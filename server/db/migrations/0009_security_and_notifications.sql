@@ -15,7 +15,7 @@ CREATE TABLE audit_log (
   -- Who did it. actor_employee_id may be null for a system or platform action;
   -- actor_label keeps the name as it was, so a later rename does not rewrite
   -- history.
-  actor_user_id  uuid REFERENCES app_user (id) ON DELETE SET NULL,
+  actor_user_id  uuid REFERENCES auth.users (id) ON DELETE SET NULL,
   actor_employee_id uuid,
   actor_label text NOT NULL,
   -- What it was done to, as a loose reference: an audit row must survive the

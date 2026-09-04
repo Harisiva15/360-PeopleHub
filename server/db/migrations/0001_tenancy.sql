@@ -1,10 +1,10 @@
 -- ---------------------------------------------------------------------------
--- 0001 — tenancy foundation
+-- 0001 — tenancy foundation (Supabase)
 --
 -- The isolation model is: one database, one schema, a tenant_id on every
 -- business table, and Postgres row-level security enforcing it. The
--- application never writes "WHERE tenant_id = $1"; it sets the tenant for the
--- transaction and the database refuses to return anything else.
+-- application never writes "WHERE tenant_id = $1"; the tenant is established
+-- for the transaction and the database refuses to return anything else.
 --
 -- Why this and not a schema or database per tenant: there are ~100 business
 -- tables. Per-tenant schemas multiply that by the tenant count, so every
@@ -13,49 +13,91 @@
 -- copy of the schema and make isolation a property the database enforces
 -- rather than one the application remembers.
 --
--- What that model costs, stated plainly: a noisy tenant shares your buffer
--- cache, per-tenant restore means filtering rows rather than restoring a
--- database, and one bad migration touches everyone. Tenants that need physical
--- separation get their own deployment; this schema is unchanged by that.
+-- Identity comes from Supabase Auth. auth.users is the person; this migration
+-- adds only what Supabase does not model — which tenants that person may
+-- enter, and as what.
 -- ---------------------------------------------------------------------------
 
+-- Supabase pre-installs these into the `extensions` schema, so these are
+-- usually no-ops. They are here so the migrations also run on a plain
+-- PostgreSQL, which is the point of not depending on Supabase-only features.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS citext;     -- case-insensitive email
 
 -- ---------------------------------------------------------------------------
 -- Tenant context
 --
--- Set per transaction with SET LOCAL, so it cannot leak to the next request
--- that borrows the same pooled connection. Reading it is deliberately strict:
--- an unset tenant raises rather than defaulting to something permissive.
+-- Two callers reach this database and they identify themselves differently:
+--
+--   * The Node API connects as a Postgres role and sets `app.tenant_id` per
+--     transaction with SET LOCAL.
+--   * PostgREST — the supabase-js client, the dashboard's API — arrives with a
+--     Supabase JWT, whose claims land in `request.jwt.claims`.
+--
+-- One function reads both so a policy never has to care which arrived. The
+-- explicit setting wins, because only trusted server code can set it.
+--
+-- It RAISES when neither is present rather than returning null. An unset
+-- tenant is a bug, and a bug that returns no rows is one you find; a bug that
+-- returns everyone's rows is one you find later.
 -- ---------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS uuid
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
-  raw text := current_setting('app.tenant_id', true);
+  raw    text;
+  claims jsonb;
 BEGIN
-  IF raw IS NULL OR raw = '' THEN
-    RAISE EXCEPTION 'app.tenant_id is not set for this transaction'
-      USING ERRCODE = 'insufficient_privilege';
+  raw := current_setting('app.tenant_id', true);
+  IF raw IS NOT NULL AND raw <> '' THEN
+    RETURN raw::uuid;
   END IF;
-  RETURN raw::uuid;
+
+  raw := current_setting('request.jwt.claims', true);
+  IF raw IS NOT NULL AND raw <> '' THEN
+    claims := raw::jsonb;
+    -- app_metadata, not user_metadata: user_metadata is writable by the user
+    -- themselves, so a tenant id kept there could be edited into someone
+    -- else's. app_metadata can only be set with the service role.
+    raw := claims -> 'app_metadata' ->> 'tenant_id';
+    IF raw IS NOT NULL AND raw <> '' THEN
+      RETURN raw::uuid;
+    END IF;
+  END IF;
+
+  RAISE EXCEPTION 'no tenant in this session: set app.tenant_id, or sign in with a tenant claim'
+    USING ERRCODE = 'insufficient_privilege';
 END;
 $$;
 
--- The acting user, for audit defaults. Unlike the tenant this may be absent —
--- migrations and scheduled jobs act without one.
+-- The acting employee, for audit defaults. Unlike the tenant this may be
+-- absent — migrations and scheduled jobs act without one.
 CREATE OR REPLACE FUNCTION current_actor_id() RETURNS uuid
 LANGUAGE sql STABLE AS $$
   SELECT NULLIF(current_setting('app.actor_id', true), '')::uuid;
 $$;
 
+-- The caller's role in the current tenant. Reads the JWT first because that is
+-- the claim Supabase signed; falls back to the membership table for the Node
+-- API, which sets app.tenant_id but carries no JWT.
+CREATE OR REPLACE FUNCTION current_app_role() RETURNS text
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+  raw text := current_setting('app.role', true);
+BEGIN
+  IF raw IS NOT NULL AND raw <> '' THEN
+    RETURN raw;
+  END IF;
+  raw := current_setting('request.jwt.claims', true);
+  IF raw IS NOT NULL AND raw <> '' THEN
+    RETURN raw::jsonb -> 'app_metadata' ->> 'app_role';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
 -- ---------------------------------------------------------------------------
--- Tenants and identities
---
--- These four tables are NOT tenant-scoped: they are how a request discovers
--- which tenant it belongs to, so scoping them by tenant would be circular.
--- They carry no RLS and the application must query them deliberately.
+-- Tenants
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE tenant (
@@ -81,31 +123,25 @@ CREATE TABLE tenant (
 COMMENT ON TABLE tenant IS
   'One customer. Every business row in this database belongs to exactly one.';
 
--- A person's login, which is global: the same human can be an employee at one
--- tenant and an external recruiter at another without two passwords.
-CREATE TABLE app_user (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  email         citext NOT NULL UNIQUE,
-  full_name     text NOT NULL,
-  -- Null when the account authenticates only through SSO.
-  password_hash text,
-  mfa_secret    text,
-  mfa_enabled   boolean NOT NULL DEFAULT false,
-  status        text NOT NULL DEFAULT 'active'
-    CHECK (status IN ('invited', 'active', 'locked', 'disabled')),
-  last_login_at timestamptz,
-  failed_logins smallint NOT NULL DEFAULT 0,
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  updated_at    timestamptz NOT NULL DEFAULT now()
-);
+-- ---------------------------------------------------------------------------
+-- Membership
+--
+-- Which tenants a Supabase user may enter, and as what. This is the table the
+-- sign-in flow reads to decide what to put in the JWT, so it is deliberately
+-- outside the tenant_isolation policy: scoping it by the tenant it is used to
+-- discover would be circular. It gets its own policy in 0010 — a user may read
+-- their own memberships and nothing else.
+--
+-- The role here is the authority. A JWT claim is a cached copy of it, which is
+-- why revoking access means updating this row *and* revoking the session.
+-- ---------------------------------------------------------------------------
 
--- Which tenants a login may enter, and as what. This is the table the login
--- flow reads to build a session; the role here is the one RLS and the API
--- authorise against.
 CREATE TABLE tenant_membership (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid NOT NULL REFERENCES tenant (id) ON DELETE CASCADE,
-  user_id     uuid NOT NULL REFERENCES app_user (id) ON DELETE CASCADE,
+  -- Supabase Auth owns the person. Deleting the login removes the membership;
+  -- the employee record survives, because employment history is not identity.
+  user_id     uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   -- Mirrors AppRole in the frontend contract.
   role        text NOT NULL CHECK (role IN ('admin', 'manager', 'employee')),
   -- The employee record this login acts as. Null for a tenant admin who is
@@ -115,35 +151,18 @@ CREATE TABLE tenant_membership (
     CHECK (status IN ('invited', 'active', 'suspended')),
   invited_at  timestamptz NOT NULL DEFAULT now(),
   accepted_at timestamptz,
+  UNIQUE (tenant_id, id),
   UNIQUE (tenant_id, user_id)
 );
 
 CREATE INDEX ON tenant_membership (user_id);
 CREATE INDEX ON tenant_membership (tenant_id, role);
 
--- Issued sessions, so a compromised token can be revoked without waiting for
--- expiry. One row per refresh token; access tokens stay stateless.
-CREATE TABLE user_session (
-  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id        uuid NOT NULL REFERENCES app_user (id) ON DELETE CASCADE,
-  -- The tenant this session is scoped to. Switching tenant issues a new
-  -- session rather than mutating this one.
-  tenant_id      uuid NOT NULL REFERENCES tenant (id) ON DELETE CASCADE,
-  refresh_token_hash text NOT NULL UNIQUE,
-  issued_at      timestamptz NOT NULL DEFAULT now(),
-  expires_at     timestamptz NOT NULL,
-  revoked_at     timestamptz,
-  ip             inet,
-  user_agent     text
-);
-
-CREATE INDEX ON user_session (user_id, expires_at);
-
 -- ---------------------------------------------------------------------------
 -- Global reference data
 --
 -- Shared by every tenant and never written at runtime. Not tenant-scoped, so
--- no RLS: these are facts about the world, not about a customer.
+-- no isolation policy: these are facts about the world, not about a customer.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE country (

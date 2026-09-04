@@ -220,9 +220,14 @@ CREATE TABLE lifecycle_event (
 
 CREATE INDEX ON lifecycle_event (tenant_id, employee_id, occurred_on DESC);
 
--- Close the membership link now that employees exist. Deliberately not a
--- composite key: tenant_membership is a platform table read before any tenant
--- context exists, so its tenant_id is an ordinary column.
+-- Close the membership link now that employees exist.
+--
+-- Composite, like every other reference between tenant-scoped rows. The
+-- checker exempts tenant_membership because it sits outside the isolation
+-- policy, but the exemption is about *policies*, not about referential
+-- integrity: a membership in one tenant pointing at another tenant's employee
+-- is exactly the leak the composite key exists to prevent, and this one
+-- decides whose payslips a login can open.
 ALTER TABLE tenant_membership
   ADD CONSTRAINT tenant_membership_employee_fkey
-  FOREIGN KEY (employee_id) REFERENCES employee (id) ON DELETE SET NULL;
+  FOREIGN KEY (tenant_id, employee_id) REFERENCES employee (tenant_id, id) ON DELETE SET NULL;

@@ -13,46 +13,67 @@
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
--- The application role
+-- Roles
 --
--- Migrations run as the owner. The API connects as this role, which
--- deliberately cannot bypass RLS. Two separate roles is the point: a policy
--- that the connecting role can switch off is decoration.
+-- On Supabase, three roles already exist and matter here:
+--
+--   anon           unauthenticated PostgREST requests
+--   authenticated  a signed-in Supabase Auth user
+--   service_role   the server-side key, which BYPASSES RLS entirely
+--
+-- app_rw is added for the Node API's direct connection. It is created
+-- NOBYPASSRLS on purpose: a policy the connecting role can switch off is
+-- decoration. Never point the API at service_role — that key exists to skip
+-- every policy in this file.
 -- ---------------------------------------------------------------------------
 
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rw') THEN
-    -- No password here; the deploy assigns one, or the role authenticates by
-    -- IAM token where the platform supports it.
+    -- NOLOGIN until the deploy assigns a password:
+    --   ALTER ROLE app_rw LOGIN PASSWORD '...';
     CREATE ROLE app_rw NOLOGIN NOBYPASSRLS;
   END IF;
 END;
 $$;
 
--- Nothing is granted by default, and PUBLIC gets nothing at all.
-REVOKE ALL ON SCHEMA public FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    GRANT USAGE ON SCHEMA public TO authenticated;
+  END IF;
+END;
+$$;
+
 GRANT USAGE ON SCHEMA public TO app_rw;
 
+-- Deliberately NOT "REVOKE ALL ON SCHEMA public FROM PUBLIC". On a plain
+-- PostgreSQL that is good hygiene; on Supabase it also strips the grants the
+-- dashboard and PostgREST rely on, and the failure is confusing. The tables
+-- below are locked down individually instead, which is narrower and reversible.
+
 -- ---------------------------------------------------------------------------
--- Tables that carry a tenant_id but are read before a tenant context exists.
--- The auth module queries these deliberately, as the owner, and they are not
--- policy-scoped. Keep this list identical to PLATFORM_TABLES in
--- scripts/check-schema.mjs.
+-- Tables that carry a tenant_id but are outside the isolation policy, because
+-- they are read to discover which tenant a session belongs to. Keep this
+-- identical to PLATFORM_TABLES in scripts/check-schema.mjs.
 -- ---------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION is_platform_table(p_table text) RETURNS boolean
 LANGUAGE sql IMMUTABLE AS $$
-  SELECT p_table IN ('tenant_membership', 'user_session');
+  SELECT p_table IN ('tenant_membership');
 $$;
 
 -- ---------------------------------------------------------------------------
--- Apply the policy
+-- Apply the isolation policy
 -- ---------------------------------------------------------------------------
 
 DO $$
 DECLARE
   t record;
+  has_authenticated boolean :=
+    EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated');
+  has_anon boolean :=
+    EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon');
 BEGIN
   FOR t IN
     SELECT c.relname AS table_name
@@ -70,8 +91,8 @@ BEGIN
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.table_name);
 
     -- FORCE makes the policy apply to the table's owner as well. Without it,
-    -- anything connecting as the owner — a migration, a console session, a
-    -- misconfigured pool — sees every tenant at once.
+    -- anything connecting as the owner — a migration, the Supabase SQL editor,
+    -- a misconfigured pool — sees every tenant at once.
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t.table_name);
 
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON public.%I', t.table_name);
@@ -93,7 +114,54 @@ BEGIN
 
     EXECUTE format(
       'GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO app_rw', t.table_name);
+
+    IF has_authenticated THEN
+      EXECUTE format(
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO authenticated', t.table_name);
+    END IF;
+
+    -- Nothing here is public. Supabase sets default privileges that can grant
+    -- new tables to anon; this takes that back explicitly rather than trusting
+    -- the project's current defaults.
+    IF has_anon THEN
+      EXECUTE format('REVOKE ALL ON public.%I FROM anon', t.table_name);
+    END IF;
   END LOOP;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- tenant_membership: its own policy, not the isolation one
+--
+-- A signed-in user may see which tenants they belong to — that is how the
+-- tenant picker works — and nothing about anyone else's membership. Writes are
+-- server-side only.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE tenant_membership ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_membership FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS membership_self_read ON tenant_membership;
+CREATE POLICY membership_self_read ON tenant_membership
+  FOR SELECT
+  USING (
+    -- Through PostgREST: only your own rows.
+    user_id = auth.uid()
+    -- Through the Node API, which has already authenticated the caller and
+    -- set the tenant for this transaction.
+    OR current_setting('app.tenant_id', true) IS NOT NULL
+  );
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_membership TO app_rw;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    GRANT SELECT ON tenant_membership TO authenticated;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON tenant_membership FROM anon;
+  END IF;
 END;
 $$;
 
@@ -102,15 +170,27 @@ REVOKE UPDATE, DELETE ON audit_log FROM app_rw;
 REVOKE UPDATE, DELETE ON consent_event FROM app_rw;
 REVOKE DELETE ON leave_ledger FROM app_rw;
 
--- Reference data is readable by everyone and written only by migrations.
-GRANT SELECT ON country, currency, fx_rate TO app_rw;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE UPDATE, DELETE ON audit_log FROM authenticated;
+    REVOKE UPDATE, DELETE ON consent_event FROM authenticated;
+    REVOKE DELETE ON leave_ledger FROM authenticated;
+  END IF;
+END;
+$$;
 
--- The auth module needs these, and they are not policy-scoped, so the grants
--- are explicit rather than swept up by the loop above.
-GRANT SELECT ON tenant TO app_rw;
-GRANT SELECT, INSERT, UPDATE ON app_user TO app_rw;
-GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_membership TO app_rw;
-GRANT SELECT, INSERT, UPDATE, DELETE ON user_session TO app_rw;
+-- Reference data is readable by everyone signed in and written only by
+-- migrations. `tenant` is readable so a session can resolve its own name.
+GRANT SELECT ON country, currency, fx_rate, tenant TO app_rw;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    GRANT SELECT ON country, currency, fx_rate, tenant TO authenticated;
+  END IF;
+END;
+$$;
 
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_rw;
 
@@ -119,8 +199,8 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_rw;
 --
 -- The build catches it: scripts/check-schema.mjs parses every migration and
 -- fails when a new table is neither tenant-scoped nor explicitly listed as
--- global. Belt and braces, this function lets an operator confirm the live
--- database matches — useful after a hotfix applied by hand.
+-- global. This function checks the *live* database, which is what catches a
+-- table created by hand in the Supabase SQL editor.
 -- ---------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION tenancy_gaps()
@@ -132,7 +212,7 @@ LANGUAGE sql STABLE AS $$
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public'
       AND c.relkind = 'r'
-      AND c.relname NOT IN ('tenant', 'app_user', 'country', 'currency', 'fx_rate')
+      AND c.relname NOT IN ('tenant', 'country', 'currency', 'fx_rate', 'schema_migration')
       AND NOT is_platform_table(c.relname)
   )
   SELECT b.name, 'no tenant_id column'

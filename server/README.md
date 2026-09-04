@@ -121,11 +121,15 @@ Two backstops:
 
 ## The three kinds of table
 
-| Kind | RLS | Why |
+| Kind | Policy | Why |
 |---|---|---|
-| **Tenant-scoped** (105) | Yes | Everything a customer owns. |
-| **Platform** (2) — `tenant_membership`, `user_session` | No | Read during login, *before* a tenant context exists. Scoping them by the tenant they are used to discover would be circular. Only the auth module touches them. |
-| **Global** (5) — `tenant`, `app_user`, `country`, `currency`, `fx_rate` | No | Facts about the world, or about the platform rather than a customer. |
+| **Tenant-scoped** (105) | `tenant_isolation` | Everything a customer owns. |
+| **Platform** (1) — `tenant_membership` | Its own | Read to *discover* which tenant a session belongs to, so the isolation policy would be circular. It is not unprotected: a user sees their own memberships and no one else's. |
+| **Global** (4) — `tenant`, `country`, `currency`, `fx_rate` | None | Facts about the world, or about the platform rather than a customer. |
+
+Identity itself lives in Supabase's `auth.users`. There is no `app_user` table:
+duplicating the identity Supabase already owns would give two answers to "who
+is this".
 
 The lists live in two places that must agree —
 [`check-schema.mjs`](scripts/check-schema.mjs) and `is_platform_table()` in
@@ -195,10 +199,19 @@ unique index that makes a second debit impossible. The mock could not race; a
 real API does, and "check then write" without a lock is where double-debits come
 from.
 
-**Sessions are opaque tokens, not JWTs.** A JWT saves a database read; this
-product needs revocation to be immediate, and every request already opens a
-transaction. Tokens are stored hashed and peppered, so a leaked backup does not
-hand over live sessions.
+**The JWT is trusted for identity and nothing else.** Supabase signs it, so
+`sub` is reliable — but the tenant and the role are read from
+`tenant_membership` on every request. A JWT is a cached copy of a decision, and
+a manager demoted an hour ago still holds a token that says "manager". The
+lookup is one indexed read inside a transaction that was opening anyway, and it
+means revocation takes effect on the next request rather than at expiry. The
+token's `tenant_id` claim only chooses *which* membership when someone belongs
+to several; it can never widen access beyond what the table says.
+
+**`app_metadata`, never `user_metadata`.** The tenant claim goes in
+`app_metadata`, which only the service role can write. `user_metadata` is
+editable by the user themselves — a tenant id kept there could be edited into
+somebody else's.
 
 ---
 

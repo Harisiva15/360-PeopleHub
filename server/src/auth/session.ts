@@ -1,17 +1,22 @@
 /**
- * Sessions.
+ * Authentication against Supabase Auth.
  *
- * Tokens here are opaque random strings, not JWTs. The trade is deliberate: a
- * JWT saves a database read per request, but this product needs revocation to
- * be immediate — an admin who is dismissed must lose access now, not in
- * fifteen minutes — and every request already opens a transaction. So the
- * lookup is nearly free, and "log everyone out" is one UPDATE.
+ * Supabase issues the JWT; this module verifies it and turns it into a Caller.
  *
- * The token is stored hashed. A leaked database backup then does not hand the
- * attacker live sessions.
+ * The important decision here: the token is trusted for *identity* and nothing
+ * else. `sub` says which auth.users row is calling, and that is all we take
+ * from it. The tenant and the role are read from tenant_membership on every
+ * request, because a JWT is a cached copy of a decision and roles change — a
+ * manager demoted an hour ago still holds a token that says "manager". Reading
+ * the membership costs one indexed lookup inside a transaction we were opening
+ * anyway, and it means revocation takes effect on the next request rather than
+ * at token expiry.
+ *
+ * The `tenant_id` claim is used only to choose *which* membership when someone
+ * belongs to several. It can never widen access beyond what the table says.
  */
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { withoutTenantForAuth } from '../tenancy/context.ts';
 import type { Caller } from '../tenancy/context.ts';
 import { config } from '../config.ts';
@@ -23,29 +28,69 @@ export class AuthError extends Error {
   }
 }
 
-/** Opaque 256-bit token, URL-safe. */
-export const mintToken = (): string => randomBytes(32).toString('base64url');
+interface SupabaseClaims {
+  sub: string;
+  exp: number;
+  /** Set with the service role only; a user cannot edit their own. */
+  app_metadata?: { tenant_id?: string; app_role?: string };
+}
+
+const b64urlToBuffer = (input: string): Buffer =>
+  Buffer.from(input.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
 
 /**
- * Hash for storage. Peppered with a server-side secret so the hashes are
- * useless without it, and SHA-256 rather than a slow KDF because the input is
- * already 256 bits of entropy — there is nothing to brute-force.
+ * Verify a Supabase HS256 JWT.
+ *
+ * Hand-rolled deliberately narrowly: the algorithm is pinned to HS256 and
+ * anything else is rejected outright, which closes the two classic holes —
+ * `alg: none`, and an RS256 token replayed as HS256 with the public key as the
+ * HMAC secret.
+ *
+ * Projects using Supabase's newer asymmetric signing keys (ES256/RS256 with a
+ * JWKS endpoint) cannot use this path. Verify against the JWKS with a
+ * maintained library instead; do not extend this function to cover it.
  */
-const hashToken = (token: string): string =>
-  createHash('sha256').update(`${config.tokenPepper}:${token}`).digest('hex');
+function verifyJwt(token: string): SupabaseClaims {
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new AuthError('malformed token');
 
-const sameHash = (a: string, b: string): boolean => {
-  const left = Buffer.from(a, 'hex');
-  const right = Buffer.from(b, 'hex');
-  return left.length === right.length && timingSafeEqual(left, right);
-};
+  const [headerPart, payloadPart, signaturePart] = parts as [string, string, string];
 
-interface SessionRow {
-  user_id: string;
+  let header: { alg?: string; typ?: string };
+  try {
+    header = JSON.parse(b64urlToBuffer(headerPart).toString('utf8'));
+  } catch {
+    throw new AuthError('malformed token header');
+  }
+  if (header.alg !== 'HS256') throw new AuthError(`unsupported token algorithm ${header.alg}`);
+
+  const expected = createHmac('sha256', config.supabaseJwtSecret)
+    .update(`${headerPart}.${payloadPart}`)
+    .digest();
+  const provided = b64urlToBuffer(signaturePart);
+
+  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
+    throw new AuthError('bad token signature');
+  }
+
+  let claims: SupabaseClaims;
+  try {
+    claims = JSON.parse(b64urlToBuffer(payloadPart).toString('utf8'));
+  } catch {
+    throw new AuthError('malformed token payload');
+  }
+
+  if (typeof claims.sub !== 'string' || !claims.sub) throw new AuthError('token has no subject');
+  if (typeof claims.exp !== 'number') throw new AuthError('token has no expiry');
+  // Seconds, per the JWT spec. A small skew allowance would go here if clocks
+  // between Supabase and this server ever proved to be a problem.
+  if (claims.exp * 1000 <= Date.now()) throw new AuthError('token expired');
+
+  return claims;
+}
+
+interface MembershipRow {
   tenant_id: string;
-  refresh_token_hash: string;
-  expires_at: Date;
-  revoked_at: Date | null;
   role: Caller['role'];
   employee_id: string | null;
   membership_status: string;
@@ -56,98 +101,65 @@ interface SessionRow {
  * Resolve a bearer token to a caller.
  *
  * This is the only place a Caller is constructed. Nothing downstream may take
- * a tenant id, a role or an employee id from the request body or a header —
- * that is what turns a multi-tenant API into a single shared database with
- * extra steps.
+ * a tenant id, a role or an employee id from a request body or a header — that
+ * is what turns a multi-tenant API into a shared database with extra steps.
  */
 export async function callerFromToken(token: string | undefined): Promise<Caller> {
   if (!token) throw new AuthError('no bearer token');
 
-  const candidateHash = hashToken(token);
+  const claims = verifyJwt(token);
+  const preferredTenant = claims.app_metadata?.tenant_id ?? null;
 
   const row = await withoutTenantForAuth(async (db) => {
-    const result = await db.query<SessionRow>(
-      `SELECT s.user_id,
-              s.tenant_id,
-              s.refresh_token_hash,
-              s.expires_at,
-              s.revoked_at,
+    const result = await db.query<MembershipRow>(
+      `SELECT m.tenant_id,
               m.role,
               m.employee_id,
               m.status AS membership_status,
               t.status AS tenant_status
-         FROM user_session s
-         JOIN tenant_membership m
-           ON m.user_id = s.user_id AND m.tenant_id = s.tenant_id
-         JOIN tenant t ON t.id = s.tenant_id
-        WHERE s.refresh_token_hash = $1
+         FROM tenant_membership m
+         JOIN tenant t ON t.id = m.tenant_id
+        WHERE m.user_id = $1
+          AND m.status = 'active'
+          AND ($2::uuid IS NULL OR m.tenant_id = $2::uuid)
+        ORDER BY (m.tenant_id = $2::uuid) DESC
         LIMIT 1`,
-      [candidateHash],
+      [claims.sub, preferredTenant],
     );
     return result.rows[0] ?? null;
   });
 
-  // Compare again in constant time. The lookup above is an index probe on the
-  // hash, so this adds nothing on the happy path and removes a timing signal.
-  if (!row || !sameHash(row.refresh_token_hash, candidateHash)) {
-    throw new AuthError('unknown session');
-  }
-  if (row.revoked_at) throw new AuthError('session revoked');
-  if (row.expires_at.getTime() <= Date.now()) throw new AuthError('session expired');
-  if (row.membership_status !== 'active') throw new AuthError('membership is not active');
+  if (!row) throw new AuthError('no active membership for this user');
   if (row.tenant_status === 'suspended' || row.tenant_status === 'closed') {
     throw new AuthError('tenant is not active');
   }
 
   return {
     tenantId: row.tenant_id,
-    userId: row.user_id,
+    userId: claims.sub,
     employeeId: row.employee_id,
     role: row.role,
   };
 }
 
-/** Issue a session for a user against one of their tenants. */
-export async function createSession(
+/** Every tenant a user may enter, for a tenant picker. */
+export async function membershipsFor(
   userId: string,
-  tenantId: string,
-  meta: { ip?: string; userAgent?: string } = {},
-): Promise<{ token: string; expiresAt: Date }> {
-  const token = mintToken();
-  const expiresAt = new Date(Date.now() + config.sessionTtlDays * 86_400_000);
-
-  await withoutTenantForAuth(async (db) => {
-    const membership = await db.query(
-      `SELECT 1 FROM tenant_membership
-        WHERE user_id = $1 AND tenant_id = $2 AND status = 'active'`,
-      [userId, tenantId],
-    );
-    if (membership.rowCount === 0) throw new AuthError('no active membership for that tenant');
-
-    await db.query(
-      `INSERT INTO user_session (user_id, tenant_id, refresh_token_hash, expires_at, ip, user_agent)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [userId, tenantId, hashToken(token), expiresAt, meta.ip ?? null, meta.userAgent ?? null],
-    );
-  });
-
-  return { token, expiresAt };
-}
-
-/** Revoke one session, or every session a user holds. */
-export async function revokeSessions(userId: string, token?: string): Promise<number> {
+): Promise<{ tenantId: string; slug: string; name: string; role: string }[]> {
   return withoutTenantForAuth(async (db) => {
-    const result = token
-      ? await db.query(
-          `UPDATE user_session SET revoked_at = now()
-            WHERE user_id = $1 AND refresh_token_hash = $2 AND revoked_at IS NULL`,
-          [userId, hashToken(token)],
-        )
-      : await db.query(
-          `UPDATE user_session SET revoked_at = now()
-            WHERE user_id = $1 AND revoked_at IS NULL`,
-          [userId],
-        );
-    return result.rowCount ?? 0;
+    const { rows } = await db.query(
+      `SELECT m.tenant_id, t.slug, t.display_name, m.role
+         FROM tenant_membership m
+         JOIN tenant t ON t.id = m.tenant_id
+        WHERE m.user_id = $1 AND m.status = 'active' AND t.status IN ('trial', 'active')
+        ORDER BY t.display_name`,
+      [userId],
+    );
+    return rows.map((r) => ({
+      tenantId: r.tenant_id,
+      slug: r.slug,
+      name: r.display_name,
+      role: r.role,
+    }));
   });
 }

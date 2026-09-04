@@ -10,7 +10,8 @@
     "migrate": "node scripts/migrate.mjs",
     "dev": "node --watch --experimental-strip-types src/index.ts",
     "check:schema:test": "node scripts/check-schema.test.mjs",
-    "check": "npm run check:schema && npm run check:schema:test && npm run typecheck"
+    "check": "npm run check:schema && npm run check:schema:test && npm run typecheck",
+    "inspect": "node scripts/inspect.mjs"
   },
   "dependencies": {
     "pg": "^8.13.1"

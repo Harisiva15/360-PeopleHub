@@ -13,11 +13,16 @@ import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { loadEnv } from './env.mjs';
+
+loadEnv();
 
 const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '..', 'db', 'migrations');
-const url = process.env.DATABASE_URL;
+// Migrations run as the OWNING role, not app_rw: they create policies that
+// app_rw must not be able to drop.
+const url = process.env.MIGRATE_DATABASE_URL;
 if (!url) {
-  console.error('DATABASE_URL is not set');
+  console.error('MIGRATE_DATABASE_URL is not set (see server/.env.example)');
   process.exit(1);
 }
 

@@ -23,21 +23,20 @@ const MIGRATIONS = process.env.SCHEMA_MIGRATIONS_DIR
  * that describe tenants and logins themselves.
  */
 const GLOBAL_TABLES = new Set([
-  'tenant', 'app_user',
+  'tenant',
   'country', 'currency', 'fx_rate',
 ]);
 
 /**
- * Tables that carry a tenant_id but are deliberately *not* RLS-scoped.
+ * Tables that carry a tenant_id but are outside the tenant_isolation policy.
  *
- * These are read during authentication, before a tenant context exists — that
- * is the whole point of reading them. Scoping them to the tenant they are used
- * to discover would be circular. They are queried only by the auth module,
- * which is why the tenant_id here is an ordinary foreign key rather than a
- * policy predicate.
+ * tenant_membership is read to *discover* which tenant a session belongs to,
+ * so scoping it by that tenant would be circular. It is not unprotected: 0010
+ * gives it its own policy — a user may see their own memberships and no one
+ * else's — which is why the composite-key rule below does not apply to it.
  */
 const PLATFORM_TABLES = new Set([
-  'tenant_membership', 'user_session',
+  'tenant_membership',
 ]);
 
 /** True for a table the tenancy invariants apply to. */
@@ -73,6 +72,7 @@ function readCreateTable(stmt) {
           table.foreignKeys.push({
             columns: [col.colname],
             refTable: con.pktable?.relname,
+            refSchema: con.pktable?.schemaname ?? null,
             refColumns: names(con.pk_attrs),
           });
         }
@@ -90,6 +90,7 @@ function readCreateTable(stmt) {
       table.foreignKeys.push({
         columns: names(con.fk_attrs),
         refTable: con.pktable?.relname,
+        refSchema: con.pktable?.schemaname ?? null,
         refColumns: names(con.pk_attrs),
       });
     }
@@ -110,6 +111,7 @@ function applyAlterTable(stmt, tables) {
       target.foreignKeys.push({
         columns: names(con.fk_attrs),
         refTable: con.pktable?.relname,
+        refSchema: con.pktable?.schemaname ?? null,
         refColumns: names(con.pk_attrs),
       });
     }
@@ -198,6 +200,12 @@ for (const [name, t] of tables) {
  * ------------------------------------------------------------------------- */
 for (const [name, t] of tables) {
   for (const fk of t.foreignKeys) {
+    // A reference into another schema — auth.users on Supabase — is outside
+    // this schema's control. The columns cannot be verified from here, and it
+    // is by definition not tenant-scoped, so the composite rule does not
+    // apply. Flagging it would only train people to ignore the checker.
+    if (fk.refSchema && fk.refSchema !== 'public') continue;
+
     const ref = tables.get(fk.refTable);
     if (!ref) {
       fail(t.file, `${name} references unknown table ${fk.refTable}`);
