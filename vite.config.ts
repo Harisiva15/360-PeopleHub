@@ -3,19 +3,21 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  /*
+   * Served from the domain root by default. A GitHub Pages project site lives
+   * under /<repo>/, so the deploy sets BASE_PATH rather than hard-coding it.
+   */
+  base: process.env.BASE_PATH || '/',
   plugins: [react()],
   build: {
     rollupOptions: {
       output: {
         /*
-         * React and the router change far less often than the app does, so
-         * they get their own chunk — a release invalidates the app bundle
-         * without making every user re-download the framework.
-         *
-         * Route-level splitting is the bigger win but is blocked on the
-         * sidebar: it computes a pending-count badge for every module, so
-         * every module has to be registered before the first paint. Moving
-         * those badges to a single service call would unblock it.
+         * Routes are code-split (see src/modules/index.ts), so this only
+         * pins the framework: React and the router change far less often
+         * than the app, and giving them their own chunk means a release
+         * invalidates the app bundle without making every user re-download
+         * the framework.
          */
         manualChunks: (id: string) =>
           (id.includes('node_modules/react') || id.includes('node_modules/scheduler')

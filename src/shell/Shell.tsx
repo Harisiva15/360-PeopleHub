@@ -108,6 +108,17 @@ export function Shell({ children }: { children: ReactNode }) {
             <div className="sub">{SUBTITLES[route]?.(ctx)}</div>
           </div>
           <div className="spacer" />
+          {/*
+            * The role switcher is the honest signal that this is a demo: there
+            * is no login, so any visitor can become an admin. Say so, rather
+            * than letting a public URL read as a live HR system.
+            */}
+          <span
+            className="demo-tag no-print"
+            title="Sample data, no sign-in — anyone can switch role. Not a live HR system."
+          >
+            Demo
+          </span>
           <div className="seg" id="roleSeg" title="Switch the signed-in role">
             {accounts.map((a) => (
               <button key={a.role} className={app.role === a.role ? 'on' : ''} onClick={() => app.signInAs(a.role)}>
