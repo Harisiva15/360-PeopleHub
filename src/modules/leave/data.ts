@@ -8,54 +8,13 @@
  * a real client does when the API does not denormalise names into the row.
  */
 
-import { useMemo } from 'react';
 import { useQuery, useMutation } from '../../services/react';
-import type { Caller, Employee, LeaveBalanceRow, LeaveRequest } from '../../services';
-import { useApp } from '../../state/AppContext';
+import type { LeaveBalanceRow, LeaveRequest } from '../../services';
 
-/** The identity every scoped read is made on behalf of. */
-export function useCaller(): Caller {
-  const app = useApp();
-  return useMemo(() => ({ role: app.role, meId: app.meId }), [app.role, app.meId]);
-}
-
-export interface Directory {
-  list: Employee[];
-  ids: string[];
-  byId: (id: string) => Employee | undefined;
-  name: (id: string | null | undefined) => string;
-  loading: boolean;
-}
-
-const emptyDirectory = (loading: boolean): Directory => ({
-  list: [], ids: [], byId: () => undefined, name: () => '—', loading,
-});
-
-function toDirectory(list: Employee[] | undefined, loading: boolean): Directory {
-  if (!list) return emptyDirectory(loading);
-  const map = new Map(list.map((e) => [e.id, e]));
-  return {
-    list,
-    ids: list.map((e) => e.id),
-    byId: (id) => map.get(id),
-    name: (id) => (id ? map.get(id)?.name ?? '—' : '—'),
-    loading,
-  };
-}
-
-/** Everyone the signed-in user may see. */
-export function useVisiblePeople(): Directory {
-  const caller = useCaller();
-  const { data, loading } = useQuery((s) => s.employees.visible(caller), [caller.role, caller.meId]);
-  return useMemo(() => toDirectory(data, loading), [data, loading]);
-}
-
-/** Resolve a specific set of people — the approvers and applicants rows refer to. */
-export function usePeople(ids: (string | null | undefined)[]): Directory {
-  const wanted = useMemo(() => Array.from(new Set(ids.filter(Boolean) as string[])).sort(), [ids.join(',')]);
-  const { data, loading } = useQuery((s) => s.employees.byIds(wanted), [wanted.join(',')]);
-  return useMemo(() => toDirectory(data, loading), [data, loading]);
-}
+/* Directory access is shared across modules — re-exported so the leave views
+   keep one import. */
+export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
+export type { Directory } from '../../services/people';
 
 /* ---------- reads ---------- */
 

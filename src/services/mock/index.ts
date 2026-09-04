@@ -6,10 +6,12 @@
  */
 
 import type { Services } from '../contracts';
+import { attendanceService } from './attendance';
 import { employeeService } from './employees';
 import { leaveService } from './leave';
 
 export const mockServices: Services = {
   employees: employeeService,
+  attendance: attendanceService,
   leave: leaveService,
 };

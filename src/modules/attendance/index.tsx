@@ -4,9 +4,7 @@ import { groupBy, sortBy, sum } from '../../lib/collections';
 import { addDays, DOW, dowOf, fmtD, fmtDS, fmtTime, hhmm, monthKey, monthLabelLong, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { ATT, ATT_IDX, attOf } from '../../data/attendance';
-import type { AttRecord } from '../../data/attendance';
-import { EMAP, empName } from '../../data/employees';
+import type { AttRecord, Employee } from '../../services';
 import { DEPTS, deptOf, HOLIDAYS, siteOf, SITES } from '../../data/org';
 import { PAYRUNS } from '../../data/payroll';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
@@ -14,9 +12,14 @@ import { ListRow, StatusBadge } from '../../components/common';
 import { BarChart, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { SCOPE, visibleIds } from '../../state/rbac';
+import { SCOPE } from '../../state/rbac';
 import { useShowEmployee } from '../employees/Profile';
 import { MapBox, PunchWidget } from './Punch';
+import {
+  useActOnRegularisation, useAttendance, useMyAttendance, usePeople,
+  useRaiseRegularisation, useRegularisableDays, useRegularisations, useVisiblePeople,
+} from './data';
+import type { Directory } from './data';
 import { MonthCalendar } from '../dashboard/shared';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
@@ -43,13 +46,13 @@ function GeoCell({ r }: { r: AttRecord }) {
     : <Badge kind="crit">⚠ {r.dist} m</Badge>;
 }
 
-function useAttDetail() {
+function useAttDetail(dir: Directory) {
   const layer = useLayer();
   return (r: AttRecord) => {
-    const e = EMAP[r.empId];
+    const name = dir.name(r.empId);
     const s = siteOf(r.site);
     layer.modal({
-      title: e.name + ' — ' + fmtD(r.date),
+      title: name + ' — ' + fmtD(r.date),
       sub: dowOf(r.date) + ' · ' + siteOf(r.site).name,
       body: (
         <>
@@ -69,7 +72,7 @@ function useAttDetail() {
           ]} />
           {r.lat && (
             <MapBox
-              points={[{ lat: r.lat, lng: r.lng, label: e.name, me: true, bad: !r.geoOk }]}
+              points={[{ lat: r.lat, lng: r.lng, label: name, me: true, bad: !r.geoOk }]}
               site={r.site === 'WFH' || r.site === 'CLIENT' ? null : s}
               height={220}
             />
@@ -80,11 +83,11 @@ function useAttDetail() {
   };
 }
 
-function AttRow({ r, showEmp, onClick }: { r: AttRecord; showEmp?: boolean; onClick: () => void }) {
+function AttRow({ r, person, onClick }: { r: AttRecord; person?: Employee; onClick: () => void }) {
   const b = ATT_LABEL[r.status];
   return (
     <tr className="clickable" onClick={onClick}>
-      {showEmp && <td><PersonCell e={EMAP[r.empId]} /></td>}
+      {person && <td><PersonCell e={person} /></td>}
       <td className="nowrap">{fmtD(r.date)} <span className="muted">{dowOf(r.date)}</span></td>
       <td>
         <Badge kind={b.kind}>{b.label}</Badge>
@@ -106,12 +109,13 @@ function AttRow({ r, showEmp, onClick }: { r: AttRecord; showEmp?: boolean; onCl
 
 function AttMe({ onRegularise }: { onRegularise: () => void }) {
   const app = useApp();
-  const detail = useAttDetail();
   const me = app.me;
+  const self = usePeople([me.id]);
+  const detail = useAttDetail(self);
   const months = PAYRUNS.map((p) => p.mk).slice(-8);
   const [mk, setMk] = useState(monthKey(TODAY));
 
-  const recs = Object.values(ATT_IDX[me.id] || {}).filter((r) => r.date.slice(0, 7) === mk);
+  const { data: recs = [] } = useMyAttendance(me.id, mk + '-01', mk + '-31');
   const work = recs.filter((r) => ['P', 'W', 'A', 'L'].includes(r.status));
   const present = recs.filter((r) => r.status === 'P' || r.status === 'W').length;
   const late = recs.filter((r) => r.late).length;
@@ -184,9 +188,9 @@ function AttLive() {
   const [q, setQ] = useState('');
   const [st, setSt] = useState('');
 
-  const ids = visibleIds(app.role, app.meId);
+  const dir = useVisiblePeople();
   const ds = ymd(TODAY);
-  const recs = ids.map((i) => attOf(i, ds)).filter(Boolean) as AttRecord[];
+  const { data: recs = [] } = useAttendance(dir.ids, ds, ds);
   const c: Record<string, number> = { P: 0, W: 0, L: 0, A: 0, H: 0, O: 0 };
   recs.forEach((r) => c[r.status]++);
 
@@ -197,7 +201,7 @@ function AttLive() {
     .filter((r) => r.v);
 
   const shown = recs.filter(
-    (r) => (!q || EMAP[r.empId].name.toLowerCase().includes(q.toLowerCase())) && (!st || r.status === st),
+    (r) => (!q || dir.name(r.empId).toLowerCase().includes(q.toLowerCase())) && (!st || r.status === st),
   );
 
   const exportCsv = () =>
@@ -205,15 +209,15 @@ function AttLive() {
       `attendance_${ds}.csv`,
       [['Emp Code', 'Name', 'Department', 'Status', 'In', 'Out', 'Hours', 'Mode', 'Distance (m)', 'Geo OK']].concat(
         recs.map((r) => {
-          const e = EMAP[r.empId];
-          return [e.code, e.name, deptOf(e.dept).name, r.status, r.inT || '', r.outT || '',
+          const e = dir.byId(r.empId);
+          return [e?.code ?? r.empId, e?.name ?? '—', e ? deptOf(e.dept).name : '—', r.status, r.inT || '', r.outT || '',
             (r.mins / 60).toFixed(2), siteOf(r.site).name, r.dist == null ? '' : String(r.dist),
             r.inT ? (r.geoOk ? 'Yes' : 'No') : ''];
         }),
       ),
     );
 
-  const pendingRegs = ATT.filter((a) => a.date === ds && a.reg && a.reg.status === 'Pending' && ids.includes(a.empId)).length;
+  const pendingRegs = recs.filter((r) => r.reg && r.reg.status === 'Pending').length;
 
   return (
     <div className="stack">
@@ -247,9 +251,10 @@ function AttLive() {
                 <tr><th>Employee</th><th>Department</th><th>Status</th><th>In</th><th>Out</th><th className="num">Hrs</th><th>Mode</th><th>Geo-fence</th></tr>
               </thead>
               <tbody>
-                {sortBy(shown, (r) => EMAP[r.empId].name).map((r) => {
-                  const e = EMAP[r.empId];
+                {sortBy(shown, (r) => dir.name(r.empId)).map((r) => {
+                  const e = dir.byId(r.empId);
                   const b = ATT_LABEL[r.status];
+                  if (!e) return null;
                   return (
                     <tr key={r.id} className="clickable" onClick={() => showEmp(e.id)}>
                       <td><PersonCell e={e} /></td>
@@ -278,9 +283,9 @@ function AttLive() {
             <div style={{ maxHeight: 230, overflow: 'auto' }}>
               {lateOnes.length ? lateOnes.map((r) => (
                 <ListRow key={r.id} onClick={() => showEmp(r.empId)}>
-                  <Avatar name={EMAP[r.empId].name} size="sm" />
+                  <Avatar name={dir.name(r.empId)} size="sm" />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 650, fontSize: 12.5 }}>{EMAP[r.empId].name}</div>
+                    <div style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(r.empId)}</div>
                     <div className="muted" style={{ fontSize: 11.5 }}>{siteOf(r.site).name}</div>
                   </div>
                   <Badge kind="warn"><span className="mono">{fmtTime(r.inT)}</span></Badge>
@@ -297,17 +302,17 @@ function AttLive() {
 /* ---------------- Log / muster roll ---------------- */
 
 function AttLog() {
-  const app = useApp();
   const showEmp = useShowEmployee();
   const [from, setFrom] = useState(ymd(addDays(TODAY, -13)));
   const [to, setTo] = useState(ymd(TODAY));
   const [dept, setDept] = useState('');
   const [site, setSite] = useState('');
 
-  const ids = visibleIds(app.role, app.meId);
-  let recs = ATT.filter((r) => ids.includes(r.empId) && r.date >= from && r.date <= to);
-  if (dept) recs = recs.filter((r) => EMAP[r.empId].dept === dept);
-  if (site) recs = recs.filter((r) => EMAP[r.empId].site === site);
+  const dir = useVisiblePeople();
+  const { data: all = [] } = useAttendance(dir.ids, from, to);
+  let recs = all;
+  if (dept) recs = recs.filter((r) => dir.byId(r.empId)?.dept === dept);
+  if (site) recs = recs.filter((r) => dir.byId(r.empId)?.site === site);
 
   const work = recs.filter((r) => ['P', 'W', 'A', 'L'].includes(r.status));
   const present = recs.filter((r) => r.status === 'P' || r.status === 'W');
@@ -318,7 +323,7 @@ function AttLog() {
     const w = rs.filter((r) => ['P', 'W', 'A', 'L'].includes(r.status));
     const p = rs.filter((r) => r.status === 'P' || r.status === 'W');
     return {
-      e: EMAP[id], days: w.length, present: p.length,
+      e: dir.byId(id)!, days: w.length, present: p.length,
       wfh: rs.filter((r) => r.status === 'W').length,
       leave: rs.filter((r) => r.status === 'L').length,
       absent: rs.filter((r) => r.status === 'A').length,
@@ -347,8 +352,8 @@ function AttLog() {
       `muster_roll_${from}_${to}.csv`,
       [['Emp Code', 'Name', 'Department', 'Location', 'Date', 'Status', 'In', 'Out', 'Hours', 'Mode', 'Geo OK', 'Source']].concat(
         sortBy(recs, (r) => r.date).map((r) => {
-          const e = EMAP[r.empId];
-          return [e.code, e.name, deptOf(e.dept).name, siteOf(e.site).name, r.date, r.status,
+          const e = dir.byId(r.empId);
+          return [e?.code ?? r.empId, e?.name ?? '—', e ? deptOf(e.dept).name : '—', e ? siteOf(e.site).name : '—', r.date, r.status,
             r.inT || '', r.outT || '', (r.mins / 60).toFixed(2), siteOf(r.site).name,
             r.inT ? (r.geoOk ? 'Yes' : 'No') : '', r.src || ''];
         }),
@@ -437,16 +442,18 @@ function AttLog() {
 
 function AttGeo() {
   const app = useApp();
-  const detail = useAttDetail();
+  const dir = useVisiblePeople();
+  const detail = useAttDetail(dir);
   const [focusSite, setFocusSite] = useState('CHN');
   const [ds, setDs] = useState(ymd(TODAY));
 
-  const ids = visibleIds(app.role, app.meId);
-  const recs = ATT.filter((r) => ids.includes(r.empId) && r.date === ds && r.lat != null);
-  const flagged = ATT.filter((r) => ids.includes(r.empId) && r.geoOk === false && r.date >= ymd(addDays(TODAY, -30)));
+  const { data: dayRows = [] } = useAttendance(dir.ids, ds, ds);
+  const { data: recent = [] } = useAttendance(dir.ids, ymd(addDays(TODAY, -30)), ymd(TODAY));
+  const recs = dayRows.filter((r) => r.lat != null);
+  const flagged = recent.filter((r) => r.geoOk === false);
   const site = siteOf(focusSite);
   const pts = recs.filter((r) => r.site === focusSite).map((r) => ({
-    lat: r.lat, lng: r.lng, label: EMAP[r.empId].name,
+    lat: r.lat, lng: r.lng, label: dir.name(r.empId),
     sub: fmtTime(r.inT) + ' · ' + (r.dist == null ? '' : r.dist + ' m'),
     bad: !r.geoOk,
   }));
@@ -496,9 +503,9 @@ function AttGeo() {
             <div style={{ maxHeight: 330, overflow: 'auto' }}>
               {flagged.length ? sortBy(flagged, (r) => r.date, 'desc').slice(0, 40).map((r) => (
                 <ListRow key={r.id} onClick={() => detail(r)}>
-                  <Avatar name={EMAP[r.empId].name} size="sm" />
+                  <Avatar name={dir.name(r.empId)} size="sm" />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 650, fontSize: 12.5 }}>{EMAP[r.empId].name}</div>
+                    <div style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(r.empId)}</div>
                     <div className="muted" style={{ fontSize: 11.5 }}>{fmtD(r.date)} · {fmtTime(r.inT)} · {siteOf(r.site).name}</div>
                   </div>
                   <Badge kind="crit">{r.dist} m</Badge>
@@ -514,11 +521,12 @@ function AttGeo() {
 
 /* ---------------- Regularisation ---------------- */
 
-function RegTable({ list, act, onApprove, onReject }: {
+function RegTable({ list, act, dir, onApprove, onReject }: {
   list: AttRecord[];
   act: boolean;
   onApprove: (r: AttRecord) => void;
   onReject: (r: AttRecord) => void;
+  dir?: Directory;
 }) {
   if (!list.length) return <EmptyState msg="Nothing here" icon="⟳" />;
   return (
@@ -534,7 +542,7 @@ function RegTable({ list, act, onApprove, onReject }: {
         <tbody>
           {sortBy(list, (r) => r.date, 'desc').map((r) => (
             <tr key={r.id}>
-              {act && <td><PersonCell e={EMAP[r.empId]} /></td>}
+              {act && dir?.byId(r.empId) && <td><PersonCell e={dir.byId(r.empId)!} /></td>}
               <td className="nowrap">{fmtD(r.date)}</td>
               <td>{r.reg!.reason}</td>
               <td className="mono nowrap">{fmtTime(r.reg!.inT)} – {fmtTime(r.reg!.outT)}</td>
@@ -560,27 +568,23 @@ function RegTable({ list, act, onApprove, onReject }: {
 
 function AttReg({ onRegularise }: { onRegularise: () => void }) {
   const app = useApp();
-  const ids = visibleIds(app.role, app.meId);
-  const mine = ATT.filter((r) => r.empId === app.meId && r.reg);
-  const team = ATT.filter((r) => r.reg && ids.includes(r.empId) && r.empId !== app.meId);
+  const dir = useVisiblePeople();
+  const { data: regs = [] } = useRegularisations(dir.ids);
+  const act = useActOnRegularisation();
+
+  const mine = regs.filter((r) => r.empId === app.meId);
+  const team = regs.filter((r) => r.empId !== app.meId);
   const pending = team.filter((r) => r.reg!.status === 'Pending');
   const canAct = app.role !== 'employee';
 
-  const approve = (r: AttRecord) => {
-    r.reg!.status = 'Approved';
-    r.status = 'P';
-    r.inT = r.reg!.inT;
-    r.outT = r.reg!.outT;
-    /* a regularised day is credited a standard 8h15m of work */
-    r.mins = 495;
+  const approve = async (r: AttRecord) => {
+    await act.mutate(r, 'Approved');
     app.toast('Regularisation approved — day marked present', 'ok');
-    app.bump();
   };
 
-  const reject = (r: AttRecord) => {
-    r.reg!.status = 'Rejected';
+  const reject = async (r: AttRecord) => {
+    await act.mutate(r, 'Rejected');
     app.toast('Regularisation rejected', 'err');
-    app.bump();
   };
 
   return (
@@ -592,7 +596,7 @@ function AttReg({ onRegularise }: { onRegularise: () => void }) {
 
       {canAct && pending.length > 0 && (
         <Card title="Pending your approval" sub={`${pending.length} requests`} flush>
-          <RegTable list={pending} act onApprove={approve} onReject={reject} />
+          <RegTable list={pending} act dir={dir} onApprove={approve} onReject={reject} />
         </Card>
       )}
 
@@ -670,35 +674,23 @@ function AttCal() {
 function RegForm({ close }: { close: () => void }) {
   const app = useApp();
   const me = app.me;
-  const missing = Object.values(ATT_IDX[me.id] || {}).filter(
-    (r) => (r.status === 'A' || (!r.inT && ['P', 'W'].includes(r.status)) || r.geoOk === false) && r.date >= ymd(addDays(TODAY, -30)),
-  );
+  const { data: missing = [] } = useRegularisableDays(me.id, ymd(addDays(TODAY, -30)));
+  const raise = useRaiseRegularisation();
 
-  const [date, setDate] = useState(missing.length ? missing[0].date : ymd(addDays(TODAY, -1)));
+  const [picked, setPicked] = useState('');
   const [inT, setInT] = useState('09:30');
   const [outT, setOutT] = useState('18:30');
   const [reason, setReason] = useState('Forgot to punch in');
   const [note, setNote] = useState('');
 
-  const submit = () => {
-    let r = attOf(me.id, date);
-    if (!r) {
-      r = {
-        id: 'A-' + me.id + '-' + date, empId: me.id, date, status: 'A', inT: null, outT: null, mins: 0,
-        lat: null, lng: null, dist: null, site: me.site, geoOk: true, src: 'Web', late: false, reg: null, notes: '',
-      } as AttRecord;
-      ATT.push(r);
-      (ATT_IDX[me.id] = ATT_IDX[me.id] || {})[date] = r;
-    }
-    r.reg = {
-      status: 'Pending',
-      reason: reason + (note ? ' — ' + note : ''),
-      raised: ymd(TODAY),
-      inT, outT,
-    };
+  /* The candidate days arrive asynchronously, so default once they are in. */
+  const date = picked || missing[0]?.date || ymd(addDays(TODAY, -1));
+  const setDate = setPicked;
+
+  const submit = async () => {
+    await raise.mutate(me.id, date, inT, outT, reason + (note ? ' — ' + note : ''));
     close();
     app.toast('Regularisation request submitted', 'ok');
-    app.bump();
   };
 
   return (
@@ -753,11 +745,12 @@ function Attendance() {
 
   const [tab, setTab] = useState<Tab>(tabs[0].v);
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
+  const approver = usePeople([app.me.managerId]);
 
   const openReg = () =>
     layer.modal({
       title: 'Request attendance regularisation',
-      sub: 'Goes to ' + empName(app.me.managerId || '') + ' for approval',
+      sub: 'Goes to ' + approver.name(app.me.managerId) + ' for approval',
       body: (close) => <RegForm close={close} />,
       footer: null,
     });

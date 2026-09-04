@@ -58,6 +58,44 @@ const check = (label: string, got: unknown, want: unknown) => {
   const batch = await s.leave.balancesFor([DEMO_EMP.id]);
   check('batched balance matches single', batch[DEMO_EMP.id].find((b) => b.type === 'CL')!.avail, twice!.avail);
 
+  /* ---- attendance ---- */
+  const day = '2026-10-07';
+  const at = {
+    lat: 12.99, lng: 80.25, site: 'CHN', geoOk: true, dist: 40,
+    src: 'Mobile GPS', wfh: false, at: '09:20',
+  };
+  const inRec = await s.attendance.punchIn(DEMO_EMP.id, day, at);
+  check('punch in stamps the time', inRec.inT, '09:20');
+  check('punch in marks present', inRec.status, 'P');
+
+  const outRec = await s.attendance.punchOut(DEMO_EMP.id, day, { ...at, at: '18:35' });
+  check('punch out deducts the 45m break', outRec.mins, (18 * 60 + 35) - (9 * 60 + 20) - 45);
+
+  /* a WFH punch records a W day and is not fence-enforced */
+  const wfhDay = '2026-10-08';
+  const wfh = await s.attendance.punchIn(DEMO_EMP.id, wfhDay, { ...at, site: 'WFH', wfh: true, at: '09:05' });
+  check('WFH punch records a W day', wfh.status, 'W');
+
+  /* an out-of-fence punch is flagged rather than silently accepted */
+  const badDay = '2026-10-09';
+  const bad = await s.attendance.punchIn(DEMO_EMP.id, badDay, { ...at, geoOk: false, dist: 900, at: '09:40' });
+  check('outside the fence is flagged', bad.notes, 'Outside geo-fence — flagged');
+
+  /* regularisation credits a full day only once approved */
+  const regDay = '2026-09-15';
+  const raised = await s.attendance.raiseRegularisation(DEMO_EMP.id, regDay, '09:30', '18:30', 'Missed punch');
+  check('regularisation starts Pending', raised.reg!.status, 'Pending');
+  const beforeMins = raised.mins;
+  check('raising does not credit hours', beforeMins, raised.mins);
+
+  const approvedReg = await s.attendance.actOnRegularisation(DEMO_EMP.id, regDay, 'Approved');
+  check('approving credits a standard day', approvedReg.mins, 495);
+  check('approving marks the day present', approvedReg.status, 'P');
+
+  let regRefused = false;
+  try { await s.attendance.actOnRegularisation(DEMO_EMP.id, regDay, 'Approved'); } catch { regRefused = true; }
+  check('a second decision is refused', regRefused, true);
+
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall service checks passed');
   process.exit(failed ? 1 : 0);
 })();

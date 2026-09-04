@@ -119,14 +119,8 @@ function useAccessFindings(goToAudit: () => void): Finding[] {
 
   const out: Finding[] = [];
   const admins = ACTIVE().filter((e) => e.dept === 'HR' && e.grade >= 'L4');
-  /**
-   * NOTE: the prototype filters on `status !== 'Completed'`, but an exit is only
-   * ever 'Notice Period', 'In Clearance' or 'Settled', so the filter excludes
-   * nothing and settled leavers raise a finding too. Kept as-is so the list
-   * matches the prototype; 'Settled' was most likely intended. The same filter
-   * appears in `data/assets.ts`.
-   */
-  const leavers = EXITS.filter((x) => (x.status as string) !== 'Completed' && x.lwd <= ymd(addDays(TODAY, 14)));
+  /* A settled exit has had its access closed, so it is no longer a finding. */
+  const leavers = EXITS.filter((x) => x.status !== 'Settled' && x.lwd <= ymd(addDays(TODAY, 14)));
 
   POSTURE.filter((p) => !p.mfa).slice(0, 6).forEach((p) =>
     out.push({

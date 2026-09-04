@@ -2,14 +2,12 @@ import { useEffect, useState } from 'react';
 import { sum } from '../../lib/collections';
 import { DOW, fmtD, fmtTime, hhmm, TODAY, ymd } from '../../lib/dates';
 import { clamp, distM } from '../../lib/format';
-import { ATT, ATT_IDX, attOf } from '../../data/attendance';
-import type { AttRecord } from '../../data/attendance';
-import { EMAP } from '../../data/employees';
 import { siteOf } from '../../data/org';
 import type { Site } from '../../types/org';
 import { Banner, KV } from '../../components/ui';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
+import { useDay, usePeople, usePunchIn, usePunchOut } from './data';
 
 const nowHM = () => {
   const d = new Date();
@@ -34,9 +32,8 @@ export interface Loc {
  * Ask the browser for a fix, falling back to a plausible point near the
  * employee's base site if permission is denied or it takes too long.
  */
-export function resolveLocation(empId: string, mode: string, cb: (l: Loc) => void): void {
-  const e = EMAP[empId];
-  const base = siteOf(e.site === 'WFH' ? 'CHN' : e.site);
+export function resolveLocation(homeSite: string, mode: string, cb: (l: Loc) => void): void {
+  const base = siteOf(homeSite === 'WFH' ? 'CHN' : homeSite);
   const fallback = () => {
     const spread = mode === 'WFH' ? 0.09 : 0.0016;
     cb({
@@ -208,8 +205,11 @@ export function MapBox({ points, site, height = 200 }: { points: MapPoint[]; sit
 export function PunchWidget({ empId }: { empId: string }) {
   const app = useApp();
   const layer = useLayer();
-  const e = EMAP[empId];
-  const [mode, setMode] = useState(e.site === 'WFH' ? 'WFH' : e.site);
+  const self = usePeople([empId]);
+  const homeSite = self.byId(empId)?.site ?? 'CHN';
+  const [mode, setMode] = useState('');
+  /* The employee arrives asynchronously; until then fall back to their base site. */
+  const activeMode = mode || (homeSite === 'WFH' ? 'WFH' : homeSite);
   const [clock, setClock] = useState(nowHMS);
 
   useEffect(() => {
@@ -217,7 +217,9 @@ export function PunchWidget({ empId }: { empId: string }) {
     return () => clearInterval(t);
   }, []);
 
-  const rec = attOf(empId, ymd(TODAY));
+  const { data: rec } = useDay(empId, ymd(TODAY));
+  const punchIn = usePunchIn();
+  const punchOut = usePunchOut();
   const inT = rec?.inT ?? null;
   const outT = rec?.outT ?? null;
   const state = !inT ? 'out' : !outT ? 'in' : 'done';
@@ -230,7 +232,7 @@ export function PunchWidget({ empId }: { empId: string }) {
     worked = Math.max(0, n.getHours() * 60 + n.getMinutes() - (+p[0] * 60 + +p[1]));
   }
 
-  const modes = [e.site === 'WFH' ? 'CHN' : e.site, 'WFH', 'CLIENT'];
+  const modes = [homeSite === 'WFH' ? 'CHN' : homeSite, 'WFH', 'CLIENT'];
 
   const showLocation = (title: string, f: Fence, loc: Loc, extra?: boolean) =>
     layer.modal({
@@ -258,7 +260,7 @@ export function PunchWidget({ empId }: { empId: string }) {
           )}
           <MapBox
             points={[{ lat: loc.lat, lng: loc.lng, label: 'You', me: true }]}
-            site={mode === 'WFH' || mode === 'CLIENT' ? null : siteOf(mode)}
+            site={activeMode === 'WFH' || activeMode === 'CLIENT' ? null : siteOf(activeMode)}
           />
         </>
       ),
@@ -269,41 +271,21 @@ export function PunchWidget({ empId }: { empId: string }) {
 
   const doPunch = (kind: 'in' | 'out') => {
     app.toast('Acquiring GPS location…');
-    resolveLocation(empId, mode, (loc) => {
-      const f = evalFence(mode, loc);
+    resolveLocation(homeSite, activeMode, async (loc) => {
+      const f = evalFence(activeMode, loc);
       const ds = ymd(TODAY);
-      let r = attOf(empId, ds);
-      if (!r) {
-        r = {
-          id: 'A-' + empId + '-' + ds, empId, date: ds, status: 'P', inT: null, outT: null,
-          mins: 0, lat: null, lng: null, dist: null, site: e.site, geoOk: true, src: 'Web',
-          late: false, reg: null, notes: '',
-        } as AttRecord;
-        ATT.push(r);
-        (ATT_IDX[empId] = ATT_IDX[empId] || {})[ds] = r;
-      }
+      /* Where the punch happened and what the fence made of it — the service
+         records it, so the same call works against a real backend. */
+      const at = {
+        lat: loc.lat, lng: loc.lng, site: f.site, geoOk: f.ok, dist: f.dist,
+        src: loc.real ? 'Mobile GPS' : 'Web',
+        wfh: activeMode === 'WFH',
+        at: nowHM(),
+      };
+      const r = kind === 'in'
+        ? await punchIn.mutate(empId, ds, at)
+        : await punchOut.mutate(empId, ds, at);
 
-      r.lat = loc.lat;
-      r.lng = loc.lng;
-      r.site = f.site;
-      r.geoOk = f.ok;
-      r.dist = f.dist;
-      r.src = loc.real ? 'Mobile GPS' : 'Web';
-      r.status = mode === 'WFH' ? 'W' : 'P';
-
-      if (kind === 'in') {
-        r.inT = nowHM();
-        r.late = false;
-      } else {
-        r.outT = nowHM();
-        const a = r.inT!.split(':');
-        const b = r.outT.split(':');
-        /* 45 minutes unpaid break */
-        r.mins = Math.max(0, +b[0] * 60 + +b[1] - (+a[0] * 60 + +a[1]) - 45);
-      }
-      if (!f.ok) r.notes = 'Outside geo-fence — flagged';
-
-      app.bump();
       showLocation(
         kind === 'in' ? 'Punched in at ' + fmtTime(r.inT) : 'Punched out at ' + fmtTime(r.outT),
         f, loc, true,
@@ -321,7 +303,7 @@ export function PunchWidget({ empId }: { empId: string }) {
         </div>
         <div className="right">
           <div className="lb">Shift</div>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>{e.shift}</div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{self.byId(empId)?.shift ?? '—'}</div>
         </div>
       </div>
 
@@ -346,8 +328,8 @@ export function PunchWidget({ empId }: { empId: string }) {
           {modes.map((m) => (
             <button
               key={m}
-              className={mode === m ? 'on' : ''}
-              style={{ color: mode === m ? 'var(--brand-ink)' : '#fff' }}
+              className={activeMode === m ? 'on' : ''}
+              style={{ color: activeMode === m ? 'var(--brand-ink)' : '#fff' }}
               onClick={() => setMode(m)}
             >
               {m === 'WFH' ? '🏠 WFH' : m === 'CLIENT' ? '🚗 Client' : '🏢 ' + siteOf(m).city}
@@ -367,7 +349,7 @@ export function PunchWidget({ empId }: { empId: string }) {
 
         <button
           className="btn"
-          onClick={() => resolveLocation(empId, mode, (loc) => showLocation('Location check', evalFence(mode, loc), loc))}
+          onClick={() => resolveLocation(homeSite, activeMode, (loc) => showLocation('Location check', evalFence(activeMode, loc), loc))}
         >
           📍 Verify location
         </button>
@@ -375,7 +357,7 @@ export function PunchWidget({ empId }: { empId: string }) {
 
       {rec?.geoOk === false && (
         <div style={{ marginTop: 11, background: 'rgba(255,255,255,.16)', padding: '8px 11px', borderRadius: 9, fontSize: 12.5 }}>
-          ⚠ Today&rsquo;s punch was recorded {rec.dist} m from {siteOf(e.site).name} — flagged for manager review.
+          ⚠ Today&rsquo;s punch was recorded {rec.dist} m from {siteOf(homeSite).name} — flagged for manager review.
         </div>
       )}
     </div>

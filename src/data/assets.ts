@@ -180,15 +180,13 @@ export const ASSET_STATUS_BADGE: Record<string, string> = {
 /**
  * Assets a leaver still holds — drives the exit clearance checklist.
  *
- * NOTE: the prototype filters on `status !== 'Completed'`, but an exit is only
- * ever 'Notice Period', 'In Clearance' or 'Settled', so the filter never
- * excludes anything and settled leavers are counted too. Kept as-is so the
- * figures match the prototype; 'Settled' was most likely intended.
+ * Once an exit is settled the kit is back and the recovery is closed, so
+ * settled leavers drop out. (The prototype compared against 'Completed', which
+ * is not one of the three exit statuses, so its filter excluded nobody and
+ * settled leavers stayed on the list for ever.)
  */
 export function pendingRecovery(): Asset[] {
-  const leaving = new Set(
-    EXITS.filter((x) => (x.status as string) !== 'Completed').map((x) => x.empId),
-  );
+  const leaving = new Set(EXITS.filter((x) => x.status !== 'Settled').map((x) => x.empId));
   return ASSETS.filter((a) => a.status === 'Assigned' && a.empId && leaving.has(a.empId));
 }
 
