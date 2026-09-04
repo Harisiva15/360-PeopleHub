@@ -11,6 +11,7 @@ import { TITLES } from './titles';
 
 /* ---- ported modules ---- */
 import './dashboard';
+import './employees';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {

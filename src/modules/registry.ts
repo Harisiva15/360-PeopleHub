@@ -1,4 +1,12 @@
 import type { ComponentType } from 'react';
+import type { AppRole, Employee } from '../types/employee';
+
+/** The slice of session state that titles and badges are allowed to depend on. */
+export interface ModuleCtx {
+  role: AppRole;
+  meId: string;
+  me: Employee;
+}
 
 /**
  * One entry per route. `subtitle` and `badge` run against live data on every
@@ -7,9 +15,9 @@ import type { ComponentType } from 'react';
 export interface ModuleDef {
   key: string;
   title: string;
-  subtitle?: () => string;
+  subtitle?: (ctx: ModuleCtx) => string;
   /** Count shown as a pill in the sidebar; 0 or undefined hides it. */
-  badge?: () => number;
+  badge?: (ctx: ModuleCtx) => number;
   Component: ComponentType;
 }
 

@@ -29,6 +29,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const mod = getModule(route);
   const accounts = ACCOUNTS();
+  const ctx = { role: app.role, meId: app.meId, me: app.me };
 
   return (
     <div id="app">
@@ -48,7 +49,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <div className="nav-group" key={g.group}>
                 <h6>{g.group}</h6>
                 {items.map((i) => {
-                  const badge = getModule(i.k)?.badge?.() || 0;
+                  const badge = getModule(i.k)?.badge?.(ctx) || 0;
                   return (
                     <Link key={i.k} to={'/' + i.k} className={route === i.k ? 'on' : ''}>
                       <span className="ic">{i.ic}</span>
@@ -94,7 +95,7 @@ export function Shell({ children }: { children: ReactNode }) {
           )}
           <div>
             <h1>{mod?.title || '—'}</h1>
-            <div className="sub">{mod?.subtitle?.()}</div>
+            <div className="sub">{mod?.subtitle?.(ctx)}</div>
           </div>
           <div className="spacer" />
           <div className="seg" id="roleSeg" title="Switch the signed-in role">
@@ -112,7 +113,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <nav className="tabbar">
         {TABBAR.filter((k) => app.can(k)).map((k) => {
           const item = NAV.flatMap((g) => g.items).find((i) => i.k === k)!;
-          const badge = getModule(k)?.badge?.() || 0;
+          const badge = getModule(k)?.badge?.(ctx) || 0;
           return (
             <Link key={k} to={'/' + k} className={route === k ? 'on' : ''}>
               <span className="ic">{item.ic}</span>

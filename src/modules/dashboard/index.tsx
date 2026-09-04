@@ -515,5 +515,6 @@ function Dashboard() {
 registerModule({
   key: 'dashboard',
   title: TITLES.dashboard,
+  subtitle: (c) => 'Welcome back, ' + c.me.name.split(' ')[0] + ' · ' + new Date().toDateString(),
   Component: Dashboard,
 });
