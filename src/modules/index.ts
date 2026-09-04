@@ -27,6 +27,8 @@ import './learning';
 import './engagement';
 import './onboarding';
 import './helpdesk';
+import './benefits';
+import './exit';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {
