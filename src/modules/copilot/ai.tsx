@@ -3,20 +3,23 @@ import { sortBy, sum } from '../../lib/collections';
 import { daysBetween, fmtD, tenure, TODAY, yearsSince, ymd } from '../../lib/dates';
 import { downloadCSV } from '../../lib/csv';
 import { countryOf, mbS, money, toBase } from '../../data/countries';
-import { ACTIVE, EMAP } from '../../data/employees';
+
 import { deptOf, ORG } from '../../data/org';
-import { REVIEWS } from '../../data/performance';
-import {
-  benchCost, benchDays, benchList, clientOf, CONSULTANTS, INVOICES, invAgeing, PLACEMENTS,
-  reqOf2, SOWS, sowOf, staffingKPI, SUBMISSIONS,
-} from '../../data/staffing';
-import type { Client, Consultant, Invoice, Placement, StaffingRequirement } from '../../data/staffing';
-import { REQUIREMENTS } from '../../data/staffing';
-import { matchBand, matchExplain, matchScore, MATCH_FLOOR, openReqs } from '../../data/matching';
-import type { MatchExplain } from '../../data/matching';
+
+import { clientOf, invAgeing, reqOf2, sowOf } from '../../data/staffing';
+import type { Client, Consultant, Invoice, Placement, Sow, StaffingRequirement } from '../../services';
+
+import { matchBand, MATCH_FLOOR } from '../../data/matching';
+import type { MatchExplain } from '../../services';
 import { Avatar, Badge, EmptyState, Table, TableWrap, Tile } from '../../components/ui';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
+import {
+  useAllEmployees, useBench, useConsultants, useInvoices,
+  useMatchesForConsultant, useMatchesForRequirement, useOpenRequirements, usePlacements,
+  useRedeploymentPlan, useRequirements, useReviews, useSows, useStaffingKpi, useSubmissions,
+  useVisiblePeople,
+} from './data';
 
 /* ---------- shared presentation ---------- */
 
@@ -66,6 +69,15 @@ function OffshoreBadge({ x }: { x: MatchExplain }) {
 
 export type DraftKind = 'dunning' | 'account' | 'renewal' | 'jd' | 'summary';
 
+/** What an account review brief reads, fetched once by the drafting hook. */
+interface AccountBook {
+  sows: Sow[];
+  placements: Placement[];
+  requirements: StaffingRequirement[];
+  invoices: Invoice[];
+  ownerName: string;
+}
+
 export interface SummaryDraft {
   t: string;
   s: string;
@@ -95,11 +107,11 @@ function dunningText(inv: Invoice, meName: string, meTitle: string, meEmail: str
   );
 }
 
-function accountText(cl: Client): string {
-  const sows = SOWS.filter((s) => s.clientId === cl.id);
-  const act = PLACEMENTS.filter((p) => reqOf2(p.reqId)?.clientId === cl.id && p.status === 'Active');
-  const open = REQUIREMENTS.filter((r) => r.clientId === cl.id && r.filled < r.positions);
-  const inv = INVOICES.filter((i) => i.clientId === cl.id);
+function accountText(cl: Client, book: AccountBook): string {
+  const sows = book.sows.filter((s) => s.clientId === cl.id);
+  const act = book.placements.filter((p) => reqOf2(p.reqId)?.clientId === cl.id && p.status === 'Active');
+  const open = book.requirements.filter((r) => r.clientId === cl.id && r.filled < r.positions);
+  const inv = book.invoices.filter((i) => i.clientId === cl.id);
   const overdue = inv.filter((i) => i.status === 'Overdue');
   const msaMonths = (new Date(cl.msaExpiry).getTime() - TODAY.getTime()) / 86400000;
 
@@ -110,7 +122,7 @@ function accountText(cl: Client): string {
     (!cl.riskFlag && cl.nps >= 8 ? '• No material risks flagged.\n' : '');
 
   return (
-    `ACCOUNT REVIEW — ${cl.name.toUpperCase()}\nPrepared ${fmtD(ymd(TODAY))} for ${EMAP[cl.ownerId]?.name || '—'}\n\n` +
+    `ACCOUNT REVIEW — ${cl.name.toUpperCase()}\nPrepared ${fmtD(ymd(TODAY))} for ${book.ownerName}\n\n` +
     `POSITION\n${cl.name} is a ${cl.tier}-tier ${cl.industry.toLowerCase()} account, live since ${cl.since.slice(0, 4)} ` +
     `under a ${cl.engagement.toLowerCase()} model${cl.vms ? ' procured through ' + cl.vms : ' contracted directly'}. ` +
     `The MSA runs to ${fmtD(cl.msaExpiry)}. Payment terms are ${cl.paymentTerms} days against a credit limit of ${money(cl.creditLimit, cl.ccy)}.\n\n` +
@@ -134,10 +146,10 @@ function accountText(cl: Client): string {
   );
 }
 
-function renewalText(p: Placement, meName: string, meTitle: string): string {
+function renewalText(p: Placement, meName: string, meTitle: string, consultants: Consultant[]): string {
   const c = reqOf2(p.reqId);
   const cl = c ? clientOf(c.clientId) : null;
-  const con = CONSULTANTS.find((x) => x.id === p.conId);
+  const con = consultants.find((x) => x.id === p.conId);
   return (
     `Subject: Extension — ${con?.name || p.id} (${c?.title || 'assignment'})\n\n` +
     `Dear ${cl?.contacts[0]?.n || 'there'},\n\n` +
@@ -195,6 +207,12 @@ function DraftBody({ text }: { text: string }) {
 export function useAiDraft() {
   const layer = useLayer();
   const app = useApp();
+  const { data: sows = [] } = useSows();
+  const { data: placements = [] } = usePlacements();
+  const { data: requirements = [] } = useRequirements();
+  const { data: invoices = [] } = useInvoices();
+  const { data: consultants = [] } = useConsultants();
+  const people = useVisiblePeople();
 
   return (kind: DraftKind, obj: Invoice | Client | Placement | StaffingRequirement | SummaryDraft) => {
     const me = app.me;
@@ -213,14 +231,16 @@ export function useAiDraft() {
       const cl = obj as Client;
       title = '✨ Account review brief — ' + cl.name;
       sub = `${cl.tier} tier · ${cl.industry} · client since ${cl.since.slice(0, 4)}`;
-      text = accountText(cl);
+      text = accountText(cl, {
+        sows, placements, requirements, invoices, ownerName: people.name(cl.ownerId),
+      });
     } else if (kind === 'renewal') {
       const p = obj as Placement;
-      const con = CONSULTANTS.find((x) => x.id === p.conId);
+      const con = consultants.find((x) => x.id === p.conId);
       const cl = reqOf2(p.reqId) ? clientOf(reqOf2(p.reqId)!.clientId) : null;
       title = '✨ Extension request — ' + (con?.name || p.id);
       sub = `${cl?.name || '—'} · ends ${fmtD(p.endOn)}`;
-      text = renewalText(p, me.name, me.designation);
+      text = renewalText(p, me.name, me.designation, consultants);
     } else if (kind === 'jd') {
       const r = obj as StaffingRequirement;
       title = '✨ Job description — ' + r.title;
@@ -272,17 +292,22 @@ export function useMatchViews() {
   const layer = useLayer();
   const app = useApp();
   const nav = useNavigate();
+  const forConsultant = useMatchesForConsultant();
+  const forRequirement = useMatchesForRequirement();
+  const plan = useRedeploymentPlan();
+  const { data: submissions = [] } = useSubmissions();
 
   const goTo = (route: string) => { layer.close(); nav(route); };
 
-  const matchConsultant = (id: string) => {
-    const c = CONSULTANTS.find((x) => x.id === id);
-    if (!c) return;
-    const rows = sortBy(openReqs().map((r) => ({ r, x: matchExplain(c, r) })), (o) => -o.x.total).slice(0, 8);
+  const matchConsultant = async (id: string) => {
+    const matches = await forConsultant.mutate(id);
+    if (!matches.length) return;
+    const c = matches[0].consultant;
+    const rows = matches.slice(0, 8).map((m) => ({ r: m.requirement, x: m.explain }));
 
     layer.drawer({
       title: '✨ Redeployment matches — ' + c.name,
-      sub: `${c.role} · ${c.exp} yrs · ${c.workAuth} · ${c.status === 'Bench' ? benchDays(c) + ' days on bench' : c.status}`,
+      sub: `${c.role} · ${c.exp} yrs · ${c.workAuth} · ${c.status}`,
       body: (
         <>
           {!rows.length && <EmptyState msg="No open requirements to match against" icon="✨" />}
@@ -323,13 +348,14 @@ export function useMatchViews() {
     });
   };
 
-  const matchRequirement = (id: string) => {
-    const r = reqOf2(id);
-    if (!r) return;
+  const matchRequirement = async (id: string) => {
+    const matches = await forRequirement.mutate(id);
+    if (!matches.length) return;
+    const r = matches[0].requirement;
     const cl = clientOf(r.clientId);
-    const available = CONSULTANTS.filter((c) => c.status !== 'Placed');
-    const already = new Set(SUBMISSIONS.filter((s) => s.reqId === r.id).map((s) => s.conId));
-    const rows = sortBy(available.map((c) => ({ c, x: matchExplain(c, r) })), (o) => -o.x.total).slice(0, 10);
+    const available = matches.map((m) => m.consultant);
+    const already = new Set(submissions.filter((x) => x.reqId === r.id).map((x) => x.conId));
+    const rows = matches.slice(0, 10).map((m) => ({ c: m.consultant, x: m.explain }));
 
     layer.drawer({
       title: '✨ Shortlist — ' + r.title,
@@ -379,49 +405,28 @@ export function useMatchViews() {
     });
   };
 
+  /* The greedy sweep is a service computation — see StaffingService. */
   const matchAll = () => {
-    const bench = CONSULTANTS.filter((c) => c.status !== 'Placed');
-    const reqs = openReqs();
-    if (!bench.length || !reqs.length) {
+    const result = plan.data;
+    if (!result || !result.availableCount || !result.openRequirementCount) {
       app.toast('Nothing to match — bench or requirement book is empty');
       return;
     }
-
-    const pairs: { c: Consultant; r: StaffingRequirement; t: number }[] = [];
-    bench.forEach((c) =>
-      reqs.forEach((r) => {
-        const t = matchScore(c, r);
-        if (t >= MATCH_FLOOR) pairs.push({ c, r, t });
-      })
-    );
-
-    /* Greedy assignment — one suggestion per consultant, respecting open positions. */
-    const usedC = new Set<string>();
-    const cap: Record<string, number> = {};
-    const picks: typeof pairs = [];
-    sortBy(pairs, (p) => -p.t).forEach((p) => {
-      if (usedC.has(p.c.id)) return;
-      const room = Math.max(0, p.r.positions - p.r.filled) - (cap[p.r.id] || 0);
-      if (room <= 0) return;
-      usedC.add(p.c.id);
-      cap[p.r.id] = (cap[p.r.id] || 0) + 1;
-      picks.push(p);
-    });
-
-    const recovered = sum(picks.filter((p) => p.c.status === 'Bench'), (p) => toBase(p.c.costPerDay * 21, p.c.ccy));
-    const rev = sum(picks, (p) => toBase(p.r.billRate * (p.r.unit === 'per day' ? 21 : 173), p.r.ccy));
+    const picks = result.picks.map((x) => ({ c: x.consultant, r: x.requirement, t: x.score, margin: x.margin }));
+    const recovered = result.recovered;
+    const rev = result.revenue;
 
     layer.modal({
       title: '✨ AI redeployment plan',
       size: 'xl',
-      sub: `${bench.length} available consultants matched against ${reqs.length} open requirements`,
+      sub: `${result.availableCount} available consultants matched against ${result.openRequirementCount} open requirements`,
       body: (
         <>
           <div className="grid g4" style={{ marginBottom: 14 }}>
             <Tile label="Matches proposed" value={picks.length} foot={`Scoring ${MATCH_FLOOR}% or better`} />
             <Tile
               label="Bench cleared"
-              value={`${picks.filter((p) => p.c.status === 'Bench').length} of ${benchList().length}`}
+              value={`${picks.filter((p) => p.c.status === 'Bench').length} of ${result.benchTotal}`}
               foot="If every submission converts"
             />
             <Tile label="Bench cost recovered" value={mbS(recovered) + '/mo'} foot="Currently unbilled" />
@@ -440,7 +445,6 @@ export function useMatchViews() {
                   </thead>
                   <tbody>
                     {picks.map((p) => {
-                      const x = matchExplain(p.c, p.r);
                       return (
                         <tr key={p.c.id + p.r.id}>
                           <td>
@@ -453,11 +457,11 @@ export function useMatchViews() {
                             </div>
                           </td>
                           <td className="nowrap">
-                            {p.c.status === 'Bench' ? <Badge kind="warn">{benchDays(p.c)}d bench</Badge> : <Badge kind="mute">{p.c.status}</Badge>}
+                            {p.c.status === 'Bench' ? <Badge kind="warn">{result.picks.find((q) => q.consultant.id === p.c.id)?.benchDays ?? 0}d bench</Badge> : <Badge kind="mute">{p.c.status}</Badge>}
                           </td>
                           <td>{p.r.title}</td>
                           <td className="nowrap">{clientOf(p.r.clientId).name}</td>
-                          <td className="num">{x.margin}%</td>
+                          <td className="num">{p.margin}%</td>
                           <td className="num"><FitPill n={p.t} /></td>
                         </tr>
                       );
@@ -480,7 +484,7 @@ export function useMatchViews() {
               downloadCSV('ai_redeployment_plan.csv', [
                 ['Consultant', 'Role', 'Status', 'Bench days', 'Requirement', 'Client', 'Bill rate', 'Fit %'],
                 ...picks.map((p) => [
-                  p.c.name, p.c.role, p.c.status, p.c.status === 'Bench' ? benchDays(p.c) : 0,
+                  p.c.name, p.c.role, p.c.status, result.picks.find((q) => q.consultant.id === p.c.id)?.benchDays ?? 0,
                   p.r.title, clientOf(p.r.clientId).name, p.r.billRate, p.t,
                 ]),
               ])
@@ -523,46 +527,60 @@ export function useInsights(): Insight[] {
   const draft = useAiDraft();
   const { matchConsultant, matchRequirement, matchAll } = useMatchViews();
 
+  const { data: k } = useStaffingKpi();
+  const { data: bench = [] } = useBench();
+  const { data: placementRows = [] } = usePlacements();
+  const { data: consultants = [] } = useConsultants();
+  const { data: invoices = [] } = useInvoices();
+  const { data: open = [] } = useOpenRequirements();
+  const { data: submissions = [] } = useSubmissions();
+  const { data: plan } = useRedeploymentPlan();
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: reviews = [] } = useReviews(everyone.map((e) => e.id));
+
   const out: Insight[] = [];
-  const k = staffingKPI();
   const go = (route: string) => () => nav(route);
+  if (!k) return out;
+
+  /* The plan already scored every pairing, so reuse it rather than re-scoring. */
+  const bestFor = new Map(plan?.picks.map((x) => [x.consultant.id, x]) ?? []);
 
   /* Bench sitting long enough to cost real money */
-  benchList()
-    .filter((c) => benchDays(c) >= 45)
+  bench
+    .filter((c) => c.benchSince && daysBetween(c.benchSince, ymd(TODAY)) >= 45)
     .forEach((c) => {
-      const best = sortBy(openReqs().map((r) => ({ r, t: matchScore(c, r) })), (o) => -o.t)[0];
-      const matched = best && best.t >= MATCH_FLOOR;
+      const days = c.benchSince ? daysBetween(c.benchSince, ymd(TODAY)) : 0;
+      const best = bestFor.get(c.id);
       out.push({
-        sev: benchDays(c) >= 75 ? 'crit' : 'warn',
+        sev: days >= 75 ? 'crit' : 'warn',
         cat: 'Bench',
-        t: `${c.name} has been on bench ${benchDays(c)} days`,
+        t: `${c.name} has been on bench ${days} days`,
         d:
-          `${money(benchCost(c), c.ccy)} of unrecovered cost. ` +
-          (matched
-            ? `Best open match is ${best.r.title} at ${best.t}% fit.`
-            : `No open requirement scores above ${MATCH_FLOOR}% — reskilling or an exit conversation is the realistic path.`),
-        act: matched
+          `${money(days * c.costPerDay, c.ccy)} of unrecovered cost. ` +
+          (best
+            ? `Best open match is ${best.requirement.title} at ${best.score}% fit.`
+            : 'No open requirement scores high enough — reskilling or an exit conversation is the realistic path.'),
+        act: best
           ? { l: 'Match now', f: () => matchConsultant(c.id) }
           : { l: 'Open bench', f: go('/bench') },
       });
     });
 
   /* Placements billing below the margin floor */
-  PLACEMENTS.filter((p) => p.status === 'Active').forEach((p) => {
+  placementRows.filter((p) => p.status === 'Active').forEach((p) => {
     const mgn = p.billRate > 0 ? Math.round(((p.billRate - p.payRate) / p.billRate) * 100) : 0;
     if (mgn >= MARGIN_FLOOR) return;
     out.push({
       sev: mgn < 12 ? 'crit' : 'warn',
       cat: 'Margin',
-      t: `${CONSULTANTS.find((c) => c.id === p.conId)?.name || p.id} is billing at ${mgn}% margin`,
+      t: `${consultants.find((c) => c.id === p.conId)?.name || p.id} is billing at ${mgn}% margin`,
       d: `Below the ${MARGIN_FLOOR}% floor on ${reqOf2(p.reqId)?.title || 'the assignment'}. Either the pay rate was negotiated up or the bill rate has drifted from the rate card.`,
       act: { l: 'Open placements', f: go('/placements') },
     });
   });
 
   /* Receivables running past terms */
-  INVOICES.filter((i) => invAgeing(i) > 30 && i.status !== 'Paid').forEach((i) =>
+  invoices.filter((i) => invAgeing(i) > 30 && i.status !== 'Paid').forEach((i) =>
     out.push({
       sev: invAgeing(i) > 60 ? 'crit' : 'warn',
       cat: 'Cash',
@@ -573,41 +591,41 @@ export function useInsights(): Insight[] {
   );
 
   /* Requirements about to lapse */
-  openReqs()
+  open
     .filter((r) => daysBetween(ymd(TODAY), r.closeBy) <= 7)
     .forEach((r) =>
       out.push({
         sev: 'warn',
         cat: 'Demand',
         t: `${r.title} closes in ${Math.max(0, daysBetween(ymd(TODAY), r.closeBy))} days`,
-        d: `${clientOf(r.clientId).name} · ${SUBMISSIONS.filter((s) => s.reqId === r.id).length} of ${r.maxSubmissions} submissions used, ${r.positions - r.filled} position(s) still open.`,
+        d: `${clientOf(r.clientId).name} · ${submissions.filter((x) => x.reqId === r.id).length} of ${r.maxSubmissions} submissions used, ${r.positions - r.filled} position(s) still open.`,
         act: { l: 'Shortlist', f: () => matchRequirement(r.id) },
       })
     );
 
   /* Assignments running out without an extension on record */
-  PLACEMENTS.filter((p) => {
+  placementRows.filter((p) => {
     const left = daysBetween(ymd(TODAY), p.endOn);
     return p.status === 'Active' && left <= 30 && left >= 0;
   }).forEach((p) =>
     out.push({
       sev: 'info',
       cat: 'Renewal',
-      t: `${CONSULTANTS.find((c) => c.id === p.conId)?.name || p.id}’s assignment ends in ${daysBetween(ymd(TODAY), p.endOn)} days`,
+      t: `${consultants.find((c) => c.id === p.conId)?.name || p.id}’s assignment ends in ${daysBetween(ymd(TODAY), p.endOn)} days`,
       d: `No extension recorded. ${mbS(toBase(p.billRate * (p.unit === 'per day' ? 21 : 173), p.ccy))}/month of revenue at risk.`,
       act: { l: 'Draft extension', f: () => draft('renewal', p) },
     })
   );
 
   /* Flight risk from the HR side */
-  ACTIVE()
+  everyone
     .filter((e) => {
-      const r = REVIEWS.filter((x) => x.empId === e.id).slice(-1)[0];
+      const r = reviews.filter((x) => x.empId === e.id).slice(-1)[0];
       return !!r && !!r.final && r.final.rating <= 2 && yearsSince(e.doj) >= 2;
     })
     .slice(0, 4)
     .forEach((e) => {
-      const r = REVIEWS.filter((x) => x.empId === e.id).slice(-1)[0];
+      const r = reviews.filter((x) => x.empId === e.id).slice(-1)[0];
       out.push({
         sev: 'warn',
         cat: 'Retention',

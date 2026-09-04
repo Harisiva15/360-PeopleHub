@@ -4,19 +4,17 @@ import { sortBy, sum, uniq } from '../../lib/collections';
 import { daysBetween, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { BASE_CCY, COUNTRIES, countryOf, mbS, money } from '../../data/countries';
-import { ACTIVE, EMAP } from '../../data/employees';
-import { deptOf, LEAVE_TYPES } from '../../data/org';
-import { LEAVES } from '../../data/leave';
-import { CUR_RUN, payrollTotals } from '../../data/payroll';
-import { EXITS } from '../../data/exit';
-import {
-  benchCost, benchDays, benchList, CLIENTS, clientOf, CONSULTANTS, INVOICES, invAgeing,
-  PLACEMENTS, reqOf2, staffingKPI, VENDORS,
-} from '../../data/staffing';
-import { openReqs } from '../../data/matching';
+
+import { deptOf } from '../../data/org';
+
+
+
+import { clientOf, invAgeing, reqOf2 } from '../../data/staffing';
+
 import { HBar, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { Badge, Table } from '../../components/ui';
+import type { AnswerSources } from './data';
 
 /** The canned questions, offered as chips and reused in the fallback. */
 export const SUGGESTIONS = [
@@ -64,13 +62,16 @@ const Lead = ({ children }: { children: ReactNode }) => (
  * question does not map onto data we hold, it says so rather than inventing
  * an answer.
  */
-export function answerFor(q: string, onAsk: (q: string) => void): Answer {
+export function answerFor(q: string, onAsk: (q: string) => void, src: AnswerSources): Answer {
   const s = q.toLowerCase();
   const has = (...w: string[]) => w.some((x) => s.includes(x));
-  const k = staffingKPI();
+  const {
+    kpi: k, bench, consultants, clients, vendors, invoices, placements, openRequirements,
+    employees, exits, leave, leaveTypes, payrollTotals: payTotals,
+  } = src;
 
   if (has('bench', 'unbilled', 'idle')) {
-    const b = sortBy(benchList(), (c) => -benchDays(c));
+    const b = sortBy(bench, (c) => -(c.benchSince ? daysBetween(c.benchSince, ymd(TODAY)) : 0));
     return {
       title: `${b.length} consultants are on bench`,
       route: '/bench',
@@ -78,7 +79,7 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
         <>
           <Lead>
             Costing {mbS(k.benchCostMonthly)} a month, averaging {k.avgBenchDays} days idle.{' '}
-            {b.filter((c) => benchDays(c) >= 60).length} have been unbilled for over 60 days.
+            {b.filter((c) => c.benchSince && daysBetween(c.benchSince, ymd(TODAY)) >= 60).length} have been unbilled for over 60 days.
           </Lead>
           <Table>
             <thead>
@@ -88,8 +89,8 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
               {b.slice(0, 8).map((c) => (
                 <tr key={c.id}>
                   <td>{c.name}</td><td>{c.role}</td>
-                  <td className="num">{benchDays(c)}</td>
-                  <td className="num">{money(benchCost(c), c.ccy)}</td>
+                  <td className="num">{c.benchSince ? daysBetween(c.benchSince, ymd(TODAY)) : 0}</td>
+                  <td className="num">{money((c.benchSince ? daysBetween(c.benchSince, ymd(TODAY)) : 0) * c.costPerDay, c.ccy)}</td>
                 </tr>
               ))}
             </tbody>
@@ -100,11 +101,11 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
   }
 
   if (has('margin', 'profit', 'gross')) {
-    const act = PLACEMENTS.filter((p) => ['Active', 'Ending Soon'].includes(p.status));
+    const act = placements.filter((p) => ['Active', 'Ending Soon'].includes(p.status));
     const low = act.filter((p) => p.billRate > 0 && (p.billRate - p.payRate) / p.billRate < 0.18);
-    const byClient: HBarRow[] = uniq(act.map((p) => clientOf(reqOf2(p.reqId)?.clientId || CLIENTS[0].id).name))
+    const byClient: HBarRow[] = uniq(act.map((p) => clientOf(reqOf2(p.reqId)?.clientId || clients[0]?.id || '').name))
       .map((n, i) => {
-        const ps = act.filter((p) => clientOf(reqOf2(p.reqId)?.clientId || CLIENTS[0].id).name === n);
+        const ps = act.filter((p) => clientOf(reqOf2(p.reqId)?.clientId || clients[0]?.id || '').name === n);
         const r = sum(ps, (p) => p.billRate);
         const c2 = sum(ps, (p) => p.payRate);
         return { k: n, c: PAL[i % 8], v: r ? +(((r - c2) / r) * 100).toFixed(1) : 0 };
@@ -129,14 +130,14 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
   }
 
   if (has('overdue', 'invoice', 'receivable', 'cash', 'dso', 'unpaid')) {
-    const ov = sortBy(INVOICES.filter((i) => i.status !== 'Paid' && invAgeing(i) > 0), (i) => -invAgeing(i));
+    const ov = sortBy(invoices.filter((i) => i.status !== 'Paid' && invAgeing(i) > 0), (i) => -invAgeing(i));
     return {
       title: `${mbS(k.arOverdue)} of invoices are overdue`,
       route: '/billing',
       body: (
         <>
           <Lead>
-            {ov.length} overdue of {INVOICES.filter((i) => i.status !== 'Paid').length} open invoices. Total
+            {ov.length} overdue of {invoices.filter((i) => i.status !== 'Paid').length} open invoices. Total
             receivables {mbS(k.ar)}, days sales outstanding {k.dso}.
           </Lead>
           <Table>
@@ -163,16 +164,16 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
     const rows: HBarRow[] = COUNTRIES.map((c, i) => ({
       k: c.flag + ' ' + c.name,
       c: PAL[i % 8],
-      v: ACTIVE().filter((e) => e.country === c.id).length,
+      v: employees.filter((e) => e.country === c.id).length,
     })).filter((r) => r.v);
     return {
-      title: `${ACTIVE().length} active employees across ${rows.length} countries`,
+      title: `${employees.length} active employees across ${rows.length} countries`,
       route: '/employees',
       body: (
         <>
           <HBar rows={sortBy(rows, (r) => -r.v)} />
           <p className="muted" style={{ margin: '8px 0 0' }}>
-            Payroll cost this month is {mbS(payrollTotals(CUR_RUN.mk).net)} in base currency across all entities.
+            Payroll cost this month is {mbS(payTotals.net)} in base currency across all entities.
           </p>
         </>
       ),
@@ -180,7 +181,7 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
   }
 
   if (has('requirement', 'open role', 'demand', 'req ', 'vacanc')) {
-    const o = openReqs();
+    const o = openRequirements;
     return {
       title: `${o.length} open requirements covering ${k.openPositions} positions`,
       route: '/requirements',
@@ -213,11 +214,12 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
 
   if (has('attrition', 'resign', 'leaving', 'turnover', 'exit')) {
     const yr = String(TODAY.getFullYear());
-    const ex = EXITS.filter((x) => x.lwd && x.lwd.startsWith(yr));
-    const rows: HBarRow[] = uniq(ex.map((x) => EMAP[x.empId]?.dept).filter(Boolean) as string[]).map((d, i) => ({
+    const ex = exits.filter((x) => x.lwd && x.lwd.startsWith(yr));
+    const deptOfEmp = (id: string) => employees.find((e) => e.id === id)?.dept;
+    const rows: HBarRow[] = uniq(ex.map((x) => deptOfEmp(x.empId)).filter(Boolean) as string[]).map((d, i) => ({
       k: deptOf(d).name,
       c: PAL[i % 8],
-      v: ex.filter((x) => EMAP[x.empId]?.dept === d).length,
+      v: ex.filter((x) => deptOfEmp(x.empId) === d).length,
     }));
     return {
       title: `${ex.length} exits recorded this year`,
@@ -225,7 +227,7 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
       body: (
         <>
           <Lead>
-            Annualised attrition is {pct(ex.length, Math.max(1, ACTIVE().length))}%. Voluntary resignations account
+            Annualised attrition is {pct(ex.length, Math.max(1, employees.length))}%. Voluntary resignations account
             for {ex.filter((x) => x.type === 'Resignation').length}.
           </Lead>
           <HBar rows={rows} />
@@ -235,7 +237,7 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
   }
 
   if (has('payroll', 'salary cost', 'wage', 'net pay')) {
-    const t = payrollTotals(CUR_RUN.mk);
+    const t = payTotals;
     const rows: HBarRow[] = Object.keys(t.byCountry).map((c, i) => ({
       k: countryOf(c).flag + ' ' + countryOf(c).name,
       c: PAL[i % 8],
@@ -257,17 +259,17 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
   }
 
   if (has('vendor', 'supplier', 'partner')) {
-    const ranked = sortBy(VENDORS, (v) => -(v.score || 0));
+    const ranked = sortBy(vendors, (v) => -(v.score || 0));
     const top = ranked[0];
     return {
-      title: `${VENDORS.length} vendors on the panel`,
+      title: `${vendors.length} vendors on the panel`,
       route: '/vendors',
       body: (
         <>
           <Lead>
-            {VENDORS.filter((v) => v.status === 'Active').length} active, supplying{' '}
-            {CONSULTANTS.filter((c) => c.external).length} consultants. Top performer by scorecard is {top.name} at{' '}
-            {top.score ?? 0}/100.
+            {vendors.filter((v) => v.status === 'Active').length} active, supplying{' '}
+            {consultants.filter((c) => c.external).length} consultants. Top performer by scorecard is {top?.name ?? '—'} at{' '}
+            {top?.score ?? 0}/100.
           </Lead>
           <HBar rows={ranked.slice(0, 8).map((v, i) => ({ k: v.name, c: PAL[i % 8], v: v.score || 0 }))} />
         </>
@@ -276,19 +278,19 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
   }
 
   if (has('client', 'account', 'customer')) {
-    const rows: HBarRow[] = uniq(CLIENTS.map((c) => c.industry)).map((n, i) => ({
+    const rows: HBarRow[] = uniq(clients.map((c) => c.industry)).map((n, i) => ({
       k: n,
       c: PAL[i % 8],
-      v: CLIENTS.filter((c) => c.industry === n).length,
+      v: clients.filter((c) => c.industry === n).length,
     }));
     return {
-      title: `${CLIENTS.filter((c) => c.status === 'Active').length} active clients`,
+      title: `${clients.filter((c) => c.status === 'Active').length} active clients`,
       route: '/clients',
       body: (
         <>
           <Lead>
-            Across {uniq(CLIENTS.map((c) => c.country)).length} countries and{' '}
-            {uniq(CLIENTS.map((c) => c.industry)).length} industries. {CLIENTS.filter((c) => c.riskFlag).length}{' '}
+            Across {uniq(clients.map((c) => c.country)).length} countries and{' '}
+            {uniq(clients.map((c) => c.industry)).length} industries. {clients.filter((c) => c.riskFlag).length}{' '}
             flagged for risk.
           </Lead>
           <HBar rows={rows} />
@@ -298,9 +300,9 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
   }
 
   if (has('leave', 'absent', 'time off')) {
-    const pend = LEAVES.filter((l) => l.status === 'Pending').length;
+    const pend = leave.filter((l) => l.status === 'Pending').length;
     const busiest = sortBy(
-      LEAVE_TYPES.map((t) => ({ t, n: LEAVES.filter((l) => l.type === t.id).length })),
+      leaveTypes.map((t) => ({ t, n: leave.filter((l) => l.type === t.id).length })),
       (o) => -o.n
     )[0];
     return {
@@ -308,7 +310,7 @@ export function answerFor(q: string, onAsk: (q: string) => void): Answer {
       route: '/leave',
       body: (
         <p className="muted" style={{ margin: 0 }}>
-          {LEAVES.filter((l) => l.status === 'Approved').length} approved so far. The highest-volume type is{' '}
+          {leave.filter((l) => l.status === 'Approved').length} approved so far. The highest-volume type is{' '}
           {busiest?.t.name || '—'}.
         </p>
       ),

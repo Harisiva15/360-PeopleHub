@@ -1,15 +1,13 @@
-import { useMemo } from 'react';
 import { sortBy, sum } from '../../lib/collections';
 import { MON, TODAY } from '../../lib/dates';
 import { pct } from '../../lib/format';
-import { ri } from '../../lib/rng';
 import { COUNTRIES, mbS, sumBase, toBase } from '../../data/countries';
-import { ACTIVE } from '../../data/employees';
+
 import { ORG } from '../../data/org';
-import { salaryStructure } from '../../data/salary';
-import { CUR_RUN, payrollTotals } from '../../data/payroll';
-import { EXITS } from '../../data/exit';
-import { CLIENTS, CONSULTANTS, PLACEMENTS, reqOf2, staffingKPI } from '../../data/staffing';
+
+
+
+import { reqOf2 } from '../../data/staffing';
 import { Badge, Card, EmptyState, Table, Tile } from '../../components/ui';
 import { Donut, HBar, LineChart, PAL, Spark } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
@@ -17,12 +15,23 @@ import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { useAiDraft } from '../copilot/ai';
+import {
+  useAllEmployees, useClients, useCompensation, useConsultants, useCurrentRun, useExits,
+  usePayrollTotals, usePlacements, useStaffingKpi,
+} from '../copilot/data';
+
+/**
+ * Indicative month-on-month headcount drift for the sparkline. Fixed rather
+ * than random so the tile does not change on every render.
+ */
+const headcountDrift = [2, 2, 1, 3, 2, 0];
 
 /** General and administrative overhead, as a share of revenue. */
 const GA_RATE = 0.08;
 
-const attritionPct = () =>
-  pct(EXITS.filter((x) => x.lwd && x.lwd.startsWith(String(TODAY.getFullYear()))).length, Math.max(1, ACTIVE().length));
+/** Year-to-date attrition, over the roster the caller has already fetched. */
+const attritionPct = (exits: { lwd: string }[], headcount: number) =>
+  pct(exits.filter((x) => x.lwd && x.lwd.startsWith(String(TODAY.getFullYear()))).length, Math.max(1, headcount));
 
 interface Risk {
   s: 'crit' | 'warn' | 'info';
@@ -33,16 +42,26 @@ interface Risk {
 function ExecView() {
   const app = useApp();
   const draft = useAiDraft();
-  const k = staffingKPI();
-  const t = payrollTotals(CUR_RUN.mk);
+  const { data: k } = useStaffingKpi();
+  const { data: curRun } = useCurrentRun();
+  const { data: t } = usePayrollTotals(curRun?.mk ?? '');
+  const { data: consultants = [] } = useConsultants();
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: comp = [] } = useCompensation();
+  const { data: exits = [] } = useExits();
+  const { data: clients = [] } = useClients();
+  const { data: placements = [] } = usePlacements();
+
+  if (!k || !t || !curRun) return <EmptyState msg="Loading the executive view…" icon="◈" />;
 
   const rev = k.revenueMonthly;
   const cost = k.costMonthly;
+  const ctcOf = new Map(comp.map((c) => [c.employee.id, c.salary.ctc]));
 
   /* Overhead is payroll for everyone not billing on a live assignment, plus G&A. */
-  const billingEmpIds = new Set(CONSULTANTS.filter((c) => c.status === 'Placed' && c.empId).map((c) => c.empId));
-  const nonBillable = ACTIVE().filter((e) => !billingEmpIds.has(e.id));
-  const support = sumBase(nonBillable, (e) => salaryStructure(e).ctc / 12);
+  const billingEmpIds = new Set(consultants.filter((c) => c.status === 'Placed' && c.empId).map((c) => c.empId));
+  const nonBillable = everyone.filter((e) => !billingEmpIds.has(e.id));
+  const support = sumBase(nonBillable, (e) => (ctcOf.get(e.id) ?? e.ctc) / 12);
   const ga = Math.round(rev * GA_RATE);
   const ebitda = rev - cost - support - ga;
 
@@ -51,24 +70,24 @@ function ExecView() {
 
   /* Indicative trends: revenue ramps to today's run rate, headcount walks back. */
   const revSeries = months.map((_, i) => Math.round((rev / 100000) * (0.86 + i * 0.03)));
-  const hcSeries = useMemo(() => months.map((_, i) => ACTIVE().length - (5 - i) * ri(1, 3)), []);
+  const hcSeries = months.map((_, i) => everyone.length - (5 - i) * headcountDrift[i]);
 
   const byCountry = COUNTRIES.map((c, i) => ({
     c,
-    n: ACTIVE().filter((e) => e.country === c.id).length,
-    cost: sumBase(ACTIVE().filter((e) => e.country === c.id), (e) => salaryStructure(e).ctc / 12),
+    n: everyone.filter((e) => e.country === c.id).length,
+    cost: sumBase(everyone.filter((e) => e.country === c.id), (e) => (ctcOf.get(e.id) ?? e.ctc) / 12),
     col: PAL[i % 8],
   })).filter((r) => r.n);
 
   const topClients = sortBy(
-    CLIENTS.filter((c) => c.status === 'Active').map((c) => {
-      const pl = PLACEMENTS.filter((p) => reqOf2(p.reqId)?.clientId === c.id && ['Active', 'Ending Soon'].includes(p.status));
+    clients.filter((c) => c.status === 'Active').map((c) => {
+      const pl = placements.filter((p) => reqOf2(p.reqId)?.clientId === c.id && ['Active', 'Ending Soon'].includes(p.status));
       return { c, n: pl.length, rev: sum(pl, (p) => toBase(p.billRate * (p.unit === 'per day' ? 21 : 173), p.ccy)) };
     }).filter((r) => r.rev),
     (r) => -r.rev
   );
   const conc = topClients.length ? Math.round((topClients[0].rev / Math.max(1, sum(topClients, (r) => r.rev))) * 100) : 0;
-  const attr = attritionPct();
+  const attr = attritionPct(exits, everyone.length);
 
   const risks: Risk[] = [];
   if (conc > 25)
@@ -137,7 +156,7 @@ function ExecView() {
         `BOARD NOTE — ${period.toUpperCase()}\n${ORG.legal}\n\n` +
         `1. TRADING\nMonthly billed revenue of ${mbS(k.revenueMonthly)} across ${k.placements} active placements, ` +
         `at a gross margin of ${k.grossMargin}%. Delivery cost was ${mbS(k.costMonthly)}.\n\n` +
-        `2. PEOPLE\nHeadcount closed at ${ACTIVE().length} across ${byCountry.length} legal entities. ` +
+        `2. PEOPLE\nHeadcount closed at ${everyone.length} across ${byCountry.length} legal entities. ` +
         `Payroll ran at ${mbS(t.gross)} gross, ${mbS(t.net)} net. Year-to-date attrition is ${attr}%.\n\n` +
         `3. UTILISATION\nUtilisation stands at ${k.utilisation}% against an 80% target. ${k.bench} consultants are ` +
         `on bench averaging ${k.avgBenchDays} days, carrying ${mbS(k.benchCostMonthly)} of monthly cost.\n\n` +
@@ -166,7 +185,7 @@ function ExecView() {
         />
         <Tile
           label="Headcount"
-          value={ACTIVE().length}
+          value={everyone.length}
           foot={`${byCountry.length} countries · ${attr}% attrition`}
           spark={<Spark data={hcSeries} color="var(--s3)" />}
         />
@@ -254,7 +273,7 @@ function ExecView() {
       >
         <p className="muted" style={{ margin: 0, lineHeight: 1.7 }}>
           {ORG.name} is running {k.placements} billable placements generating {mbS(rev)} of monthly revenue at a{' '}
-          {k.grossMargin}% gross margin. Headcount stands at {ACTIVE().length} across {byCountry.length} entities with
+          {k.grossMargin}% gross margin. Headcount stands at {everyone.length} across {byCountry.length} entities with
           a monthly people cost of {mbS(sum(byCountry, (r) => r.cost))}.{' '}
           {k.bench
             ? `${k.bench} consultants sit on bench carrying ${mbS(k.benchCostMonthly)} a month of unrecovered cost; the AI redeployment plan identifies matches for a portion of them. `
@@ -270,6 +289,10 @@ function ExecView() {
 registerModule({
   key: 'exec',
   title: TITLES.exec,
-  subtitle: () => `${mbS(staffingKPI().revenueMonthly)} monthly revenue · ${staffingKPI().grossMargin}% gross margin`,
+  /*
+   * Static rather than live: the registry's subtitle callback is synchronous,
+   * so it cannot await a service. The trading numbers are on the page itself.
+   */
+  subtitle: () => 'Trading, people and cash — one page for the board',
   Component: ExecView,
 });

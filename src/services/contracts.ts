@@ -41,6 +41,11 @@ import type { Review, Cycle } from '../data/performance';
 import type { Course, Enrollment } from '../data/learning';
 import type { Survey } from '../data/engagement';
 import type { Announcement, Celebration } from '../data/announcements';
+import type {
+  Client, Consultant, Invoice, Placement, Sow, StaffingKPI, StaffingRequirement,
+  Submission, Vendor,
+} from '../data/staffing';
+import type { MatchExplain } from '../data/matching';
 
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
@@ -67,6 +72,11 @@ export type { Review, Cycle } from '../data/performance';
 export type { Course } from '../data/learning';
 export type { Survey } from '../data/engagement';
 export type { Announcement, Celebration } from '../data/announcements';
+export type {
+  Client, Consultant, Invoice, Placement, Sow, StaffingKPI, StaffingRequirement,
+  Submission, Vendor,
+} from '../data/staffing';
+export type { MatchExplain } from '../data/matching';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
 export interface Caller {
@@ -371,6 +381,59 @@ export interface ExitService {
   list(): Promise<ExitRecord[]>;
 }
 
+/* ---------- the staffing book ---------- */
+
+/** A scored pairing, with the breakdown that justifies the number. */
+export interface MatchRow {
+  consultant: Consultant;
+  requirement: StaffingRequirement;
+  explain: MatchExplain;
+}
+
+/** One consultant's proposed redeployment, from the greedy sweep. */
+export interface PlanRow {
+  consultant: Consultant;
+  requirement: StaffingRequirement;
+  score: number;
+  margin: number;
+  benchDays: number;
+}
+
+export interface RedeploymentPlan {
+  picks: PlanRow[];
+  /** Monthly bench cost the plan would recover, in base currency. */
+  recovered: number;
+  /** Monthly revenue it would unlock, at client bill rates. */
+  revenue: number;
+  benchTotal: number;
+  availableCount: number;
+  openRequirementCount: number;
+}
+
+export interface StaffingService {
+  clients(): Promise<Client[]>;
+  requirements(): Promise<StaffingRequirement[]>;
+  /** Requirements still taking submissions. */
+  openRequirements(): Promise<StaffingRequirement[]>;
+  consultants(): Promise<Consultant[]>;
+  bench(): Promise<Consultant[]>;
+  placements(): Promise<Placement[]>;
+  submissions(): Promise<Submission[]>;
+  invoices(): Promise<Invoice[]>;
+  vendors(): Promise<Vendor[]>;
+  sows(): Promise<Sow[]>;
+  /** Utilisation, margin, fill rate, DSO — the operating numbers. */
+  kpi(): Promise<StaffingKPI>;
+
+  /* The match engine is a server computation: it reads pay rates and cost
+     bases, which is not data every caller should be holding. */
+  matchesForConsultant(consultantId: string): Promise<MatchRow[]>;
+  matchesForRequirement(requirementId: string): Promise<MatchRow[]>;
+  redeploymentPlan(): Promise<RedeploymentPlan>;
+  /** Bench days and accrued cost for one consultant. */
+  benchStanding(consultantId: string): Promise<{ days: number; cost: number }>;
+}
+
 /* ---------- the registry ---------- */
 
 export interface Services {
@@ -390,5 +453,6 @@ export interface Services {
   benefits: BenefitsService;
   noticeboard: NoticeboardService;
   exits: ExitService;
+  staffing: StaffingService;
   leave: LeaveService;
 }

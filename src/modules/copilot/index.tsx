@@ -2,12 +2,19 @@ import { useState } from 'react';
 import { uniq } from '../../lib/collections';
 import { daysBetween, TODAY, ymd } from '../../lib/dates';
 import { mbS, toBase } from '../../data/countries';
-import { PLACEMENTS, staffingKPI } from '../../data/staffing';
+
 import { Badge, Card, EmptyState, Tile } from '../../components/ui';
 import { Chip } from '../../components/common';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { useInsights, useMatchViews } from './ai';
+import {
+  useAllEmployees, useBench, useClients, useConsultants, useCurrentRun, useExits,
+  useInvoices, useLeaveAll, useOpenRequirements, usePlacements, usePayrollTotals,
+  useStaffingKpi, useVendors,
+} from './data';
+import type { AnswerSources } from './data';
+import { LEAVE_TYPES } from '../../data/org';
 import type { InsightSev } from './ai';
 import { AnswerCard, answerFor, SUGGESTIONS } from './answer';
 
@@ -17,7 +24,7 @@ const SEV_KIND: Record<InsightSev, 'crit' | 'warn' | 'info'> = { crit: 'crit', w
 /** Assignments ending inside this window count as revenue at risk. */
 const RISK_WINDOW_DAYS = 30;
 
-function AskPanel() {
+function AskPanel({ sources }: { sources: AnswerSources | null }) {
   const [q, setQ] = useState('');
   const [asked, setAsked] = useState<string | null>(null);
 
@@ -48,9 +55,9 @@ function AskPanel() {
         ))}
       </div>
 
-      {asked && (
+      {asked && sources && (
         <div style={{ marginTop: 12 }}>
-          <AnswerCard answer={answerFor(asked, ask)} />
+          <AnswerCard answer={answerFor(asked, ask, sources)} />
         </div>
       )}
     </Card>
@@ -62,26 +69,47 @@ function CopilotView() {
   const { matchAll } = useMatchViews();
   const [cat, setCat] = useState('');
 
-  const k = staffingKPI();
+  const { data: k } = useStaffingKpi();
+  const { data: bench = [] } = useBench();
+  const { data: consultants = [] } = useConsultants();
+  const { data: clients = [] } = useClients();
+  const { data: vendors = [] } = useVendors();
+  const { data: invoices = [] } = useInvoices();
+  const { data: placements = [] } = usePlacements();
+  const { data: openRequirements = [] } = useOpenRequirements();
+  const { data: employees = [] } = useAllEmployees();
+  const { data: exits = [] } = useExits();
+  const { data: leave = [] } = useLeaveAll(employees.map((e) => e.id));
+  const { data: curRun } = useCurrentRun();
+  const { data: payTotals } = usePayrollTotals(curRun?.mk ?? '');
+
+  /* Everything the answerer needs, gathered once and handed over. */
+  const sources: AnswerSources | null = k && payTotals && curRun
+    ? {
+        kpi: k, bench, consultants, clients, vendors, invoices, placements,
+        openRequirements, employees, exits, leave,
+        leaveTypes: LEAVE_TYPES, payrollTotals: payTotals, currentRunKey: curRun.mk,
+      }
+    : null;
   const cats = uniq(insights.map((i) => i.cat));
   const active = cats.includes(cat) ? cat : '';
   const list = active ? insights.filter((i) => i.cat === active) : insights;
   const critical = insights.filter((i) => i.sev === 'crit').length;
 
-  const atRisk = PLACEMENTS.filter((p) => {
+  const atRisk = placements.filter((p) => {
     const left = daysBetween(ymd(TODAY), p.endOn);
     return p.status === 'Active' && left <= RISK_WINDOW_DAYS && left >= 0;
   }).reduce((t, p) => t + toBase(p.billRate * (p.unit === 'per day' ? 21 : 173), p.ccy), 0);
 
   return (
     <div className="stack">
-      <AskPanel />
+      <AskPanel sources={sources} />
 
       <div className="grid g4">
         <Tile label="Signals raised" value={insights.length} foot={`Across ${cats.length} areas`} />
         <Tile label="Needing action now" value={critical} foot="Margin, cash and bench breaches" />
         <Tile label="Revenue at risk" value={mbS(atRisk)} foot={`Assignments ending inside ${RISK_WINDOW_DAYS} days`} />
-        <Tile label="Recoverable bench cost" value={mbS(k.benchCostMonthly)} foot="If the bench were fully redeployed" />
+        <Tile label="Recoverable bench cost" value={mbS(k?.benchCostMonthly ?? 0)} foot="If the bench were fully redeployed" />
       </div>
 
       <Card
