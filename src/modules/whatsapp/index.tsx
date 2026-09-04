@@ -540,10 +540,5 @@ function WhatsApp() {
 registerModule({
   key: 'whatsapp',
   title: TITLES.whatsapp,
-  /* Static: the registry's callbacks are synchronous and cannot await. */
-  subtitle: (c) =>
-    (c.role === 'admin'
-      ? 'Templates, routing rules, delivery log and consent'
-      : 'Your WhatsApp notification settings'),
   Component: WhatsApp,
 });

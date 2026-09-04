@@ -607,8 +607,26 @@ export interface ExitDetail {
 
 /* ---------- IT assets ---------- */
 
+/** Register health: counts, book value and what needs attention. */
+export interface AssetKPI {
+  total: number;
+  assigned: number;
+  stock: number;
+  repair: number;
+  retired: number;
+  gross: number;
+  net: number;
+  dep: number;
+  outOfWarranty: number;
+  eol: number;
+  /** Active employees without a laptop issued to them. */
+  unassigned: number;
+  recovery: number;
+}
+
 export interface AssetService {
   list(): Promise<Asset[]>;
+  kpi(): Promise<AssetKPI>;
   requests(): Promise<AssetRequest[]>;
   openRequests(): Promise<AssetRequest[]>;
   /** Kit a leaver still holds — the exit clearance checklist. */

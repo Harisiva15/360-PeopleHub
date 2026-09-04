@@ -17,7 +17,7 @@ import { EXITS, exitOf, fnfSettlement } from '../../data/exit';
 import { leaveBalance } from '../../data/leave';
 import { activeLoans } from '../../data/loans';
 import { ASSET_REQS, arOpen } from '../../data/assetWorkflow';
-import { pendingRecovery } from '../../data/assets';
+import { assetKPI, pendingRecovery } from '../../data/assets';
 import { AUDIT, AUDIT_CATS, CONTROLS, POSTURE, RETENTION } from '../../data/security';
 import { ONBOARD } from '../../data/onboarding';
 import type {
@@ -98,6 +98,7 @@ export const exitService: ExitService = {
 
 export const assetService: AssetService = {
   list() { return ok(ASSETS.slice()); },
+  kpi() { return ok(assetKPI()); },
   requests() { return ok(ASSET_REQS.slice()); },
   openRequests() { return ok(arOpen()); },
   pendingRecovery() { return ok(pendingRecovery()); },

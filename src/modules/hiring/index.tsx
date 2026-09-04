@@ -701,7 +701,5 @@ function Hiring() {
 registerModule({
   key: 'hiring',
   title: TITLES.hiring,
-  /* Static: the registry's callbacks are synchronous and cannot await. */
-  subtitle: () => 'Requisitions, pipeline, interviews and offers end to end',
   Component: Hiring,
 });

@@ -155,6 +155,5 @@ function CopilotView() {
 registerModule({
   key: 'copilot',
   title: TITLES.copilot,
-  subtitle: () => 'Signals computed from live records · nothing leaves the system',
   Component: CopilotView,
 });

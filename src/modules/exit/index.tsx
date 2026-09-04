@@ -569,6 +569,5 @@ function ExitView() {
 registerModule({
   key: 'exit',
   title: TITLES.exit,
-  subtitle: () => 'Notice periods, clearance and full-and-final settlement',
   Component: ExitView,
 });

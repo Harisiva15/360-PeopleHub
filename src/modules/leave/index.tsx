@@ -587,6 +587,5 @@ function Leave() {
 registerModule({
   key: 'leave',
   title: TITLES.leave,
-  subtitle: () => 'Balances, requests and the company holiday calendar',
   Component: Leave,
 });

@@ -11,7 +11,6 @@ import { useShowEmployee } from './Profile';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { useApp } from '../../state/AppContext';
-import { SCOPE, visibleEmps } from '../../state/rbac';
 import type { Grade } from '../../types/country';
 
 function Employees() {
@@ -156,7 +155,6 @@ function Employees() {
 registerModule({
   key: 'employees',
   title: TITLES.employees,
-  subtitle: (c) => visibleEmps(c.role, c.meId).length + ' employees in scope · ' + SCOPE[c.role].label,
   Component: Employees,
 });
 

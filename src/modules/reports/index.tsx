@@ -77,6 +77,5 @@ function ReportsView() {
 registerModule({
   key: 'reports',
   title: TITLES.reports,
-  subtitle: (ctx) => `${availableTo(ctx.role).length} reports available to you`,
   Component: ReportsView,
 });

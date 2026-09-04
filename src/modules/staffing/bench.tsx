@@ -305,7 +305,6 @@ registerModule({
    * Static: the registry's subtitle and badge callbacks are synchronous and
    * cannot await a service. The live figures are on the page.
    */
-  subtitle: () => 'Consultants between assignments, and what they cost',
   Component: Bench,
 });
 
@@ -429,6 +428,5 @@ function clientPlacementCounts(placements: Placement[]) {
 registerModule({
   key: 'placements',
   title: TITLES.placements,
-  subtitle: () => 'Live assignments, rates and blended margin',
   Component: Placements,
 });

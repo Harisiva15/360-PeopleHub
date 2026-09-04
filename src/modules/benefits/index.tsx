@@ -467,6 +467,5 @@ function Benefits() {
 registerModule({
   key: 'benefits',
   title: TITLES.benefits,
-  subtitle: () => 'Insurance, perks, flexible benefit plan, loans and advances',
   Component: Benefits,
 });

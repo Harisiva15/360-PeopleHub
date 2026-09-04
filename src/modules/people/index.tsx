@@ -351,20 +351,17 @@ function Announcements() {
 registerModule({
   key: 'org',
   title: TITLES.org,
-  subtitle: () => `Reporting structure across ${DEPTS.length} departments`,
   Component: OrgChart,
 });
 
 registerModule({
   key: 'celebrations',
   title: TITLES.celebrations,
-  subtitle: () => 'Birthdays, work anniversaries and milestones',
   Component: Celebrations,
 });
 
 registerModule({
   key: 'announcements',
   title: TITLES.announcements,
-  subtitle: () => 'Company-wide communication',
   Component: Announcements,
 });

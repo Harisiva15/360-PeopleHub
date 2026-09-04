@@ -377,6 +377,5 @@ function Tax() {
 registerModule({
   key: 'tax',
   title: TITLES.tax,
-  subtitle: () => `${ORG.fy} · ${ORG.ay} · Form 12BB investment declaration`,
   Component: Tax,
 });

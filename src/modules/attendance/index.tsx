@@ -771,6 +771,5 @@ function Attendance() {
 registerModule({
   key: 'attendance',
   title: TITLES.attendance,
-  subtitle: () => 'Punch in/out with location verification against site geo-fences',
   Component: Attendance,
 });

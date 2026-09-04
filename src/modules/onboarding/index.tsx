@@ -166,7 +166,5 @@ function OnboardingView() {
 registerModule({
   key: 'onboarding',
   title: TITLES.onboarding,
-  /* Static: the registry's callbacks are synchronous and cannot await. */
-  subtitle: () => 'Pre-boarding checklists from offer accepted to day one',
   Component: OnboardingView,
 });

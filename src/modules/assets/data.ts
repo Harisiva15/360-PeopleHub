@@ -8,6 +8,7 @@ export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
 
 export const useAssets = () => useQuery((s) => s.assets.list(), []);
+export const useAssetKpi = () => useQuery((s) => s.assets.kpi(), []);
 export const useAssetRequests = () => useQuery((s) => s.assets.requests(), []);
 export const useOpenAssetRequests = () => useQuery((s) => s.assets.openRequests(), []);
 export const usePendingRecovery = () => useQuery((s) => s.assets.pendingRecovery(), []);

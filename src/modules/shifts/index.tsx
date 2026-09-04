@@ -461,6 +461,5 @@ function Shifts() {
 registerModule({
   key: 'shifts',
   title: TITLES.shifts,
-  subtitle: () => `${SHIFTS.length} shift patterns · rotational rosters, overtime and comp off`,
   Component: Shifts,
 });

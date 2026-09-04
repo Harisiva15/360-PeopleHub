@@ -9,17 +9,16 @@ export interface ModuleCtx {
 }
 
 /**
- * One entry per route.
+ * One entry per route — the component and nothing else.
  *
- * `subtitle` is synchronous, so it may depend only on the session and on
- * static configuration — never on records. Sidebar pills used to be a
- * `badge` callback here, which could not await a service; they now come from
- * `approvals.navBadges` and are rendered by the shell.
+ * Titles and subtitles live in `titles.ts` and `subtitles.ts`, and sidebar
+ * pills come from `approvals.navBadges`. That is what lets a route be
+ * code-split: the shell paints the header from data it already has, without
+ * waiting for the route's chunk.
  */
 export interface ModuleDef {
   key: string;
   title: string;
-  subtitle?: (ctx: ModuleCtx) => string;
   Component: ComponentType;
 }
 

@@ -343,6 +343,5 @@ function Engagement() {
 registerModule({
   key: 'engagement',
   title: TITLES.engagement,
-  subtitle: () => 'Pulse surveys, eNPS and the action tracker',
   Component: Engagement,
 });

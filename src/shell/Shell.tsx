@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { logoFor } from '../assets/logo';
 import { NAV, TABBAR } from '../nav';
-import { getModule } from '../modules/registry';
+import { TITLES } from '../modules/titles';
+import { SUBTITLES } from '../modules/subtitles';
 import { useNavBadges } from './badges';
 import { ORG } from '../data/org';
 import { ACCOUNTS } from '../state/rbac';
@@ -36,7 +37,6 @@ export function Shell({ children }: { children: ReactNode }) {
     if (navOpen) setNavOpen(false);
   }
 
-  const mod = getModule(route);
   const accounts = ACCOUNTS();
   const ctx = { role: app.role, meId: app.meId, me: app.me };
   const badges = useNavBadges();
@@ -104,8 +104,8 @@ export function Shell({ children }: { children: ReactNode }) {
             </button>
           )}
           <div>
-            <h1>{mod?.title || '—'}</h1>
-            <div className="sub">{mod?.subtitle?.(ctx)}</div>
+            <h1>{TITLES[route] || '—'}</h1>
+            <div className="sub">{SUBTITLES[route]?.(ctx)}</div>
           </div>
           <div className="spacer" />
           <div className="seg" id="roleSeg" title="Switch the signed-in role">

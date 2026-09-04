@@ -36,6 +36,7 @@ const missingFor = (empId: string, types: string[], docs: { empId: string; type:
 function GenTab() {
   const app = useApp();
   const showLetter = useShowLetter();
+  const dir = useVisiblePeople();
   const [forId, setForId] = useState(app.meId);
   const target = app.role === 'employee' ? app.meId : forId;
 
@@ -55,7 +56,7 @@ function GenTab() {
             value={forId}
             onChange={(ev) => setForId(ev.target.value)}
           >
-            {sortBy(app.visibleEmps(), (e) => e.name).map((e) => (
+            {sortBy(dir.list, (e) => e.name).map((e) => (
               <option key={e.id} value={e.id}>{e.name} — {e.code}</option>
             ))}
           </select>
@@ -318,7 +319,5 @@ function DocumentsView() {
 registerModule({
   key: 'documents',
   title: TITLES.documents,
-  /* Static: the registry's callbacks are synchronous and cannot await. */
-  subtitle: () => 'Self-service letters and the document repository',
   Component: DocumentsView,
 });

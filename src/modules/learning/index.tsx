@@ -440,7 +440,5 @@ function Learning() {
 registerModule({
   key: 'learning',
   title: TITLES.learning,
-  /* Static: the registry's callbacks are synchronous and cannot await. */
-  subtitle: () => 'Catalogue, certifications and compliance training tracked to completion',
   Component: Learning,
 });

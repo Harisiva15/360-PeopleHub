@@ -502,6 +502,5 @@ function SecurityView() {
 registerModule({
   key: 'security',
   title: TITLES.security,
-  subtitle: () => 'Posture, access review, audit trail and data retention',
   Component: SecurityView,
 });

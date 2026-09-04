@@ -279,6 +279,5 @@ function Billing() {
 registerModule({
   key: 'billing',
   title: TITLES.billing,
-  subtitle: () => 'Invoices, receivables ageing and the billing run',
   Component: Billing,
 });

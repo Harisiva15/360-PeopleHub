@@ -69,11 +69,21 @@ Anything that is a record, or derived from records, is a service call.
 [`docs/api-contract.md`](docs/api-contract.md) is the same contract expressed
 as HTTP.
 
-**One constraint worth knowing.** The module registry's `subtitle` and `badge`
-callbacks are synchronous, so they cannot await a service. Modules that used to
-count records in their subtitle now carry static text. Feeding them from a
-single counts endpoint would fix that — and would also unblock route-level code
-splitting, which the same constraint currently prevents.
+### Route loading
+
+Each module is its own chunk, fetched when its route is first visited. The
+entry bundle is 185 kB rather than 780 kB, and the shell paints before any of
+it arrives.
+
+What makes that possible is that the registry holds only the component. Titles
+live in `src/modules/titles.ts`, subtitles in `src/modules/subtitles.ts`, and
+sidebar pills come from `approvals.navBadges` — so the header and navigation
+render from data the shell already has, and only the page body suspends.
+
+The rule that keeps it working: **a subtitle may read the session and static
+configuration, nothing else.** It is a synchronous call, so a subtitle that
+counted records would either be wrong or would drag the module's data back into
+the shell. Counts belong in the page or in the sidebar pills.
 
 **One constraint worth knowing before the next pass.** The module registry's
 `subtitle` and `badge` callbacks are synchronous, so they cannot await a

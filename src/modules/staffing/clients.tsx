@@ -351,6 +351,5 @@ function Clients() {
 registerModule({
   key: 'clients',
   title: TITLES.clients,
-  subtitle: () => 'Accounts, statements of work and rate cards',
   Component: Clients,
 });

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Tabs } from '../../components/ui';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
-import { MODULES, RbacTab, UsersTab } from './access';
+import { RbacTab, UsersTab } from './access';
 import { CompanyTab, ConfigAuditTab, GeoTab, LeavePolicyTab, OrgTab, PayConfigTab } from './config';
 
 type Tab = 'rbac' | 'users' | 'geo' | 'leave' | 'pay' | 'org' | 'company' | 'audit';
@@ -38,7 +38,5 @@ function SettingsView() {
 registerModule({
   key: 'settings',
   title: TITLES.settings,
-  /* Static: the registry's callbacks are synchronous and cannot await. */
-  subtitle: () => `Access control, policy and company configuration · ${MODULES.length} modules`,
   Component: SettingsView,
 });

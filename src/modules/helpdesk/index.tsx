@@ -492,6 +492,5 @@ function Helpdesk() {
 registerModule({
   key: 'helpdesk',
   title: TITLES.helpdesk,
-  subtitle: () => 'Ticketing with SLAs, plus a self-service knowledge base',
   Component: Helpdesk,
 });

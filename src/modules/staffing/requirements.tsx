@@ -379,6 +379,5 @@ function Requirements() {
 registerModule({
   key: 'requirements',
   title: TITLES.requirements,
-  subtitle: () => 'The demand book, the pipeline and submission analytics',
   Component: Requirements,
 });

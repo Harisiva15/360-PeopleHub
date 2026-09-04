@@ -325,6 +325,5 @@ function Approvals() {
 registerModule({
   key: 'approvals',
   title: TITLES.approvals,
-  subtitle: () => 'Everything waiting on your action',
   Component: Approvals,
 });

@@ -296,6 +296,5 @@ registerModule({
    * Static rather than live: the registry's subtitle callback is synchronous,
    * so it cannot await a service. The trading numbers are on the page itself.
    */
-  subtitle: () => 'Trading, people and cash — one page for the board',
   Component: ExecView,
 });

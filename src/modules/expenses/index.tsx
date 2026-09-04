@@ -581,6 +581,5 @@ function Expenses() {
 registerModule({
   key: 'expenses',
   title: TITLES.expenses,
-  subtitle: () => 'Claims, travel advances and policy limits · reimbursed with payroll',
   Component: Expenses,
 });

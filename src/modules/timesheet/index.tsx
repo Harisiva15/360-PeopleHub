@@ -598,6 +598,5 @@ function TimesheetView() {
 registerModule({
   key: 'timesheet',
   title: TITLES.timesheet,
-  subtitle: () => 'Log project hours, submit weekly and track approvals',
   Component: TimesheetView,
 });

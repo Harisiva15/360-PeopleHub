@@ -710,7 +710,5 @@ function Performance() {
 registerModule({
   key: 'performance',
   title: TITLES.performance,
-  /* Static: the registry's callbacks are synchronous and cannot await. */
-  subtitle: () => 'Goals, reviews, 9-box calibration and recognition',
   Component: Performance,
 });

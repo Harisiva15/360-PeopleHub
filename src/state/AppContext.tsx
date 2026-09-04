@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ACCOUNTS, can, SCOPE, visibleEmps, visibleIds } from './rbac';
+import { ACCOUNTS, can, SCOPE, visibleIds } from './rbac';
 import { EMAP } from '../data/employees';
 import { subscribe } from '../services/react';
 import type { AppRole, Employee } from '../types/employee';
@@ -28,8 +28,7 @@ interface AppState {
 
   can: (route: string) => boolean;
   scope: (typeof SCOPE)[AppRole];
-  visibleIds: () => string[];
-  visibleEmps: () => Employee[];
+
   isMyReport: (id: string) => boolean;
 
   toasts: Toast[];
@@ -106,8 +105,6 @@ export function AppProvider({ children, initialRole = 'admin' }: { children: Rea
       bump,
       can: (route: string) => can(role, route),
       scope: SCOPE[role],
-      visibleIds: () => visibleIds(role, meId),
-      visibleEmps: () => visibleEmps(role, meId),
       isMyReport: (id: string) => role !== 'employee' && visibleIds(role, meId).includes(id) && id !== meId,
       toasts,
       toast,

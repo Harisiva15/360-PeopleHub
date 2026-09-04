@@ -295,6 +295,5 @@ function Vendors() {
 registerModule({
   key: 'vendors',
   title: TITLES.vendors,
-  subtitle: () => 'The supplier panel, scorecards and compliance',
   Component: Vendors,
 });

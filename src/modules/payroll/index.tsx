@@ -973,6 +973,5 @@ function Payroll() {
 registerModule({
   key: 'payroll',
   title: TITLES.payroll,
-  subtitle: () => 'India payroll · PF, ESI, Professional Tax and TDS',
   Component: Payroll,
 });

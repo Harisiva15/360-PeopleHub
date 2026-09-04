@@ -7,7 +7,7 @@ import { mbS } from '../../data/countries';
 
 import type { Asset } from '../../types/asset';
 import {
-  ASSET_CATS, ASSET_STATUS_BADGE, acatOf, assetAge, assetEol, assetKPI, bookValue, inWarranty, modelOf,
+  ASSET_CATS, ASSET_STATUS_BADGE, acatOf, assetAge, assetEol, bookValue, inWarranty, modelOf,
 } from '../../data/assets';
 import { ASSET_POLICY, ASSET_REQ_BADGE, entitledTo } from '../../data/assetWorkflow';
 import type { AssetRequest } from '../../services';
@@ -19,7 +19,7 @@ import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../c
 import { BarChart, HBar, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import {
-  useActOnRequest, useAllEmployees, useAllocateAsset, useAssetRequests, useAssets,
+  useActOnRequest, useAllEmployees, useAllocateAsset, useAssetKpi, useAssetRequests, useAssets,
   useExits, useMarkReturned, useOnboardingJourneys, useOpenAssetRequests, usePendingRecovery,
   useVisiblePeople,
 } from './data';
@@ -88,10 +88,14 @@ function AsMine() {
 
 function AsRegister() {
   const { data: ASSETS = [] } = useAssets();
+  const { data: k } = useAssetKpi();
   const dir = useVisiblePeople();
   const [q, setQ] = useState('');
   const [fc, setFc] = useState('');
   const [fs, setFs] = useState('');
+
+  /* After every hook: the register health is computed by the service. */
+  if (!k) return <Card><EmptyState msg="Loading the asset register…" icon="💻" /></Card>;
 
   let list: Asset[] = ASSETS;
   if (fc) list = list.filter((a) => a.cat === fc);
@@ -103,7 +107,6 @@ function AsRegister() {
     );
   }
 
-  const k = assetKPI();
   const byCat = ASSET_CATS.map((c) => ({ k: c.n, c: c.c, v: ASSETS.filter((a) => a.cat === c.id).length }));
 
   return (
@@ -680,12 +683,6 @@ function Assets() {
 registerModule({
   key: 'assets',
   title: TITLES.assets,
-  subtitle: (c) => {
-    const k = assetKPI();
-    return c.role === 'employee'
-      ? 'Equipment issued to you'
-      : `${k.total} assets tracked · ${mbS(k.net)} net book value`;
-  },
   Component: Assets,
 });
 
