@@ -53,12 +53,23 @@ component for nothing.
 → balance debit, cancellation crediting the days back, and refusal of a
 double approval.
 
-**Migration status.** `leave` is on the seam and is the reference to copy —
-see `src/modules/leave/data.ts` for the pattern, including the two-stage
-fetch (rows, then the people they reference) that a real client needs when
-the API does not denormalise names. The other modules still import `src/data`
-directly; `AppProvider` subscribes to service invalidations and re-renders
-them, which is the bridge that keeps them correct until they are moved.
+**Migration status.** On the seam: `leave`, `attendance`, `timesheet`,
+`expenses`. Each has a `data.ts` holding its reads and writes as service
+calls; `src/modules/leave/data.ts` is the reference to copy, including the
+two-stage fetch (rows, then the people they reference) that a real client
+needs when the API does not denormalise names into the row.
+
+The remaining modules still import `src/data` directly. `AppProvider`
+subscribes to service invalidations and re-renders them, which is the bridge
+that keeps them correct until they are moved. Rough order of remaining work,
+heaviest first: `approvals` (27 write sites), `dashboard`, `copilot`,
+`payroll` and `employees` (read-only, so quick), then the staffing book.
+
+Each migration follows the same four steps: ground a contract in what the
+module actually does, implement it in `services/mock`, add a module
+`data.ts`, then replace the direct imports. Contracts are only added for
+surfaces a screen actually exercises — an ungrounded interface is worse than
+none.
 
 ### The data layer
 
