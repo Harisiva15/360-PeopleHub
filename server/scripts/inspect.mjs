@@ -10,6 +10,7 @@
 
 import pg from 'pg';
 import { loadEnv } from './env.mjs';
+import { sslConfig } from './ssl.mjs';
 
 loadEnv();
 
@@ -32,10 +33,7 @@ console.log(`connecting to ${safe}`);
 
 const client = new pg.Client({
   connectionString: url,
-  // Supabase terminates TLS at the pooler with a certificate this client does
-  // not have the chain for. Encrypted, but not authenticated — fine for a
-  // read-only inspection, not something to copy into the server.
-  ssl: { rejectUnauthorized: false },
+  ssl: sslConfig(),
   connectionTimeoutMillis: 15_000,
 });
 

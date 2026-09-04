@@ -11,7 +11,9 @@
     "dev": "node --watch --experimental-strip-types src/index.ts",
     "check:schema:test": "node scripts/check-schema.test.mjs",
     "check": "npm run check:schema && npm run check:schema:test && npm run typecheck",
-    "inspect": "node scripts/inspect.mjs"
+    "inspect": "node scripts/inspect.mjs",
+    "verify:isolation": "node scripts/verify-isolation.mjs",
+    "ci:bootstrap": "node scripts/ci-bootstrap.mjs"
   },
   "dependencies": {
     "pg": "^8.13.1"

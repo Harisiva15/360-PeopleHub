@@ -1,5 +1,5 @@
-# Checks the backend schema and skeleton. Separate from the Pages workflow so a
-# server problem does not block the frontend demo from deploying.
+# Checks the backend. Separate from the Pages workflow so a server problem does
+# not block the frontend demo from deploying.
 name: Server checks
 
 on:
@@ -11,7 +11,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  check:
+  # Static: does the schema parse, and does it satisfy the tenancy invariants.
+  static:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,5 +25,69 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
-      # Schema invariants, the checker's own tests, and the TypeScript.
       - run: npm run check
+
+  # Live: do the migrations actually apply, and do the policies actually hold.
+  #
+  # Against a real PostgreSQL, because parsing is not execution — it cannot
+  # catch a type mismatch, a missing function, or a policy that is written
+  # correctly and does nothing.
+  database:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: peoplehub
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    env:
+      # The owner, for migrations. No TLS: this is a container on the same
+      # host, not a connection across a network.
+      MIGRATE_DATABASE_URL: postgresql://postgres:ci@localhost:5432/peoplehub
+      PGSSLMODE: disable
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+
+      # Stand in for the parts of Supabase the schema depends on.
+      - run: npm run ci:bootstrap
+
+      - name: Apply migrations
+        run: npm run migrate
+
+      # app_rw is created NOLOGIN by the migration; give it a password so the
+      # isolation test can connect as a role that cannot bypass RLS.
+      - name: Give app_rw a login
+        run: |
+          node -e "
+            const pg = require('pg');
+            (async () => {
+              const c = new pg.Client({ connectionString: process.env.MIGRATE_DATABASE_URL });
+              await c.connect();
+              await c.query(\"ALTER ROLE app_rw LOGIN PASSWORD 'ci'\");
+              await c.end();
+            })();
+          "
+
+      - name: Prove tenant isolation
+        env:
+          DATABASE_URL: postgresql://app_rw:ci@localhost:5432/peoplehub
+        run: npm run verify:isolation

@@ -4,9 +4,9 @@ The multi-tenant backend for [`docs/api-contract.md`](../docs/api-contract.md).
 A schema, the tenancy enforcement, and two vertical slices showing the pattern
 the remaining modules follow.
 
-**Status: skeleton.** The schema is complete and checked; the API has five
-endpoints wired of the 112 in the contract. Nothing here has been run against a
-live PostgreSQL — see [What is verified](#what-is-verified) before you trust it.
+**Status: skeleton.** The schema is applied and its isolation is proven against
+a real database; the API has five endpoints wired of the 112 in the contract.
+See [What is verified](#what-is-verified) for the line between the two.
 
 ```bash
 cd server
@@ -231,31 +231,34 @@ each claim:
 
 | Claim | How far it is checked |
 |---|---|
-| The SQL is syntactically valid | **Verified.** Parsed with `libpg-query` — PostgreSQL's own grammar compiled to WASM, not an approximation. |
+| The SQL is syntactically valid | **Verified.** Parsed with `libpg-query` — PostgreSQL's own grammar compiled to WASM. |
 | Every table is tenant-scoped or deliberately not | **Verified** by `check:schema`. |
-| No foreign key can point across tenants | **Verified** by `check:schema`. |
+| No foreign key can point across tenants | **Verified** by `check:schema`, and at runtime by `verify:isolation`. |
 | The checker actually catches these | **Verified** by `check:schema:test` — nine deliberately broken schemas, each rejected for the right reason. |
 | The TypeScript compiles | **Verified** by `tsc --noEmit`, strict. |
-| The policies behave correctly at runtime | **Not verified.** Needs a live database. |
-| The migrations apply cleanly in order | **Not verified.** Parsing is not execution: it cannot catch a type mismatch, a function that does not exist, or an index on a column added later in the same file. |
-| The queries return what they claim | **Not verified.** |
+| The migrations apply cleanly in order | **Verified.** All ten applied to PostgreSQL 17, and again to a clean database on every CI run. |
+| The policies actually isolate tenants | **Verified** by `verify:isolation`, connecting as `app_rw` — a role that cannot bypass RLS — against two real tenants. It asserts reads are scoped, that `WITH CHECK` refuses writing another tenant's id, that a composite key refuses referencing another tenant's row, that an unset tenant raises, and that the setting does not survive the transaction. |
+| The API's queries return what they claim | **Not verified.** Five endpoints exist and none has been called against real data. |
 
-**The first thing to do with a database available** is run `npm run migrate`,
-then `SELECT * FROM tenancy_gaps()`, then this — the test that matters most:
-
-```sql
--- Two tenants, one table. Set tenant A, count rows. You must see only A's.
-SET LOCAL app.tenant_id = '<tenant-a>';
-SELECT count(*) FROM employee;          -- A's employees
-SET LOCAL app.tenant_id = '<tenant-b>';
-SELECT count(*) FROM employee;          -- B's, and no overlap
-
--- And the one people forget: WITH CHECK on insert.
-SET LOCAL app.tenant_id = '<tenant-a>';
-INSERT INTO employee (tenant_id, ...) VALUES ('<tenant-b>', ...);  -- must fail
+```bash
+npm run inspect            # what is in the database, without printing secrets
+npm run migrate            # ordered, checksummed, one transaction per file
+npm run verify:isolation   # two throwaway tenants; proves the policies hold
 ```
 
-Until that has run, treat the isolation as designed rather than proven.
+`verify:isolation` runs in CI against a PostgreSQL service container on every
+push, so this stays proven rather than having been proven once.
+
+**Two things that must be true for it to mean anything**, both asserted by the
+script itself rather than assumed:
+
+- `DATABASE_URL` points at `app_rw`, not the owner. On Supabase the `postgres`
+  role has `BYPASSRLS`, so an API connecting as it skips every policy in the
+  schema and the test would prove nothing. The script reports the role it
+  connected as and fails loudly if that role can bypass.
+- Expected failures are wrapped in savepoints. A failed statement aborts the
+  whole transaction in PostgreSQL, so without them the first refusal poisons
+  every assertion after it.
 
 ---
 

@@ -8,6 +8,7 @@
  */
 
 import pg from 'pg';
+import { readFileSync } from 'node:fs';
 import { config } from '../config.ts';
 
 const { Pool, types } = pg;
@@ -21,8 +22,27 @@ types.setTypeParser(1082, (value: string) => value);
 // up a cent out and nobody can explain why.
 types.setTypeParser(1700, (value: string) => value);
 
+/**
+ * Supabase requires TLS. Verification needs its CA, which is downloaded from
+ * Project Settings -> Database -> SSL Configuration; without it the connection
+ * is encrypted but the server is not authenticated, which is fine on a laptop
+ * and not fine in production. The server refuses to start unverified outside
+ * development — see below.
+ */
+const ssl = config.sslRootCert
+  ? { ca: readFileSync(config.sslRootCert, 'utf8'), rejectUnauthorized: true }
+  : { rejectUnauthorized: false };
+
+if (!config.sslRootCert && config.nodeEnv === 'production') {
+  throw new Error(
+    'PGSSLROOTCERT must be set in production: refusing to talk to the database '
+    + 'over a connection whose certificate is not verified',
+  );
+}
+
 export const pool = new Pool({
   connectionString: config.databaseUrl,
+  ssl,
   max: Number(process.env.PG_POOL_MAX ?? 10),
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,

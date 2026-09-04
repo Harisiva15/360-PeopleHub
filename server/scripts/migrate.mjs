@@ -14,6 +14,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { loadEnv } from './env.mjs';
+import { sslConfig, sslVerified } from './ssl.mjs';
 
 loadEnv();
 
@@ -26,7 +27,10 @@ if (!url) {
   process.exit(1);
 }
 
-const client = new pg.Client({ connectionString: url });
+const client = new pg.Client({ connectionString: url, ssl: sslConfig() });
+if (process.env.PGSSLMODE !== 'disable' && !sslVerified()) {
+  console.log('note: TLS certificate is not verified (set PGSSLROOTCERT to verify)');
+}
 await client.connect();
 
 await client.query(`

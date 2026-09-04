@@ -23,5 +23,7 @@ export const config = {
    */
   supabaseJwtSecret: required('SUPABASE_JWT_SECRET'),
   supabaseUrl: process.env.SUPABASE_URL ?? '',
+  /** Path to Supabase's CA certificate. Required in production. */
+  sslRootCert: process.env.PGSSLROOTCERT ?? '',
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').filter(Boolean),
 } as const;
