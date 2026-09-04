@@ -215,7 +215,8 @@ export function RepHeadcount() {
       return y >= b[1] && y < b[2];
     }).length,
   }));
-  const trend = headcountTrend(12);
+  const { data: leavers = [] } = useExitedEmployees();
+  const trend = headcountTrend(12, [...act, ...leavers]);
   const leaders = act.filter((e) => LEADER_GRADES.includes(e.grade)).length;
   const womenLeader = act.filter((e) => e.gender === 'F' && LEADER_GRADES.includes(e.grade)).length;
   const managers = act.filter((e) => e.reports.length).length;

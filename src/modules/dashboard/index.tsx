@@ -1,22 +1,22 @@
 import { sortBy, sum } from '../../lib/collections';
 import { addDays, daysBetween, fmtD, fmtDS, fmtTime, monthKey, monthLabel, monthLabelLong, mondayOf, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh, pct } from '../../lib/format';
-import { ATT, attOf, ATT_IDX } from '../../data/attendance';
-import { CANDS, REQS, STAGES } from '../../data/ats';
-import { ANNOUNCE, celebrations } from '../../data/announcements';
+
+import { STAGES } from '../../data/ats';
+
 import { countryOf, money } from '../../data/countries';
-import { ACTIVE, EMAP, empName, teamOf } from '../../data/employees';
-import { CLAIMS } from '../../data/expenses';
-import { BANKABLE, DEPTS, ltOf, ORG, PROJECTS, projOf, siteOf, SITES } from '../../data/org';
-import { LEAVE_BAL, leaveBalance, LEAVES } from '../../data/leave';
-import { COMPLIANCE_PAYS } from '../../data/payinputs';
-import { CUR_RUN, DECL, PAYRUNS, payrollTotals, payslip } from '../../data/payroll';
-import { CUR_CYCLE, GOALS } from '../../data/performance';
-import { enpsOf, SURVEYS } from '../../data/engagement';
-import { TICKETS, tCat } from '../../data/helpdesk';
-import { COURSES, ENROLL } from '../../data/learning';
-import { EXITS } from '../../data/exit';
-import { TS } from '../../data/timesheet';
+
+
+import { DEPTS, ltOf, ORG, PROJECTS, projOf, siteOf, SITES } from '../../data/org';
+
+
+
+
+
+import { tCat } from '../../data/helpdesk';
+
+
+
 import { Badge, Card, EmptyState, KV, Tile } from '../../components/ui';
 import { Avatar, PersonCell } from '../../components/ui';
 import { Chip, Dot, Divide, ListRow, StatusBadge } from '../../components/common';
@@ -30,34 +30,82 @@ import {
   ApprovalSummary, attendanceToday, attendanceTrend, CelebRows, GoLink,
   headcountTrend, joinersExits, MonthCalendar,
 } from './shared';
+import {
+  useAllEmployees, useAnnouncements, useAttendanceIn, useCandidates, useCelebrations,
+  useClaimsIn, useCompliancePayments, useCourses, useCurrentCycle, useCurrentRun,
+  useDeclarations, useEnrolments, useExits, useGoals, useLeaveIn, useMyAttendance,
+  useMyBalances, usePayRuns, usePayrollTotals, usePayslipHistory, useRequisitions,
+  useSurveys, useTeam, useTickets, useTimesheetsIn,
+} from './data';
+import type { Directory } from './data';
+
+/** Build a directory view over an already-fetched roster. */
+const asDirectory = (list: { id: string; name: string }[]): Directory => ({
+  list: list as never,
+  ids: list.map((e) => e.id),
+  byId: (id) => list.find((e) => e.id === id) as never,
+  name: (id) => list.find((e) => e.id === id)?.name ?? '—',
+  loading: false,
+});
 
 /* ---------------- admin ---------------- */
 
 function DashAdmin() {
   const app = useApp();
-  const act = ACTIVE();
-  const at = attendanceToday(act.map((e) => e.id));
+  const today = ymd(TODAY);
+  const { data: act = [] } = useAllEmployees();
+  const { data: leavers = [] } = useExits();
+  const ids = act.map((e) => e.id);
+  const dir = asDirectory(act);
+
+  const { data: todayRecs = [] } = useAttendanceIn(ids, today, today);
+  const { data: sixMonths = [] } = useAttendanceIn(ids, ymd(addDays(TODAY, -190)), today);
+  const { data: runs = [] } = usePayRuns();
+  const { data: curRun } = useCurrentRun();
+  const { data: run } = usePayrollTotals(curRun?.mk ?? '');
+  const { data: reqs = [] } = useRequisitions();
+  const { data: cands = [] } = useCandidates();
+  const { data: cel = [] } = useCelebrations(14);
+  const { data: goals = [] } = useGoals(ids);
+  const { data: cycle } = useCurrentCycle();
+  const { data: surveys = [] } = useSurveys();
+  const { data: tickets = [] } = useTickets();
+  const { data: claims = [] } = useClaimsIn(ids);
+  const { data: courses = [] } = useCourses();
+  const { data: enrolments = [] } = useEnrolments();
+  const { data: compliance = [] } = useCompliancePayments();
+  const { data: announcements = [] } = useAnnouncements();
+
+  const at = attendanceToday(todayRecs);
   const present = at.c.P + at.c.W;
   const working = at.total - at.c.H - at.c.O;
-  const ht = headcountTrend(8);
-  const run = payrollTotals(CUR_RUN.mk);
+  /* Leavers still count towards the months they were employed in. */
+  const roster = [...act, ...(leavers.map((x) => dir.byId(x.empId)).filter(Boolean) as typeof act)];
+  const ht = headcountTrend(8, act);
 
-  const openReq = REQS.filter((r) => r.status === 'Open');
+  const openReq = reqs.filter((r) => r.status === 'Open');
   const openings = sum(openReq, (r) => Math.max(0, r.openings - r.filled));
-  const exitsYear = Object.values(EMAP).filter((e) => e.dol && e.dol >= ymd(addDays(TODAY, -365)));
+  const exitsYear = leavers.filter((x) => x.lwd >= ymd(addDays(TODAY, -365)));
   const attrition = pct(exitsYear.length, act.length + exitsYear.length);
+  if (!curRun || !run || runs.length < 2) return <EmptyState msg="Loading your dashboard…" icon="◧" />;
+  const CUR_RUN = curRun;
+  /* eNPS comes from the quarterly survey, not a stored figure. */
+  const enpsSurvey = surveys.find((x) => x.id === 'SV2');
+  const enps = enpsSurvey
+    ? Math.round(((enpsSurvey.promoters ?? 0) - (enpsSurvey.detractors ?? 0)) /
+        Math.max(1, (enpsSurvey.promoters ?? 0) + (enpsSurvey.passives ?? 0) + (enpsSurvey.detractors ?? 0)) * 100)
+    : 0;
 
   const byDept = DEPTS.map((d) => ({ k: d.name, v: act.filter((e) => e.dept === d.id).length, c: d.color }));
   const bySite = ['CHN', 'BLR', 'HYD'].map((s, i) => ({ k: siteOf(s).city, v: act.filter((e) => e.site === s).length, c: PAL[i] }));
-  const cel = celebrations(14);
   const pend = pendingCount(app.role, app.meId);
   const funnel = STAGES.filter((s) => s.id !== 'rejected').map((s) => ({
-    k: s.name, v: CANDS.filter((c) => c.stage === s.id).length, c: s.color,
+    k: s.name, v: cands.filter((c) => c.stage === s.id).length, c: s.color,
   }));
 
-  const trend = attendanceTrend(6, ATT);
-  const je = joinersExits(8);
-  const lastRunMk = PAYRUNS[PAYRUNS.length - 2].mk;
+  const trend = attendanceTrend(6, sixMonths);
+  const je = joinersExits(8, roster);
+  const lastRunMk = runs[runs.length - 2].mk;
 
   const donutSlices = [
     { k: 'In office', v: at.c.P, c: 'var(--s1)' },
@@ -66,7 +114,7 @@ function DashAdmin() {
     { k: 'Absent', v: at.c.A, c: 'var(--s8)' },
   ];
 
-  const mandatory = COURSES.filter((c) => c.mandatory);
+  const mandatory = courses.filter((c) => c.mandatory);
 
   return (
     <div className="stack">
@@ -80,7 +128,7 @@ function DashAdmin() {
         <Tile label={'Net payable · ' + monthLabel(CUR_RUN.mk)} value={lakh(run.net)}
           foot={<><StatusBadge status={CUR_RUN.status} /> <span className="muted">{run.count} employees</span></>} />
         <Tile label="Open positions" value={openings}
-          foot={`${openReq.length} live requisitions · ${CANDS.filter((c) => c.stage === 'offer').length} in offer`} />
+          foot={`${openReq.length} live requisitions · ${cands.filter((c) => c.stage === 'offer').length} in offer`} />
         <Tile label="Attrition (12 mo)" value={attrition + '%'} foot={`${exitsYear.length} exits · industry avg 18%`} />
       </div>
 
@@ -117,7 +165,7 @@ function DashAdmin() {
         <Card title="Headcount by department" sub={`${act.length} active employees`}>
           <HBar rows={sortBy(byDept, (r) => -r.v)} />
         </Card>
-        <Card title="Hiring funnel" sub={`${CANDS.length} candidates all-time`} actions={<GoLink to="hiring">Open ATS</GoLink>}>
+        <Card title="Hiring funnel" sub={`${cands.length} candidates all-time`} actions={<GoLink to="hiring">Open ATS</GoLink>}>
           <HBar rows={funnel} />
         </Card>
         <Card title="Pending your action" sub={`${pend} items`} actions={<GoLink to="approvals">Review</GoLink>} flush>
@@ -136,21 +184,21 @@ function DashAdmin() {
         </Card>
         <Card title="Celebrations" sub="Next 14 days" actions={<GoLink to="celebrations">All</GoLink>} flush>
           <div style={{ maxHeight: 320, overflow: 'auto' }}>
-            <CelebRows list={cel.slice(0, 8)} />
+            <CelebRows list={cel.slice(0, 8)} dir={dir} />
           </div>
         </Card>
       </div>
 
       <div className="grid g4">
         <Tile label="Goal achievement"
-          value={Math.round(sum(GOALS, (g) => g.progress * g.weight) / Math.max(1, sum(GOALS, (g) => g.weight))) + '%'}
-          foot={`${GOALS.filter((g) => ['At Risk', 'Behind'].includes(g.status)).length} goals at risk · ${CUR_CYCLE.name.split(' Appraisal')[0]}`} />
-        <Tile label="eNPS" value={'+' + enpsOf(SURVEYS.find((x) => x.id === 'SV2')!)} trend="up" foot="▲ 9 vs last quarter" />
-        <Tile label="Open tickets" value={TICKETS.filter((t) => ['Open', 'In Progress'].includes(t.status)).length}
-          foot={`${TICKETS.filter((t) => t.breached && ['Open', 'In Progress'].includes(t.status)).length} past SLA`} />
+          value={Math.round(sum(goals, (g) => g.progress * g.weight) / Math.max(1, sum(goals, (g) => g.weight))) + '%'}
+          foot={`${goals.filter((g) => ['At Risk', 'Behind'].includes(g.status)).length} goals at risk · ${(cycle?.name ?? '').split(' Appraisal')[0]}`} />
+        <Tile label="eNPS" value={'+' + enps} trend="up" foot="▲ 9 vs last quarter" />
+        <Tile label="Open tickets" value={tickets.filter((t) => ['Open', 'In Progress'].includes(t.status)).length}
+          foot={`${tickets.filter((t) => t.breached && ['Open', 'In Progress'].includes(t.status)).length} past SLA`} />
         <Tile label="Expenses pending"
-          value={inr(sum(CLAIMS.filter((c) => ['Submitted', 'Approved'].includes(c.status)), (c) => c.total))}
-          foot={`${CLAIMS.filter((c) => c.status === 'Submitted').length} claims awaiting approval`} />
+          value={inr(sum(claims.filter((c) => ['Submitted', 'Approved'].includes(c.status)), (c) => c.total))}
+          foot={`${claims.filter((c) => c.status === 'Submitted').length} claims awaiting approval`} />
       </div>
 
       <div className="grid g3">
@@ -158,12 +206,12 @@ function DashAdmin() {
           <HBar fmt={(v) => v + '%'}
             rows={mandatory.map((c, i) => ({
               k: c.t, c: PAL[i],
-              v: pct(act.filter((e) => ENROLL.some((x) => x.empId === e.id && x.courseId === c.id && x.status === 'Completed')).length, act.length),
+              v: pct(act.filter((e) => enrolments.some((x) => x.empId === e.id && x.courseId === c.id && x.status === 'Completed')).length, Math.max(1, act.length)),
             }))} />
         </Card>
 
         <Card title="Statutory dues" sub={monthLabelLong(lastRunMk)} actions={<GoLink to="payroll">Pay</GoLink>} flush>
-          {COMPLIANCE_PAYS.filter((c) => c.mk === lastRunMk).map((c) => (
+          {compliance.filter((c) => c.mk === lastRunMk).map((c) => (
             <ListRow key={c.type}>
               <Dot color={c.status === 'Paid' ? 'var(--good)' : c.status === 'Overdue' ? 'var(--crit)' : 'var(--warn)'} />
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -175,14 +223,14 @@ function DashAdmin() {
           ))}
         </Card>
 
-        <Card title="Exits in progress" sub={`${EXITS.filter((x) => x.status !== 'Settled').length} employees`}
+        <Card title="Exits in progress" sub={`${leavers.filter((x) => x.status !== 'Settled').length} employees`}
           actions={<GoLink to="exit">Manage</GoLink>} flush>
           <div style={{ maxHeight: 300, overflow: 'auto' }}>
-            {EXITS.length ? sortBy(EXITS, (x) => x.lwd).slice(0, 6).map((x) => (
+            {leavers.length ? sortBy(leavers, (x) => x.lwd).slice(0, 6).map((x) => (
               <ListRow key={x.id}>
-                <Avatar name={empName(x.empId)} size="sm" />
+                <Avatar name={dir.name(x.empId)} size="sm" />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{empName(x.empId)}</div>
+                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(x.empId)}</div>
                   <div className="muted" style={{ fontSize: 11 }}>{x.reason} · LWD {fmtD(x.lwd)}</div>
                 </div>
                 <Badge kind="warn">{Math.max(0, daysBetween(ymd(TODAY), x.lwd))}d</Badge>
@@ -203,8 +251,8 @@ function DashAdmin() {
           </div>
         </Card>
 
-        <Card title="Latest announcements" sub={`${ANNOUNCE.length} posts`} actions={<GoLink to="announcements">View all</GoLink>} flush>
-          {ANNOUNCE.slice(0, 4).map((a) => (
+        <Card title="Latest announcements" sub={`${announcements.length} posts`} actions={<GoLink to="announcements">View all</GoLink>} flush>
+          {announcements.slice(0, 4).map((a) => (
             <ListRow key={a.id}>
               <Badge kind="info">{a.tag}</Badge>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -234,19 +282,24 @@ const ATT_BADGE: Record<string, { kind: 'good' | 'info' | 'warn' | 'crit' | 'mut
 function DashManager() {
   const app = useApp();
   const me = app.me;
-  const team = teamOf(me.id, true).map((id) => EMAP[id]);
+  const { data: team = [] } = useTeam(me.id);
+  const dir = asDirectory(team);
   const ids = team.map((t) => t.id);
-  const at = attendanceToday(ids);
 
-  const pendLeave = LEAVES.filter((l) => l.status === 'Pending' && ids.includes(l.empId));
-  const pendTS = TS.filter((t) => t.status === 'Submitted' && ids.includes(t.empId));
-  const pendReg = ATT.filter((a) => a.reg && a.reg.status === 'Pending' && ids.includes(a.empId));
+  const { data: teamLeave = [] } = useLeaveIn(ids);
+  const { data: teamSheets = [] } = useTimesheetsIn(ids);
+  const { data: teamAtt = [] } = useAttendanceIn(ids, ymd(addDays(TODAY, -35)), ymd(TODAY));
+  const at = attendanceToday(teamAtt.filter((r) => r.date === ymd(TODAY)));
+  const { data: cel = [] } = useCelebrations(21);
+  const pendLeave = teamLeave.filter((l) => l.status === 'Pending');
+  const pendTS = teamSheets.filter((t) => t.status === 'Submitted');
+  const pendReg = teamAtt.filter((a) => a.reg && a.reg.status === 'Pending');
   const awaiting = pendLeave.length + pendTS.length + pendReg.length;
 
   const last4 = [];
   for (let w = 3; w >= 0; w--) {
     const ws = ymd(mondayOf(addDays(TODAY, -w * 7)));
-    const sheets = TS.filter((t) => t.weekStart === ws && ids.includes(t.empId));
+    const sheets = teamSheets.filter((t) => t.weekStart === ws);
     last4.push({
       label: 'W' + (4 - w),
       hours: sum(sheets, (s) => s.total),
@@ -254,15 +307,15 @@ function DashManager() {
     });
   }
 
-  const cel = celebrations(21).filter((c) => ids.includes(c.empId) || c.empId === me.id);
-  const onLeaveSoon = LEAVES.filter(
+  const teamCel = cel.filter((c) => ids.includes(c.empId) || c.empId === me.id);
+  const onLeaveSoon = teamLeave.filter(
     (l) => l.status === 'Approved' && ids.includes(l.empId) && l.from >= ymd(TODAY) && l.from <= ymd(addDays(TODAY, 21)),
   );
 
   const projRows = PROJECTS.map((p) => ({
     k: p.name, c: p.color,
     v: sum(
-      TS.filter((t) => ids.includes(t.empId) && t.weekStart >= ymd(mondayOf(addDays(TODAY, -21)))),
+      teamSheets.filter((t) => t.weekStart >= ymd(mondayOf(addDays(TODAY, -21)))),
       (t) => sum(t.rows.filter((r) => r.proj === p.id), (r) => sum(r.h)),
     ),
   })).filter((r) => r.v > 0);
@@ -297,7 +350,7 @@ function DashManager() {
               </thead>
               <tbody>
                 {team.map((t) => {
-                  const r = attOf(t.id, ymd(TODAY));
+                  const r = teamAtt.find((a) => a.empId === t.id && a.date === ymd(TODAY));
                   const b = ATT_BADGE[r ? r.status : 'O'];
                   return (
                     <tr key={t.id}>
@@ -324,9 +377,9 @@ function DashManager() {
             {onLeaveSoon.length ? sortBy(onLeaveSoon, (l) => l.from).map((l) => (
               <ListRow key={l.id}>
                 <Dot color={ltOf(l.type).color} />
-                <Avatar name={empName(l.empId)} size="sm" />
+                <Avatar name={dir.name(l.empId)} size="sm" />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{empName(l.empId)}</div>
+                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(l.empId)}</div>
                   <div className="muted" style={{ fontSize: 11.5 }}>{ltOf(l.type).name} · {l.days} d</div>
                 </div>
                 <div className="right nowrap" style={{ fontSize: 11.5 }}>
@@ -344,7 +397,7 @@ function DashManager() {
         </Card>
         <Card title="Team celebrations" sub="Next 21 days" actions={<GoLink to="celebrations">All</GoLink>} flush>
           <div style={{ maxHeight: 280, overflow: 'auto' }}>
-            <CelebRows list={cel.slice(0, 8)} />
+            <CelebRows list={teamCel.slice(0, 8)} dir={dir} />
           </div>
         </Card>
       </div>
@@ -359,36 +412,47 @@ function DashEmployee() {
   const me = app.me;
   const mk = monthKey(TODAY);
 
-  const recs = Object.values(ATT_IDX[me.id] || {}).filter((r) => r.date.slice(0, 7) === mk);
+  const { data: monthRecs = [] } = useMyAttendance(me.id, mk + '-01', mk + '-31');
+  const { data: mySheets = [] } = useTimesheetsIn([me.id]);
+  const { data: history = [] } = usePayslipHistory(me.id);
+  const { data: bals = [] } = useMyBalances(me.id);
+  const { data: myLeaveRows = [] } = useLeaveIn([me.id]);
+  const { data: cel = [] } = useCelebrations(14);
+  const { data: decls = {} } = useDeclarations();
+  const { data: myGoals = [] } = useGoals([me.id]);
+  const { data: myTickets = [] } = useTickets([me.id]);
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: myClaims = [] } = useClaimsIn([me.id]);
+  const { data: courses = [] } = useCourses();
+  const { data: myEnrolments = [] } = useEnrolments([me.id]);
+  const { data: announcements = [] } = useAnnouncements();
+  const dir = asDirectory(everyone);
+  const recs = monthRecs;
   const work = recs.filter((r) => ['P', 'W', 'A', 'L'].includes(r.status));
   const present = recs.filter((r) => r.status === 'P' || r.status === 'W').length;
   const hrs = sum(recs, (r) => r.mins) / 60;
 
-  const myTS = TS.find((t) => t.empId === me.id && t.weekStart === ymd(mondayOf(TODAY)));
-  const lastRun = PAYRUNS[PAYRUNS.length - 2];
-  const ps = payslip(me, lastRun.mk);
+  const myTS = mySheets.find((t) => t.weekStart === ymd(mondayOf(TODAY)));
+  const lastSlip = history[history.length - 1];
+  const lastRun = lastSlip?.run;
+  const ps = lastSlip?.payslip;
 
-  const bals = Object.keys(LEAVE_BAL[me.id] || {})
-    .map((t) => ({ t, ...leaveBalance(me.id, t)! }))
-    .filter((b) => b.quota + b.carry > 0 && BANKABLE.includes(b.t));
-
-  const myLeaves = sortBy(LEAVES.filter((l) => l.empId === me.id), (l) => l.from, 'desc').slice(0, 5);
-  const cel = celebrations(14);
-  const dec = DECL[me.id];
+  const myLeaves = sortBy(myLeaveRows, (l) => l.from, 'desc').slice(0, 5);
+  const dec = decls[me.id];
 
   const wk = [];
   for (let w = 7; w >= 0; w--) {
     const ws = ymd(mondayOf(addDays(TODAY, -w * 7)));
-    const t = TS.find((x) => x.empId === me.id && x.weekStart === ws);
+    const t = mySheets.find((x) => x.weekStart === ws);
     wk.push({ l: fmtDS(ws), v: t ? t.total : 0 });
   }
 
-  const g = GOALS.filter((x) => x.empId === me.id);
+  const g = myGoals;
   const achv = Math.round(sum(g, (x) => x.progress * x.weight) / Math.max(1, sum(g, (x) => x.weight)));
-  const tk = TICKETS.filter((t) => t.empId === me.id && ['Open', 'In Progress'].includes(t.status));
-  const cl = CLAIMS.filter((c) => c.empId === me.id && ['Submitted', 'Approved'].includes(c.status));
-  const mand = COURSES.filter((c) => c.mandatory);
-  const done = mand.filter((c) => ENROLL.some((x) => x.empId === me.id && x.courseId === c.id && x.status === 'Completed')).length;
+  const tk = myTickets.filter((t) => ['Open', 'In Progress'].includes(t.status));
+  const cl = myClaims.filter((c) => ['Submitted', 'Approved'].includes(c.status));
+  const mand = courses.filter((c) => c.mandatory);
+  const done = mand.filter((c) => myEnrolments.some((x) => x.courseId === c.id && x.status === 'Completed')).length;
 
   const ctry = countryOf(me.country);
   const m = (a: number) => money(a, me.ccy);
@@ -415,15 +479,19 @@ function DashEmployee() {
       <div className="grid g4">
         <Tile label="Leave available"
           value={<>{sum(bals, (b) => b.avail).toFixed(1)} <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600 }}>days</span></>}
-          foot={bals.map((b) => `${b.t} ${b.avail}`).slice(0, 3).join(' · ')} />
+          foot={bals.map((b) => `${b.type} ${b.avail}`).slice(0, 3).join(' · ')} />
         <Tile label="This week" value={(myTS ? myTS.total : 0) + ' h'}
           foot={myTS ? <><StatusBadge status={myTS.status} /> <span className="muted">target 40 h</span></> : 'Not started'}
           spark={<Spark data={wk.map((w) => w.v)} color="var(--s1)" />} />
-        <Tile label={'Net pay · ' + monthLabel(lastRun.mk)} value={m(ps.net)}
-          foot={<span className="muted">Gross {m(ps.gross)} · {ctry.empTax.split(' ')[0]} {m(ps.statutory.tax)}</span>} />
+        <Tile label={'Net pay' + (lastRun ? ' · ' + monthLabel(lastRun.mk) : '')} value={ps ? m(ps.net) : '—'}
+          foot={ps
+            ? <span className="muted">Gross {m(ps.gross)} · {ctry.empTax.split(' ')[0]} {m(ps.statutory.tax)}</span>
+            : <span className="muted">No payslip yet</span>} />
         {me.country === 'IN' ? (
-          <Tile label="Tax regime" value={dec.regime}
-            foot={<><StatusBadge status={dec.status} /> <span className="muted">{ORG.fy}</span></>} />
+          <Tile label="Tax regime" value={dec?.regime ?? '—'}
+            foot={dec
+              ? <><StatusBadge status={dec.status} /> <span className="muted">{ORG.fy}</span></>
+              : <span className="muted">{ORG.fy}</span>} />
         ) : (
           <Tile label="Tax withholding" value={ctry.empTax.split(' ')[0]}
             foot={<span className="muted">{ctry.flag} {ctry.name} · {ctry.fy}</span>} />
@@ -432,19 +500,19 @@ function DashEmployee() {
 
       <div className="grid g-2-1">
         <Card title="My attendance calendar" sub={monthLabelLong(mk)} actions={<GoLink to="attendance">Details</GoLink>}>
-          <MonthCalendar empId={me.id} mk={mk} />
+          <MonthCalendar records={monthRecs} mk={mk} />
         </Card>
         <Card title="Leave balances" sub={ORG.fy} actions={<GoLink to="leave">Apply</GoLink>}>
           <div className="stack" style={{ gap: 11 }}>
             {bals.map((b) => {
               const total = b.quota + b.carry;
               return (
-                <div key={b.t} data-tip={`${ltOf(b.t).name}: ${b.avail} of ${total} available`}>
+                <div key={b.type} data-tip={`${ltOf(b.type).name}: ${b.avail} of ${total} available`}>
                   <div className="row" style={{ justifyContent: 'space-between', fontSize: 12.5, marginBottom: 4 }}>
-                    <span style={{ fontWeight: 600 }}>{ltOf(b.t).name}</span>
+                    <span style={{ fontWeight: 600 }}>{ltOf(b.type).name}</span>
                     <span className="mono"><b>{b.avail}</b><span className="muted"> / {total}</span></span>
                   </div>
-                  <div className="bar"><i style={{ width: pct(b.avail, total) + '%', background: ltOf(b.t).color }} /></div>
+                  <div className="bar"><i style={{ width: pct(b.avail, total) + '%', background: ltOf(b.type).color }} /></div>
                 </div>
               );
             })}
@@ -484,13 +552,13 @@ function DashEmployee() {
 
         <Card title="Celebrations" sub="Next 14 days" actions={<GoLink to="celebrations">All</GoLink>} flush>
           <div style={{ maxHeight: 300, overflow: 'auto' }}>
-            <CelebRows list={cel.slice(0, 7)} />
+            <CelebRows list={cel.slice(0, 7)} dir={dir} />
           </div>
         </Card>
       </div>
 
       <Card title="Announcements" sub="From HR & leadership" actions={<GoLink to="announcements">View all</GoLink>} flush>
-        {ANNOUNCE.slice(0, 3).map((a) => (
+        {announcements.slice(0, 3).map((a) => (
           <ListRow key={a.id} style={{ alignItems: 'flex-start' }}>
             <Badge kind="info">{a.tag}</Badge>
             <div style={{ flex: 1, minWidth: 0 }}>

@@ -40,6 +40,7 @@ import type { Candidate, Interview, Requisition } from '../data/ats';
 import type { Review, Cycle } from '../data/performance';
 import type { Course, Enrollment } from '../data/learning';
 import type { Survey } from '../data/engagement';
+import type { Announcement, Celebration } from '../data/announcements';
 
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
@@ -65,6 +66,7 @@ export type { Candidate, Interview, Requisition } from '../data/ats';
 export type { Review, Cycle } from '../data/performance';
 export type { Course } from '../data/learning';
 export type { Survey } from '../data/engagement';
+export type { Announcement, Celebration } from '../data/announcements';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
 export interface Caller {
@@ -346,6 +348,8 @@ export interface HelpdeskService {
 
 export interface EngagementService {
   surveys(): Promise<Survey[]>;
+  /** The eNPS score for one survey, computed from its promoter split. */
+  enpsOf(surveyId: string): Promise<number>;
   /** eNPS by quarter, oldest first. */
   enpsHistory(): Promise<{ k: string; v: number }[]>;
 }
@@ -353,6 +357,18 @@ export interface EngagementService {
 export interface BenefitsService {
   /** Flexible-benefit allocation per employee, keyed by id. */
   fbpTotals(empIds: string[]): Promise<Record<string, number>>;
+}
+
+/* ---------- the noticeboard and exits ---------- */
+
+export interface NoticeboardService {
+  announcements(): Promise<Announcement[]>;
+  /** Birthdays and work anniversaries falling in the next `days` days. */
+  celebrations(days: number): Promise<Celebration[]>;
+}
+
+export interface ExitService {
+  list(): Promise<ExitRecord[]>;
 }
 
 /* ---------- the registry ---------- */
@@ -372,5 +388,7 @@ export interface Services {
   helpdesk: HelpdeskService;
   engagement: EngagementService;
   benefits: BenefitsService;
+  noticeboard: NoticeboardService;
+  exits: ExitService;
   leave: LeaveService;
 }

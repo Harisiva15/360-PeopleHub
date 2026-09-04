@@ -2,35 +2,34 @@ import { Link } from 'react-router-dom';
 import { sum } from '../../lib/collections';
 import { addDays, DOW, fmtD, fmtDS, fmtTime, hhmm, isWeekend, MON, monthKey, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
-import { attOf } from '../../data/attendance';
-import type { AttStatus } from '../../data/attendance';
-import { EMAP, EMP } from '../../data/employees';
 import { deptOf, HOLIDAY_MAP, ORG } from '../../data/org';
-import type { Celebration } from '../../data/announcements';
+import type { AttRecord, AttStatus, Celebration, Employee } from '../../services';
+import type { Directory } from '../../services/people';
 import { Avatar, Badge, EmptyState } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { Legend } from '../../components/charts';
 import { pendingItems } from '../../state/pending';
 import { useApp } from '../../state/AppContext';
 
-/** Today's attendance split for a set of employees. */
-export function attendanceToday(ids: string[]) {
-  const ds = ymd(TODAY);
-  const recs = ids.map((i) => attOf(i, ds)).filter(Boolean) as NonNullable<ReturnType<typeof attOf>>[];
+/** Today's attendance split, over records the caller has already fetched. */
+export function attendanceToday(recs: AttRecord[]) {
   const c: Record<AttStatus, number> = { P: 0, W: 0, L: 0, A: 0, H: 0, O: 0 };
   recs.forEach((r) => c[r.status]++);
   return { recs, c, total: recs.length };
 }
 
-/** Month-end headcount over the last `n` months. */
-export function headcountTrend(n: number) {
+/**
+ * Month-end headcount over the last `n` months, counted from the whole roster
+ * — leavers included, since they were on the books until they left.
+ */
+export function headcountTrend(n: number, roster: Employee[]) {
   const labels: string[] = [];
   const data: number[] = [];
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i + 1, 0);
     const k = ymd(d);
     labels.push(MON[d.getMonth()]);
-    data.push(EMP.filter((e) => e.doj <= k && (!e.dol || e.dol > k)).length);
+    data.push(roster.filter((e) => e.doj <= k && (!e.dol || e.dol > k)).length);
   }
   return { labels, data };
 }
@@ -55,12 +54,13 @@ export function ApprovalSummary() {
   );
 }
 
-export function CelebRows({ list }: { list: Celebration[] }) {
+export function CelebRows({ list, dir }: { list: Celebration[]; dir: Directory }) {
   if (!list.length) return <EmptyState msg="Nothing coming up" icon="🎈" />;
   return (
     <>
       {list.map((c, i) => {
-        const e = EMAP[c.empId];
+        const e = dir.byId(c.empId);
+        if (!e) return null;
         const when = c.inDays === 0 ? 'Today' : c.inDays === 1 ? 'Tomorrow' : fmtDS(c.date);
         return (
           <ListRow key={i} to={'/employees?emp=' + e.id}>
@@ -89,19 +89,20 @@ const DAY_LABEL: Record<string, string> = {
 };
 
 /** One month of an employee's attendance, as a day grid. */
-export function MonthCalendar({ empId, mk }: { empId: string; mk: string }) {
+export function MonthCalendar({ records, mk }: { records: AttRecord[]; mk: string }) {
   const [Y, M] = mk.split('-').map(Number);
   const first = new Date(Y, M - 1, 1);
   const dim = new Date(Y, M, 0).getDate();
   const lead = first.getDay();
 
+  const byDate = new Map(records.map((r) => [r.date, r]));
   const cells = [];
   DOW.forEach((d) => cells.push(<div className="dow" key={'h' + d}>{d[0]}</div>));
   for (let i = 0; i < lead; i++) cells.push(<div className="day mut" key={'l' + i} />);
 
   for (let d = 1; d <= dim; d++) {
     const ds = Y + '-' + String(M).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-    const r = attOf(empId, ds);
+    const r = byDate.get(ds);
     const st = r ? r.status : HOLIDAY_MAP[ds] ? 'H' : isWeekend(parseYmd(ds)) ? 'O' : '';
     const lbl = st === 'H' ? HOLIDAY_MAP[ds] || 'Holiday' : DAY_LABEL[st] || 'No record';
     const tip =
@@ -149,7 +150,7 @@ export function attendanceTrend(months: number, ATT: { date: string; status: Att
 }
 
 /** Joiners and exits per month over the last `n` months. */
-export function joinersExits(n: number) {
+export function joinersExits(n: number, roster: Employee[]) {
   const lb: string[] = [];
   const j: number[] = [];
   const x: number[] = [];
@@ -157,8 +158,8 @@ export function joinersExits(n: number) {
     const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1);
     const k = monthKey(d);
     lb.push(MON[d.getMonth()]);
-    j.push(EMP.filter((e) => e.doj.slice(0, 7) === k).length);
-    x.push(EMP.filter((e) => e.dol && e.dol.slice(0, 7) === k).length);
+    j.push(roster.filter((e) => e.doj.slice(0, 7) === k).length);
+    x.push(roster.filter((e) => e.dol && e.dol.slice(0, 7) === k).length);
   }
   return { lb, j, x };
 }

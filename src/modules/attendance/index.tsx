@@ -159,7 +159,7 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
 
       <div className="grid g-1-2">
         <Card title="Calendar" sub={monthLabelLong(mk)}>
-          <MonthCalendar empId={me.id} mk={mk} />
+          <MonthCalendar records={recs} mk={mk} />
         </Card>
         <Card title="Daily log" sub={`${recs.length} records`} flush>
           <div style={{ maxHeight: 520, overflow: 'auto' }} className="tbl-wrap">

@@ -6,12 +6,13 @@ import { useState } from 'react';
 import { sortBy } from '../../lib/collections';
 import { DOW, fmtD, MON, nextOccur, parseYmd, TODAY, yearsSince, ymd } from '../../lib/dates';
 import { downloadCSV } from '../../lib/csv';
-import { ANNOUNCE, celebrations } from '../../data/announcements';
+
 import type { Announcement } from '../../data/announcements';
-import { ACTIVE, CEO, EMAP, empName, teamOf } from '../../data/employees';
+import { useAllEmployees, useAnnouncements, useCelebrations, useTeam } from './data';
+import type { Directory } from './data';
 import type { Employee } from '../../types/employee';
 import { DEPTS, deptOf, HOLIDAYS, ORG, siteOf } from '../../data/org';
-import { Avatar, Badge, Card, PersonCell } from '../../components/ui';
+import { Avatar, Badge, Card, EmptyState, PersonCell } from '../../components/ui';
 import { Chip, Dot, ListRow } from '../../components/common';
 import { HBar } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -24,13 +25,14 @@ import { TITLES } from '../titles';
    Org chart
    ============================================================ */
 
-function OrgNode({ e, depth, onOpen, onExpand }: {
+function OrgNode({ e, depth, dir, onOpen, onExpand }: {
   e: Employee;
   depth: number;
+  dir: Directory;
   onOpen: (id: string) => void;
   onExpand: (id: string) => void;
 }) {
-  const kids = (e.reports || []).map((r) => EMAP[r]).filter(Boolean);
+  const kids = (e.reports || []).map((r) => dir.byId(r)).filter(Boolean) as Employee[];
   return (
     <div style={{
       marginLeft: depth ? 22 : 0,
@@ -58,7 +60,7 @@ function OrgNode({ e, depth, onOpen, onExpand }: {
       {kids.length > 0 && depth < 3 ? (
         <div>
           {sortBy(kids, (k) => k.name).map((k) => (
-            <OrgNode key={k.id} e={k} depth={depth + 1} onOpen={onOpen} onExpand={onExpand} />
+            <OrgNode key={k.id} e={k} depth={depth + 1} dir={dir} onOpen={onOpen} onExpand={onExpand} />
           ))}
         </div>
       ) : kids.length > 0 ? (
@@ -72,33 +74,48 @@ function OrgNode({ e, depth, onOpen, onExpand }: {
 
 function OrgChart() {
   const show = useShowEmployee();
-  const [rootId, setRootId] = useState(CEO.id);
-  const root = EMAP[rootId];
-  const managers = sortBy(ACTIVE().filter((e) => e.reports.length), (e) => e.name);
-  const spans = ACTIVE().filter((e) => e.reports.length).map((e) => ({ e, n: e.reports.length }));
+  const { data: everyone = [] } = useAllEmployees();
+  const dir = {
+    list: everyone,
+    ids: everyone.map((e) => e.id),
+    byId: (id) => everyone.find((e) => e.id === id),
+    name: (id) => everyone.find((e) => e.id === id)?.name ?? '—',
+    loading: false,
+  } as Directory;
+  /* The tree roots at whoever has no manager — the chief executive. */
+  const ceo = everyone.find((e) => !e.managerId);
+  const [picked, setPicked] = useState('');
+  const rootId = picked || ceo?.id || '';
+  const setRootId = setPicked;
+  const root = dir.byId(rootId);
+  const { data: tree = [] } = useTeam(rootId);
+  const managers = sortBy(everyone.filter((e) => e.reports.length), (e) => e.name);
+  const spans = managers.map((e) => ({ e, n: e.reports.length }));
+  if (!root) return <EmptyState msg="Loading the org chart…" icon="☰" />;
 
   return (
     <div className="stack">
       <div className="toolbar">
-        {rootId !== CEO.id && <button className="btn" onClick={() => setRootId(CEO.id)}>‹ Back to top</button>}
+        {ceo && rootId !== ceo.id && <button className="btn" onClick={() => setRootId(ceo.id)}>‹ Back to top</button>}
         <select className="input" style={{ width: 'auto' }} value={rootId} onChange={(e) => setRootId(e.target.value)}>
           {managers.map((e) => <option key={e.id} value={e.id}>{e.name} — {e.designation}</option>)}
         </select>
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12.5 }}>{1 + teamOf(rootId, true).length} people in this tree</span>
+        <span className="muted" style={{ fontSize: 12.5 }}>{1 + tree.length} people in this tree</span>
       </div>
 
       <div className="grid g-2-1">
         <Card>
           <div style={{ overflowX: 'auto' }}>
-            <OrgNode e={root} depth={0} onOpen={show} onExpand={setRootId} />
+            <OrgNode e={root} depth={0} dir={dir} onOpen={show} onExpand={setRootId} />
           </div>
         </Card>
 
         <div className="stack">
           <Card title="Department heads" sub={`${DEPTS.length} departments`} flush>
             {DEPTS.map((d) => {
-              const h = EMAP[d.head!];
+              const h = dir.byId(d.head);
+              if (!h) return null;
               return (
                 <ListRow key={d.id} onClick={() => show(d.head!)}>
                   <Dot color={d.color} />
@@ -107,7 +124,7 @@ function OrgChart() {
                     <div style={{ fontWeight: 650, fontSize: 12.5 }}>{h.name}</div>
                     <div className="muted" style={{ fontSize: 11.5 }}>{d.name}</div>
                   </div>
-                  <Badge>{ACTIVE().filter((e) => e.dept === d.id).length}</Badge>
+                  <Badge>{everyone.filter((e) => e.dept === d.id).length}</Badge>
                 </ListRow>
               );
             })}
@@ -131,20 +148,29 @@ function OrgChart() {
 function Celebrations() {
   const app = useApp();
   const show = useShowEmployee();
-  const cel = celebrations(60);
+  const { data: cel = [] } = useCelebrations(60);
+  const { data: everyone = [] } = useAllEmployees();
+  const dir = {
+    list: everyone,
+    ids: everyone.map((e) => e.id),
+    byId: (id) => everyone.find((e) => e.id === id),
+    name: (id) => everyone.find((e) => e.id === id)?.name ?? '—',
+    loading: false,
+  } as Directory;
   const today = cel.filter((c) => c.inDays === 0);
   const week = cel.filter((c) => c.inDays > 0 && c.inDays <= 7);
   const month = cel.filter((c) => c.inDays > 7 && c.inDays <= 30);
-  const milestones = ACTIVE().filter((e) => [1, 3, 5, 7, 10].includes(yearsSince(e.doj))).slice(0, 12);
+  const milestones = everyone.filter((e) => [1, 3, 5, 7, 10].includes(yearsSince(e.doj))).slice(0, 12);
 
   const exportCsv = () =>
     downloadCSV(
       'celebrations.csv',
       [['Date', 'Employee', 'Occasion', 'Department', 'Location', 'In days']].concat(
-        cel.map((c) => {
-          const e = EMAP[c.empId];
-          return [c.date, e.name, c.kind === 'birthday' ? 'Birthday' : `${c.years}-year anniversary`,
-            deptOf(e.dept).name, siteOf(e.site).name, String(c.inDays)];
+        cel.flatMap((c) => {
+          const e = dir.byId(c.empId);
+          if (!e) return [];
+          return [[c.date, e.name, c.kind === 'birthday' ? 'Birthday' : `${c.years}-year anniversary`,
+            deptOf(e.dept).name, siteOf(e.site).name, String(c.inDays)]];
         }),
       ),
     );
@@ -158,12 +184,12 @@ function Celebrations() {
               Today at {ORG.name}
             </div>
             <div style={{ fontSize: 22, fontWeight: 750, letterSpacing: '-.6px', margin: '6px 0 12px' }}>
-              {today.map((c) => (c.kind === 'birthday' ? '🎂 ' : '🎉 ') + empName(c.empId)).join('  ·  ')}
+              {today.map((c) => (c.kind === 'birthday' ? '🎂 ' : '🎉 ') + dir.name(c.empId)).join('  ·  ')}
             </div>
             <div style={{ opacity: 0.9, fontSize: 13 }}>
               {today.map((c) => c.kind === 'birthday'
-                ? `Wish ${empName(c.empId).split(' ')[0]} a happy birthday`
-                : `${empName(c.empId).split(' ')[0]} completes ${c.years} year${(c.years ?? 0) > 1 ? 's' : ''} with us`,
+                ? `Wish ${dir.name(c.empId).split(' ')[0]} a happy birthday`
+                : `${dir.name(c.empId).split(' ')[0]} completes ${c.years} year${(c.years ?? 0) > 1 ? 's' : ''} with us`,
               ).join(' · ')}
             </div>
             <div className="row" style={{ marginTop: 14, gap: 8 }}>
@@ -177,10 +203,10 @@ function Celebrations() {
       )}
 
       <div className="grid g3">
-        <Card title="This week" sub={`${week.length} upcoming`} flush><CelebRows list={week} /></Card>
-        <Card title="This month" sub={`${month.length} upcoming`} flush><CelebRows list={month} /></Card>
+        <Card title="This week" sub={`${week.length} upcoming`} flush><CelebRows list={week} dir={dir} /></Card>
+        <Card title="This month" sub={`${month.length} upcoming`} flush><CelebRows list={month} dir={dir} /></Card>
         <Card title="Work milestones" sub="Employees hitting a year milestone" flush>
-          <CelebRows list={milestones.map((e) => ({
+          <CelebRows dir={dir} list={milestones.map((e) => ({
             kind: 'anniversary' as const, empId: e.id, date: ymd(nextOccur(e.doj)), inDays: 0, years: yearsSince(e.doj),
           }))} />
         </Card>
@@ -195,7 +221,8 @@ function Celebrations() {
             </thead>
             <tbody>
               {cel.map((c, i) => {
-                const e = EMAP[c.empId];
+                const e = dir.byId(c.empId);
+          if (!e) return null;
                 return (
                   <tr key={i} className="clickable" onClick={() => show(e.id)}>
                     <td className="nowrap">{fmtD(c.date)}</td>
@@ -233,6 +260,7 @@ const ackCount = (a: Announcement) => {
 
 function Announcements() {
   const app = useApp();
+  const { data: announcements = [] } = useAnnouncements();
   const canPost = app.role === 'admin' || app.role === 'manager';
   const [acked, setAcked] = useState<Record<string, boolean>>({});
 
@@ -252,7 +280,7 @@ function Announcements() {
 
       <div className="grid g-2-1">
         <div className="stack">
-          {ANNOUNCE.map((a) => (
+          {announcements.map((a) => (
             <Card key={a.id}>
               <div className="row" style={{ gap: 9, marginBottom: 9 }}>
                 <Avatar name={a.by} size="sm" />
