@@ -36,6 +36,7 @@ import './staffing/billing';
 import './staffing/vendors';
 import './assets';
 import './whatsapp';
+import './reports';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {

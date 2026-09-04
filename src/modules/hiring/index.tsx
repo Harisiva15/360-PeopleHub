@@ -18,12 +18,12 @@ import { TITLES } from '../titles';
 import type { AppRole } from '../../types/employee';
 
 /** Managers see only requisitions they own or that sit under them. */
-function reqScope(role: AppRole, meId: string): Requisition[] {
+export function reqScope(role: AppRole, meId: string): Requisition[] {
   if (role === 'admin') return REQS;
   return REQS.filter((r) => r.hiringManagerId === meId || isMyReport(meId, r.hiringManagerId));
 }
 
-function hiringScope(role: AppRole, meId: string, list: Candidate[]): Candidate[] {
+export function hiringScope(role: AppRole, meId: string, list: Candidate[]): Candidate[] {
   if (role === 'admin') return list;
   return list.filter((c) => {
     const r = reqOf(c.reqId);
