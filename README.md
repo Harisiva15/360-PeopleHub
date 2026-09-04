@@ -54,7 +54,7 @@ component for nothing.
 double approval.
 
 **Migration status.** On the seam: `leave`, `attendance`, `timesheet`,
-`expenses`, `employees`, `payroll`, `approvals`. Each has a `data.ts` holding its reads and writes as service
+`expenses`, `employees`, `payroll`, `approvals`, `reports`, `dashboard`, `people`. Each has a `data.ts` holding its reads and writes as service
 calls; `src/modules/leave/data.ts` is the reference to copy, including the
 two-stage fetch (rows, then the people they reference) that a real client
 needs when the API does not denormalise names into the row.
@@ -62,8 +62,8 @@ needs when the API does not denormalise names into the row.
 The remaining modules still import `src/data` directly. `AppProvider`
 subscribes to service invalidations and re-renders them, which is the bridge
 that keeps them correct until they are moved. Rough order of remaining work,
-heaviest first: `dashboard`, `copilot`, then the staffing book and the
-smaller screens.
+heaviest first: `copilot` and `exec`, the staffing book (five files), then
+`settings`, `assets`, `security`, `documents` and the smaller screens.
 
 Three shapes are worth copying. The employee profile is a single composite
 (`EmployeeProfile`) rather than fourteen calls across as many domains,
