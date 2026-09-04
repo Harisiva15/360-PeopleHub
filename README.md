@@ -81,6 +81,14 @@ module actually does, implement it in `services/mock`, add a module
 surfaces a screen actually exercises — an ungrounded interface is worse than
 none.
 
+### Building the backend
+
+[docs/api-contract.md](docs/api-contract.md) expresses `services/contracts.ts` as
+HTTP endpoints, with the rules the server has to own — scoping, field-level
+redaction, and every state transition that must be refused rather than
+repeated. Implementing it means writing one class that satisfies `Services`
+and calling `setServices()`.
+
 ### The data layer
 
 `src/data` generates the whole demo dataset — 139 employees across five legal
