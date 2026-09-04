@@ -24,6 +24,9 @@ import './shifts';
 import './expenses';
 import './performance';
 import './learning';
+import './engagement';
+import './onboarding';
+import './helpdesk';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {
