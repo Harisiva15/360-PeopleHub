@@ -50,10 +50,10 @@ function readStoredTheme(): Theme {
 
 let toastSeq = 0;
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const accounts = ACCOUNTS();
-  const [role, setRole] = useState<AppRole>('admin');
-  const [meId, setMeId] = useState<string>(accounts[0].empId);
+export function AppProvider({ children, initialRole = 'admin' }: { children: ReactNode; initialRole?: AppRole }) {
+  const start = ACCOUNTS().find((a) => a.role === initialRole)!;
+  const [role, setRole] = useState<AppRole>(start.role);
+  const [meId, setMeId] = useState<string>(start.empId);
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [revision, setRevision] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);

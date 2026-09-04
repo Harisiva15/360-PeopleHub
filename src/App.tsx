@@ -1,6 +1,7 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppProvider, useApp } from './state/AppContext';
 import { LayerProvider } from './components/Layer';
+import { TooltipLayer } from './components/Tooltip';
 import { Shell } from './shell/Shell';
 import { ALL_ROUTES } from './nav';
 import { getModule } from './modules/registry';
@@ -34,6 +35,7 @@ export default function App() {
     <HashRouter>
       <AppProvider>
         <LayerProvider>
+          <TooltipLayer />
           <Routed />
         </LayerProvider>
       </AppProvider>

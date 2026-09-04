@@ -189,3 +189,31 @@ export function KV({ rows }: { rows: [ReactNode, ReactNode][] }) {
     </dl>
   );
 }
+
+/* ---------- Banner ---------- */
+
+/** Inline callout above a section — status is carried by icon and text, not colour alone. */
+export function Banner({
+  kind,
+  icon,
+  title,
+  children,
+  actions,
+}: {
+  kind?: 'info' | 'good' | 'warn';
+  icon?: ReactNode;
+  title?: ReactNode;
+  children?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className={'banner' + (kind ? ' ' + kind : '')}>
+      {icon && <div>{icon}</div>}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {title && <div className="t">{title}</div>}
+        {children}
+      </div>
+      {actions}
+    </div>
+  );
+}

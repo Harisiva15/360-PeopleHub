@@ -10,7 +10,7 @@ import { Placeholder } from './Placeholder';
 import { TITLES } from './titles';
 
 /* ---- ported modules ---- */
-/* modules land here as they are ported */
+import './dashboard';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {
