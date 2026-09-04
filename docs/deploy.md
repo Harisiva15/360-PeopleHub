@@ -10,17 +10,13 @@ no URL-rewrite rules are needed anywhere.
 publishes on every push to `main`. It runs the same gates as local — typecheck,
 lint, service checks — and publishes only if they pass.
 
-One-time setup:
+The repo is `Harisiva15/360-PeopleHub` and the site is
+**https://harisiva15.github.io/360-PeopleHub/**. Every push to `main`
+redeploys it.
 
-```bash
-gh auth login                                    # browser sign-in, once
-gh repo create 360-PeopleHub-v2 --public --source=. --remote=origin
-git push -u origin main
-gh api -X POST repos/:owner/360-PeopleHub-v2/pages -f build_type=workflow
-```
-
-The URL is then `https://<user>.github.io/360-PeopleHub-v2/`, and every later
-push to `main` redeploys it. Watch a run with `gh run watch`.
+Nothing has to be enabled by hand: `configure-pages` is set to `enablement:
+true`, so the first successful run turns Pages on with the workflow's own
+token.
 
 A **project site is served from `/<repo>/`**, not the domain root, which is why
 the workflow sets `BASE_PATH`. Building without it produces a site whose asset
