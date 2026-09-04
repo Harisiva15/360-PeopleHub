@@ -39,6 +39,7 @@ import './whatsapp';
 import './reports';
 import './documents';
 import './security';
+import './settings';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {
