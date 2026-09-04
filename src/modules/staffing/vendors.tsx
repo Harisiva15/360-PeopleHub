@@ -52,7 +52,7 @@ function VnList() {
         <Tile label="Vendor consultants" value={CONSULTANTS.filter((c) => c.external).length} foot="Currently supplied to us" />
         <Tile label="Vendor placements" value={PLACEMENTS.filter((p) => p.vendorId).length}
           foot={pct(PLACEMENTS.filter((p) => p.vendorId).length, Math.max(1, PLACEMENTS.length)) + '% of all placements'} />
-        <Tile label="Average score" value={Math.round(sum(VENDORS, (v) => v.score ?? 0) / VENDORS.length)} foot="Out of 100" />
+        <Tile label="Average score" value={Math.round(sum(VENDORS, (v) => v.score ?? 0) / Math.max(1, VENDORS.length))} foot="Out of 100" />
         <Tile label="Compliance issues" value={VENDORS.filter((v) => !isCompliant(v)).length} foot="Missing or expired documents" />
       </div>
 

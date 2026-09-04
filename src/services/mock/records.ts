@@ -138,6 +138,17 @@ export const onboardingService: OnboardingService = {
     const t = o.tasks.find((x) => x.k === key);
     if (!t) return Promise.reject(new Error('No task ' + key + ' on ' + id));
     t.done = done;
+    /* Status is derived from the checklist, never set alongside it. */
+    o.status = o.tasks.every((x) => x.done) ? 'Completed' : o.doj <= ymd(TODAY) ? 'In Progress' : o.status;
+    return ok(o);
+  },
+
+  complete(id) {
+    const o = ONBOARD.find((x) => x.id === id);
+    if (!o) return Promise.reject(new Error('No such onboarding journey: ' + id));
+    const open = o.tasks.filter((t) => !t.done).length;
+    if (open) return Promise.reject(new Error(open + ' checklist item(s) still open'));
+    o.status = 'Completed';
     return ok(o);
   },
 };

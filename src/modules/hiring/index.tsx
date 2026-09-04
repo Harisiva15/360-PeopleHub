@@ -3,9 +3,9 @@ import { sortBy, sum } from '../../lib/collections';
 import { addDays, daysBetween, fmtD, fmtTime, MON, monthKey, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { CANDS, INTERVIEWS, REQS, reqOf, SOURCES, STAGES } from '../../data/ats';
-import type { Candidate, Interview, Requisition } from '../../data/ats';
-import { empName } from '../../data/employees';
+import { reqOf, SOURCES, STAGES } from '../../data/ats';
+import type { Candidate, Interview, Requisition } from '../../services';
+
 import { DEPTS, deptOf, GRADES, siteOf } from '../../data/org';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile } from '../../components/ui';
 import { Chip, Divide, Dot, StatusBadge } from '../../components/common';
@@ -13,14 +13,15 @@ import { BarChart, Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
+import { useCandidates, useInterviews, useMoveCandidate, useRequisitions, useVisiblePeople } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { AppRole } from '../../types/employee';
 
 /** Managers see only requisitions they own or that sit under them. */
-export function reqScope(role: AppRole, meId: string): Requisition[] {
-  if (role === 'admin') return REQS;
-  return REQS.filter((r) => r.hiringManagerId === meId || isMyReport(meId, r.hiringManagerId));
+export function reqScope(role: AppRole, meId: string, list: Requisition[]): Requisition[] {
+  if (role === 'admin') return list;
+  return list.filter((r) => r.hiringManagerId === meId || isMyReport(meId, r.hiringManagerId));
 }
 
 export function hiringScope(role: AppRole, meId: string, list: Candidate[]): Candidate[] {
@@ -61,6 +62,8 @@ function VerdictBadge({ v }: { v: string }) {
 /* ---------------- candidate drawer ---------------- */
 
 function CandidateBody({ c }: { c: Candidate }) {
+  const dir = useVisiblePeople();
+  const { data: INTERVIEWS = [] } = useInterviews();
   const r = reqOf(c.reqId);
   const ivs = sortBy(INTERVIEWS.filter((i) => i.candId === c.id), (i) => i.date);
   const stageIdx = STAGES.findIndex((s) => s.id === c.stage);
@@ -118,7 +121,7 @@ function CandidateBody({ c }: { c: Candidate }) {
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 12.5 }}>{i.round}</div>
               <div className="muted" style={{ fontSize: 11.5 }}>
-                {fmtD(i.date)} · {fmtTime(i.time)} · {i.mode} · {empName(i.panelId)}
+                {fmtD(i.date)} · {fmtTime(i.time)} · {i.mode} · {dir.name(i.panelId)}
               </div>
             </div>
             {i.verdict ? <VerdictBadge v={i.verdict} /> : <StatusBadge status={i.status} />}
@@ -140,6 +143,7 @@ function CandidateBody({ c }: { c: Candidate }) {
 function useShowCandidate() {
   const layer = useLayer();
   const app = useApp();
+  const { data: CANDS = [] } = useCandidates();
 
   return (id: string) => {
     const c = CANDS.find((x) => x.id === id);
@@ -176,25 +180,30 @@ function useShowCandidate() {
 /* ---------------- Pipeline (kanban) ---------------- */
 
 function HrPipeline() {
+  const { data: CANDS = [] } = useCandidates();
+  const { data: REQS = [] } = useRequisitions();
+  const { data: INTERVIEWS = [] } = useInterviews();
+  const move = useMoveCandidate();
   const app = useApp();
   const show = useShowCandidate();
   const [reqF, setReqF] = useState('');
   const [dragId, setDragId] = useState<string | null>(null);
 
-  const scope = reqScope(app.role, app.meId);
+  const scope = reqScope(app.role, app.meId, REQS);
   let cands = hiringScope(app.role, app.meId, CANDS).filter((c) => c.stage !== 'rejected');
   if (reqF) cands = cands.filter((c) => c.reqId === reqF);
   const stages = STAGES.filter((s) => s.id !== 'rejected');
 
-  const drop = (stageId: string) => {
-    if (!dragId) return;
+  const drop = async (stageId: string) => {
     const c = CANDS.find((x) => x.id === dragId);
-    if (c && c.stage !== stageId) {
-      c.stage = stageId;
-      app.toast(`${c.name} moved to ${STAGES.find((s) => s.id === stageId)!.name}`, 'ok');
-      app.bump();
-    }
     setDragId(null);
+    if (!c || c.stage === stageId) return;
+    try {
+      await move.mutate(c.id, stageId);
+      app.toast(`${c.name} moved to ${STAGES.find((s) => s.id === stageId)!.name}`, 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not move the candidate', 'err');
+    }
   };
 
   return (
@@ -274,9 +283,12 @@ function HrPipeline() {
 /* ---------------- Requisitions ---------------- */
 
 function HrReqs() {
+  const { data: REQS = [] } = useRequisitions();
+  const { data: CANDS = [] } = useCandidates();
+  const dir = useVisiblePeople();
   const app = useApp();
   const layer = useLayer();
-  const list = reqScope(app.role, app.meId);
+  const list = reqScope(app.role, app.meId, REQS);
   const open = list.filter((r) => r.status === 'Open');
 
   const showReq = (r: Requisition) =>
@@ -293,8 +305,8 @@ function HrReqs() {
             ['Experience', r.exp],
             ['Openings', `${r.filled} filled of ${r.openings}`],
             ['Budget', `${inr(r.budgetMin)} – ${inr(r.budgetMax)}`],
-            ['Hiring manager', empName(r.hiringManagerId)],
-            ['Recruiter', empName(r.recruiterId)],
+            ['Hiring manager', dir.name(r.hiringManagerId)],
+            ['Recruiter', dir.name(r.recruiterId)],
             ['Opened on', fmtD(r.openedOn)],
             ['Must-have skills', <>{r.must.map((s) => <Chip key={s}>{s}</Chip>)}</>],
           ]} />
@@ -308,7 +320,7 @@ function HrReqs() {
     downloadCSV('requisitions.csv',
       [['ID', 'Title', 'Department', 'Location', 'Grade', 'Openings', 'Filled', 'Priority', 'Hiring manager', 'Recruiter', 'Opened', 'Status']].concat(
         list.map((r) => [r.id, r.title, deptOf(r.dept).name, siteOf(r.site).name, r.grade,
-          String(r.openings), String(r.filled), r.priority, empName(r.hiringManagerId), empName(r.recruiterId), r.openedOn, r.status]),
+          String(r.openings), String(r.filled), r.priority, dir.name(r.hiringManagerId), dir.name(r.recruiterId), r.openedOn, r.status]),
       ));
 
   return (
@@ -359,8 +371,8 @@ function HrReqs() {
                     <td>
                       <Badge kind={r.priority === 'Critical' ? 'crit' : r.priority === 'High' ? 'warn' : 'mute'}>{r.priority}</Badge>
                     </td>
-                    <td className="nowrap">{empName(r.hiringManagerId)}</td>
-                    <td className="nowrap">{empName(r.recruiterId)}</td>
+                    <td className="nowrap">{dir.name(r.hiringManagerId)}</td>
+                    <td className="nowrap">{dir.name(r.recruiterId)}</td>
                     <td className="nowrap">{fmtD(r.openedOn)}</td>
                     <td><StatusBadge status={r.status} /></td>
                   </tr>
@@ -377,6 +389,7 @@ function HrReqs() {
 /* ---------------- Candidates ---------------- */
 
 function HrCands() {
+  const { data: CANDS = [] } = useCandidates();
   const app = useApp();
   const show = useShowCandidate();
   const [q, setQ] = useState('');
@@ -457,6 +470,9 @@ function HrCands() {
 /* ---------------- Interviews ---------------- */
 
 function HrIvs() {
+  const { data: CANDS = [] } = useCandidates();
+  const { data: INTERVIEWS = [] } = useInterviews();
+  const dir = useVisiblePeople();
   const app = useApp();
   const show = useShowCandidate();
   const mine = INTERVIEWS.filter((i) => app.role === 'admin' || i.panelId === app.meId || isMyReport(app.meId, i.panelId));
@@ -473,7 +489,7 @@ function HrIvs() {
         <td>{i.round}</td>
         <td className="nowrap">{fmtD(i.date)} · {fmtTime(i.time)}</td>
         <td>{i.mode}</td>
-        <td className="nowrap">{empName(i.panelId)}</td>
+        <td className="nowrap">{dir.name(i.panelId)}</td>
         <td><StatusBadge status={i.status} /></td>
         {showV
           ? <td>{i.verdict ? <VerdictBadge v={i.verdict} /> : '—'}</td>
@@ -519,6 +535,7 @@ function HrIvs() {
 /* ---------------- Offers ---------------- */
 
 function HrOffers() {
+  const { data: CANDS = [] } = useCandidates();
   const app = useApp();
   const show = useShowCandidate();
   const list = hiringScope(app.role, app.meId, CANDS).filter((c) => c.offer);
@@ -585,6 +602,8 @@ function HrOffers() {
 /* ---------------- Analytics ---------------- */
 
 function HrFunnel() {
+  const { data: CANDS = [] } = useCandidates();
+  const { data: REQS = [] } = useRequisitions();
   const app = useApp();
   const cands = hiringScope(app.role, app.meId, CANDS);
   const stages = STAGES.filter((s) => s.id !== 'rejected');
@@ -616,7 +635,7 @@ function HrFunnel() {
   return (
     <div className="stack">
       <div className="grid g4">
-        <Tile label="Total applicants" value={cands.length} foot={`Across ${reqScope(app.role, app.meId).length} requisitions`} />
+        <Tile label="Total applicants" value={cands.length} foot={`Across ${reqScope(app.role, app.meId, REQS).length} requisitions`} />
         <Tile label="Offer conversion" value={pct(cands.filter((c) => c.offer).length, Math.max(1, cands.length)) + '%'} foot="Applicant → offer" />
         <Tile label="Hired" value={cands.filter((c) => c.stage === 'hired').length} foot="Joined or joining" />
         <Tile label="Rejection rate" value={pct(cands.filter((c) => c.stage === 'rejected').length, Math.max(1, cands.length)) + '%'}
@@ -682,7 +701,7 @@ function Hiring() {
 registerModule({
   key: 'hiring',
   title: TITLES.hiring,
-  subtitle: () =>
-    `${REQS.filter((r) => r.status === 'Open').length} open requisitions · ${CANDS.filter((c) => !['hired', 'rejected'].includes(c.stage)).length} active candidates`,
+  /* Static: the registry's callbacks are synchronous and cannot await. */
+  subtitle: () => 'Requisitions, pipeline, interviews and offers end to end',
   Component: Hiring,
 });

@@ -2,15 +2,16 @@ import { useState } from 'react';
 import { sum } from '../../lib/collections';
 import { fmtD, monthKey, TODAY, ymd } from '../../lib/dates';
 import { inr, pct } from '../../lib/format';
-import { empName } from '../../data/employees';
-import { ONBOARD } from '../../data/onboarding';
-import type { Onboarding } from '../../data/onboarding';
+
+
+import type { Onboarding } from '../../services';
 import { deptOf, siteOf } from '../../data/org';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, Tile } from '../../components/ui';
 import { Divide, ListRow, StatusBadge } from '../../components/common';
 import { HBar, PAL, Ring } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
+import { useCompleteJourney, useJourneys, useSetTask, useVisiblePeople } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -19,18 +20,21 @@ const progressOf = (x: Onboarding) => pct(x.tasks.filter((t) => t.done).length, 
 const OWNERS = ['HR', 'IT', 'Manager', 'Finance', 'Candidate', 'Employee'];
 
 function OnbDetail({ o }: { o: Onboarding }) {
+  const dir = useVisiblePeople();
+  const setTask = useSetTask();
+  const completeJourney = useCompleteJourney();
   const app = useApp();
   const done = o.tasks.filter((t) => t.done).length;
   const complete = pct(done, o.tasks.length);
   const byOwner = OWNERS.map((k, i) => ({ k, c: PAL[i], v: o.tasks.filter((t) => t.owner === k).length })).filter((r) => r.v);
 
-  const toggleTask = (i: number, checked: boolean) => {
-    o.tasks[i].done = checked;
-    o.tasks[i].doneOn = checked ? ymd(TODAY) : null;
-    /* status follows the checklist: all done completes it, otherwise it depends on whether they have started */
-    if (o.tasks.every((t) => t.done)) o.status = 'Completed';
-    else if (o.doj <= ymd(TODAY)) o.status = 'In Progress';
-    app.bump();
+  /* The service derives the journey's status from the checklist. */
+  const toggleTask = async (key: string, checked: boolean) => {
+    try {
+      await setTask.mutate(o.id, key, checked);
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not update the task', 'err');
+    }
   };
 
   return (
@@ -40,11 +44,14 @@ function OnbDetail({ o }: { o: Onboarding }) {
           <div className="row">
             <StatusBadge status={o.status} />
             {o.status !== 'Completed' && (
-              <button className="btn sm primary" onClick={() => {
-                o.tasks.forEach((t) => { t.done = true; t.doneOn = ymd(TODAY); });
-                o.status = 'Completed';
-                app.toast(o.name + "'s onboarding marked complete", 'ok');
-                app.bump();
+              <button className="btn sm primary" onClick={async () => {
+                try {
+                  for (const t of o.tasks.filter((x) => !x.done)) await setTask.mutate(o.id, t.k, true);
+                  await completeJourney.mutate(o.id);
+                  app.toast(o.name + "'s onboarding marked complete", 'ok');
+                } catch (e) {
+                  app.toast(e instanceof Error ? e.message : 'Could not complete the journey', 'err');
+                }
               }}>Mark complete</button>
             )}
           </div>
@@ -53,8 +60,8 @@ function OnbDetail({ o }: { o: Onboarding }) {
           <Ring value={complete} color={complete === 100 ? 'var(--good)' : 'var(--brand)'} size={92} />
           <div style={{ flex: 1, minWidth: 200 }}>
             <KV rows={[
-              ['Reporting manager', empName(o.managerId)],
-              ['Onboarding buddy', empName(o.buddyId)],
+              ['Reporting manager', dir.name(o.managerId)],
+              ['Onboarding buddy', dir.name(o.buddyId)],
               ['Location', siteOf(o.site).name],
               ['Offered CTC', app.role === 'admin' ? inr(o.ctc) : <span className="muted">Restricted</span>],
               ['Background check', <StatusBadge status={o.bgv} />],
@@ -65,10 +72,10 @@ function OnbDetail({ o }: { o: Onboarding }) {
       </Card>
 
       <Card title="Onboarding checklist" sub={`${done} of ${o.tasks.length} complete`} flush>
-        {o.tasks.map((t, i) => (
+        {o.tasks.map((t) => (
           <ListRow key={t.k}>
             <input type="checkbox" checked={t.done} style={{ width: 17, height: 17, cursor: 'pointer' }}
-              onChange={(e) => toggleTask(i, e.target.checked)} />
+              onChange={(e) => toggleTask(t.k, e.target.checked)} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 12.5, ...(t.done ? { textDecoration: 'line-through', opacity: 0.55 } : {}) }}>
                 {t.n}
@@ -112,6 +119,7 @@ function OnbDetail({ o }: { o: Onboarding }) {
 }
 
 function OnboardingView() {
+  const { data: ONBOARD = [] } = useJourneys();
   const app = useApp();
   const list = app.role === 'admin'
     ? ONBOARD
@@ -158,6 +166,7 @@ function OnboardingView() {
 registerModule({
   key: 'onboarding',
   title: TITLES.onboarding,
-  subtitle: () => `${ONBOARD.filter((o) => o.status !== 'Completed').length} journeys in progress`,
+  /* Static: the registry's callbacks are synchronous and cannot await. */
+  subtitle: () => 'Pre-boarding checklists from offer accepted to day one',
   Component: OnboardingView,
 });

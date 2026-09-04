@@ -15,7 +15,7 @@ import { useShowEmployee } from '../employees/Profile';
 import { hiringScope, reqScope } from '../hiring';
 import {
   useAllEmployees, useCandidates, useCourses, useCurrentCycle, useEnpsHistory, useEnrolments,
-  useGoals, usePraise, useReviews, useSurveys, useTickets, useTimesheetsIn,
+  useGoals, usePraise, useRequisitions, useReviews, useSurveys, useTickets, useTimesheetsIn,
   useVisiblePeople,
 } from './data';
 import { RepHead } from './shared';
@@ -25,8 +25,9 @@ import { RepHead } from './shared';
 export function RepHiring() {
   const app = useApp();
   const { data: allCands = [] } = useCandidates();
+  const { data: allReqs = [] } = useRequisitions();
   const cands = hiringScope(app.role, app.meId, allCands);
-  const reqs = reqScope(app.role, app.meId);
+  const reqs = reqScope(app.role, app.meId, allReqs);
   const openReqs = reqs.filter((r) => r.status === 'Open');
   const today = ymd(TODAY);
 

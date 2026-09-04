@@ -3,16 +3,20 @@ import { sortBy, sum } from '../../lib/collections';
 import { daysBetween, fmtD, MON, monthKey, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { EMAP, empName } from '../../data/employees';
-import { KB, TICKETS, TICKET_CATS, tCat } from '../../data/helpdesk';
-import type { Ticket } from '../../data/helpdesk';
+
+import { TICKET_CATS, tCat } from '../../data/helpdesk';
+import type { Ticket } from '../../services';
 import { deptOf } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Divide, ListRow } from '../../components/common';
 import { BarChart, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { visibleIds } from '../../state/rbac';
+import {
+  useCommentOnTicket, useKnowledgeBase, useRaiseTicket, useResolveTicket,
+  useTickets, useVisiblePeople,
+} from './data';
+import type { Directory } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -31,7 +35,10 @@ const AGE_BUCKETS: [string, number, number][] = [
   ['Under 1 day', 0, 1], ['1–3 days', 1, 3], ['3–7 days', 3, 7], ['Over 7 days', 7, 999],
 ];
 
-function TicketTable({ list, showEmp, onOpen }: { list: Ticket[]; showEmp?: boolean; onOpen: (t: Ticket) => void }) {
+function TicketTable(
+  { list, dir, showEmp, onOpen }:
+  { list: Ticket[]; dir: Directory; showEmp?: boolean; onOpen: (t: Ticket) => void },
+) {
   if (!list.length) return <EmptyState msg="No tickets here" icon="🎫" />;
   return (
     <div className="tbl-wrap">
@@ -50,10 +57,10 @@ function TicketTable({ list, showEmp, onOpen }: { list: Ticket[]; showEmp?: bool
                 <b>{t.subject}</b>
                 <div className="muted mono" style={{ fontSize: 11 }}>{t.id}</div>
               </td>
-              {showEmp && <td><PersonCell e={EMAP[t.empId]} /></td>}
+              {showEmp && <td><PersonCell e={dir.byId(t.empId)!} /></td>}
               <td className="nowrap">{tCat(t.cat).ic} {tCat(t.cat).n}</td>
               <td><PrioBadge p={t.priority} /></td>
-              <td className="nowrap">{empName(t.assigneeId)}</td>
+              <td className="nowrap">{dir.name(t.assigneeId)}</td>
               <td className="nowrap">{fmtD(t.createdOn)}</td>
               <td>
                 {t.breached
@@ -74,6 +81,9 @@ function TicketTable({ list, showEmp, onOpen }: { list: Ticket[]; showEmp?: bool
 /* ---------------- ticket drawer ---------------- */
 
 function TicketBody({ t, close }: { t: Ticket; close: () => void }) {
+  const dir = useVisiblePeople();
+  const commentOn = useCommentOnTicket();
+  const resolveTicket = useResolveTicket();
   const app = useApp();
   const [reply, setReply] = useState('');
 
@@ -87,8 +97,8 @@ function TicketBody({ t, close }: { t: Ticket; close: () => void }) {
 
       <div style={{ marginBottom: 14 }}>
         <KV rows={[
-          ['Raised by', empName(t.empId)],
-          ['Assigned to', `${empName(t.assigneeId)} · ${deptOf(tCat(t.cat).team).name}`],
+          ['Raised by', dir.name(t.empId)],
+          ['Assigned to', `${dir.name(t.assigneeId)} · ${deptOf(tCat(t.cat).team).name}`],
           ['Created', `${fmtD(t.createdOn)} at ${t.createdTime}`],
           ['Due by', fmtD(t.dueOn)],
           ...(t.resolvedOn ? [['Resolved', `${fmtD(t.resolvedOn)} · took ${t.resolutionHrs} h`]] as [string, string][] : []),
@@ -120,28 +130,29 @@ function TicketBody({ t, close }: { t: Ticket; close: () => void }) {
       </div>
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
         <button className="btn" onClick={close}>Close</button>
-        <button className="btn" onClick={() => {
+        <button className="btn" onClick={async () => {
           const v = reply.trim();
           if (!v) {
             app.toast('Write something first', 'err');
             return;
           }
-          t.comments.push({ by: app.me.name, on: ymd(TODAY), text: v });
-          /* replying to a new ticket moves it into progress */
-          if (t.status === 'Open') t.status = 'In Progress';
-          close();
-          app.toast('Reply posted', 'ok');
-          app.bump();
+          try {
+            await commentOn.mutate(t.id, app.me.name, v);
+            close();
+            app.toast('Reply posted', 'ok');
+          } catch (e) {
+            app.toast(e instanceof Error ? e.message : 'Could not post the reply', 'err');
+          }
         }}>Post reply</button>
         {(app.role === 'admin' || t.assigneeId === app.meId) && t.status !== 'Closed' && (
-          <button className="btn primary" onClick={() => {
-            t.status = 'Resolved';
-            t.resolvedOn = ymd(TODAY);
-            t.resolutionHrs = Math.max(1, daysBetween(t.createdOn, ymd(TODAY)) * 24);
-            t.breached = t.resolutionHrs > t.slaHours;
-            close();
-            app.toast('Ticket marked resolved', 'ok');
-            app.bump();
+          <button className="btn primary" onClick={async () => {
+            try {
+              await resolveTicket.mutate(t.id);
+              close();
+              app.toast('Ticket marked resolved', 'ok');
+            } catch (e) {
+              app.toast(e instanceof Error ? e.message : 'Could not resolve the ticket', 'err');
+            }
           }}>Mark resolved</button>
         )}
       </div>
@@ -162,6 +173,7 @@ function useShowTicket() {
 /* ---------------- new ticket ---------------- */
 
 function NewTicketForm({ close }: { close: () => void }) {
+  const raiseTicket = useRaiseTicket();
   const app = useApp();
   const [cat, setCat] = useState(TICKET_CATS[0].id);
   const [subject, setSubject] = useState('');
@@ -197,20 +209,18 @@ function NewTicketForm({ close }: { close: () => void }) {
       </Banner>
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
         <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" disabled={!subject.trim()} onClick={() => {
-          const created = new Date();
-          TICKETS.unshift({
-            id: 'TKT-' + (9100 + TICKETS.length),
-            empId: app.meId, cat, subject, desc: desc || 'Raised via employee self-service.',
-            priority, status: 'Open', createdOn: ymd(TODAY),
-            createdTime: String(created.getHours()).padStart(2, '0') + ':' + String(created.getMinutes()).padStart(2, '0'),
-            dueOn: ymd(new Date(TODAY.getTime() + tCat(cat).sla * 3600000)),
-            slaHours: tCat(cat).sla, assigneeId: app.meId,
-            resolvedOn: null, resolutionHrs: null, breached: false, csat: null, comments: [],
-          });
-          close();
-          app.toast('Ticket raised — you will get an update within ' + tCat(cat).sla + ' hours', 'ok');
-          app.bump();
+        <button className="btn primary" disabled={!subject.trim()} onClick={async () => {
+          try {
+            await raiseTicket.mutate({
+              empId: app.meId, cat, subject,
+              desc: desc || 'Raised via employee self-service.',
+              priority,
+            });
+            close();
+            app.toast('Ticket raised — you will get an update within ' + tCat(cat).sla + ' hours', 'ok');
+          } catch (e) {
+            app.toast(e instanceof Error ? e.message : 'Could not raise the ticket', 'err');
+          }
         }}>Raise ticket</button>
       </div>
     </>
@@ -231,6 +241,9 @@ function useNewTicket() {
 /* ---------------- My tickets ---------------- */
 
 function HdMy() {
+  const { data: TICKETS = [] } = useTickets();
+  const { data: KB = [] } = useKnowledgeBase();
+  const dir = useVisiblePeople();
   const app = useApp();
   const show = useShowTicket();
   const raise = useNewTicket();
@@ -255,7 +268,7 @@ function HdMy() {
       </div>
 
       <Card title="My tickets" sub={`${mine.length} records`} flush>
-        <TicketTable list={mine} onOpen={show} />
+        <TicketTable list={mine} dir={dir} onOpen={show} />
       </Card>
 
       <Card title="Common questions" sub="Might save you a ticket" flush>
@@ -277,12 +290,15 @@ function HdMy() {
 /* ---------------- Queue ---------------- */
 
 function HdQueue() {
+  const { data: TICKETS = [] } = useTickets();
+  const dir = useVisiblePeople();
   const app = useApp();
   const show = useShowTicket();
   const [f, setF] = useState('');
 
-  const ids = visibleIds(app.role, app.meId);
-  const all = app.role === 'admin' ? TICKETS : TICKETS.filter((t) => t.assigneeId === app.meId || ids.includes(t.empId));
+  const all = app.role === 'admin'
+    ? TICKETS
+    : TICKETS.filter((t) => t.assigneeId === app.meId || dir.ids.includes(t.empId));
   const list = f ? all.filter((t) => t.status === f) : all;
   const open = all.filter((t) => ['Open', 'In Progress'].includes(t.status));
   const resolved = all.filter((t) => t.resolutionHrs);
@@ -310,13 +326,13 @@ function HdQueue() {
               <button className="btn sm" onClick={() =>
                 downloadCSV('tickets.csv',
                   [['ID', 'Subject', 'Raised by', 'Category', 'Priority', 'Assignee', 'Created', 'Due', 'Status', 'Resolution h', 'Breached']].concat(
-                    all.map((t) => [t.id, t.subject, empName(t.empId), tCat(t.cat).n, t.priority,
-                      empName(t.assigneeId), t.createdOn, t.dueOn, t.status, String(t.resolutionHrs ?? ''), t.breached ? 'Yes' : 'No']),
+                    all.map((t) => [t.id, t.subject, dir.name(t.empId), tCat(t.cat).n, t.priority,
+                      dir.name(t.assigneeId), t.createdOn, t.dueOn, t.status, String(t.resolutionHrs ?? ''), t.breached ? 'Yes' : 'No']),
                   ))}>⤓</button>
             </div>
           }>
           <div style={{ maxHeight: 600, overflow: 'auto' }}>
-            <TicketTable list={list} showEmp onOpen={show} />
+            <TicketTable list={list} dir={dir} showEmp onOpen={show} />
           </div>
         </Card>
 
@@ -342,6 +358,7 @@ function HdQueue() {
 /* ---------------- SLA & analytics ---------------- */
 
 function HdSla() {
+  const { data: TICKETS = [] } = useTickets();
   const all = TICKETS;
   const byCat = TICKET_CATS.map((c) => {
     const ts = all.filter((t) => t.cat === c.id && t.resolutionHrs != null);
@@ -407,6 +424,7 @@ function HdSla() {
 /* ---------------- Knowledge base ---------------- */
 
 function HdKb() {
+  const { data: KB = [] } = useKnowledgeBase();
   const app = useApp();
   const raise = useNewTicket();
   const [q, setQ] = useState('');
@@ -475,6 +493,5 @@ registerModule({
   key: 'helpdesk',
   title: TITLES.helpdesk,
   subtitle: () => 'Ticketing with SLAs, plus a self-service knowledge base',
-  badge: (c) => TICKETS.filter((t) => t.empId === c.meId && ['Open', 'In Progress'].includes(t.status)).length,
   Component: Helpdesk,
 });

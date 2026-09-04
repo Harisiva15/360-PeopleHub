@@ -3,18 +3,19 @@ import { sortBy, sum, uniq } from '../../lib/collections';
 import { daysBetween, fmtD, TODAY, ymd } from '../../lib/dates';
 import { inr, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { ri } from '../../lib/rng';
-import { ACTIVE, EMAP, empName } from '../../data/employees';
-import { COURSES, ENROLL, courseOf } from '../../data/learning';
-import type { Course, Enrollment } from '../../data/learning';
+
+import { courseOf } from '../../data/learning';
+import type { Course, Enrollment } from '../../services';
 import { DEPTS, deptOf } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Chip, Divide, ListRow } from '../../components/common';
 import { HBar } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { visibleIds } from '../../state/rbac';
 import { useShowEmployee } from '../employees/Profile';
+import {
+  useAllEmployees, useCourses, useEnrol, useEnrolments, useSetProgress, useVisiblePeople,
+} from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -27,12 +28,9 @@ const courseIcon = (c: Course) =>
 
 function useCoursePlayer() {
   const layer = useLayer();
-  const app = useApp();
 
-  return (courseId: string) => {
-    const en = ENROLL.find((x) => x.empId === app.meId && x.courseId === courseId);
-    if (!en) return;
-    const c = courseOf(courseId);
+  return (en: Enrollment) => {
+    const c = courseOf(en.courseId);
     layer.modal({
       title: c.t,
       sub: `${c.provider} · ${c.hrs} hours · ${c.cat}`,
@@ -40,9 +38,12 @@ function useCoursePlayer() {
       footer: null,
     });
   };
+}
 
-  function Player({ en, close }: { en: Enrollment; close: () => void }) {
-    const [progress, setProgress] = useState(en.progress);
+function Player({ en, close }: { en: Enrollment; close: () => void }) {
+  const app = useApp();
+  const setProgress = useSetProgress();
+  const [progress, setProgress_] = useState(en.progress);
     return (
       <>
         <Banner kind="info" icon="▶️">
@@ -52,7 +53,7 @@ function useCoursePlayer() {
         <div className="field">
           <label>Mark progress</label>
           <input type="range" min={0} max={100} step={10} value={progress}
-            style={{ width: '100%' }} onChange={(e) => setProgress(+e.target.value)} />
+            style={{ width: '100%' }} onChange={(e) => setProgress_(+e.target.value)} />
         </div>
         <div className="muted" style={{ fontSize: 12.5 }}>
           Completing a course records a certificate on your profile and, for mandatory training, updates your
@@ -60,38 +61,37 @@ function useCoursePlayer() {
         </div>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
           <button className="btn" onClick={close}>Close</button>
-          <button className="btn primary" onClick={() => {
-            en.progress = progress;
-            en.status = progress === 100 ? 'Completed' : progress > 0 ? 'In Progress' : 'Not Started';
-            if (progress === 100) {
-              en.completedOn = ymd(TODAY);
-              en.score = ri(78, 100);
+          <button className="btn primary" onClick={async () => {
+            try {
+              await setProgress.mutate(en.empId, en.courseId, progress);
+              close();
+              app.toast(progress === 100 ? 'Course completed — certificate issued 🏅' : 'Progress saved', 'ok');
+            } catch (e) {
+              app.toast(e instanceof Error ? e.message : 'Could not save your progress', 'err');
             }
-            close();
-            app.toast(progress === 100 ? 'Course completed — certificate issued 🏅' : 'Progress saved', 'ok');
-            app.bump();
           }}>Save progress</button>
         </div>
       </>
-    );
-  }
-}
-
-function useEnrol() {
-  const app = useApp();
-  return (courseId: string) => {
-    ENROLL.push({ empId: app.meId, courseId, progress: 0, status: 'Not Started', completedOn: null, score: null });
-    app.toast('Enrolled in ' + courseOf(courseId).t, 'ok');
-    app.bump();
-  };
+  );
 }
 
 /* ---------------- My learning ---------------- */
 
 function LnMy() {
+  const { data: COURSES = [] } = useCourses();
+  const { data: ENROLL = [] } = useEnrolments();
+  const enrol = useEnrol();
   const app = useApp();
   const play = useCoursePlayer();
-  const enrol = useEnrol();
+
+  const doEnrol = async (courseId: string) => {
+    try {
+      await enrol.mutate(app.meId, courseId);
+      app.toast('Enrolled in ' + courseOf(courseId).t, 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not enrol you', 'err');
+    }
+  };
 
   const mine = ENROLL.filter((x) => x.empId === app.meId);
   const done = mine.filter((x) => x.status === 'Completed');
@@ -140,7 +140,7 @@ function LnMy() {
                       <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>Score {x.score}%</div>
                     </>
                   ) : (
-                    <button className="btn sm primary" onClick={() => play(x.courseId)}>
+                    <button className="btn sm primary" onClick={() => play(x)}>
                       {x.progress ? 'Resume' : 'Start'}
                     </button>
                   )}
@@ -174,7 +174,7 @@ function LnMy() {
                   <div style={{ fontWeight: 650, fontSize: 12.5 }}>{c.t}</div>
                   <div className="muted" style={{ fontSize: 11 }}>{c.cat} · {c.hrs} h</div>
                 </div>
-                <button className="btn sm" onClick={() => enrol(c.id)}>Enrol</button>
+                <button className="btn sm" onClick={() => doEnrol(c.id)}>Enrol</button>
               </ListRow>
             ))}
           </Card>
@@ -187,10 +187,21 @@ function LnMy() {
 /* ---------------- Catalogue ---------------- */
 
 function LnCat() {
+  const { data: COURSES = [] } = useCourses();
+  const { data: ENROLL = [] } = useEnrolments();
   const app = useApp();
   const play = useCoursePlayer();
   const enrol = useEnrol();
   const [f, setF] = useState('');
+
+  const doEnrol = async (courseId: string) => {
+    try {
+      await enrol.mutate(app.meId, courseId);
+      app.toast('Enrolled in ' + courseOf(courseId).t, 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not enrol you', 'err');
+    }
+  };
 
   const cats = uniq(COURSES.map((c) => c.cat));
   const list = f ? COURSES.filter((c) => c.cat === f) : COURSES;
@@ -230,10 +241,10 @@ function LnCat() {
                   <div className="bar" style={{ marginBottom: 9 }}><i style={{ width: en.progress + '%' }} /></div>
                   {en.status === 'Completed'
                     ? <Badge kind="good">Completed · {en.score}%</Badge>
-                    : <button className="btn sm primary" style={{ width: '100%' }} onClick={() => play(c.id)}>Continue ({en.progress}%)</button>}
+                    : <button className="btn sm primary" style={{ width: '100%' }} onClick={() => play(en)}>Continue ({en.progress}%)</button>}
                 </>
               ) : (
-                <button className="btn sm" style={{ width: '100%' }} onClick={() => enrol(c.id)}>Enrol</button>
+                <button className="btn sm" style={{ width: '100%' }} onClick={() => doEnrol(c.id)}>Enrol</button>
               )}
             </Card>
           );
@@ -246,10 +257,14 @@ function LnCat() {
 /* ---------------- Compliance tracker ---------------- */
 
 function LnComp() {
+  const { data: COURSES = [] } = useCourses();
+  const { data: ENROLL = [] } = useEnrolments();
+  const { data: everyone = [] } = useAllEmployees();
+  const dir = useVisiblePeople();
   const app = useApp();
   const showEmp = useShowEmployee();
   const mand = COURSES.filter((c) => c.mandatory);
-  const active = ACTIVE();
+  const active = everyone;
 
   const rows = active.map((e) => {
     const done = mand.filter((c) => ENROLL.some((x) => x.empId === e.id && x.courseId === c.id && x.status === 'Completed')).length;
@@ -285,7 +300,7 @@ function LnComp() {
                   <tr key={r.e.id} className="clickable" onClick={() => showEmp(r.e.id)}>
                     <td><PersonCell e={r.e} /></td>
                     <td className="nowrap">{deptOf(r.e.dept).name}</td>
-                    <td className="nowrap">{empName(r.e.managerId || '')}</td>
+                    <td className="nowrap">{dir.name(r.e.managerId || '')}</td>
                     <td className="num">{r.done} / {mand.length}</td>
                     <td>
                       <div className="row" style={{ gap: 7 }}>
@@ -328,14 +343,16 @@ function LnComp() {
 /* ---------------- Team progress ---------------- */
 
 function LnTeam() {
-  const app = useApp();
+  const { data: COURSES = [] } = useCourses();
+  const { data: ENROLL = [] } = useEnrolments();
+  const dir = useVisiblePeople();
   const showEmp = useShowEmployee();
-  const ids = visibleIds(app.role, app.meId);
+  const ids = dir.ids;
 
-  const rows = ids.map((id) => {
-    const en = ENROLL.filter((x) => x.empId === id);
+  const rows = dir.list.map((e) => {
+    const en = ENROLL.filter((x) => x.empId === e.id);
     return {
-      e: EMAP[id],
+      e,
       enrolled: en.length,
       done: en.filter((x) => x.status === 'Completed').length,
       hrs: sum(en.filter((x) => x.status === 'Completed'), (x) => courseOf(x.courseId).hrs),
@@ -362,7 +379,7 @@ function LnTeam() {
             downloadCSV('learning.csv',
               [['Emp Code', 'Name', 'Course', 'Category', 'Mandatory', 'Status', 'Progress %', 'Completed on', 'Score']].concat(
                 ENROLL.filter((x) => ids.includes(x.empId)).map((x) => {
-                  const e = EMAP[x.empId];
+                  const e = dir.byId(x.empId)!;
                   const c = courseOf(x.courseId);
                   return [e.code, e.name, c.t, c.cat, c.mandatory ? 'Yes' : 'No', x.status,
                     String(x.progress), x.completedOn || '', String(x.score ?? '')];
@@ -423,6 +440,7 @@ function Learning() {
 registerModule({
   key: 'learning',
   title: TITLES.learning,
-  subtitle: () => `${COURSES.length} courses · compliance training tracked to completion`,
+  /* Static: the registry's callbacks are synchronous and cannot await. */
+  subtitle: () => 'Catalogue, certifications and compliance training tracked to completion',
   Component: Learning,
 });

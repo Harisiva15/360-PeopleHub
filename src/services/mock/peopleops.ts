@@ -7,9 +7,11 @@
  * filing rather than design.
  */
 
-import { CUR_CYCLE, GOALS, PRAISE, REVIEWS } from '../../data/performance';
+import { CHECKINS, CUR_CYCLE, GOALS, PRAISE, REVIEWS } from '../../data/performance';
 import { COURSES, ENROLL } from '../../data/learning';
-import { TICKETS } from '../../data/helpdesk';
+import { KB, TICKETS } from '../../data/helpdesk';
+import { TODAY, ymd } from '../../lib/dates';
+import { uid } from '../../lib/rng';
 import { enpsOf, ENPS_HISTORY, SURVEYS } from '../../data/engagement';
 import { ANNOUNCE, celebrations } from '../../data/announcements';
 import { fbpTotal } from '../../data/benefits';
@@ -31,15 +33,90 @@ export const performanceService: PerformanceService = {
   reviews(empIds) { return ok(scoped(REVIEWS, empIds)); },
   praise() { return ok(PRAISE.slice()); },
   currentCycle() { return ok(CUR_CYCLE); },
+  checkins(empIds) { return ok(scoped(CHECKINS, empIds)); },
+
+  setGoalProgress(goalId, progress) {
+    const g = GOALS.find((x) => x.id === goalId);
+    if (!g) return Promise.reject(new Error('No such goal: ' + goalId));
+    if (progress < 0 || progress > 100) return Promise.reject(new Error('Progress runs from 0 to 100'));
+    g.progress = progress;
+    g.status = progress >= 100 ? 'Achieved' : progress >= 60 ? 'On Track' : progress >= 35 ? 'At Risk' : 'Behind';
+    /* The mid and final key results mirror the same thresholds. */
+    if (g.keyResults[1]) g.keyResults[1].done = progress >= 50;
+    if (g.keyResults[2]) g.keyResults[2].done = progress >= 100;
+    return ok(g);
+  },
 };
 
 export const learningService: LearningService = {
   courses() { return ok(COURSES.slice()); },
   enrolments(empIds) { return ok(scoped(ENROLL, empIds)); },
+
+  enrol(empId, courseId) {
+    const existing = ENROLL.find((x) => x.empId === empId && x.courseId === courseId);
+    if (existing) return Promise.reject(new Error('Already enrolled in that course'));
+    const row = { empId, courseId, progress: 0, status: 'Not Started' as const, completedOn: null, score: null };
+    ENROLL.push(row);
+    return ok(row);
+  },
+
+  setProgress(empId, courseId, progress) {
+    const en = ENROLL.find((x) => x.empId === empId && x.courseId === courseId);
+    if (!en) return Promise.reject(new Error('Not enrolled in that course'));
+    const p = Math.max(0, Math.min(100, progress));
+    en.progress = p;
+    en.status = p === 100 ? 'Completed' : p > 0 ? 'In Progress' : 'Not Started';
+    en.completedOn = p === 100 ? ymd(TODAY) : null;
+    return ok(en);
+  },
 };
 
 export const helpdeskService: HelpdeskService = {
   tickets(empIds) { return ok(scoped(TICKETS, empIds)); },
+  knowledgeBase() { return ok(KB.slice()); },
+
+  raise(t) {
+    const row = {
+      id: uid('TK'),
+      empId: t.empId,
+      cat: t.cat,
+      subject: t.subject,
+      desc: t.desc,
+      priority: t.priority,
+      status: 'Open' as const,
+      createdOn: ymd(TODAY),
+      createdTime: '09:00',
+      dueOn: ymd(TODAY),
+      slaHours: 24,
+      assigneeId: '',
+      resolvedOn: null,
+      resolutionHrs: null,
+      breached: false,
+      csat: null,
+      comments: [],
+    };
+    TICKETS.unshift(row);
+    return ok(row);
+  },
+
+  comment(id, by, text) {
+    const t = TICKETS.find((x) => x.id === id);
+    if (!t) return Promise.reject(new Error('No such ticket: ' + id));
+    t.comments.push({ by, on: ymd(TODAY), text });
+    /* The first reply is what starts the clock moving. */
+    if (t.status === 'Open') t.status = 'In Progress';
+    return ok(t);
+  },
+
+  resolve(id, csat) {
+    const t = TICKETS.find((x) => x.id === id);
+    if (!t) return Promise.reject(new Error('No such ticket: ' + id));
+    if (t.status === 'Resolved' || t.status === 'Closed') return Promise.reject(new Error('Already ' + t.status.toLowerCase()));
+    t.status = 'Resolved';
+    t.resolvedOn = ymd(TODAY);
+    if (csat != null) t.csat = csat;
+    return ok(t);
+  },
 };
 
 export const engagementService: EngagementService = {

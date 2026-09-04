@@ -2,15 +2,16 @@ import { useState } from 'react';
 import { sum } from '../../lib/collections';
 import { addDays, fmtD, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
-import { ACTIVE } from '../../data/employees';
-import { ENPS_HISTORY, enpsOf, SURVEYS } from '../../data/engagement';
-import type { Survey } from '../../data/engagement';
+
+
+import type { Survey } from '../../services';
 import { DEPTS, ORG } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, Tabs, Tile } from '../../components/ui';
 import { Divide, ListRow } from '../../components/common';
 import { Donut, HBar, Legend, LineChart, Ring } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
+import { useAllEmployees, useEnpsHistory, useEnps, useSurveys } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -103,6 +104,7 @@ function SurveyForm({ s, close }: { s: Survey; close: () => void }) {
 /* ---------------- Open surveys ---------------- */
 
 function EnOpen() {
+  const { data: SURVEYS = [] } = useSurveys();
   const layer = useLayer();
   const live = SURVEYS.filter((s) => s.status === 'Live');
 
@@ -147,9 +149,16 @@ function EnOpen() {
 /* ---------------- Results ---------------- */
 
 function EnResults() {
-  const pulse = SURVEYS.find((s) => s.id === 'SV1')!;
-  const enps = SURVEYS.find((s) => s.id === 'SV2')!;
-  const score = enpsOf(enps);
+  const { data: SURVEYS = [] } = useSurveys();
+  const { data: ENPS_HISTORY = [] } = useEnpsHistory();
+  const { data: enpsScore = 0 } = useEnps('SV2');
+  const pulse = SURVEYS.find((s) => s.id === 'SV1');
+  const enps = SURVEYS.find((s) => s.id === 'SV2');
+
+  /* After every hook: the surveys arrive asynchronously. */
+  if (!pulse || !enps) return <EmptyState msg="Loading survey results…" icon="📊" />;
+
+  const score = enpsScore;
   const total = (enps.promoters ?? 0) + (enps.passives ?? 0) + (enps.detractors ?? 0);
   const questions = pulse.questions || [];
   const lowest = questions.length ? Math.min(...questions.map((q) => q.score)) : 0;
@@ -224,6 +233,7 @@ function EnResults() {
 /* ---------------- Manage ---------------- */
 
 function EnManage() {
+  const { data: everyone = [] } = useAllEmployees();
   const app = useApp();
   const layer = useLayer();
 
@@ -263,7 +273,7 @@ function EnManage() {
           <button className="btn" onClick={close}>Cancel</button>
           <button className="btn primary" onClick={() => {
             close();
-            app.toast('Survey sent to ' + ACTIVE().length + ' employees', 'ok');
+            app.toast('Survey sent to ' + everyone.length + ' employees', 'ok');
           }}>Send survey</button>
         </>
       ),

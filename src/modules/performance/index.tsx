@@ -3,18 +3,19 @@ import { sortBy, sum, uniq } from '../../lib/collections';
 import { fmtD, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { ACTIVE, EMAP, empName, teamOf } from '../../data/employees';
+
 import { ORG } from '../../data/org';
-import {
-  CHECKINS, CUR_CYCLE, CYCLES, GOALS, NINEBOX, PRAISE, RATINGS, ratingOf,
-  REVIEW_PHASES, REVIEWS, reviewOf, VALUES,
-} from '../../data/performance';
-import type { Goal, Review } from '../../data/performance';
+import { CYCLES, NINEBOX, RATINGS, ratingOf, REVIEW_PHASES, VALUES } from '../../data/performance';
+import type { Goal, Review } from '../../services';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Divide, Dot, ListRow, StatusBadge } from '../../components/common';
 import { Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
+import {
+  useAllEmployees, useCheckins, useCurrentCycle, useGoals, usePraise, useReviews,
+  useSetGoalProgress, useTeam, useVisiblePeople,
+} from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -22,12 +23,13 @@ const GOAL_TONE: Record<string, 'good' | 'info' | 'warn' | 'crit'> = {
   Achieved: 'good', 'On Track': 'info', 'At Risk': 'warn', Behind: 'crit',
 };
 
+/** Find someone's review in this cycle, from the rows already fetched. */
+const findReview = (reviews: Review[], empId: string, cycleId: string) =>
+  reviews.find((r) => r.empId === empId && r.cycleId === cycleId);
+
 /** Progress bar colour tracks the same thresholds the status uses. */
 const progressColor = (p: number) =>
   p >= 100 ? 'var(--good)' : p >= 60 ? 'var(--s1)' : p >= 35 ? 'var(--warn)' : 'var(--crit)';
-
-const statusFor = (p: number): Goal['status'] =>
-  p >= 100 ? 'Achieved' : p >= 60 ? 'On Track' : p >= 35 ? 'At Risk' : 'Behind';
 
 function Stars({ n }: { n: number }) {
   return (
@@ -39,14 +41,14 @@ function Stars({ n }: { n: number }) {
 
 function GoalCard({ g, editable }: { g: Goal; editable?: boolean }) {
   const app = useApp();
-  const setProgress = (v: number) => {
-    g.progress = v;
-    g.status = statusFor(v);
-    /* the mid and final key results mirror the progress thresholds */
-    g.keyResults[1].done = v >= 50;
-    g.keyResults[2].done = v >= 100;
-    app.toast('Progress updated to ' + v + '%', 'ok');
-    app.bump();
+  const setGoalProgress = useSetGoalProgress();
+  const setProgress = async (v: number) => {
+    try {
+      await setGoalProgress.mutate(g.id, v);
+      app.toast('Progress updated to ' + v + '%', 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not save the progress', 'err');
+    }
   };
 
   return (
@@ -88,10 +90,19 @@ function GoalCard({ g, editable }: { g: Goal; editable?: boolean }) {
 function PfGoals() {
   const app = useApp();
   const me = app.me;
-  const goals = GOALS.filter((g) => g.empId === me.id && g.cycleId === CUR_CYCLE.id);
+  const dir = useVisiblePeople();
+  const { data: GOALS = [] } = useGoals([me.id]);
+  const { data: REVIEWS = [] } = useReviews([me.id]);
+  const { data: CHECKINS = [] } = useCheckins([me.id]);
+  const { data: cycle } = useCurrentCycle();
+
+  /* After every hook: the cycle arrives asynchronously. */
+  if (!cycle) return <Card><EmptyState msg="Loading your goals…" icon="🎯" /></Card>;
+
+  const goals = GOALS.filter((g) => g.empId === me.id && g.cycleId === cycle.id);
   const achv = sum(goals, (g) => g.progress * g.weight) / Math.max(1, sum(goals, (g) => g.weight));
   const ci = sortBy(CHECKINS.filter((c) => c.empId === me.id), (c) => c.on, 'desc');
-  const rv = reviewOf(me.id);
+  const rv = findReview(REVIEWS, me.id, cycle.id);
   const byCat = uniq(goals.map((g) => g.category)).map((c, i) => ({
     k: c, c: PAL[i % 8], v: sum(goals.filter((g) => g.category === c), (g) => g.weight),
   }));
@@ -102,14 +113,14 @@ function PfGoals() {
         <Tile label="Goal achievement" value={Math.round(achv) + '%'} foot={`Weighted across ${goals.length} goals`} />
         <Tile label="On track" value={`${goals.filter((g) => ['On Track', 'Achieved'].includes(g.status)).length} / ${goals.length}`}
           foot={`${goals.filter((g) => g.status === 'At Risk' || g.status === 'Behind').length} need attention`} />
-        <Tile label="Cycle" value={CUR_CYCLE.name.split(' Appraisal')[0]} foot={`${fmtD(CUR_CYCLE.from)} – ${fmtD(CUR_CYCLE.to)}`} />
-        <Tile label="Review status" value={rv ? rv.status : '—'} foot={'Manager: ' + empName(me.managerId || '')} />
+        <Tile label="Cycle" value={cycle.name.split(' Appraisal')[0]} foot={`${fmtD(cycle.from)} – ${fmtD(cycle.to)}`} />
+        <Tile label="Review status" value={rv ? rv.status : '—'} foot={'Manager: ' + dir.name(me.managerId || '')} />
       </div>
 
       <div className="grid g-2-1">
         <div>
           <div className="toolbar">
-            <div style={{ fontWeight: 750, fontSize: 15 }}>My goals — {CUR_CYCLE.name}</div>
+            <div style={{ fontWeight: 750, fontSize: 15 }}>My goals — {cycle.name}</div>
             <div className="spacer" />
           </div>
           {goals.map((g) => <GoalCard key={g.id} g={g} editable />)}
@@ -131,7 +142,7 @@ function PfGoals() {
               {ci.length ? ci.map((c) => (
                 <div key={c.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)' }}>
                   <div className="muted" style={{ fontSize: 11, fontWeight: 650 }}>
-                    {fmtD(c.on)} · with {empName(c.by || '')}
+                    {fmtD(c.on)} · with {dir.name(c.by || '')}
                   </div>
                   <div style={{ fontSize: 12.5, marginTop: 5 }}><b>Wins:</b> {c.wins}</div>
                   <div style={{ fontSize: 12.5, marginTop: 3 }}><b>Blockers:</b> {c.blockers}</div>
@@ -149,23 +160,29 @@ function PfGoals() {
 /* ---------------- Team goals ---------------- */
 
 function PfTeam({ openReview }: { openReview: (id: string) => void }) {
+  const { data: GOALS = [] } = useGoals();
+  const { data: REVIEWS = [] } = useReviews();
+  const { data: cycle } = useCurrentCycle();
   const app = useApp();
   const showEmp = useShowEmployee();
+  const { data: teamList = [] } = useTeam(app.meId);
+  const { data: everyone = [] } = useAllEmployees();
 
-  const team = teamOf(app.meId, true).map((i) => EMAP[i]);
-  if (app.role === 'admin') {
-    ACTIVE().forEach((e) => {
-      if (!team.some((t) => t.id === e.id) && e.id !== app.meId) team.push(e);
-    });
-  }
+  /* After every hook. */
+  if (!cycle) return <Card><EmptyState msg="Loading the team's goals…" icon="🎯" /></Card>;
+
+  /* An admin sees the whole organisation, not only their own reports. */
+  const team = app.role === 'admin'
+    ? everyone.filter((e) => e.id !== app.meId)
+    : teamList;
 
   const rows = team.map((e) => {
-    const g = GOALS.filter((x) => x.empId === e.id && x.cycleId === CUR_CYCLE.id);
+    const g = GOALS.filter((x) => x.empId === e.id && x.cycleId === cycle.id);
     const achv = sum(g, (x) => x.progress * x.weight) / Math.max(1, sum(g, (x) => x.weight));
     return {
       e, g, achv: Math.round(achv),
       risk: g.filter((x) => ['At Risk', 'Behind'].includes(x.status)).length,
-      rv: reviewOf(e.id),
+      rv: findReview(REVIEWS, e.id, cycle.id),
     };
   });
 
@@ -237,17 +254,26 @@ function PfTeam({ openReview }: { openReview: (id: string) => void }) {
 /* ---------------- Review ---------------- */
 
 function PfReview({ target, setTarget }: { target: string | null; setTarget: (id: string) => void }) {
+  const dir = useVisiblePeople();
+  const { data: GOALS = [] } = useGoals();
+  const { data: REVIEWS = [] } = useReviews();
+  const { data: cycle } = useCurrentCycle();
   const app = useApp();
   const me = app.me;
-  const e = EMAP[target && app.role !== 'employee' ? target : me.id];
-  const rv = reviewOf(e.id);
-  const goals = GOALS.filter((g) => g.empId === e.id && g.cycleId === CUR_CYCLE.id);
+  const { data: teamList = [] } = useTeam(app.meId);
+
+  /* After every hook. */
+  const e = dir.byId(target && app.role !== 'employee' ? target : me.id) ?? me;
+  if (!cycle) return <Card><EmptyState msg="Loading the review…" icon="📋" /></Card>;
+
+  const rv = findReview(REVIEWS, e.id, cycle.id);
+  const goals = GOALS.filter((g) => g.empId === e.id && g.cycleId === cycle.id);
   const isSelf = e.id === me.id;
 
   if (!rv) return <Card><EmptyState msg="No review record for this cycle" /></Card>;
   const peerAvg = rv.peers.length ? sum(rv.peers, (p) => p.rating) / rv.peers.length : null;
 
-  const options = sortBy([me].concat(teamOf(me.id, true).map((i) => EMAP[i])), (x) => x.name);
+  const options = sortBy([me as typeof teamList[number]].concat(teamList), (x) => x.name);
 
   return (
     <div className="stack">
@@ -268,13 +294,13 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
         <Tile label="Self rating" value={rv.self.rating ? rv.self.rating + ' / 5' : 'Pending'}
           foot={rv.self.rating ? ratingOf(rv.self.rating).label : 'Awaiting submission'} />
         <Tile label="Manager rating" value={rv.manager.rating ? rv.manager.rating + ' / 5' : 'Pending'}
-          foot={rv.manager.rating ? ratingOf(rv.manager.rating).label : 'Awaiting ' + empName(e.managerId || '')} />
+          foot={rv.manager.rating ? ratingOf(rv.manager.rating).label : 'Awaiting ' + dir.name(e.managerId || '')} />
         <Tile label="Peer average" value={peerAvg ? peerAvg.toFixed(1) + ' / 5' : '—'} foot={`${rv.peers.length} peer responses`} />
       </div>
 
       <div className="grid g-2-1">
         <div className="stack">
-          <Card title="Goal scorecard" sub={CUR_CYCLE.name} flush>
+          <Card title="Goal scorecard" sub={cycle.name} flush>
             <div className="tbl-wrap">
               <table className="tbl">
                 <thead>
@@ -311,7 +337,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
             ) : <EmptyState msg={isSelf ? 'Your self appraisal is due by 10 September' : 'Employee has not submitted yet'} icon="✍️" />}
           </Card>
 
-          <Card title="Manager review" sub={'By ' + empName(e.managerId || '')}>
+          <Card title="Manager review" sub={'By ' + dir.name(e.managerId || '')}>
             {rv.manager.rating ? (
               <>
                 <div className="row" style={{ gap: 10, marginBottom: 9 }}>
@@ -334,8 +360,8 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
                     </>
                   ) : (
                     <>
-                      <Avatar name={empName(p.by)} size="sm" />
-                      <span style={{ fontWeight: 650, fontSize: 12.5 }}>{empName(p.by)}</span>
+                      <Avatar name={dir.name(p.by)} size="sm" />
+                      <span style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(p.by)}</span>
                     </>
                   )}
                   <div className="spacer" />
@@ -388,18 +414,27 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
 /* ---------------- 9-box & calibration ---------------- */
 
 function PfCalib() {
+  const { data: REVIEWS = [] } = useReviews();
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: cycle } = useCurrentCycle();
   const app = useApp();
   const showEmp = useShowEmployee();
-  const scope = app.role === 'admin' ? ACTIVE() : teamOf(app.meId, true).map((i) => EMAP[i]);
-  const rows = scope.map((e) => ({ e, rv: reviewOf(e.id) })).filter((r) => r.rv && r.rv.manager.rating) as
-    { e: typeof scope[number]; rv: Review }[];
+  const { data: teamList = [] } = useTeam(app.meId);
+
+  /* After every hook. */
+  if (!cycle) return <Card><EmptyState msg="Loading calibration…" icon="⚖️" /></Card>;
+
+  const scope = app.role === 'admin' ? everyone : teamList;
+  const rows = scope
+    .map((e) => ({ e, rv: findReview(REVIEWS, e.id, cycle.id) }))
+    .filter((r) => r.rv && r.rv.manager.rating) as { e: typeof scope[number]; rv: Review }[];
 
   /* performance collapses the 1-5 rating into three bands for the grid */
   const perfBand = (rating: number) => (rating >= 4 ? 3 : rating === 3 ? 2 : 1);
   const box = (perf: number, pot: number) => rows.filter((r) => perfBand(r.rv.manager.rating!) === perf && r.rv.potential === pot);
 
   const dist = RATINGS.map((r) => ({ k: `${r.v} — ${r.label}`, c: r.c, v: rows.filter((x) => x.rv.manager.rating === r.v).length }));
-  const budget = sum(rows.filter((r) => r.rv.final), (r) => (EMAP[r.e.id].ctc * r.rv.final!.hike) / 100);
+  const budget = sum(rows.filter((r) => r.rv.final), (r) => (r.e.ctc * r.rv.final!.hike) / 100);
 
   return (
     <div className="stack">
@@ -407,7 +442,7 @@ function PfCalib() {
         <Tile label="Rated employees" value={rows.length} foot="Manager rating submitted" />
         <Tile label="Average rating" value={(sum(rows, (r) => r.rv.manager.rating!) / Math.max(1, rows.length)).toFixed(2)}
           foot="Target 3.10 – 3.40" />
-        <Tile label="Increment pool" value={CUR_CYCLE.hikePool + '%'} foot="Approved by the board" />
+        <Tile label="Increment pool" value={cycle.hikePool + '%'} foot="Approved by the board" />
         <Tile label="Committed spend" value={lakh(budget)} foot="Annualised increment cost" />
       </div>
 
@@ -489,6 +524,8 @@ function PfCalib() {
 /* ---------------- Praise wall ---------------- */
 
 function PfPraise() {
+  const dir = useVisiblePeople();
+  const { data: PRAISE = [] } = usePraise();
   const app = useApp();
   const showEmp = useShowEmployee();
   const [liked, setLiked] = useState<Record<string, boolean>>({});
@@ -514,10 +551,10 @@ function PfPraise() {
             return (
               <Card key={p.id}>
                 <div className="row" style={{ gap: 9, marginBottom: 8 }}>
-                  <Avatar name={empName(p.fromId)} size="sm" />
+                  <Avatar name={dir.name(p.fromId)} size="sm" />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5 }}>
-                      <b>{empName(p.fromId)}</b> <span className="muted">praised</span> <b>{empName(p.toId)}</b>
+                      <b>{dir.name(p.fromId)}</b> <span className="muted">praised</span> <b>{dir.name(p.toId)}</b>
                     </div>
                     <div className="muted" style={{ fontSize: 11 }}>{fmtD(p.on)}</div>
                   </div>
@@ -547,10 +584,10 @@ function PfPraise() {
             {top.map((t, i) => (
               <ListRow key={t.id} onClick={() => showEmp(t.id)}>
                 <span style={{ width: 18, fontWeight: 750, color: 'var(--ink-3)' }}>{i + 1}</span>
-                <Avatar name={empName(t.id)} size="sm" />
+                <Avatar name={dir.name(t.id)} size="sm" />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{empName(t.id)}</div>
-                  <div className="muted" style={{ fontSize: 11 }}>{EMAP[t.id]?.designation || ''}</div>
+                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(t.id)}</div>
+                  <div className="muted" style={{ fontSize: 11 }}>{dir.byId(t.id)?.designation || ''}</div>
                 </div>
                 <Badge kind="good">{t.n}</Badge>
               </ListRow>
@@ -575,7 +612,13 @@ function PfPraise() {
 /* ---------------- Cycle timeline ---------------- */
 
 function PfCycle() {
+  const { data: REVIEWS = [] } = useReviews();
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: cycle } = useCurrentCycle();
   const today = ymd(TODAY);
+
+  /* After every hook. */
+  if (!cycle) return <Card><EmptyState msg="Loading the cycle…" icon="📅" /></Card>;
   return (
     <div className="stack">
       <div className="grid g2">
@@ -583,17 +626,17 @@ function PfCycle() {
           <Card key={c.id} title={c.name} sub={`${fmtD(c.from)} – ${fmtD(c.to)}`} actions={<StatusBadge status={c.status} />}>
             <KV rows={[
               ['Increment pool', c.hikePool + '% of payroll'],
-              ['Employees in cycle', c.id === CUR_CYCLE.id ? REVIEWS.length : ACTIVE().length],
-              ['Reviews completed', c.id === CUR_CYCLE.id
+              ['Employees in cycle', c.id === cycle.id ? REVIEWS.length : everyone.length],
+              ['Reviews completed', c.id === cycle.id
                 ? REVIEWS.filter((r) => ['Calibrated', 'Completed'].includes(r.status)).length
-                : ACTIVE().length],
+                : everyone.length],
               ['Letters released', c.status === 'Completed' ? 'Yes · 1 Apr 2026' : 'Scheduled 1 Oct 2026'],
             ]} />
           </Card>
         ))}
       </div>
 
-      <Card title="Cycle timeline" sub={`${CUR_CYCLE.name} · ${REVIEW_PHASES.length} phases`}>
+      <Card title="Cycle timeline" sub={`${cycle.name} · ${REVIEW_PHASES.length} phases`}>
         <div className="stack" style={{ gap: 0 }}>
           {REVIEW_PHASES.map((p, i) => {
             const done = p.to < today;
@@ -624,7 +667,7 @@ function PfCycle() {
       </Card>
 
       <Banner kind="info" icon="ℹ️" title="How ratings translate into increments">
-        The board approves a company-wide increment pool ({CUR_CYCLE.hikePool}% this cycle). Managers rate against goals,
+        The board approves a company-wide increment pool ({cycle.hikePool}% this cycle). Managers rate against goals,
         calibration normalises ratings across departments, and the pool is distributed so that higher ratings receive a
         proportionally larger share. Letters are released on 1 October with effect from the same date.
       </Banner>
@@ -667,6 +710,7 @@ function Performance() {
 registerModule({
   key: 'performance',
   title: TITLES.performance,
-  subtitle: () => `${CUR_CYCLE.name} · goals, reviews, calibration and recognition`,
+  /* Static: the registry's callbacks are synchronous and cannot await. */
+  subtitle: () => 'Goals, reviews, 9-box calibration and recognition',
   Component: Performance,
 });

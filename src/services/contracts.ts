@@ -37,7 +37,7 @@ import type { BankBatch, CompliancePayment } from '../data/payinputs';
 import type { Overtime } from '../data/shifts';
 import type { LetterRequest } from '../data/letters';
 import type { Candidate, Interview, Requisition } from '../data/ats';
-import type { Review, Cycle } from '../data/performance';
+import type { CheckIn, Review, Cycle } from '../data/performance';
 import type { Course, Enrollment } from '../data/learning';
 import type { Survey } from '../data/engagement';
 import type { Announcement, Celebration } from '../data/announcements';
@@ -73,7 +73,7 @@ export type { BankBatch, CompliancePayment } from '../data/payinputs';
 export type { Overtime } from '../data/shifts';
 export type { LetterRequest } from '../data/letters';
 export type { Candidate, Interview, Requisition } from '../data/ats';
-export type { Review, Cycle } from '../data/performance';
+export type { CheckIn, Review, Cycle } from '../data/performance';
 export type { Course } from '../data/learning';
 export type { Survey } from '../data/engagement';
 export type { Announcement, Celebration } from '../data/announcements';
@@ -343,6 +343,10 @@ export interface InterviewRow {
 export interface HiringService {
   /** The panel member's own upcoming interviews. */
   interviewsFor(panelId: string, status?: Interview['status']): Promise<InterviewRow[]>;
+  /** The whole interview schedule — the hiring screens filter it themselves. */
+  interviews(): Promise<Interview[]>;
+  /** Move a candidate to another pipeline stage. Refuses an unknown stage. */
+  moveCandidate(candId: string, stage: string): Promise<Candidate>;
   candidates(): Promise<Candidate[]>;
   requisitions(): Promise<Requisition[]>;
 }
@@ -354,15 +358,38 @@ export interface PerformanceService {
   reviews(empIds?: string[]): Promise<Review[]>;
   praise(): Promise<Praise[]>;
   currentCycle(): Promise<Cycle>;
+  /** 1:1 check-ins logged against the cycle, newest first. */
+  checkins(empIds?: string[]): Promise<CheckIn[]>;
+  /**
+   * Move a goal's progress. Status and the mid/final key results follow from
+   * the number rather than being set alongside it.
+   */
+  setGoalProgress(goalId: string, progress: number): Promise<Goal>;
 }
 
 export interface LearningService {
   courses(): Promise<Course[]>;
   enrolments(empIds?: string[]): Promise<Enrollment[]>;
+  enrol(empId: string, courseId: string): Promise<Enrollment>;
+  /** Progress drives the status — 100% completes and stamps the date. */
+  setProgress(empId: string, courseId: string, progress: number): Promise<Enrollment>;
+}
+
+export interface NewTicket {
+  empId: string;
+  cat: string;
+  subject: string;
+  desc: string;
+  priority: string;
 }
 
 export interface HelpdeskService {
   tickets(empIds?: string[]): Promise<Ticket[]>;
+  knowledgeBase(): Promise<{ cat: string; q: string; a: string }[]>;
+  raise(t: NewTicket): Promise<Ticket>;
+  /** A comment moves an open ticket into progress — that is the SLA clock. */
+  comment(id: string, by: string, text: string): Promise<Ticket>;
+  resolve(id: string, csat?: number): Promise<Ticket>;
 }
 
 export interface EngagementService {
@@ -489,8 +516,12 @@ export interface AssetService {
 
 export interface OnboardingService {
   list(): Promise<Onboarding[]>;
-  /** Tick or untick one checklist item on a joiner's journey. */
+  /**
+   * Tick or untick one checklist item. The journey's status follows from the
+   * checklist rather than being set alongside it.
+   */
   setTask(id: string, key: string, done: boolean): Promise<Onboarding>;
+  complete(id: string): Promise<Onboarding>;
 }
 
 /* ---------- configuration ---------- */

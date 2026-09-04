@@ -9,7 +9,7 @@ import { TODAY, ymd } from '../../lib/dates';
 import { OVERTIME } from '../../data/shifts';
 import { LOANS } from '../../data/loans';
 import { LETTER_REQS } from '../../data/letters';
-import { CANDS, INTERVIEWS, REQS, reqOf } from '../../data/ats';
+import { CANDS, INTERVIEWS, REQS, reqOf, STAGES } from '../../data/ats';
 import type { HiringService, InterviewRow, LetterService, LoanService, ShiftService } from '../contracts';
 import { ok } from './util';
 
@@ -73,6 +73,18 @@ export const hiringService: HiringService = {
       requisitionTitle: reqOf(interview.reqId)?.title ?? '—',
     }));
     return ok(rows);
+  },
+
+  interviews() {
+    return ok(INTERVIEWS.slice());
+  },
+
+  moveCandidate(candId, stage) {
+    const c = CANDS.find((x) => x.id === candId);
+    if (!c) throw new Error('That candidate is not on file');
+    if (!STAGES.some((s) => s.id === stage)) throw new Error('That is not a pipeline stage');
+    c.stage = stage;
+    return ok(c);
   },
 
   candidates() {
