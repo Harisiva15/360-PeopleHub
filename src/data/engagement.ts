@@ -2,6 +2,7 @@
 import './performance';
 
 import { addDays, TODAY, ymd } from '../lib/dates';
+import { ORG } from './org';
 
 export interface SurveyQuestion {
   q: string;
@@ -43,7 +44,7 @@ export const SURVEYS: Survey[] = [
       { q: 'I see a clear path to grow my career here', score: 3.4 },
       { q: 'My workload is sustainable', score: 3.6 },
       { q: 'I feel comfortable raising a concern', score: 4.2 },
-      { q: 'I am proud to work at 360 Technology', score: 4.4 },
+      { q: `I am proud to work at ${ORG.name}`, score: 4.4 },
     ],
   },
   {

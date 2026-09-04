@@ -4,6 +4,7 @@ import './benefits';
 import { addDays, TODAY, ymd } from '../lib/dates';
 import { chance, pick, ri } from '../lib/rng';
 import { ACTIVE } from './employees';
+import { ORG } from './org';
 
 export interface TicketCat {
   id: string;
@@ -127,7 +128,7 @@ export const KB = [
   { cat: 'PAY', q: 'When is salary credited?', a: 'Salary is credited on the 1st working day of the following month. The attendance cut-off is the 25th; anything after that flows into the next cycle.' },
   { cat: 'PAY', q: 'Why is my TDS higher this month?', a: 'TDS is recomputed whenever your declaration changes, a bonus is paid, or proofs are rejected. Check Tax Declaration → Regime comparison for the current projection.' },
   { cat: 'ATT', q: 'What happens if I forget to punch?', a: 'Raise an attendance regularisation from Attendance → Regularisation within 30 days. Your manager approves it and the day stops counting as Loss of Pay.' },
-  { cat: 'ATT', q: 'How does the sandwich rule work?', a: 'Week-offs and holidays that fall between two leave days are not deducted from your balance at 360 Technology.' },
+  { cat: 'ATT', q: 'How does the sandwich rule work?', a: `Week-offs and holidays that fall between two leave days are not deducted from your balance at ${ORG.name}.` },
   { cat: 'DOC', q: 'How do I get an experience letter?', a: 'Go to Documents & Letters, choose Experience Letter and submit. HR issues it within 2 working days.' },
   { cat: 'BEN', q: 'How do I add a dependent to insurance?', a: 'Additions are allowed within 30 days of joining, marriage or childbirth. Raise a Helpdesk ticket under Insurance & Benefits with the supporting document.' },
   { cat: 'IT', q: 'How do I request software or access?', a: 'Raise an IT & Systems ticket with the business justification. Access needing data privileges also needs your manager and the data owner to approve.' },

@@ -1,6 +1,6 @@
 # 360 People Hub
 
-HR, workforce and staffing platform for 360 Technology — React + TypeScript,
+HR, workforce and staffing platform for 360VHM Technology — React + TypeScript,
 ported from the `360_HRMS` HTML prototype kept in [reference/](reference/).
 
 ```bash

@@ -2,9 +2,11 @@ import type { Dept, GradeBand, Holiday, LeaveType, Project, Site } from '../type
 import type { Grade } from '../types/country';
 
 export const ORG = {
-  product: '360 People',                       /* the HR platform itself */
+  product: '360 People Hub',                   /* the HR platform itself */
   productSub: 'HR & Workforce Platform',
-  name: '360 Technology',
+  /* `name` is the trading name and carries the running prose ("3 years at
+     …"); `legal` is the registered entity and signs payslips and letters. */
+  name: '360VHM Technology',
   legal: '360VHM Technology Private Limited',
   tagline: 'Integration | Insights | Innovation',
   cin: 'U72900TN2014PTC098231',

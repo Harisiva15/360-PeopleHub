@@ -5,7 +5,7 @@ import { pct } from '../../lib/format';
 import { ACTIVE } from '../../data/employees';
 import { ENPS_HISTORY, enpsOf, SURVEYS } from '../../data/engagement';
 import type { Survey } from '../../data/engagement';
-import { DEPTS } from '../../data/org';
+import { DEPTS, ORG } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, Tabs, Tile } from '../../components/ui';
 import { Divide, ListRow } from '../../components/common';
 import { Donut, HBar, Legend, LineChart, Ring } from '../../components/charts';
@@ -50,7 +50,7 @@ function SurveyForm({ s, close }: { s: Survey; close: () => void }) {
       {s.type === 'eNPS' ? (
         <>
           <div className="field">
-            <label>How likely are you to recommend 360 Technology as a place to work? (0 = not at all, 10 = extremely likely)</label>
+            <label>How likely are you to recommend {ORG.name} as a place to work? (0 = not at all, 10 = extremely likely)</label>
             <div className="row wrap" style={{ gap: 5, marginTop: 6 }}>
               {Array.from({ length: 11 }, (_, i) => (
                 <button key={i} type="button" className={'chip x' + (answers.nps === i ? ' on' : '')}

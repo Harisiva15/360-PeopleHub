@@ -238,9 +238,20 @@ EMP.forEach((e) => {
 export const ACTIVE = (): Employee[] => EMP.filter((e) => e.status === 'Active');
 export const empName = (id: string): string => EMAP[id]?.name || '—';
 
-/** The employee the role-switcher signs in as. */
+/**
+ * The employee the role-switcher signs in as.
+ *
+ * The overrides below place her in Chennai on an INR salary, so she has to be
+ * picked from the India-based reports — everything else on the record derives
+ * from the seeded site at generation time (currency, PAN/UAN/PF, notice period,
+ * phone, address). Taking whoever came first meant landing on a UK-based
+ * consultant and then stamping an INR CTC onto a GBP record, which converted
+ * her ₹11.8L to ₹12.5 crore and made one junior engineer a fifth of the
+ * company's payroll.
+ */
+const demoCandidates = EMP.filter((e) => e.managerId === DEMO_MGR.id && e.country === 'IN' && e.site === 'CHN');
 export const DEMO_EMP =
-  EMP.find((e) => e.managerId === DEMO_MGR.id && e.grade === 'L2') || EMP.find((e) => e.managerId === DEMO_MGR.id)!;
+  demoCandidates.find((e) => e.grade === 'L2') || demoCandidates[0] || EMP.find((e) => e.managerId === DEMO_MGR.id)!;
 DEMO_EMP.name = 'Nithya Balan';
 DEMO_EMP.gender = 'F';
 DEMO_EMP.site = 'CHN';

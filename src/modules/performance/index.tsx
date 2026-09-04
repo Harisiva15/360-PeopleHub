@@ -4,6 +4,7 @@ import { fmtD, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { ACTIVE, EMAP, empName, teamOf } from '../../data/employees';
+import { ORG } from '../../data/org';
 import {
   CHECKINS, CUR_CYCLE, CYCLES, GOALS, NINEBOX, PRAISE, RATINGS, ratingOf,
   REVIEW_PHASES, REVIEWS, reviewOf, VALUES,
@@ -361,7 +362,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
             ) : <EmptyState msg="Calibration happens 21–27 September" icon="⚖️" />}
           </Card>
 
-          <Card title="Rating scale" sub="360 Technology performance framework" flush>
+          <Card title="Rating scale" sub={`${ORG.name} performance framework`} flush>
             {RATINGS.map((r) => (
               <ListRow key={r.v}>
                 <Dot color={r.c} />
