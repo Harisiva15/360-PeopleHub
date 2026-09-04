@@ -161,7 +161,7 @@ function BnFbp() {
 
       <div className="grid g-2-1">
         <Card title="Declare your components"
-          sub={`Locks on ${fmtD(f.lockedOn || '2026-04-30')} · claim against bills each month`} flush
+          sub={`Locks on ${fmtD(f.lockedOn || '2027-03-31')} · claim against bills each month`} flush
           actions={
             <button className="btn sm primary" disabled={over} onClick={async () => {
               try {

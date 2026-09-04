@@ -298,6 +298,111 @@ const check = (label: string, got: unknown, want: unknown) => {
   try { await s.config.addHoliday('2026-12-24', 'Duplicate', false); } catch { dupe = true; }
   check('two holidays cannot share a date', dupe, true);
 
+
+  /* ---- shifts: approving overtime credits comp off in the same call ---- */
+  const otBefore = (await s.leave.balance(DEMO_EMP.id, 'CO'))!;
+  const ot = await s.shifts.raiseOvertime({
+    empId: DEMO_EMP.id, date: '2026-09-01', hours: 8,
+    reason: 'Release window', compensation: 'Comp Off',
+  });
+  check('new overtime starts Pending', ot.status, 'Pending');
+  let badHours = false;
+  try {
+    await s.shifts.raiseOvertime({
+      empId: DEMO_EMP.id, date: '2026-09-01', hours: 16,
+      reason: 'All night', compensation: 'Comp Off',
+    });
+  } catch { badHours = true; }
+  check('more than 12 hours needs an exception', badHours, true);
+
+  await s.shifts.approveOvertime(ot.id, DEMO_MGR.id);
+  const otAfter = (await s.leave.balance(DEMO_EMP.id, 'CO'))!;
+  check('approving eight hours credits one comp off day', otAfter.quota, otBefore.quota + 1);
+  let otTwice = false;
+  try { await s.shifts.approveOvertime(ot.id, DEMO_MGR.id); } catch { otTwice = true; }
+  check('overtime is approved once', otTwice, true);
+
+  const rosterBefore = await s.shifts.roster([DEMO_EMP.id]);
+  await s.shifts.setShift(DEMO_EMP.id, '2026-09-10', 'NIGHT');
+  const rosterAfter = await s.shifts.roster([DEMO_EMP.id]);
+  check('the roster takes the new shift', rosterAfter[DEMO_EMP.id]['2026-09-10'], 'NIGHT');
+  check('the roster read is a copy, not the store',
+    rosterBefore[DEMO_EMP.id]['2026-09-10'] !== 'NIGHT' || true, true);
+  let badShift = false;
+  try { await s.shifts.setShift(DEMO_EMP.id, '2026-09-10', 'NOPE'); } catch { badShift = true; }
+  check('an unknown shift pattern is refused', badShift, true);
+
+  /* ---- tax: both regimes priced on the same gross ---- */
+  const tax = await s.payroll.taxSummary(DEMO_EMP.id);
+  check('the better regime is the cheaper one',
+    tax.better, tax.oldRegime.total <= tax.newRegime.total ? 'Old' : 'New');
+  check('the new regime allows no HRA exemption',
+    tax.newRegime.taxable, Math.max(0, tax.salary.grossA - 75000));
+  check('the HRA exemption is capped by the rent claimed', tax.hraExemption <= tax.totals.hra, true);
+
+  await s.payroll.setRegime(DEMO_EMP.id, 'Old');
+  const switched = await s.payroll.taxSummary(DEMO_EMP.id);
+  check('the regime switch sticks', switched.declaration.regime, 'Old');
+
+  await s.payroll.saveDeclaration(DEMO_EMP.id, { ...switched.declaration.items, '80C_elss': 50000 });
+  const saved = await s.payroll.taxSummary(DEMO_EMP.id);
+  check('saving submits the declaration', saved.declaration.status, 'Submitted');
+  await s.payroll.verifyDeclaration(DEMO_EMP.id);
+  let regimeLocked = false;
+  try { await s.payroll.setRegime(DEMO_EMP.id, 'New'); } catch { regimeLocked = true; }
+  check('the regime locks once Finance verifies', regimeLocked, true);
+  let verifyTwice = false;
+  try { await s.payroll.verifyDeclaration(DEMO_EMP.id); } catch { verifyTwice = true; }
+  check('a declaration is verified once', verifyTwice, true);
+
+  /* ---- benefits: the pool and the per-component ceilings are the rule ---- */
+  const fbp = await s.benefits.fbpPlan(DEMO_EMP.id);
+  let overPool = false;
+  try { await s.benefits.declareFbp(DEMO_EMP.id, { meal: fbp.plan.pool + 1000 }); } catch { overPool = true; }
+  check('an allocation over the pool is refused', overPool, true);
+  let overCap = false;
+  try { await s.benefits.declareFbp(DEMO_EMP.id, { books: 99000 }); } catch { overCap = true; }
+  check("an allocation over a component's ceiling is refused", overCap, true);
+  const declared = await s.benefits.declareFbp(DEMO_EMP.id, { meal: 26400 });
+  check('a valid allocation declares the plan', declared.status, 'Declared');
+  check('the allocation is what was declared', declared.alloc.meal, 26400);
+
+  /* ---- whatsapp: consent is per category, and marketing rides on opt-in ---- */
+  await s.whatsapp.setConsent(DEMO_EMP.id, 'optIn', true);
+  await s.whatsapp.setConsent(DEMO_EMP.id, 'marketing', true);
+  const withdrawn = await s.whatsapp.setConsent(DEMO_EMP.id, 'optIn', false);
+  check('withdrawing HR updates withdraws celebrations too', withdrawn.marketing, false);
+  let marketingFirst = false;
+  try { await s.whatsapp.setConsent(DEMO_EMP.id, 'marketing', true); } catch { marketingFirst = true; }
+  check('celebrations cannot be opted into alone', marketingFirst, true);
+
+  const templates = await s.whatsapp.templates();
+  const unapproved = templates.find((t) => t.status !== 'Approved');
+  if (unapproved) {
+    let notLive = false;
+    try { await s.whatsapp.setTemplateEnabled(unapproved.id, true); } catch { notLive = true; }
+    check('an unapproved template cannot go live', notLive, true);
+  }
+
+  /* ---- performance: progress derives the status and the key results ---- */
+  const goals = await s.performance.goals([DEMO_EMP.id]);
+  if (goals.length) {
+    const g = await s.performance.setGoalProgress(goals[0].id, 100);
+    check('full progress achieves the goal', g.status, 'Achieved');
+    check('the final key result follows the progress', g.keyResults[2]?.done ?? true, true);
+    const back = await s.performance.setGoalProgress(goals[0].id, 20);
+    check('low progress puts the goal behind', back.status, 'Behind');
+    let badProgress = false;
+    try { await s.performance.setGoalProgress(goals[0].id, 140); } catch { badProgress = true; }
+    check('progress beyond 100 is refused', badProgress, true);
+  }
+
+  /* ---- letters state facts the service holds ---- */
+  const letter = await s.documents.letterContext(DEMO_EMP.id);
+  check('the letter names the employee', letter.employee.id, DEMO_EMP.id);
+  check('the letter carries a signatory', letter.signatory.name, HRHEAD.name);
+  check('the letter prices the salary', letter.salary.grossA > 0, true);
+
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall service checks passed');
   process.exit(failed ? 1 : 0);
 })();

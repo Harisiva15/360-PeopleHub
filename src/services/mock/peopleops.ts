@@ -158,7 +158,9 @@ export const benefitsService: BenefitsService = {
     const plan = FBP[empId];
     if (!plan) return Promise.reject(new Error('No flexible benefit plan for ' + empId));
     if (plan.na) return Promise.reject(new Error('The plan does not apply outside India'));
-    if (plan.lockedOn) return Promise.reject(new Error('The plan locked on ' + plan.lockedOn));
+    if (plan.lockedOn && plan.lockedOn < ymd(TODAY)) {
+      return Promise.reject(new Error('The plan locked on ' + plan.lockedOn));
+    }
     /* Each component has an annual tax-free ceiling, and the total is capped
        by the pool carved out of special allowance. */
     for (const [id, amount] of Object.entries(alloc)) {

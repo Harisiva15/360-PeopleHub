@@ -49,24 +49,31 @@ stays a synchronous import from `src/data/org`. It is config, fetched once and
 cached in any real deployment, and making it async would poison every
 component for nothing.
 
-`npm run check` exercises the seam end to end: role scoping, apply → approve
-→ balance debit, cancellation crediting the days back, and refusal of a
-double approval.
+`npm run check` exercises the seam end to end — around a hundred assertions
+covering role scoping and every state transition the services own: apply →
+approve → balance debit, cancellation crediting the days back, refusal of a
+double approval, overtime crediting comp off, a tax regime locking on
+verification, an FBP allocation over its ceiling, consent categories that
+cannot come apart.
 
-**Migration status.** On the seam: `leave`, `attendance`, `timesheet`,
-`expenses`, `employees`, `payroll`, `approvals`, `reports`, `dashboard`, `people`,
-`copilot`, `exec`, the staffing book, `documents`, `exit`, `security`, `assets`. Each has a `data.ts` holding its reads and writes as service
-calls; `src/modules/leave/data.ts` is the reference to copy, including the
-two-stage fetch (rows, then the people they reference) that a real client
-needs when the API does not denormalise names into the row.
+**Migration status: all 35 modules are on the seam.** Each has a `data.ts`
+holding its reads and writes as service calls; `src/modules/leave/data.ts` is
+the reference to copy, including the two-stage fetch (rows, then the people
+they reference) that a real client needs when the API does not denormalise
+names into the row.
 
-The remaining modules still import `src/data` directly. `AppProvider`
-subscribes to service invalidations and re-renders them, which is the bridge
-that keeps them correct until they are moved. Rough order of remaining work,
-`settings`, then the smaller screens — `shifts`, `benefits`, `tax`,
-`performance`, `onboarding`, `learning`, `hiring`, `helpdesk`, `engagement`,
-`whatsapp`. Most of their services already exist, so the remaining work is
-wiring rather than contract design.
+What a module's `data.ts` must not do is reach past the seam. The rule that
+keeps this honest: a screen may import from `src/data` only for *static
+configuration* — departments, grades, categories, badge maps, rating scales.
+Anything that is a record, or derived from records, is a service call.
+[`docs/api-contract.md`](docs/api-contract.md) is the same contract expressed
+as HTTP.
+
+**One constraint worth knowing.** The module registry's `subtitle` and `badge`
+callbacks are synchronous, so they cannot await a service. Modules that used to
+count records in their subtitle now carry static text. Feeding them from a
+single counts endpoint would fix that — and would also unblock route-level code
+splitting, which the same constraint currently prevents.
 
 **One constraint worth knowing before the next pass.** The module registry's
 `subtitle` and `badge` callbacks are synchronous, so they cannot await a

@@ -180,6 +180,12 @@ server; the client renders its answer.
 | GET | `/payroll/daily-rates?empIds=` | Drives leave-encashment liability. |
 | GET | `/payroll/compensation` | Salary structures across the workforce. Admin only. |
 | GET | `/payroll/declarations` | Tax regime and proof status. |
+| GET | `/payroll/{empId}/tax` | Both regimes priced on the same gross. See below. |
+| GET | `/payroll/tax-rows` | The declaration tracker. Admin only. |
+| PUT | `/payroll/{empId}/declaration` | Saves items and submits. **409 once verified.** |
+| PUT | `/payroll/{empId}/regime` | **409 once Finance has verified the proofs.** |
+| POST | `/payroll/{empId}/proofs` | |
+| POST | `/payroll/{empId}/declaration/verify` | **409 on a draft, 409 if already verified.** |
 | GET | `/payroll/bank-batches` | |
 | GET | `/payroll/compliance-payments` | |
 | GET | `/loans?status=` | |
@@ -189,23 +195,43 @@ server; the client renders its answer.
 the cycle's total gross, converted to base. `npm run check` asserts this against
 the mock; the server should assert it too.
 
+`GET /payroll/{empId}/tax` returns the whole tax position, not the inputs to
+one: the declaration, the salary structure, the capped section totals, the HRA
+exemption already reduced to the least of the three tests, both regimes priced,
+and which is cheaper. Tax rules are law, not display — the client must not be
+the place they are applied.
+
 ## Approval surfaces
 
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/overtime?empIds=&status=` | |
-| POST | `/overtime/{id}/approve` | 409 if already approved. |
+| POST | `/overtime` | Raise. 422 on zero hours, over 12 hours, or no reason. |
+| POST | `/overtime/{id}/approve` | 409 if already approved. **Credits comp off.** |
 | POST | `/loans/{id}/approve` | Moves to Active. 409 otherwise. |
 | GET | `/letter-requests?status=` | |
 | POST | `/letter-requests/{id}/issue` | 409 if already issued. Stamps the date. |
 
+## Shifts and rosters
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/roster?empIds=` | Keyed by employee id, then date. |
+| PUT | `/roster/{empId}/{date}` | 422 on an unknown shift pattern. |
+| GET | `/shifts/coverage/today` | Headcount per pattern. |
+
+Approving overtime credits comp off at one day per eight hours, in the same
+call. Two writes that must not come apart belong in one endpoint.
+
 ## Hiring
 
-| Method | Path |
-|---|---|
-| GET | `/hiring/interviews?panelId=&status=` |
-| GET | `/hiring/candidates` |
-| GET | `/hiring/requisitions` |
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/hiring/interviews?panelId=&status=` | Resolved rows: candidate and requisition title. |
+| GET | `/hiring/interviews/all` | The whole schedule, for the hiring screens. |
+| GET | `/hiring/candidates` | |
+| GET | `/hiring/requisitions` | |
+| PUT | `/hiring/candidates/{id}/stage` | 422 on an unknown pipeline stage. |
 
 Interviews come back with the candidate and requisition title resolved — the
 client does not join them.
@@ -218,16 +244,67 @@ client does not join them.
 | GET | `/performance/reviews?empIds=` |
 | GET | `/performance/praise` |
 | GET | `/performance/cycle/current` |
+| GET | `/performance/checkins?empIds=` |
+| PUT | `/performance/goals/{id}/progress` |
 | GET | `/learning/courses` |
 | GET | `/learning/enrolments?empIds=` |
+| POST | `/learning/enrolments` |
+| PUT | `/learning/enrolments/{empId}/{courseId}/progress` |
 | GET | `/helpdesk/tickets?empIds=` |
+| GET | `/helpdesk/knowledge-base` |
+| POST | `/helpdesk/tickets` |
+| POST | `/helpdesk/tickets/{id}/comments` |
+| POST | `/helpdesk/tickets/{id}/resolve` |
 | GET | `/engagement/surveys` |
 | GET | `/engagement/enps-history` |
 | GET | `/engagement/surveys/{id}/enps` |
 | GET | `/benefits/fbp-totals?empIds=` |
+| GET | `/benefits/fbp/{empId}` |
+| GET | `/benefits/fbp` |
+| PUT | `/benefits/fbp/{empId}` |
+| GET | `/benefits/insurance-cover` |
+| GET | `/onboarding` |
+| PUT | `/onboarding/{id}/tasks/{key}` |
+| POST | `/onboarding/{id}/complete` |
 | GET | `/announcements` |
 | GET | `/celebrations?days=` |
 | GET | `/exits` |
+| GET | `/documents/{empId}/letter-context` |
+
+Four of these own a derivation rather than a write:
+
+- **`PUT /performance/goals/{id}/progress`** — progress decides the status and
+  ticks the mid and final key results. 422 outside 0–100.
+- **`PUT /learning/.../progress`** — 100% completes the course, stamps the date
+  and issues the certificate.
+- **`PUT /onboarding/{id}/tasks/{key}`** — the journey's status follows from the
+  checklist. `POST /complete` **409s while any item is open**.
+- **`PUT /benefits/fbp/{empId}`** — 422 over the pool or over a component's
+  annual ceiling; **409 once the plan's lock date has passed**.
+
+`GET /documents/{empId}/letter-context` returns the facts a generated letter
+asserts: salary structure, last working day, current review and increment,
+year-to-date tax withheld, and the signatory. A letter is a legal statement, so
+those facts must be the server's, not the printer's.
+
+## WhatsApp notifications
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/whatsapp/templates` | |
+| GET | `/whatsapp/log?empId=` | |
+| GET | `/whatsapp/stats` | Delivery, read, cost and consent rates. |
+| GET | `/whatsapp/consent/{empId}` | |
+| GET | `/whatsapp/consent` | The register. Admin only. |
+| PUT | `/whatsapp/consent/{empId}/{category}` | See below. |
+| PUT | `/whatsapp/templates/{id}/enabled` | **409 unless Meta has approved it.** |
+| PUT | `/whatsapp/rules/{id}/enabled` | |
+
+Consent is recorded per category and the categories are not independent:
+withdrawing HR updates withdraws celebration messages with it, and celebrations
+cannot be opted into alone. Enforce that on the server — a client that toggles
+one flag at a time will get it wrong, and consent is the one thing a regulator
+will ask about.
 
 ---
 

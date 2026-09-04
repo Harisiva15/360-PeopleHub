@@ -76,6 +76,10 @@ export interface FbpPlan {
   pool: number;
   alloc: Record<string, number>;
   status: string;
+  /**
+   * The last date a revision can take effect within the financial year. After
+   * it, the allocation is fixed and the balance is paid as taxable salary.
+   */
   lockedOn: string | null;
   /** Set outside India, where the plan does not apply. */
   na?: boolean;
@@ -102,7 +106,7 @@ export const FBP: Record<string, FbpPlan> = {};
       alloc[c.id] = v;
       left -= v;
     });
-    FBP[e.id] = { pool, alloc, status: chance(0.6) ? 'Declared' : 'Not declared', lockedOn: '2026-04-30' };
+    FBP[e.id] = { pool, alloc, status: chance(0.6) ? 'Declared' : 'Not declared', lockedOn: '2027-03-31' };
   });
 })();
 
