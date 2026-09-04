@@ -1,0 +1,24 @@
+{
+  "name": "@360peoplehub/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-tenant API implementing docs/api-contract.md",
+  "scripts": {
+    "check:schema": "node scripts/check-schema.mjs",
+    "typecheck": "tsc --noEmit",
+    "migrate": "node scripts/migrate.mjs",
+    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "check:schema:test": "node scripts/check-schema.test.mjs",
+    "check": "npm run check:schema && npm run check:schema:test && npm run typecheck"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "libpg-query": "^17.2.0",
+    "typescript": "^5.7.2"
+  }
+}
