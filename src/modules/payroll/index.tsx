@@ -1,17 +1,17 @@
 import { useState } from 'react';
 import { sortBy, sum, uniq } from '../../lib/collections';
-import { addDays, fmtD, MON, mondayOf, monthLabel, monthLabelLong, TODAY, ymd } from '../../lib/dates';
+import { fmtD, MON, monthLabel, monthLabelLong, TODAY } from '../../lib/dates';
 import { inr, lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { countryOf, mb, mbS, money, moneyShort, sumBase, toBase } from '../../data/countries';
-import { ACTIVE, EMAP, empName, teamOf } from '../../data/employees';
-import { CLAIMS } from '../../data/expenses';
-import { LOANS, LOAN_TYPES, loanEmiFor } from '../../data/loans';
+import { LOAN_TYPES } from '../../data/loans';
 import { BANKS, DEPTS, deptOf, GRADES, ORG, projOf, siteOf } from '../../data/org';
-import { BANK_BATCHES, COMPLIANCE_PAYS, PAY_INPUTS } from '../../data/payinputs';
-import { CUR_RUN, DECL, PAYRUNS, payrollTotals, payslip } from '../../data/payroll';
-import { comp, compAllow, salaryStructure } from '../../data/salary';
-import { TS } from '../../data/timesheet';
+import {
+  useActiveLoans, useApprovedClaims, useBankBatches, useCompensation, useCompliancePayments,
+  useCurrentRun, useDeclarations, usePayInputs, usePayRuns, usePayrollTotals,
+  useProcessRun, usePayrollTotalsFor, usePayslipHistory, useRegister, useStructure,
+  useTeamTimesheets, useVisiblePeople,
+} from './data';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
 import { ListRow, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, LineChart, PAL } from '../../components/charts';
@@ -22,6 +22,7 @@ import { useShowPayslip } from './Payslip';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { Employee } from '../../types/employee';
+import type { SalaryStructure } from '../../services';
 import type { Grade } from '../../types/country';
 
 const m = (e: Employee, a: number) => money(a, e.ccy);
@@ -34,8 +35,15 @@ const TAX_RE = /Tax|TDS|PAYE/;
 
 function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
   const app = useApp();
-  const cur = payrollTotals(CUR_RUN.mk);
-  const trend = PAYRUNS.map((r) => ({ mk: r.mk, t: payrollTotals(r.mk) }));
+  const { data: runs = [] } = usePayRuns();
+  const { data: curRun } = useCurrentRun();
+  const { data: cur } = usePayrollTotals(curRun?.mk ?? '');
+  const processRun = useProcessRun();
+  const { data: allTotals = {} } = usePayrollTotalsFor(runs.map((r) => r.mk));
+  if (!curRun || !cur) return <EmptyState msg="Loading payroll…" icon="₹" />;
+  const CUR_RUN = curRun;
+  const PAYRUNS = runs;
+  const trend = runs.filter((r) => allTotals[r.mk]).map((r) => ({ mk: r.mk, t: allTotals[r.mk] }));
 
   return (
     <div className="stack">
@@ -43,7 +51,14 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
         icon={<span style={{ fontSize: 19 }}>{CUR_RUN.status === 'Paid' ? '✅' : '🧾'}</span>}
         title={`${monthLabelLong(CUR_RUN.mk)} payroll — ${CUR_RUN.status}`}
         actions={CUR_RUN.status !== 'Paid'
-          ? <button className="btn primary" onClick={() => app.toast('Payroll processing is simulated in this build')}>Process payroll</button>
+          ? <button className="btn primary" disabled={processRun.pending} onClick={async () => {
+              try {
+                await processRun.mutate(CUR_RUN.mk);
+                app.toast(monthLabelLong(CUR_RUN.mk) + ' payroll processed — bank advice generated', 'ok');
+              } catch (err) {
+                app.toast(err instanceof Error ? err.message : 'Could not process the run', 'err');
+              }
+            }}>Process payroll</button>
           : undefined}>
         {cur.count} employees · gross {inr(cur.gross)} · deductions {inr(cur.ded)} · <b>net payable {inr(cur.net)}</b>
       </Banner>
@@ -111,7 +126,7 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
                       <button className="btn sm" onClick={() => goRegister(t.mk)}>Register</button>{' '}
                       <button className="btn sm" onClick={() => {
                         app.toast('Publishing payslips for ' + monthLabelLong(t.mk) + '…');
-                        setTimeout(() => app.toast(ACTIVE().length + ' payslips published to employee self-service', 'ok'), 700);
+                        setTimeout(() => app.toast(t.t.count + ' payslips published to employee self-service', 'ok'), 700);
                       }}>Payslips</button>
                     </td>
                   </tr>
@@ -130,9 +145,13 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
 function PyRegister({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
   const showSlip = useShowPayslip();
   const [q, setQ] = useState('');
-  const list = ACTIVE().filter((e) => e.doj <= mk + '-28');
-  const slips = list.map((e) => ({ e, p: payslip(e, mk) }));
-  const t = payrollTotals(mk);
+  const { data: rows = [] } = useRegister(mk);
+  const { data: runs = [] } = usePayRuns();
+  const { data: totals } = usePayrollTotals(mk);
+  const slips = rows.map((r) => ({ e: r.employee, p: r.payslip }));
+  const list = slips.map((x) => x.e);
+  if (!totals) return <EmptyState msg="Loading the register…" icon="₹" />;
+  const t = totals;
 
   const shown = q
     ? slips.filter((s) => (s.e.name + ' ' + s.e.code).toLowerCase().includes(q.toLowerCase()))
@@ -156,7 +175,7 @@ function PyRegister({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
     <div className="stack">
       <div className="toolbar">
         <select className="input" style={{ width: 'auto' }} value={mk} onChange={(e) => setMk(e.target.value)}>
-          {PAYRUNS.map((r) => <option key={r.mk} value={r.mk}>{monthLabelLong(r.mk)}</option>)}
+          {runs.map((r) => <option key={r.mk} value={r.mk}>{monthLabelLong(r.mk)}</option>)}
         </select>
         <input className="input" placeholder="Search employee…" style={{ width: 210 }} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="spacer" />
@@ -226,12 +245,21 @@ function PyRegister({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
 function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
   const app = useApp();
   const showEmp = useShowEmployee();
-  const run = PAYRUNS.find((r) => r.mk === mk) || CUR_RUN;
-  const list = ACTIVE().filter((e) => e.doj <= mk + '-28');
-  const inputs = PAY_INPUTS[mk] || (PAY_INPUTS[mk] = {});
+  const { data: runs = [] } = usePayRuns();
+  const { data: curRun } = useCurrentRun();
+  const { data: rows = [] } = useRegister(mk);
+  const { data: inputs = {} } = usePayInputs(mk);
+  const { data: loans = [] } = useActiveLoans();
+  const { data: claims = [] } = useApprovedClaims();
+  const dir = useVisiblePeople();
+  const PAYRUNS = runs;
+  const run = runs.find((r) => r.mk === mk) || curRun;
+  const list = rows.map((r) => r.employee);
   const withInput = list.filter((e) => inputs[e.id]);
   const tot = (k: 'bonus' | 'arrears' | 'incentive' | 'other' | 'reimb') => sum(withInput, (e) => inputs[e.id][k] || 0);
-  const totalEmi = sum(list, (e) => loanEmiFor(e.id, mk));
+  const totalEmi = sum(rows, (r) => r.loanEmi);
+  const emiFor = (id: string) => rows.find((r) => r.employee.id === id)?.loanEmi ?? 0;
+  if (!run) return <EmptyState msg="Loading payroll inputs…" icon="₹" />;
 
   return (
     <div className="stack">
@@ -278,7 +306,7 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
             <tbody>
               {withInput.length ? sortBy(withInput, (e) => e.name).map((e) => {
                 const i = inputs[e.id];
-                const emi = loanEmiFor(e.id, mk);
+                const emi = emiFor(e.id);
                 const net = i.bonus + i.arrears + i.incentive + i.other + i.reimb - emi;
                 return (
                   <tr key={e.id} className="clickable" onClick={() => showEmp(e.id)}>
@@ -317,9 +345,9 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
             <table className="tbl">
               <thead><tr><th>Employee</th><th>Scheme</th><th className="num">EMI</th><th className="num">Instalment</th><th className="num">Outstanding</th></tr></thead>
               <tbody>
-                {LOANS.filter((l) => l.status === 'Active').length ? LOANS.filter((l) => l.status === 'Active').map((l) => (
+                {loans.length ? loans.map((l) => (
                   <tr key={l.id} className="clickable" onClick={() => showEmp(l.empId)}>
-                    <td><PersonCell e={EMAP[l.empId]} /></td>
+                    <td>{dir.byId(l.empId) && <PersonCell e={dir.byId(l.empId)!} />}</td>
                     <td>{LOAN_TYPES.find((t) => t.id === l.type)?.n || l.type}</td>
                     <td className="num">{inr(l.emi)}</td>
                     <td className="num">{l.paidN + 1} / {l.tenure}</td>
@@ -333,11 +361,11 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
 
         <Card title="Reimbursements queued" sub="Approved expense claims flowing into payroll" flush>
           <div style={{ maxHeight: 300, overflow: 'auto' }}>
-            {CLAIMS.filter((c) => c.status === 'Approved').length ? CLAIMS.filter((c) => c.status === 'Approved').slice(0, 12).map((c) => (
+            {claims.length ? claims.slice(0, 12).map((c) => (
               <ListRow key={c.id}>
-                <Avatar name={empName(c.empId)} size="sm" />
+                <Avatar name={dir.name(c.empId)} size="sm" />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{empName(c.empId)}</div>
+                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(c.empId)}</div>
                   <div className="muted" style={{ fontSize: 11 }}>{c.title}</div>
                 </div>
                 <span className="strong">{inr(c.total)}</span>
@@ -354,9 +382,15 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
 
 function PyBank() {
   const app = useApp();
-  const batches = sortBy(BANK_BATCHES, (b) => b.mk, 'desc');
+  const { data: rawBatches = [] } = useBankBatches();
+  const { data: curRun } = useCurrentRun();
+  const { data: curTotals } = usePayrollTotals(curRun?.mk ?? '');
+  const everyone = useVisiblePeople().list;
+  const batches = sortBy(rawBatches, (b) => b.mk, 'desc');
   const totalPaid = sum(batches.filter((b) => b.status === 'Paid'), (b) => b.amount);
-  const byBank = BANKS.map((b, i) => ({ k: b, c: PAL[i], v: ACTIVE().filter((e) => e.bank === b).length })).filter((r) => r.v);
+  const byBank = BANKS.map((b, i) => ({ k: b, c: PAL[i], v: everyone.filter((e) => e.bank === b).length })).filter((r) => r.v);
+  if (!curRun || !curTotals) return <EmptyState msg="Loading disbursal…" icon="🏦" />;
+  const CUR_RUN = curRun;
 
   return (
     <div className="stack">
@@ -364,13 +398,13 @@ function PyBank() {
         title={'Salary disbursal — ' + monthLabelLong(CUR_RUN.mk)}
         actions={<button className="btn primary" onClick={() => app.toast('Bank advice generated', 'ok')}>⤓ Generate bank advice</button>}>
         {CUR_RUN.status === 'Paid'
-          ? `Bank advice uploaded to ${BANKS[0]} · ${ACTIVE().length} beneficiaries · ${inr(payrollTotals(CUR_RUN.mk).net)} credited`
-          : `Payroll is still in draft. Process the run to generate the NEFT advice file for ${ACTIVE().length} beneficiaries.`}
+          ? `Bank advice uploaded to ${BANKS[0]} · ${curTotals.count} beneficiaries · ${inr(curTotals.net)} credited`
+          : `Payroll is still in draft. Process the run to generate the NEFT advice file for ${curTotals.count} beneficiaries.`}
       </Banner>
 
       <div className="grid g4">
         <Tile label="Disbursed (8 cycles)" value={lakh(totalPaid)} foot={`${batches.filter((b) => b.status === 'Paid').length} successful batches`} />
-        <Tile label="Beneficiaries" value={ACTIVE().length} foot="Active bank mandates" />
+        <Tile label="Beneficiaries" value={curTotals.count} foot="Active bank mandates" />
         <Tile label="Failed credits" value={0} foot="Returned by the bank" />
         <Tile label="Avg credit time" value="Same day" foot="NEFT before 4 PM cut-off" />
       </div>
@@ -429,7 +463,9 @@ function PyBank() {
 
 function PyComply() {
   const app = useApp();
-  const rows = sortBy(COMPLIANCE_PAYS, (c) => c.dueDate, 'desc');
+  const { data: pays = [] } = useCompliancePayments();
+  const { data: runs = [] } = usePayRuns();
+  const rows = sortBy(pays, (c) => c.dueDate, 'desc');
   const overdue = rows.filter((c) => c.status === 'Overdue');
   const scheduled = rows.filter((c) => c.status === 'Scheduled');
 
@@ -444,7 +480,7 @@ function PyComply() {
         <Tile label="Authorities" value={uniq(rows.map((c) => c.authority)).length} foot="Portals filed against" />
       </div>
 
-      <Card title="Statutory remittances" sub={`${rows.length} entries across ${PAYRUNS.length} cycles`} flush
+      <Card title="Statutory remittances" sub={`${rows.length} entries across ${runs.length} cycles`} flush
         actions={<button className="btn sm" onClick={() =>
           downloadCSV('compliance_payments.csv',
             [['Period', 'Type', 'Name', 'Amount', 'Due', 'Authority', 'Status', 'Challan', 'Paid on']].concat(
@@ -485,9 +521,14 @@ function PyComply() {
 /* ---------------- Statutory ---------------- */
 
 function PyStatutory({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
-  const t = payrollTotals(mk);
-  const list = ACTIVE().filter((e) => e.doj <= mk + '-28');
-  const esiEligible = list.filter((e) => payslip(e, mk).gross <= 21000);
+  const { data: totals } = usePayrollTotals(mk);
+  const { data: regRows = [] } = useRegister(mk);
+  const { data: decls = {} } = useDeclarations();
+  const { data: runs = [] } = usePayRuns();
+  const list = regRows.map((r) => r.employee);
+  if (!totals) return <EmptyState msg="Loading statutory summary…" icon="§" />;
+  const t = totals;
+  const esiEligible = regRows.filter((r) => r.payslip.gross <= 21000).map((r) => r.employee);
   const bySite = ['CHN', 'BLR', 'HYD', 'WFH']
     .map((s) => ({ site: siteOf(s), n: list.filter((e) => e.site === s).length, pt: list.filter((e) => e.site === s).length * siteOf(s).ptax }))
     .filter((r) => r.n);
@@ -498,7 +539,7 @@ function PyStatutory({ mk, setMk }: { mk: string; setMk: (s: string) => void }) 
     <div className="stack">
       <div className="toolbar">
         <select className="input" style={{ width: 'auto' }} value={mk} onChange={(e) => setMk(e.target.value)}>
-          {PAYRUNS.map((r) => <option key={r.mk} value={r.mk}>{monthLabelLong(r.mk)}</option>)}
+          {runs.map((r) => <option key={r.mk} value={r.mk}>{monthLabelLong(r.mk)}</option>)}
         </select>
         <div className="spacer" />
       </div>
@@ -569,10 +610,10 @@ function PyStatutory({ mk, setMk }: { mk: string; setMk: (s: string) => void }) 
             <table className="tbl">
               <tbody>
                 {([
-                  ['Employees on New Regime', ACTIVE().filter((e) => DECL[e.id]?.regime === 'New').length],
-                  ['Employees on Old Regime', ACTIVE().filter((e) => DECL[e.id]?.regime === 'Old').length],
-                  ['Declarations submitted', `${ACTIVE().filter((e) => DECL[e.id]?.status !== 'Draft').length} / ${ACTIVE().length}`],
-                  ['Proofs verified', ACTIVE().filter((e) => DECL[e.id]?.status === 'Verified').length],
+                  ['Employees on New Regime', list.filter((e) => decls[e.id]?.regime === 'New').length],
+                  ['Employees on Old Regime', list.filter((e) => decls[e.id]?.regime === 'Old').length],
+                  ['Declarations submitted', `${list.filter((e) => decls[e.id]?.status !== 'Draft').length} / ${list.length}`],
+                  ['Proofs verified', list.filter((e) => decls[e.id]?.status === 'Verified').length],
                   ['TDS deducted this month', inr(t.tds)],
                   ['Projected annual TDS', inr(t.tds * 12)],
                 ] as [string, string | number][]).map(([k, v]) => (
@@ -592,35 +633,38 @@ function PyStatutory({ mk, setMk }: { mk: string; setMk: (s: string) => void }) 
 function PyStructures() {
   const layer = useLayer();
   const [q, setQ] = useState('');
-  const list = sortBy(ACTIVE(), (e) => -e.ctc);
+  const { data: rows = [] } = useCompensation();
+  const salaryOf = new Map(rows.map((r) => [r.employee.id, r]));
+  const everyone = rows.map((r) => r.employee);
+  const list = sortBy(everyone, (e) => -e.ctc);
   const shown = q ? list.filter((e) => (e.name + ' ' + e.code).toLowerCase().includes(q.toLowerCase())) : list;
 
   const byGrade = (Object.keys(GRADES) as Grade[]).map((g, i) => ({
-    k: GRADES[g].label, c: PAL[i], v: ACTIVE().filter((e) => e.grade === g).length,
+    k: GRADES[g].label, c: PAL[i], v: everyone.filter((e) => e.grade === g).length,
   }));
   const costByDept = DEPTS.map((d) => ({
-    k: d.name, c: d.color, v: sumBase(ACTIVE().filter((e) => e.dept === d.id), (e) => e.ctc),
+    k: d.name, c: d.color, v: sumBase(everyone.filter((e) => e.dept === d.id), (e) => e.ctc),
   }));
-  const medianBase = sortBy(ACTIVE().map((e) => toBase(e.ctc, e.ccy)))[Math.floor(ACTIVE().length / 2)];
+  const medianBase = sortBy(everyone.map((e) => toBase(e.ctc, e.ccy)))[Math.floor(everyone.length / 2)];
 
   const showBreakup = (e: Employee) =>
     layer.modal({
       title: 'Salary breakup — ' + e.name,
       sub: `${countryOf(e.country).wage} ${m(e, e.ctc)} · ${GRADES[e.grade].label}`,
       size: 'wide',
-      body: <StructureTable e={e} />,
+      body: <StructureTable e={e} s={salaryOf.get(e.id)!.salary} />,
     });
 
   return (
     <div className="stack">
       <div className="grid g4">
-        <Tile label="Total annual cost" value={mbS(sumBase(ACTIVE(), (e) => e.ctc))}
-          foot={`${ACTIVE().length} employees across ${uniq(ACTIVE().map((e) => e.country)).length} countries`} />
+        <Tile label="Total annual cost" value={mbS(sumBase(everyone, (e) => e.ctc))}
+          foot={`${everyone.length} employees across ${uniq(everyone.map((e) => e.country)).length} countries`} />
         <Tile label="Median package (₹ base)" value={mbS(medianBase)} foot="Normalised for comparison" />
         <Tile label="Highest band" value={GRADES.L6.label.split('·')[1]}
-          foot={`Leadership · ${ACTIVE().filter((e) => e.grade === 'L6').length} employees`} />
+          foot={`Leadership · ${everyone.filter((e) => e.grade === 'L6').length} employees`} />
         <Tile label="Avg employer burden"
-          value={mbS(sumBase(ACTIVE(), (e) => sum(salaryStructure(e).benefits, (b) => b.a)) / ACTIVE().length)}
+          value={mbS(sumBase(everyone, (e) => sum(salaryOf.get(e.id)!.salary.benefits, (b) => b.a)) / Math.max(1, everyone.length))}
           foot="Statutory + benefits, per employee" />
       </div>
 
@@ -651,7 +695,7 @@ function PyStructures() {
             </thead>
             <tbody>
               {shown.map((e) => {
-                const s = salaryStructure(e);
+                const s = salaryOf.get(e.id)!.salary;
                 const ct = countryOf(e.country);
                 return (
                   <tr key={e.id}>
@@ -661,8 +705,8 @@ function PyStructures() {
                     <td className="nowrap">{ct.flag} {e.ccy}</td>
                     <td className="num strong">{m(e, e.ctc)}</td>
                     <td className="num muted">{mbS(toBase(e.ctc, e.ccy))}</td>
-                    <td className="num">{m(e, comp(s, 0))}</td>
-                    <td className="num">{m(e, compAllow(s))}</td>
+                    <td className="num">{m(e, salaryOf.get(e.id)!.basicAnnual)}</td>
+                    <td className="num">{m(e, salaryOf.get(e.id)!.allowanceAnnual)}</td>
                     <td className="num">{m(e, sum(s.benefits, (b) => b.a))}</td>
                     <td className="num">{m(e, Math.round(s.grossA / 12))}</td>
                     <td className="right"><button className="btn sm" onClick={() => showBreakup(e)}>Breakup</button></td>
@@ -679,8 +723,7 @@ function PyStructures() {
 
 /* ---------------- My salary structure ---------------- */
 
-function StructureTable({ e }: { e: Employee }) {
-  const s = salaryStructure(e);
+function StructureTable({ e, s }: { e: Employee; s: SalaryStructure }) {
   return (
     <div className="tbl-wrap">
       <table className="tbl">
@@ -717,14 +760,15 @@ function StructureTable({ e }: { e: Employee }) {
 function PyMyStructure() {
   const app = useApp();
   const e = app.me;
-  const s = salaryStructure(e);
+  const { data: s } = useStructure(e.id);
   const ct = countryOf(e.country);
+  if (!s) return <EmptyState msg="Loading your salary structure…" icon="₹" />;
 
   return (
     <div className="stack">
       <div className="grid g-2-1">
         <Card title="Salary structure" sub={`${ct.flag} ${ct.wage} ${m(e, e.ctc)} · ${GRADES[e.grade].label}`} flush>
-          <StructureTable e={e} />
+          <StructureTable e={e} s={s} />
         </Card>
         <Card title="CTC composition" sub={GRADES[e.grade].label}>
           <Donut size={160} center={mS(e, e.ctc)} centerSub={'annual ' + e.ccy} fmt={(v) => m(e, v)}
@@ -746,14 +790,15 @@ function PyMe() {
   const e = app.me;
   const ct = countryOf(e.country);
 
-  const runs = PAYRUNS.filter((r) => r.status === 'Paid' && r.mk >= e.doj.slice(0, 7));
-  const slips = runs.map((r) => ({ r, p: payslip(e, r.mk) }));
+  const { data: history = [] } = usePayslipHistory(e.id);
+  const { data: decls = {} } = useDeclarations();
+  const slips = history.map((h) => ({ r: h.run, p: h.payslip }));
   const fyStart = (TODAY.getMonth() >= 3 ? TODAY.getFullYear() : TODAY.getFullYear() - 1) + '-04';
   const ytd = slips.filter((s) => s.r.mk >= fyStart);
 
   const docs: [string, string][] = [
     ['Form 16 — ' + ORG.fy, 'Provisional, live computation'],
-    ['Form 12BB declaration', DECL[e.id]?.status || 'Draft'],
+    ['Form 12BB declaration', decls[e.id]?.status || 'Draft'],
     ['Salary certificate', 'For loans and visas'],
     [`PF passbook (UAN ${e.uan || '—'})`, 'EPFO portal'],
   ];
@@ -825,16 +870,20 @@ function PyMe() {
 function PyTeamCost() {
   const app = useApp();
   const showEmp = useShowEmployee();
-  const team = teamOf(app.meId, true).map((i) => EMAP[i]);
+  const dir = useVisiblePeople();
+  const { data: runs = [] } = usePayRuns();
+  const team = dir.list.filter((e) => e.id !== app.meId);
   const ids = team.map((x) => x.id);
-  const mk = PAYRUNS[PAYRUNS.length - 2].mk;
+  const { data: recent = [] } = useTeamTimesheets(ids);
+  if (runs.length < 2) return <EmptyState msg="Loading team cost…" icon="₹" />;
+  const mk = runs[runs.length - 2].mk;
   const total = sum(team, (e) => e.ctc);
 
   const byGrade = (Object.keys(GRADES) as Grade[]).map((g, i) => ({
     k: GRADES[g].label, c: PAL[i], v: sum(team.filter((e) => e.grade === g), (e) => e.ctc),
   })).filter((r) => r.v);
 
-  const recent = TS.filter((t) => ids.includes(t.empId) && t.weekStart >= ymd(mondayOf(addDays(TODAY, -28))));
+
   const billableCoverage = pct(
     sum(recent, (t) => sum(t.rows.filter((r) => projOf(r.proj).billable), (r) => sum(r.h))),
     Math.max(1, sum(recent, (t) => t.total)),
@@ -896,7 +945,11 @@ function Payroll() {
         : [{ v: 'me', label: 'My Payslips' }, { v: 'struct', label: 'My Salary Structure' }];
 
   const [tab, setTab] = useState<Tab>(tabs[0].v);
-  const [mk, setMk] = useState(PAYRUNS[PAYRUNS.length - 2].mk);
+  const { data: runs = [] } = usePayRuns();
+  const [picked, setPicked] = useState('');
+  /* Default to the last closed cycle once the runs arrive. */
+  const mk = picked || runs[runs.length - 2]?.mk || '';
+  const setMk = setPicked;
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
 
   const goRegister = (m2: string) => { setMk(m2); setTab('reg'); };

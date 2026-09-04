@@ -2,10 +2,9 @@ import { LOGO_LIGHT } from '../../assets/logo';
 import { fmtD, monthLabelLong } from '../../lib/dates';
 import { downloadCSV } from '../../lib/csv';
 import { countryOf, money } from '../../data/countries';
-import { EMAP } from '../../data/employees';
 import { deptOf, ORG, siteOf } from '../../data/org';
-import { payslip } from '../../data/payroll';
-import { salaryStructure } from '../../data/salary';
+import type { Employee, Payslip, SalaryStructure } from '../../services';
+import { getServices } from '../../services';
 import { useLayer } from '../../components/Layer';
 
 /** Indian numbering system, for the amount-in-words line on Indian payslips. */
@@ -26,10 +25,7 @@ function inWords(value: number): string {
   return out.trim() + ' Rupees Only';
 }
 
-function PayslipDoc({ empId, mk }: { empId: string; mk: string }) {
-  const e = EMAP[empId];
-  const p = payslip(e, mk);
-  const s = salaryStructure(e);
+function PayslipDoc({ e, p, s, mk }: { e: Employee; p: Payslip; s: SalaryStructure; mk: string }) {
   const CC = e.ccy || 'INR';
   const CT = countryOf(e.country);
   const M = (a: number) => money(a, CC);
@@ -155,14 +151,18 @@ function PayslipDoc({ empId, mk }: { empId: string; mk: string }) {
 /** Opens the payslip document. Shared by the register, self-service and search. */
 export function useShowPayslip() {
   const layer = useLayer();
-  return (empId: string, mk: string) => {
-    const e = EMAP[empId];
-    const p = payslip(e, mk);
+  /* Resolve the person and their computed slip before opening — the drawer
+     header needs both, and both come from the service. */
+  return async (empId: string, mk: string) => {
+    const svc = getServices();
+    const e = await svc.employees.byId(empId);
+    if (!e) return;
+    const [p, s] = await Promise.all([svc.payroll.payslip(empId, mk), svc.payroll.structure(empId)]);
     layer.modal({
       title: 'Payslip — ' + monthLabelLong(mk),
       sub: e.name + ' · ' + e.code,
       size: 'wide',
-      body: <PayslipDoc empId={empId} mk={mk} />,
+      body: <PayslipDoc e={e} p={p} s={s} mk={mk} />,
       footer: (close) => (
         <>
           <button className="btn" onClick={close}>Close</button>

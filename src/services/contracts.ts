@@ -24,6 +24,16 @@ import type { LeaveBalance, LeaveRequest, LeaveStatus } from '../data/leave';
 import type { AttRecord } from '../data/attendance';
 import type { Timesheet, TSStatus } from '../data/timesheet';
 import type { Advance, Claim, ClaimStatus, ExpItem } from '../data/expenses';
+import type { Asset } from '../types/asset';
+import type { EmpDoc } from '../data/announcements';
+import type { Ticket } from '../data/helpdesk';
+import type { LifecycleEvent } from '../data/lifecycle';
+import type { Loan } from '../data/loans';
+import type { Goal } from '../data/performance';
+import type { ExitRecord } from '../data/exit';
+import type { SalaryStructure } from '../data/salary';
+import type { Declaration, PayInput, PayRun, Payslip, PayrollTotals } from '../data/payroll';
+import type { BankBatch, CompliancePayment } from '../data/payinputs';
 
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
@@ -32,6 +42,17 @@ export type { LeaveRequest, LeaveStatus } from '../data/leave';
 export type { AttRecord, AttStatus, Regularisation } from '../data/attendance';
 export type { Timesheet, TSRow, TSStatus } from '../data/timesheet';
 export type { Advance, Claim, ClaimStatus, ExpItem } from '../data/expenses';
+export type { Asset } from '../types/asset';
+export type { EmpDoc } from '../data/announcements';
+export type { Ticket } from '../data/helpdesk';
+export type { Enrollment } from '../data/learning';
+export type { LifecycleEvent } from '../data/lifecycle';
+export type { Loan } from '../data/loans';
+export type { Goal, Praise } from '../data/performance';
+export type { ExitRecord } from '../data/exit';
+export type { SalaryStructure } from '../data/salary';
+export type { Declaration, PayInput, PayRun, Payslip, PayrollTotals } from '../data/payroll';
+export type { BankBatch, CompliancePayment } from '../data/payinputs';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
 export interface Caller {
@@ -41,6 +62,36 @@ export interface Caller {
 
 /* ---------- employees ---------- */
 
+/**
+ * Everything the profile drawer renders, in one response.
+ *
+ * A real API would expose this as GET /employees/{id}/profile rather than
+ * make the screen fan out fourteen calls, so the contract says so here.
+ */
+export interface EmployeeProfile {
+  employee: Employee;
+  managerName: string;
+  reports: Employee[];
+  salary: SalaryStructure;
+  /** Monthly basic and allowance totals, already computed. */
+  compMonthly: { basic: number; allowance: number };
+  taxRegime: string;
+  taxStatus: string;
+  /** The current month's attendance, for the presence tile. */
+  attendanceThisMonth: AttRecord[];
+  leaveBalances: LeaveBalanceRow[];
+  assets: Asset[];
+  documents: EmpDoc[];
+  claims: Claim[];
+  tickets: Ticket[];
+  coursesCompleted: number;
+  praiseReceived: number;
+  goals: Goal[];
+  loans: Loan[];
+  lifecycle: LifecycleEvent[];
+  exit: ExitRecord | null;
+}
+
 export interface EmployeeService {
   /** Everyone the caller may see — the whole company, their tree, or themselves. */
   visible(c: Caller): Promise<Employee[]>;
@@ -48,8 +99,12 @@ export interface EmployeeService {
   /** Resolved in bulk; screens should not fetch a directory one row at a time. */
   byIds(ids: string[]): Promise<Employee[]>;
   active(): Promise<Employee[]>;
+  /** Leavers — the directory can switch to them. */
+  exited(): Promise<Employee[]>;
   /** Direct reports, or the whole sub-tree when `deep`. */
   team(managerId: string, deep?: boolean): Promise<Employee[]>;
+  /** The composite behind the profile drawer. */
+  profile(id: string): Promise<EmployeeProfile | null>;
   setRole(id: string, role: AppRole): Promise<Employee>;
 }
 
@@ -179,6 +234,50 @@ export interface ExpenseService {
   approveAdvance(id: string): Promise<Advance>;
 }
 
+/* ---------- payroll ---------- */
+
+/** One row of the payroll register: the person and their computed payslip. */
+export interface RegisterRow {
+  employee: Employee;
+  payslip: Payslip;
+  /** Loan instalment recovered in this cycle. */
+  loanEmi: number;
+}
+
+/** The salary-structure view, computed rather than derived in the screen. */
+export interface CompRow {
+  employee: Employee;
+  salary: SalaryStructure;
+  basicAnnual: number;
+  allowanceAnnual: number;
+}
+
+export interface PayrollService {
+  runs(): Promise<PayRun[]>;
+  currentRun(): Promise<PayRun>;
+  /** Gross, deductions, statutory splits and per-country totals for a cycle. */
+  totals(mk: string): Promise<PayrollTotals>;
+  /** Totals for several cycles at once — the trend charts want the series. */
+  totalsFor(mks: string[]): Promise<Record<string, PayrollTotals>>;
+  /** Everyone paid in a cycle, with their payslip already computed. */
+  register(mk: string): Promise<RegisterRow[]>;
+  payslip(empId: string, mk: string): Promise<Payslip>;
+  /** One person's payslip history — every paid cycle since they joined. */
+  payslipHistory(empId: string): Promise<{ run: PayRun; payslip: Payslip }[]>;
+  /** The salary structure behind one person's own pay. */
+  structure(empId: string): Promise<SalaryStructure>;
+  /** Off-cycle inputs (bonus, arrears, incentive) keyed by employee. */
+  inputs(mk: string): Promise<Record<string, PayInput>>;
+  /** Salary structures across the workforce, for the compensation view. */
+  compensation(): Promise<CompRow[]>;
+  declarations(): Promise<Record<string, Declaration>>;
+  bankBatches(): Promise<BankBatch[]>;
+  compliancePayments(): Promise<CompliancePayment[]>;
+  activeLoans(): Promise<Loan[]>;
+  /** Marks a draft cycle paid and generates its bank advice. */
+  processRun(mk: string): Promise<PayRun>;
+}
+
 /* ---------- the registry ---------- */
 
 export interface Services {
@@ -186,5 +285,6 @@ export interface Services {
   attendance: AttendanceService;
   timesheet: TimesheetService;
   expenses: ExpenseService;
+  payroll: PayrollService;
   leave: LeaveService;
 }

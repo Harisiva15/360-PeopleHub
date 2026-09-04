@@ -1,28 +1,17 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { sum } from '../../lib/collections';
-import { fmtD, monthKey, TODAY, tenure, yearsSince } from '../../lib/dates';
+import { fmtD, tenure, yearsSince } from '../../lib/dates';
 import { inr, pct } from '../../lib/format';
-import { ATT_IDX } from '../../data/attendance';
-import { ASSETS, DOCS } from '../../data/announcements';
 import { countryOf, mbS, money, toBase } from '../../data/countries';
-import { EMAP, empName } from '../../data/employees';
-import { CLAIMS } from '../../data/expenses';
-import { TICKETS } from '../../data/helpdesk';
-import { ENROLL } from '../../data/learning';
-import { LEAVE_BAL, leaveBalance } from '../../data/leave';
-import { LIFECYCLE } from '../../data/lifecycle';
-import { activeLoans } from '../../data/loans';
 import { deptOf, GRADES, siteOf } from '../../data/org';
-import { DECL } from '../../data/payroll';
-import { GOALS, PRAISE } from '../../data/performance';
-import { comp, compAllow, salaryStructure } from '../../data/salary';
-import { exitOf } from '../../data/exit';
+import type { EmployeeProfile } from '../../services';
+import { getServices } from '../../services';
+import { useProfile } from './data';
 import { Avatar, Badge, Banner, KV } from '../../components/ui';
 import { Chip, ListRow, StatusBadge } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import type { Employee } from '../../types/employee';
 
 function SectionHead({ children }: { children: React.ReactNode }) {
   return (
@@ -42,36 +31,38 @@ function MiniTile({ label, value, foot }: { label: string; value: React.ReactNod
   );
 }
 
-function ProfileBody({ e, jump }: { e: Employee; jump: (id: string) => void }) {
+function ProfileBody({ id, jump }: { id: string; jump: (nextId: string) => void }) {
+  const { data: p } = useProfile(id);
+  if (!p) return <div className="muted">Loading profile…</div>;
+  return <ProfileView p={p} jump={jump} />;
+}
+
+function ProfileView({ p, jump }: { p: EmployeeProfile; jump: (id: string) => void }) {
   const app = useApp();
+  const e = p.employee;
   const isSelf = e.id === app.meId;
 
   /* compensation is HR-and-self only; personal details also open to the line manager */
   const canSeeComp = app.role === 'admin' || isSelf;
   const canSeePersonal = canSeeComp || (app.role === 'manager' && app.isMyReport(e.id));
 
-  const s = salaryStructure(e);
+  const s = p.salary;
   const ctry = countryOf(e.country);
   const m = (a: number) => money(a, e.ccy);
 
-  const mk = monthKey(TODAY);
-  const recs = Object.values(ATT_IDX[e.id] || {}).filter((r) => r.date.slice(0, 7) === mk);
+  const recs = p.attendanceThisMonth;
   const present = recs.filter((r) => r.status === 'P' || r.status === 'W').length;
   const work = recs.filter((r) => ['P', 'W', 'A', 'L'].includes(r.status)).length;
 
-  const bals = Object.keys(LEAVE_BAL[e.id] || {})
-    .map((t) => ({ t, ...leaveBalance(e.id, t)! }))
-    .filter((b) => b.quota + b.carry > 0);
-
-  const assets = ASSETS.filter((a) => a.empId === e.id);
-  const docs = DOCS.filter((d) => d.empId === e.id);
-  const reports = (e.reports || []).map((r) => EMAP[r]);
-
-  const myGoals = GOALS.filter((g) => g.empId === e.id);
-  const myClaims = CLAIMS.filter((c) => c.empId === e.id);
-  const myTickets = TICKETS.filter((t) => t.empId === e.id);
-  const loans = activeLoans(e.id);
-  const ex = exitOf(e.id);
+  const bals = p.leaveBalances.filter((b) => b.quota + b.carry > 0);
+  const assets = p.assets;
+  const docs = p.documents;
+  const reports = p.reports;
+  const myGoals = p.goals;
+  const myClaims = p.claims;
+  const myTickets = p.tickets;
+  const loans = p.loans;
+  const ex = p.exit;
 
   /* national identifiers differ by country — show whichever this person has */
   const ids: [string, string | null | undefined][] = [
@@ -107,7 +98,7 @@ function ProfileBody({ e, jump }: { e: Employee; jump: (id: string) => void }) {
           ['Employee code', <span className="mono">{e.code}</span>],
           ['Department', deptOf(e.dept).name],
           ['Reporting to', e.managerId
-            ? <a onClick={() => jump(e.managerId!)} style={{ cursor: 'pointer' }}>{empName(e.managerId)}</a>
+            ? <a onClick={() => jump(e.managerId!)} style={{ cursor: 'pointer' }}>{p.managerName}</a>
             : '—'],
           ['Location', `${siteOf(e.site).name} · ${ctry.flag} ${ctry.name}`],
           ['Legal entity', ctry.entity],
@@ -144,11 +135,11 @@ function ProfileBody({ e, jump }: { e: Employee; jump: (id: string) => void }) {
               [ctry.wage, <><b>{m(e.ctc)}</b> <span className="muted">({e.ccy} · {mbS(toBase(e.ctc, e.ccy))} base)</span></>],
               ['Monthly gross', m(s.grossA / 12)],
               [e.country === 'IN' ? 'Basic / HRA' : 'Basic / allowances',
-                `${m(comp(s, 0) / 12)} / ${m(compAllow(s) / 12)} per month`],
+                `${m(p.compMonthly.basic)} / ${m(p.compMonthly.allowance)} per month`],
               ...ids.filter(([, v]) => v).map(([k, v]) => [k, <span className="mono">{v}</span>] as [string, React.ReactNode]),
               ...(e.workAuth ? [['Work authorisation', e.workAuth] as [string, React.ReactNode]] : []),
               ['Bank', `${e.bank} · ${e.acct} · ${e.ifsc}`],
-              ['Tax regime', `${DECL[e.id]?.regime || '—'} · ${DECL[e.id]?.status || ''}`],
+              ['Tax regime', `${p.taxRegime} · ${p.taxStatus}`],
             ]} />
           </div>
         </>
@@ -178,7 +169,7 @@ function ProfileBody({ e, jump }: { e: Employee; jump: (id: string) => void }) {
 
       <SectionHead>Career timeline</SectionHead>
       <div className="tl" style={{ marginBottom: 16 }}>
-        {(LIFECYCLE[e.id] || []).map((ev, i) => (
+        {p.lifecycle.map((ev, i) => (
           <div key={i} className={'tl-i ' + (ev.type === 'Promotion' ? 'alt' : ev.type === 'Salary Revision' ? '' : 'warn')}>
             <div style={{ fontWeight: 700, fontSize: 12.5 }}>{ev.type}</div>
             <div className="muted" style={{ fontSize: 11.5 }}>{fmtD(ev.on)} · {ev.note}</div>
@@ -198,8 +189,8 @@ function ProfileBody({ e, jump }: { e: Employee; jump: (id: string) => void }) {
             <MiniTile label="Goals"
               value={Math.round(sum(myGoals, (g) => g.progress * g.weight) / Math.max(1, sum(myGoals, (g) => g.weight))) + '%'}
               foot={`${myGoals.length} goals`} />
-            <MiniTile label="Learning" value={ENROLL.filter((x) => x.empId === e.id && x.status === 'Completed').length} foot="courses done" />
-            <MiniTile label="Praise" value={PRAISE.filter((p) => p.toId === e.id).length} foot="recognitions" />
+            <MiniTile label="Learning" value={p.coursesCompleted} foot="courses done" />
+            <MiniTile label="Praise" value={p.praiseReceived} foot="recognitions" />
           </div>
           {(myClaims.length > 0 || myTickets.length > 0 || loans.length > 0) && (
             <div className="row wrap" style={{ gap: 7, marginBottom: 16 }}>
@@ -256,14 +247,16 @@ export function useShowEmployee() {
   const app = useApp();
   const nav = useNavigate();
 
+  /* The header needs the person before the drawer opens, so resolve them first
+     — the body then fetches the rest of the profile on its own. */
   const show = useCallback(
-    (id: string) => {
-      const e = EMAP[id];
+    async (id: string) => {
+      const e = await getServices().employees.byId(id);
       if (!e) return;
       layer.drawer({
         title: e.name,
         sub: e.designation + ' · ' + e.code,
-        body: <ProfileBody e={e} jump={show} />,
+        body: <ProfileBody id={id} jump={show} />,
         footer: (close) => (
           <>
             <button className="btn" onClick={close}>Close</button>

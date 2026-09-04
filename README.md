@@ -54,7 +54,7 @@ component for nothing.
 double approval.
 
 **Migration status.** On the seam: `leave`, `attendance`, `timesheet`,
-`expenses`. Each has a `data.ts` holding its reads and writes as service
+`expenses`, `employees`, `payroll`. Each has a `data.ts` holding its reads and writes as service
 calls; `src/modules/leave/data.ts` is the reference to copy, including the
 two-stage fetch (rows, then the people they reference) that a real client
 needs when the API does not denormalise names into the row.
@@ -62,8 +62,15 @@ needs when the API does not denormalise names into the row.
 The remaining modules still import `src/data` directly. `AppProvider`
 subscribes to service invalidations and re-renders them, which is the bridge
 that keeps them correct until they are moved. Rough order of remaining work,
-heaviest first: `approvals` (27 write sites), `dashboard`, `copilot`,
-`payroll` and `employees` (read-only, so quick), then the staffing book.
+heaviest first: `approvals` (27 write sites), `dashboard`, `copilot`, then
+the staffing book and the smaller screens.
+
+Two shapes are worth copying. The employee profile is a single composite
+(`EmployeeProfile`) rather than fourteen calls across as many domains,
+because that is what a real `GET /employees/{id}/profile` returns. Payroll
+computes payslips, cycle totals, the register and salary structures in the
+service, because a payroll engine runs on the server and the screen should be
+rendering its answer rather than deriving one of its own.
 
 Each migration follows the same four steps: ground a contract in what the
 module actually does, implement it in `services/mock`, add a module

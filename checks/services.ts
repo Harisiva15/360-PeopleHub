@@ -1,5 +1,6 @@
 import { getServices } from '../src/services';
-import { DEMO_EMP, DEMO_MGR, HRHEAD } from '../src/data/employees';
+import { DEMO_EMP, DEMO_MGR, EMAP, HRHEAD } from '../src/data/employees';
+import { toBase } from '../src/data/countries';
 
 const s = getServices();
 let failed = 0;
@@ -165,6 +166,37 @@ const check = (label: string, got: unknown, want: unknown) => {
   let dblAdv = false;
   try { await s.expenses.approveAdvance(adv.id); } catch { dblAdv = true; }
   check('an advance is approved once', dblAdv, true);
+
+  /* ---- employees ---- */
+  const prof = await s.employees.profile(DEMO_EMP.id);
+  check('the profile composite resolves', !!prof, true);
+  check('it carries the manager name, not just an id', prof!.managerName, EMAP[DEMO_EMP.managerId!].name);
+  check('it computes monthly comp', prof!.compMonthly.basic > 0, true);
+  check('leave balances come with it', prof!.leaveBalances.length > 0, true);
+  const missingProfile = await s.employees.profile('NOPE');
+  check('an unknown id resolves to null, not a throw', missingProfile, null);
+
+  /* ---- payroll ---- */
+  const allRuns = await s.payroll.runs();
+  const lastPaid = allRuns.filter((r) => r.status === 'Paid').slice(-1)[0];
+  const reg = await s.payroll.register(lastPaid.mk);
+  const regTotals = await s.payroll.totals(lastPaid.mk);
+  check('the register covers everyone in the cycle', reg.length, regTotals.count);
+  check('register gross reconciles with the cycle total',
+    Math.round(reg.reduce((t, r) => t + toBase(r.payslip.gross, r.employee.ccy), 0)),
+    Math.round(regTotals.gross));
+
+  const hist = await s.payroll.payslipHistory(DEMO_EMP.id);
+  check('payslip history covers only paid cycles', hist.every((h) => h.run.status === 'Paid'), true);
+  check('history starts no earlier than the join date',
+    hist.every((h) => h.run.mk >= DEMO_EMP.doj.slice(0, 7)), true);
+
+  const batched = await s.payroll.totalsFor([lastPaid.mk]);
+  check('batched totals match the single read', batched[lastPaid.mk].net, regTotals.net);
+
+  let rerun = false;
+  try { await s.payroll.processRun(lastPaid.mk); } catch { rerun = true; }
+  check('a paid cycle cannot be processed twice', rerun, true);
 
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall service checks passed');
   process.exit(failed ? 1 : 0);

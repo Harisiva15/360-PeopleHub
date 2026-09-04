@@ -3,7 +3,7 @@ import { sortBy, sum } from '../../lib/collections';
 import { daysBetween, fmtD, TODAY, tenure, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { ACTIVE, EMP, empName } from '../../data/employees';
+import { useAllEmployees, useExitedEmployees, usePeople, useVisiblePeople } from './data';
 import { DEPTS, deptOf, GRADES, siteOf, SITES } from '../../data/org';
 import { Avatar, Badge, Card, EmptyState, PersonCell, Tile } from '../../components/ui';
 import { Chip, StatusBadge } from '../../components/common';
@@ -26,9 +26,13 @@ function Employees() {
   const [view, setView] = useState<'grid' | 'list'>('grid');
 
   /* the directory itself is open to everyone; sensitive fields are gated in the profile */
-  const all = app.role === 'employee' ? ACTIVE() : visibleEmps(app.role, app.meId);
+  const dir = useVisiblePeople();
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: leavers = [] } = useExitedEmployees();
+  const all = app.role === 'employee' ? everyone : dir.list;
+  const managers = usePeople(all.map((e) => e.managerId));
 
-  let list = status === 'Exited' ? EMP.filter((e) => e.status === 'Exited') : all;
+  let list = status === 'Exited' ? leavers : all;
   if (dept) list = list.filter((e) => e.dept === dept);
   if (site) list = list.filter((e) => e.site === site);
   if (grade) list = list.filter((e) => e.grade === grade);
@@ -46,7 +50,7 @@ function Employees() {
       [['Code', 'Name', 'Department', 'Designation', 'Grade', 'Location', 'Manager', 'Joined', 'Status']].concat(
         list.map((e) => [
           e.code, e.name, deptOf(e.dept).name, e.designation, e.grade,
-          siteOf(e.site).name, e.managerId ? empName(e.managerId) : '', e.doj, e.status,
+          siteOf(e.site).name, managers.name(e.managerId), e.doj, e.status,
         ]),
       ),
     );
@@ -132,7 +136,7 @@ function Employees() {
                     <td className="nowrap">{e.designation}</td>
                     <td><Badge>{e.grade}</Badge></td>
                     <td className="nowrap">{siteOf(e.site).name}</td>
-                    <td className="nowrap">{e.managerId ? empName(e.managerId) : '—'}</td>
+                    <td className="nowrap">{managers.name(e.managerId)}</td>
                     <td className="nowrap">{fmtD(e.doj)}</td>
                     <td>{tenure(e.doj)}</td>
                     <td><StatusBadge status={e.status} />{e.probation && <> <Badge kind="warn">Probation</Badge></>}</td>
