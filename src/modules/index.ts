@@ -22,6 +22,8 @@ import './hiring';
 import './tax';
 import './shifts';
 import './expenses';
+import './performance';
+import './learning';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {
