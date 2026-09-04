@@ -14,8 +14,10 @@ import { TODAY, ymd } from '../../lib/dates';
 import { uid } from '../../lib/rng';
 import { enpsOf, ENPS_HISTORY, SURVEYS } from '../../data/engagement';
 import { ANNOUNCE, celebrations } from '../../data/announcements';
-import { fbpTotal } from '../../data/benefits';
+import { FBP, FBP_COMPONENTS, fbpTotal, INSURANCE } from '../../data/benefits';
+import { ACTIVE, EMAP } from '../../data/employees';
 import type {
+  FbpPlan, FbpRow,
   BenefitsService, EngagementService, HelpdeskService, LearningService,
   NoticeboardService, PerformanceService,
 } from '../contracts';
@@ -128,11 +130,57 @@ export const engagementService: EngagementService = {
   enpsHistory() { return ok(ENPS_HISTORY.slice()); },
 };
 
+const EMPTY_PLAN: FbpPlan = { pool: 0, alloc: {}, status: 'Not declared', lockedOn: null };
+
 export const benefitsService: BenefitsService = {
   fbpTotals(empIds) {
     const out: Record<string, number> = {};
     empIds.forEach((id) => { out[id] = fbpTotal(id); });
     return ok(out);
+  },
+
+  fbpPlan(empId) {
+    const e = EMAP[empId];
+    if (!e) return Promise.reject(new Error('No such employee: ' + empId));
+    return ok({ employee: e, plan: FBP[empId] ?? EMPTY_PLAN, allocated: fbpTotal(empId) });
+  },
+
+  fbpRows() {
+    const rows: FbpRow[] = ACTIVE().map((e) => ({
+      employee: e,
+      plan: FBP[e.id] ?? EMPTY_PLAN,
+      allocated: fbpTotal(e.id),
+    }));
+    return ok(rows);
+  },
+
+  declareFbp(empId, alloc) {
+    const plan = FBP[empId];
+    if (!plan) return Promise.reject(new Error('No flexible benefit plan for ' + empId));
+    if (plan.na) return Promise.reject(new Error('The plan does not apply outside India'));
+    if (plan.lockedOn) return Promise.reject(new Error('The plan locked on ' + plan.lockedOn));
+    /* Each component has an annual tax-free ceiling, and the total is capped
+       by the pool carved out of special allowance. */
+    for (const [id, amount] of Object.entries(alloc)) {
+      const c = FBP_COMPONENTS.find((x) => x.id === id);
+      if (!c) return Promise.reject(new Error('No such benefit component: ' + id));
+      if (amount < 0) return Promise.reject(new Error(c.n + ' cannot be negative'));
+      if (amount > c.cap) return Promise.reject(new Error(c.n + ' is capped at ' + c.cap + ' a year'));
+    }
+    const total = Object.values(alloc).reduce((a, b) => a + b, 0);
+    if (total > plan.pool) return Promise.reject(new Error('That allocates more than your pool of ' + plan.pool));
+    plan.alloc = { ...alloc };
+    plan.status = 'Declared';
+    return ok(plan);
+  },
+
+  insuranceCover() {
+    const people = ACTIVE();
+    const group = INSURANCE[0];
+    return ok({
+      totalSumAssured: people.reduce((a, e) => a + (group?.sum[e.grade] ?? 0), 0),
+      covered: people.length,
+    });
   },
 };
 

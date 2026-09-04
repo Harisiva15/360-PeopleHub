@@ -20,6 +20,8 @@
  */
 
 import type { AppRole, Employee } from '../types/employee';
+import type { FbpPlan } from '../data/benefits';
+import type { WaConsent, WaLogEntry, WaTemplate } from '../data/whatsapp';
 import type { LeaveBalance, LeaveRequest, LeaveStatus } from '../data/leave';
 import type { AttRecord } from '../data/attendance';
 import type { Timesheet, TSStatus } from '../data/timesheet';
@@ -32,12 +34,14 @@ import type { Loan } from '../data/loans';
 import type { Goal, Praise } from '../data/performance';
 import type { ExitRecord } from '../data/exit';
 import type { SalaryStructure } from '../data/salary';
-import type { Declaration, PayInput, PayRun, Payslip, PayrollTotals } from '../data/payroll';
+import type { Declaration, DeclTotals, PayInput, PayRun, Payslip, PayrollTotals } from '../data/payroll';
+import type { INTax } from '../data/salary';
 import type { BankBatch, CompliancePayment } from '../data/payinputs';
 import type { Overtime } from '../data/shifts';
 import type { LetterRequest } from '../data/letters';
 import type { Candidate, Interview, Requisition } from '../data/ats';
 import type { CheckIn, Review, Cycle } from '../data/performance';
+import type { Ytd } from '../data/letters';
 import type { Course, Enrollment } from '../data/learning';
 import type { Survey } from '../data/engagement';
 import type { Announcement, Celebration } from '../data/announcements';
@@ -55,6 +59,8 @@ import type { Holiday, Site } from '../types/org';
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
 export type { Employee } from '../types/employee';
+export type { FbpComponent, FbpPlan } from '../data/benefits';
+export type { WaConsent, WaLogEntry, WaTemplate } from '../data/whatsapp';
 export type { LeaveRequest, LeaveStatus } from '../data/leave';
 export type { AttRecord, AttStatus, Regularisation } from '../data/attendance';
 export type { Timesheet, TSRow, TSStatus } from '../data/timesheet';
@@ -68,12 +74,14 @@ export type { Loan } from '../data/loans';
 export type { Goal, Praise } from '../data/performance';
 export type { ExitRecord } from '../data/exit';
 export type { SalaryStructure } from '../data/salary';
-export type { Declaration, PayInput, PayRun, Payslip, PayrollTotals } from '../data/payroll';
+export type { Declaration, DeclTotals, PayInput, PayRun, Payslip, PayrollTotals } from '../data/payroll';
+export type { INTax } from '../data/salary';
 export type { BankBatch, CompliancePayment } from '../data/payinputs';
 export type { Overtime } from '../data/shifts';
 export type { LetterRequest } from '../data/letters';
 export type { Candidate, Interview, Requisition } from '../data/ats';
 export type { CheckIn, Review, Cycle } from '../data/performance';
+export type { Ytd } from '../data/letters';
 export type { Course } from '../data/learning';
 export type { Survey } from '../data/engagement';
 export type { Announcement, Celebration } from '../data/announcements';
@@ -285,6 +293,30 @@ export interface CompRow {
   allowanceAnnual: number;
 }
 
+/**
+ * Everything one person's tax screen needs, computed server-side: the caps in
+ * declTotals, the HRA exemption and both regimes are tax rules, not display.
+ */
+export interface TaxSummary {
+  declaration: Declaration;
+  salary: SalaryStructure;
+  totals: DeclTotals;
+  /** HRA exempt under section 10(13A), already the least of the three tests. */
+  hraExemption: number;
+  oldRegime: INTax;
+  newRegime: INTax;
+  /** Which regime costs less on these numbers. */
+  better: Declaration['regime'];
+}
+
+/** One row of the workforce-wide declaration tracker. */
+export interface TaxRow {
+  employee: Employee;
+  declaration: Declaration;
+  totals: DeclTotals;
+  taxPayable: number;
+}
+
 export interface PayrollService {
   runs(): Promise<PayRun[]>;
   currentRun(): Promise<PayRun>;
@@ -306,6 +338,17 @@ export interface PayrollService {
   /** Salary structures across the workforce, for the compensation view. */
   compensation(): Promise<CompRow[]>;
   declarations(): Promise<Record<string, Declaration>>;
+  /** One person's tax position for the year, with both regimes priced. */
+  taxSummary(empId: string): Promise<TaxSummary>;
+  /** The declaration tracker across the workforce. */
+  taxRows(): Promise<TaxRow[]>;
+  /** Save declared investments. Submitting stamps the date. */
+  saveDeclaration(empId: string, items: Record<string, number | string>): Promise<Declaration>;
+  /** Switch regime. Refuses once Finance has verified the proofs. */
+  setRegime(empId: string, regime: Declaration['regime']): Promise<Declaration>;
+  submitProofs(empId: string): Promise<Declaration>;
+  /** Finance verifies a submitted declaration. A draft cannot be verified. */
+  verifyDeclaration(empId: string): Promise<Declaration>;
   bankBatches(): Promise<BankBatch[]>;
   compliancePayments(): Promise<CompliancePayment[]>;
   activeLoans(): Promise<Loan[]>;
@@ -315,9 +358,28 @@ export interface PayrollService {
 
 /* ---------- shifts, loans, letters ---------- */
 
+export interface NewOvertime {
+  empId: string;
+  date: string;
+  hours: number;
+  reason: string;
+  compensation: Overtime['compensation'];
+}
+
 export interface ShiftService {
   overtime(empIds?: string[], status?: Overtime['status']): Promise<Overtime[]>;
+  /**
+   * Approving credits comp off when that is the compensation, which is why the
+   * two happen together behind the service rather than in the screen.
+   */
   approveOvertime(id: string, approverId: string): Promise<Overtime>;
+  raiseOvertime(o: NewOvertime): Promise<Overtime>;
+  /** The roster for a set of people, keyed by employee id then date. */
+  roster(empIds: string[]): Promise<Record<string, Record<string, string>>>;
+  /** Reassign one person's shift on one day. Refuses an unknown pattern. */
+  setShift(empId: string, date: string, shiftId: string): Promise<{ empId: string; date: string; shiftId: string }>;
+  /** How many people are on each shift pattern today. */
+  todayCoverage(): Promise<Record<string, number>>;
 }
 
 export interface LoanService {
@@ -400,9 +462,27 @@ export interface EngagementService {
   enpsHistory(): Promise<{ k: string; v: number }[]>;
 }
 
+/** One employee's flexible-benefit plan, with what they have allocated. */
+export interface FbpRow {
+  employee: Employee;
+  plan: FbpPlan;
+  allocated: number;
+}
+
 export interface BenefitsService {
   /** Flexible-benefit allocation per employee, keyed by id. */
   fbpTotals(empIds: string[]): Promise<Record<string, number>>;
+  /** One person's plan and what they have allocated so far. */
+  fbpPlan(empId: string): Promise<FbpRow>;
+  /** The declaration tracker across the workforce. */
+  fbpRows(): Promise<FbpRow[]>;
+  /**
+   * Declare an allocation. Refuses once the plan is locked, and refuses an
+   * allocation over the pool or over a component's annual ceiling.
+   */
+  declareFbp(empId: string, alloc: Record<string, number>): Promise<FbpPlan>;
+  /** Group cover sums assured by grade, and what the workforce costs to insure. */
+  insuranceCover(): Promise<{ totalSumAssured: number; covered: number }>;
 }
 
 /* ---------- the noticeboard and exits ---------- */
@@ -481,10 +561,36 @@ export interface StaffingService {
 
 /* ---------- documents ---------- */
 
+/**
+ * Everything a generated letter states about someone, gathered in one call.
+ *
+ * A letter is a legal statement of fact, so the facts it asserts — the salary
+ * structure, the year-to-date tax withheld, the last working day, the current
+ * increment — are what the server holds, not what the printer recomputes.
+ */
+export interface LetterContext {
+  employee: Employee;
+  /** Whose name and designation sign the letter. */
+  signatory: { name: string; designation: string };
+  managerName: string;
+  salary: SalaryStructure;
+  /** Last working day, when the person has an exit on file. */
+  lastWorkingDay: string | null;
+  /** The current cycle's review, when one exists. */
+  review: Review | null;
+  cycleName: string;
+  /** Year-to-date payroll, for Form 16 part B. */
+  ytd: Ytd;
+  /** Annual tax on the new regime, for the Form 16 computation. */
+  annualTax: INTax;
+}
+
 export interface DocumentService {
   /** Employment documents on file, for one person or everyone. */
   documents(empIds?: string[]): Promise<EmpDoc[]>;
   documentTypes(): Promise<string[]>;
+  /** The facts a generated letter asserts about one person. */
+  letterContext(empId: string): Promise<LetterContext>;
 }
 
 /* ---------- exits ---------- */
@@ -522,6 +628,49 @@ export interface OnboardingService {
    */
   setTask(id: string, key: string, done: boolean): Promise<Onboarding>;
   complete(id: string): Promise<Onboarding>;
+}
+
+/* ---------- WhatsApp notifications ---------- */
+
+/** Delivery and consent health for the business account. */
+export interface WaStats {
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  replies: number;
+  deliveryRate: number;
+  readRate: number;
+  cost: number;
+  optIn: number;
+  optInRate: number;
+  active: number;
+  /** How many people the consent numbers were computed over. */
+  workforce: number;
+}
+
+/** One person's consent, with the employee it belongs to. */
+export interface WaConsentRow {
+  employee: Employee;
+  consent: WaConsent;
+}
+
+export interface WhatsAppService {
+  templates(): Promise<WaTemplate[]>;
+  /** The send log, newest first, optionally narrowed to one person. */
+  log(empId?: string): Promise<WaLogEntry[]>;
+  stats(): Promise<WaStats>;
+  consent(empId: string): Promise<WaConsent>;
+  consentRows(): Promise<WaConsentRow[]>;
+  /**
+   * Turn one consent category on or off. Withdrawing HR updates withdraws the
+   * marketing category with it, since marketing rides on the same number.
+   */
+  setConsent(empId: string, key: 'optIn' | 'marketing', on: boolean): Promise<WaConsent>;
+  /** Pause or resume a template. A template Meta has not approved cannot go live. */
+  setTemplateEnabled(id: string, on: boolean): Promise<WaTemplate>;
+  /** Pause or resume an automation rule. */
+  setRuleEnabled(id: string, on: boolean): Promise<{ id: string; on: boolean }>;
 }
 
 /* ---------- configuration ---------- */
@@ -585,4 +734,5 @@ export interface Services {
   onboarding: OnboardingService;
   config: ConfigService;
   leave: LeaveService;
+  whatsapp: WhatsAppService;
 }

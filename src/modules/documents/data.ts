@@ -13,3 +13,5 @@ export const useDocumentTypes = () => useQuery((s) => s.documents.documentTypes(
 export const useLetterRequests = () => useQuery((s) => s.letters.requests(), []);
 export const useAllEmployees = () => useQuery((s) => s.employees.active(), []);
 export const useIssueLetter = () => useMutation((s, id: string) => s.letters.issue(id));
+export const useLetterContext = (empId: string) =>
+  useQuery((s) => s.documents.letterContext(empId), [empId]);

@@ -3,18 +3,19 @@ import { sortBy, sum } from '../../lib/collections';
 import { addDays, DOW, dowOf, fmtD, fmtDS, isWeekend, mondayOf, TODAY, ymd } from '../../lib/dates';
 import { inr } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { uid } from '../../lib/rng';
-import { ACTIVE, EMAP, empName } from '../../data/employees';
-import { LEAVE_BAL, leaveBalance } from '../../data/leave';
 import { DEPTS, deptOf } from '../../data/org';
-import { OVERTIME, ROSTER, SHIFTS, shiftOf } from '../../data/shifts';
-import type { Overtime } from '../../data/shifts';
+import { SHIFTS, shiftOf } from '../../data/shifts';
+import type { Overtime } from '../../services';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Dot, StatusBadge } from '../../components/common';
 import { BarChart, Legend } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { visibleIds } from '../../state/rbac';
+import {
+  useApproveOvertime, useLeaveBalance, useOvertime, useRaiseOvertime, useRoster,
+  useSetShift, useTodayCoverage, useVisiblePeople,
+} from './data';
+import type { Directory } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -27,60 +28,69 @@ const OT_HOURLY = 450;
 
 /* ---------------- Team roster ---------------- */
 
+/** The picker owns the write, so one roster change is one mutation. */
+function ShiftPicker(
+  { id, ds, current, close }: { id: string; ds: string; current: string; close: () => void },
+) {
+  const app = useApp();
+  const setShift = useSetShift();
+  const [v, setV] = useState(current);
+  return (
+    <>
+      <div className="field">
+        <label>Shift</label>
+        <select className="input" value={v} onChange={(e) => setV(e.target.value)}>
+          {SHIFTS.map((sh) => <option key={sh.id} value={sh.id}>{sh.n} ({sh.start} – {sh.end})</option>)}
+          <option value="OFF">Week off</option>
+        </select>
+      </div>
+      <Banner kind="info" icon="📧">The employee is notified of any roster change and must acknowledge it.</Banner>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
+        <button className="btn" onClick={close}>Cancel</button>
+        <button className="btn primary" onClick={async () => {
+          try {
+            await setShift.mutate(id, ds, v);
+            close();
+            app.toast('Roster updated and employee notified', 'ok');
+          } catch (e) {
+            app.toast(e instanceof Error ? e.message : 'Could not change the shift', 'err');
+          }
+        }}>Save</button>
+      </div>
+    </>
+  );
+}
+
 function ShRoster() {
   const app = useApp();
   const layer = useLayer();
+  const dir = useVisiblePeople();
   const [dept, setDept] = useState('SUP');
 
   const start = mondayOf(TODAY);
   const days: Date[] = [];
   for (let i = 0; i < 14; i++) days.push(addDays(start, i));
 
-  const ids = visibleIds(app.role, app.meId);
-  const people = ACTIVE().filter((e) => e.dept === dept && ids.includes(e.id));
-  const coverage = days.map((d) => ROSTERED.map((s) => people.filter((p) => ROSTER[p.id]?.[ymd(d)] === s.id).length));
+  const people = dir.list.filter((e) => e.dept === dept);
+  const { data: roster = {} } = useRoster(dir.ids);
+  const coverage = days.map((d) => ROSTERED.map((sh) => people.filter((p) => roster[p.id]?.[ymd(d)] === sh.id).length));
 
   const editCell = (id: string, ds: string) => {
     if (app.role === 'employee') return;
     layer.modal({
       title: 'Change shift',
-      sub: empName(id) + ' · ' + fmtD(ds),
+      sub: dir.name(id) + ' · ' + fmtD(ds),
       size: 'narrow',
-      body: (close) => <ShiftPicker id={id} ds={ds} close={close} />,
+      body: (close) => <ShiftPicker id={id} ds={ds} current={roster[id]?.[ds] || 'GEN'} close={close} />,
       footer: null,
     });
   };
-
-  function ShiftPicker({ id, ds, close }: { id: string; ds: string; close: () => void }) {
-    const [v, setV] = useState(ROSTER[id]?.[ds] || 'GEN');
-    return (
-      <>
-        <div className="field">
-          <label>Shift</label>
-          <select className="input" value={v} onChange={(e) => setV(e.target.value)}>
-            {SHIFTS.map((s) => <option key={s.id} value={s.id}>{s.n} ({s.start} – {s.end})</option>)}
-            <option value="OFF">Week off</option>
-          </select>
-        </div>
-        <Banner kind="info" icon="📧">The employee is notified of any roster change and must acknowledge it.</Banner>
-        <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
-          <button className="btn" onClick={close}>Cancel</button>
-          <button className="btn primary" onClick={() => {
-            ROSTER[id][ds] = v;
-            close();
-            app.toast('Roster updated and employee notified', 'ok');
-            app.bump();
-          }}>Save</button>
-        </div>
-      </>
-    );
-  }
 
   const exportCsv = () => {
     const ds = days.map((d) => ymd(d));
     downloadCSV(`roster_${dept}.csv`,
       [['Emp Code', 'Name', ...ds]].concat(
-        ACTIVE().filter((e) => e.dept === dept).map((e) => [e.code, e.name, ...ds.map((d) => ROSTER[e.id]?.[d] || '')]),
+        people.map((e) => [e.code, e.name, ...ds.map((d) => roster[e.id]?.[d] || '')]),
       ));
   };
 
@@ -123,7 +133,7 @@ function ShRoster() {
                   </td>
                   {days.map((d, i) => {
                     const ds = ymd(d);
-                    const s = ROSTER[e.id]?.[ds] || 'GEN';
+                    const s = roster[e.id]?.[ds] || 'GEN';
                     if (s === 'OFF') {
                       return (
                         <td key={i} style={{ textAlign: 'center', background: 'var(--surface-3)', color: 'var(--ink-3)' }}
@@ -161,11 +171,13 @@ function ShRoster() {
 function ShMy() {
   const app = useApp();
   const me = app.me;
+  const { data: roster = {} } = useRoster([me.id]);
+  const { data: compOff } = useLeaveBalance(me.id, 'CO');
   const start = addDays(TODAY, -7);
   const days: Date[] = [];
   for (let i = 0; i < 28; i++) days.push(addDays(start, i));
 
-  const mine = ROSTER[me.id] || {};
+  const mine = roster[me.id] || {};
   const todayShift = mine[ymd(TODAY)];
   const nights = days.filter((d) => mine[ymd(d)] === 'NIGHT').length;
   const offs = days.filter((d) => mine[ymd(d)] === 'OFF').length;
@@ -181,7 +193,7 @@ function ShMy() {
         <Tile label="Night shifts" value={nights}
           foot={nights ? `Allowance ${inr(nights * NIGHT_ALLOWANCE)} for this window` : 'None rostered'} />
         <Tile label="Week offs" value={offs} foot="In the next 4 weeks" />
-        <Tile label="Comp off balance" value={(leaveBalance(me.id, 'CO')?.avail ?? 0) + ' days'} foot="Earned from extra working days" />
+        <Tile label="Comp off balance" value={(compOff?.avail ?? 0) + ' days'} foot="Earned from extra working days" />
       </div>
 
       <Card title="My roster" sub={`4-week view · ${fmtD(ymd(days[0]))} – ${fmtD(ymd(days[27]))}`}
@@ -218,7 +230,10 @@ function ShMy() {
 
 /* ---------------- Overtime & comp off ---------------- */
 
-function OtTable({ list, act, onApprove }: { list: Overtime[]; act: boolean; onApprove: (o: Overtime) => void }) {
+function OtTable(
+  { list, dir, act, onApprove }:
+  { list: Overtime[]; dir: Directory; act: boolean; onApprove: (o: Overtime) => void },
+) {
   if (!list.length) return <EmptyState msg="Nothing logged" icon="⏱️" />;
   return (
     <div className="tbl-wrap">
@@ -233,7 +248,7 @@ function OtTable({ list, act, onApprove }: { list: Overtime[]; act: boolean; onA
         <tbody>
           {sortBy(list, (o) => o.date, 'desc').map((o) => (
             <tr key={o.id}>
-              {act && <td><PersonCell e={EMAP[o.empId]} /></td>}
+              {act && <td><PersonCell e={dir.byId(o.empId)!} /></td>}
               <td className="nowrap">{fmtD(o.date)} <span className="muted">{dowOf(o.date)}</span></td>
               <td className="num strong">{o.hours}</td>
               <td>{o.reason}</td>
@@ -258,30 +273,14 @@ function OtTable({ list, act, onApprove }: { list: Overtime[]; act: boolean; onA
   );
 }
 
-function ShOt() {
+function LogForm({ close }: { close: () => void }) {
   const app = useApp();
-  const layer = useLayer();
-  const ids = visibleIds(app.role, app.meId);
-  const mine = OVERTIME.filter((o) => o.empId === app.meId);
-  const team = app.role === 'employee' ? [] : OVERTIME.filter((o) => ids.includes(o.empId) && o.empId !== app.meId);
-  const pend = team.filter((o) => o.status === 'Pending');
-
-  const approve = (o: Overtime) => {
-    o.status = 'Approved';
-    /* comp off is credited at one day per eight hours worked */
-    if (o.compensation === 'Comp Off' && LEAVE_BAL[o.empId]?.CO) {
-      LEAVE_BAL[o.empId].CO.quota += Math.round(o.hours / 8);
-    }
-    app.toast('Overtime approved' + (o.compensation === 'Comp Off' ? ' — comp off credited' : ''), 'ok');
-    app.bump();
-  };
-
-  function LogForm({ close }: { close: () => void }) {
-    const [date, setDate] = useState(ymd(addDays(TODAY, -1)));
-    const [hours, setHours] = useState(4);
-    const [reason, setReason] = useState('');
-    const [comp, setComp] = useState<'Comp Off' | 'Overtime Pay'>('Comp Off');
-    return (
+  const raiseOvertime = useRaiseOvertime();
+  const [date, setDate] = useState(ymd(addDays(TODAY, -1)));
+  const [hours, setHours] = useState(4);
+  const [reason, setReason] = useState('');
+  const [comp, setComp] = useState<'Comp Off' | 'Overtime Pay'>('Comp Off');
+  return (
       <>
         <div className="field"><label>Date</label><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></div>
         <div className="field">
@@ -300,19 +299,43 @@ function ShOt() {
         </div>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
           <button className="btn" onClick={close}>Cancel</button>
-          <button className="btn primary" onClick={() => {
-            OVERTIME.unshift({
-              id: uid('OT'), empId: app.meId, date, hours, reason: reason || 'Extra hours',
-              status: 'Pending', compensation: comp, approverId: app.me.managerId,
-            });
-            close();
-            app.toast('Submitted for approval', 'ok');
-            app.bump();
+          <button className="btn primary" onClick={async () => {
+            try {
+              await raiseOvertime.mutate({
+                empId: app.meId, date, hours, reason: reason || 'Extra hours', compensation: comp,
+              });
+              close();
+              app.toast('Submitted for approval', 'ok');
+            } catch (e) {
+              app.toast(e instanceof Error ? e.message : 'Could not log the hours', 'err');
+            }
           }}>Submit</button>
         </div>
       </>
-    );
-  }
+  );
+}
+
+function ShOt() {
+  const app = useApp();
+  const layer = useLayer();
+  const dir = useVisiblePeople();
+  const { data: overtime = [] } = useOvertime(dir.ids);
+  const { data: compOff } = useLeaveBalance(app.meId, 'CO');
+  const approveOvertime = useApproveOvertime();
+
+  const mine = overtime.filter((o) => o.empId === app.meId);
+  const team = app.role === 'employee' ? [] : overtime.filter((o) => o.empId !== app.meId);
+  const pend = team.filter((o) => o.status === 'Pending');
+
+  /* Approving credits the comp off, so the service does both together. */
+  const approve = async (o: Overtime) => {
+    try {
+      await approveOvertime.mutate(o.id, app.meId);
+      app.toast('Overtime approved' + (o.compensation === 'Comp Off' ? ' — comp off credited' : ''), 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not approve the overtime', 'err');
+    }
+  };
 
   return (
     <div className="stack">
@@ -323,7 +346,7 @@ function ShOt() {
 
       <div className="grid g4">
         <Tile label="My overtime" value={sum(mine.filter((o) => o.status === 'Approved'), (o) => o.hours) + ' h'} foot="Approved, last 45 days" />
-        <Tile label="Comp off balance" value={(leaveBalance(app.meId, 'CO')?.avail ?? 0) + ' days'} foot="Use within 60 days" />
+        <Tile label="Comp off balance" value={(compOff?.avail ?? 0) + ' days'} foot="Use within 60 days" />
         <Tile label="Team pending" value={pend.length} foot="Awaiting your approval" />
         <Tile label="Overtime cost"
           value={inr(sum(team.filter((o) => o.status === 'Approved' && o.compensation === 'Overtime Pay'), (o) => o.hours * OT_HOURLY))}
@@ -335,18 +358,18 @@ function ShOt() {
           <button className="btn sm primary" onClick={() =>
             layer.modal({
               title: 'Log extra hours',
-              sub: 'Sent to ' + empName(app.me.managerId || '') + ' for approval',
+              sub: 'Sent to ' + dir.name(app.me.managerId) + ' for approval',
               size: 'narrow',
               body: (close) => <LogForm close={close} />,
               footer: null,
             })}>＋ Log extra hours</button>
         }>
-        <OtTable list={mine} act={false} onApprove={approve} />
+        <OtTable list={mine} dir={dir} act={false} onApprove={approve} />
       </Card>
 
       {app.role !== 'employee' && (
         <Card title="Team overtime" sub={`${team.length} entries · ${pend.length} pending`} flush>
-          <OtTable list={team} act onApprove={approve} />
+          <OtTable list={team} dir={dir} act onApprove={approve} />
         </Card>
       )}
     </div>
@@ -366,6 +389,7 @@ const ROSTER_RULES: [string, string][] = [
 ];
 
 function ShDef() {
+  const { data: coverage = {} } = useTodayCoverage();
   return (
     <div className="grid g-2-1">
       <Card title="Shift definitions" sub={`${SHIFTS.length} patterns configured`} flush>
@@ -385,7 +409,7 @@ function ShDef() {
                   <td className="num">{s.brk} min</td>
                   <td className="num">{s.grace} min</td>
                   <td className="num">{s.allowance ? inr(s.allowance) + ' / night' : '—'}</td>
-                  <td className="num">{ACTIVE().filter((e) => ROSTER[e.id]?.[ymd(TODAY)] === s.id).length}</td>
+                  <td className="num">{coverage[s.id] ?? 0}</td>
                 </tr>
               ))}
             </tbody>

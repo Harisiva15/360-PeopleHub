@@ -6,11 +6,13 @@
  */
 
 import { TODAY, ymd } from '../../lib/dates';
-import { OVERTIME } from '../../data/shifts';
+import { ACTIVE } from '../../data/employees';
+import { LEAVE_BAL } from '../../data/leave';
+import { OVERTIME, ROSTER, SHIFTS } from '../../data/shifts';
 import { LOANS } from '../../data/loans';
 import { LETTER_REQS } from '../../data/letters';
 import { CANDS, INTERVIEWS, REQS, reqOf, STAGES } from '../../data/ats';
-import type { HiringService, InterviewRow, LetterService, LoanService, ShiftService } from '../contracts';
+import type { HiringService, InterviewRow, LetterService, LoanService, Overtime, ShiftService } from '../contracts';
 import { ok } from './util';
 
 export const shiftService: ShiftService = {
@@ -30,7 +32,49 @@ export const shiftService: ShiftService = {
     if (o.status === 'Approved') return Promise.reject(new Error('Already approved'));
     o.status = 'Approved';
     o.approverId = approverId;
+    /* Comp off is earned on approval — eight hours to the day. */
+    const bal = LEAVE_BAL[o.empId]?.CO;
+    if (o.compensation === 'Comp Off' && bal) bal.quota += Math.round(o.hours / 8);
     return ok(o);
+  },
+
+  raiseOvertime(o) {
+    if (o.hours <= 0) return Promise.reject(new Error('Overtime must be at least an hour'));
+    if (o.hours > 12) return Promise.reject(new Error('More than 12 hours in a day needs an exception'));
+    if (!o.reason.trim()) return Promise.reject(new Error('Say what the extra hours were for'));
+    const row: Overtime = {
+      id: 'OT-' + (900 + OVERTIME.length),
+      empId: o.empId, date: o.date, hours: o.hours, reason: o.reason,
+      status: 'Pending', compensation: o.compensation, approverId: null,
+    };
+    OVERTIME.unshift(row);
+    return ok(row);
+  },
+
+  roster(empIds) {
+    const out: Record<string, Record<string, string>> = {};
+    empIds.forEach((id) => { out[id] = { ...(ROSTER[id] ?? {}) }; });
+    return ok(out);
+  },
+
+  setShift(empId, date, shiftId) {
+    if (shiftId !== 'OFF' && !SHIFTS.some((s) => s.id === shiftId)) {
+      return Promise.reject(new Error('That is not a shift pattern'));
+    }
+    ROSTER[empId] = ROSTER[empId] ?? {};
+    ROSTER[empId][date] = shiftId;
+    return ok({ empId, date, shiftId });
+  },
+
+  todayCoverage() {
+    const today = ymd(TODAY);
+    const out: Record<string, number> = {};
+    SHIFTS.forEach((s) => { out[s.id] = 0; });
+    ACTIVE().forEach((e) => {
+      const s = ROSTER[e.id]?.[today];
+      if (s && out[s] !== undefined) out[s] += 1;
+    });
+    return ok(out);
   },
 };
 

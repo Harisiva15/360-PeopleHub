@@ -4,18 +4,19 @@ import { addDays, fmtD, monthLabelLong, TODAY, yearsSince, ymd } from '../../lib
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { COUNTRIES, countryOf, mb, money } from '../../data/countries';
-import { ACTIVE, empName } from '../../data/employees';
 import { deptOf, ORG } from '../../data/org';
-import { CUR_RUN, payslip } from '../../data/payroll';
 import {
-  WA_ACCOUNT, WA_CAT_BADGE, WA_CONSENT, WA_LOG, WA_RULES, WA_STATUS_BADGE, WA_TEMPLATES,
-  waConsent, waKPI, waRender, waTpl,
+  WA_ACCOUNT, WA_CAT_BADGE, WA_RULES, WA_STATUS_BADGE, waRender, waTpl,
 } from '../../data/whatsapp';
-import type { WaTemplate } from '../../data/whatsapp';
+import type { WaTemplate } from '../../services';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { BarChart, HBar, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import { pendingCount } from '../../state/pending';
+import {
+  useConsent, useConsentRows, useCurrentRun, useLog, usePayslip, useSetConsent,
+  useSetRuleEnabled, useSetTemplateEnabled, useTemplates, useVisiblePeople, useWaStats,
+} from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -52,14 +53,17 @@ function WaBubble({ text, cta }: { text: string; cta?: string | null }) {
  */
 function useSampleFor() {
   const app = useApp();
+  const dir = useVisiblePeople();
   const e = app.me;
   const f = e.name.split(' ')[0];
   const ct = countryOf(e.country);
+  const { data: run } = useCurrentRun();
+  const { data: slip } = usePayslip(e.id, run?.mk ?? '');
 
   return (t: WaTemplate): string => {
     const map: Record<string, string[]> = {
-      payslip_ready: [f, monthLabelLong(CUR_RUN.mk), money(payslip(e, CUR_RUN.mk).net, e.ccy), '4417'],
-      leave_decision: [f, 'Earned Leave', '12–14 Sep 2026', 'approved', empName(e.managerId || '') || 'your manager', '9'],
+      payslip_ready: [f, run ? monthLabelLong(run.mk) : 'this month', slip ? money(slip.net, e.ccy) : '—', '4417'],
+      leave_decision: [f, 'Earned Leave', '12–14 Sep 2026', 'approved', dir.name(e.managerId), '9'],
       approval_pending: [f, String(pendingCount(app.role, app.meId) || 4), '3'],
       birthday: [f, ORG.name],
       anniversary: [f, String(Math.max(1, yearsSince(e.doj))), ORG.name],
@@ -82,22 +86,23 @@ function useSampleFor() {
 function WaMine() {
   const app = useApp();
   const sample = useSampleFor();
-  const c = waConsent(app.meId);
-  const mine = WA_LOG.filter((l) => l.empId === app.meId).slice(0, 25);
+  const { data: c } = useConsent(app.meId);
+  const { data: log = [] } = useLog(app.meId);
+  const setConsent = useSetConsent();
 
-  const toggle = (key: 'optIn' | 'marketing') => {
-    const rec = WA_CONSENT[app.meId];
-    rec[key] = !rec[key];
-    /* turning off HR updates also stops the marketing category */
-    if (key === 'optIn' && !rec.optIn) rec.marketing = false;
-    if (key === 'optIn' && rec.optIn && !rec.on) {
-      rec.on = ymd(TODAY);
-      rec.via = 'Self-service portal';
-      rec.verified = true;
-      rec.number = app.me.phone;
+  /* After every hook. */
+  if (!c) return <Card><EmptyState msg="Loading your notification settings…" icon="💬" /></Card>;
+
+  const mine = log.slice(0, 25);
+
+  /* Withdrawing HR updates withdraws celebrations too — the service does both. */
+  const toggle = async (key: 'optIn' | 'marketing') => {
+    try {
+      const next = await setConsent.mutate(app.meId, key, !c[key]);
+      app.toast(next[key] ? 'Turned on' : 'Turned off', 'ok');
+    } catch (err) {
+      app.toast(err instanceof Error ? err.message : 'Could not change the setting', 'err');
     }
-    app.toast(rec[key] ? 'Turned on' : 'Turned off', 'ok');
-    app.bump();
   };
 
   return (
@@ -169,7 +174,13 @@ function WaMine() {
 
 function WaTemplates() {
   const app = useApp();
-  const k = waKPI();
+  const { data: k } = useWaStats();
+  const { data: WA_TEMPLATES = [] } = useTemplates();
+  const { data: WA_LOG = [] } = useLog();
+  const setEnabled = useSetTemplateEnabled();
+
+  /* After every hook. */
+  if (!k) return <Card><EmptyState msg="Loading the account…" icon="💬" /></Card>;
 
   return (
     <div className="stack">
@@ -178,7 +189,7 @@ function WaTemplates() {
           foot={WA_ACCOUNT.verified ? `Verified · quality ${WA_ACCOUNT.quality.toLowerCase()}` : 'Not verified'} />
         <Tile label="Templates live" value={`${k.active} of ${WA_TEMPLATES.length}`}
           foot={`${WA_TEMPLATES.filter((t) => t.status !== 'Approved').length} awaiting Meta review`} />
-        <Tile label="Opted in" value={k.optInRate + '%'} foot={`${k.optIn} of ${ACTIVE().length} employees`} />
+        <Tile label="Opted in" value={k.optInRate + '%'} foot={`${k.optIn} of ${k.workforce} employees`} />
         <Tile label="Delivery rate" value={k.deliveryRate + '%'} foot={`${k.readRate}% read · last 30 days`} />
         <Tile label="Conversation cost" value={mb(Math.round(k.cost))} foot={`${k.sent} messages in 30 days`} />
       </div>
@@ -214,10 +225,13 @@ function WaTemplates() {
                       {t.status === 'Approved' ? <Badge kind="good">Approved</Badge> : <Badge kind="warn">{t.status}</Badge>}
                     </td>
                     <td className="right">
-                      <button className={'btn sm' + (t.on ? '' : ' primary')} onClick={() => {
-                        t.on = !t.on;
-                        app.toast(`${t.name} ${t.on ? 'enabled' : 'paused'}`, 'ok');
-                        app.bump();
+                      <button className={'btn sm' + (t.on ? '' : ' primary')} onClick={async () => {
+                        try {
+                          const next = await setEnabled.mutate(t.id, !t.on);
+                          app.toast(`${t.name} ${next.on ? 'enabled' : 'paused'}`, 'ok');
+                        } catch (err) {
+                          app.toast(err instanceof Error ? err.message : 'Could not change the template', 'err');
+                        }
                       }}>{t.on ? 'On' : 'Off'}</button>
                     </td>
                   </tr>
@@ -242,6 +256,9 @@ const ESCALATION: [string, string][] = [
 
 function WaRules() {
   const app = useApp();
+  const setRule = useSetRuleEnabled();
+  const { data: WA_TEMPLATES = [] } = useTemplates();
+  const { data: WA_LOG = [] } = useLog();
   return (
     <div className="stack">
       <Card title="Routing rules" sub={`${WA_RULES.filter((r) => r.on).length} of ${WA_RULES.length} rules active`} flush
@@ -265,10 +282,13 @@ function WaRules() {
                     <td className="muted">{r.to}</td>
                     <td>{r.quiet ? <Badge kind="good">Yes</Badge> : <Badge>Sends immediately</Badge>}</td>
                     <td className="right">
-                      <button className={'btn sm' + (r.on ? '' : ' primary')} onClick={() => {
-                        r.on = !r.on;
-                        app.toast(`${r.id} ${r.on ? 'activated' : 'paused'}`, 'ok');
-                        app.bump();
+                      <button className={'btn sm' + (r.on ? '' : ' primary')} onClick={async () => {
+                        try {
+                          const next = await setRule.mutate(r.id, !r.on);
+                          app.toast(`${r.id} ${next.on ? 'activated' : 'paused'}`, 'ok');
+                        } catch (err) {
+                          app.toast(err instanceof Error ? err.message : 'Could not change the rule', 'err');
+                        }
                       }}>{r.on ? 'Active' : 'Paused'}</button>
                     </td>
                   </tr>
@@ -304,11 +324,17 @@ function WaRules() {
 /* ---------------- Delivery log ---------------- */
 
 function WaLog() {
+  const dir = useVisiblePeople();
+  const { data: k } = useWaStats();
+  const { data: WA_LOG = [] } = useLog();
+  const { data: WA_TEMPLATES = [] } = useTemplates();
   const [fs, setFs] = useState('');
   const [ft, setFt] = useState('');
-  const k = waKPI();
 
-  let list = WA_LOG;
+  /* After every hook. */
+  if (!k) return <Card><EmptyState msg="Loading the delivery log…" icon="💬" /></Card>;
+
+  let list: typeof WA_LOG = WA_LOG;
   if (fs) list = list.filter((l) => l.status === fs);
   if (ft) list = list.filter((l) => l.tplId === ft);
 
@@ -333,7 +359,7 @@ function WaLog() {
         <button className="btn" onClick={() =>
           downloadCSV('whatsapp_log.csv',
             [['Date', 'Time', 'Template', 'Recipient', 'Number', 'Category', 'Status', 'Reply', 'Error', 'Cost']].concat(
-              WA_LOG.map((l) => [l.on, l.at, waTpl(l.tplId)?.name || l.tplId, empName(l.empId), l.to,
+              WA_LOG.map((l) => [l.on, l.at, waTpl(l.tplId)?.name || l.tplId, dir.name(l.empId), l.to,
                 l.cat, l.status, l.replied || '', l.error || '', String(l.cost)]),
             ))}>⤓ Export</button>
       </div>
@@ -362,7 +388,7 @@ function WaLog() {
                 <tr key={l.id}>
                   <td className="nowrap">{fmtD(l.on)} <span className="muted">{l.at}</span></td>
                   <td>{waTpl(l.tplId)?.name || l.tplId}</td>
-                  <td className="nowrap">{empName(l.empId)} {countryOf(l.country).flag}</td>
+                  <td className="nowrap">{dir.name(l.empId)} {countryOf(l.country).flag}</td>
                   <td className="mono muted nowrap">{l.to}</td>
                   <td><WaCatBadge c={l.cat} /></td>
                   <td><WaBadge s={l.status} /></td>
@@ -386,10 +412,15 @@ function WaLog() {
 
 function WaConsentTab() {
   const app = useApp();
-  const k = waKPI();
-  const list = ACTIVE();
-  const noOpt = list.filter((e) => !waConsent(e.id).optIn);
-  const unverified = list.filter((e) => waConsent(e.id).optIn && !waConsent(e.id).verified);
+  const { data: k } = useWaStats();
+  const { data: rows = [] } = useConsentRows();
+
+  /* After every hook. */
+  if (!k) return <Card><EmptyState msg="Loading the consent register…" icon="🔒" /></Card>;
+
+  const list = rows.map((r) => r.employee);
+  const noOpt = rows.filter((r) => !r.consent.optIn).map((r) => r.employee);
+  const unverified = rows.filter((r) => r.consent.optIn && !r.consent.verified);
 
   return (
     <div className="stack">
@@ -397,7 +428,7 @@ function WaConsentTab() {
         <Tile label="Opted in" value={`${k.optIn} of ${list.length}`} foot={`${k.optInRate}% reachable on WhatsApp`} />
         <Tile label="Not opted in" value={noOpt.length} foot="Fall back to in-app and email" />
         <Tile label="Number unverified" value={unverified.length} foot="Opted in but never confirmed" />
-        <Tile label="Celebration opt-in" value={list.filter((e) => waConsent(e.id).marketing).length}
+        <Tile label="Celebration opt-in" value={rows.filter((r) => r.consent.marketing).length}
           foot="Separate consent, as Marketing category" />
       </div>
 
@@ -411,10 +442,10 @@ function WaConsentTab() {
         <Card title="Opt-in by country" sub="Where our reach is weakest">
           <HBar fmt={(v) => v + '%'}
             rows={COUNTRIES.filter((c) => list.some((e) => e.country === c.id)).map((c, i) => {
-              const g = list.filter((e) => e.country === c.id);
+              const g = rows.filter((r) => r.employee.country === c.id);
               return {
                 k: `${c.flag} ${c.name}`, c: PAL[i % 8],
-                v: pct(g.filter((e) => waConsent(e.id).optIn).length, Math.max(1, g.length)),
+                v: pct(g.filter((r) => r.consent.optIn).length, Math.max(1, g.length)),
               };
             })} />
         </Card>
@@ -447,11 +478,9 @@ function WaConsentTab() {
         actions={<button className="btn sm" onClick={() =>
           downloadCSV('whatsapp_consent.csv',
             [['Emp Code', 'Name', 'Number', 'HR updates', 'Celebrations', 'Verified', 'Recorded', 'Captured via']].concat(
-              list.map((e) => {
-                const c = waConsent(e.id);
-                return [e.code, e.name, c.number, c.optIn ? 'Yes' : 'No', c.marketing ? 'Yes' : 'No',
-                  c.verified ? 'Yes' : 'No', c.on || '', c.via || ''];
-              }),
+              rows.map(({ employee: e, consent: c }) =>
+                [e.code, e.name, c.number, c.optIn ? 'Yes' : 'No', c.marketing ? 'Yes' : 'No',
+                  c.verified ? 'Yes' : 'No', c.on || '', c.via || '']),
             ))}>⤓ Export</button>}>
         <div className="tbl-wrap" style={{ maxHeight: 520, overflow: 'auto' }}>
           <table className="tbl">
@@ -459,8 +488,7 @@ function WaConsentTab() {
               <tr><th>Employee</th><th>Number</th><th>HR updates</th><th>Celebrations</th><th>Verified</th><th>Recorded</th><th>Captured via</th></tr>
             </thead>
             <tbody>
-              {list.map((e) => {
-                const c = waConsent(e.id);
+              {rows.map(({ employee: e, consent: c }) => {
                 return (
                   <tr key={e.id}>
                     <td><PersonCell e={e} sub={e.code} /></td>
@@ -511,10 +539,10 @@ function WhatsApp() {
 registerModule({
   key: 'whatsapp',
   title: TITLES.whatsapp,
-  subtitle: (c) => {
-    if (c.role !== 'admin') return 'Your WhatsApp notification settings';
-    const k = waKPI();
-    return `${k.active} templates live · ${k.optInRate}% of employees opted in`;
-  },
+  /* Static: the registry's callbacks are synchronous and cannot await. */
+  subtitle: (c) =>
+    (c.role === 'admin'
+      ? 'Templates, routing rules, delivery log and consent'
+      : 'Your WhatsApp notification settings'),
   Component: WhatsApp,
 });

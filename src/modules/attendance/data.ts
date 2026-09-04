@@ -10,6 +10,8 @@ import { useMutation, useQuery } from '../../services/react';
 import type { AttRecord, PunchAt } from '../../services';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
+
+export const usePayRuns = () => useQuery((s) => s.payroll.runs(), []);
 export type { Directory } from '../../services/people';
 
 /* ---------- reads ---------- */

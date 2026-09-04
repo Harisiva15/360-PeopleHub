@@ -7,7 +7,6 @@ import { ORG } from '../../data/org';
 
 
 
-import { reqOf2 } from '../../data/staffing';
 import { Badge, Card, EmptyState, Table, Tile } from '../../components/ui';
 import { Donut, HBar, LineChart, PAL, Spark } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
@@ -17,7 +16,7 @@ import { TITLES } from '../titles';
 import { useAiDraft } from '../copilot/ai';
 import {
   useAllEmployees, useClients, useCompensation, useConsultants, useCurrentRun, useExits,
-  usePayrollTotals, usePlacements, useStaffingKpi,
+  usePayrollTotals, usePlacements, useRequirements, useStaffingKpi,
 } from '../copilot/data';
 
 /**
@@ -43,6 +42,7 @@ function ExecView() {
   const app = useApp();
   const draft = useAiDraft();
   const { data: k } = useStaffingKpi();
+  const { data: requirements = [] } = useRequirements();
   const { data: curRun } = useCurrentRun();
   const { data: t } = usePayrollTotals(curRun?.mk ?? '');
   const { data: consultants = [] } = useConsultants();
@@ -81,7 +81,10 @@ function ExecView() {
 
   const topClients = sortBy(
     clients.filter((c) => c.status === 'Active').map((c) => {
-      const pl = placements.filter((p) => reqOf2(p.reqId)?.clientId === c.id && ['Active', 'Ending Soon'].includes(p.status));
+      const pl = placements.filter((p) => {
+        const req = requirements.find((r) => r.id === p.reqId);
+        return req?.clientId === c.id && ['Active', 'Ending Soon'].includes(p.status);
+      });
       return { c, n: pl.length, rev: sum(pl, (p) => toBase(p.billRate * (p.unit === 'per day' ? 21 : 173), p.ccy)) };
     }).filter((r) => r.rev),
     (r) => -r.rev

@@ -1,17 +1,18 @@
 import { useState } from 'react';
 import { sortBy, sum } from '../../lib/collections';
-import { fmtD, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { ACTIVE } from '../../data/employees';
 import { ORG } from '../../data/org';
-import { DECL, declTotals, hraExempt } from '../../data/payroll';
-import { comp, salaryStructure, taxNewRegime, taxOldRegime } from '../../data/salary';
-import { Badge, Banner, Card, PersonCell, Tabs, Tile } from '../../components/ui';
+import { comp } from '../../data/salary';
+import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Divide, StatusBadge } from '../../components/common';
 import { BarChart, Donut, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
+import {
+  useSaveDeclaration, useSetRegime, useSubmitProofs, useTaxRows, useTaxSummary,
+  useVerifyDeclaration,
+} from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -62,30 +63,38 @@ function TaxMe() {
   const app = useApp();
   const layer = useLayer();
   const e = app.me;
-  const d = DECL[e.id];
-  const s = salaryStructure(e);
+  const { data: tax } = useTaxSummary(e.id);
+  const saveDeclaration = useSaveDeclaration();
+  const setRegime = useSetRegime();
+  const submitProofs = useSubmitProofs();
 
-  /* local edits are held until Save, then written back to the record */
-  const [items, setItems] = useState<Record<string, number | string>>({ ...d.items });
-  const setItem = (k: string, v: number | string) => setItems((x) => ({ ...x, [k]: v }));
+  /* Local edits are held until Save, then sent as one declaration. */
+  const [items, setItems] = useState<Record<string, number | string> | null>(null);
+  const setItem = (k: string, v: number | string) => setItems((x) => ({ ...(x ?? {}), [k]: v }));
 
-  const t = declTotals(e.id);
-  const hx = hraExempt(e, t.hra);
-  const oldR = taxOldRegime(s.grossA - hx, t.total);
-  const newR = taxNewRegime(s.grossA);
-  const better = oldR.total <= newR.total ? 'Old' : 'New';
+  /* After every hook: the tax position is computed by the service. */
+  if (!tax) return <Card><EmptyState msg="Loading your tax position…" icon="🧾" /></Card>;
+
+  const d = tax.declaration;
+  const s = tax.salary;
+  const t = tax.totals;
+  const hx = tax.hraExemption;
+  const oldR = tax.oldRegime;
+  const newR = tax.newRegime;
+  const better = tax.better;
+  const draft = items ?? d.items;
   const saving = Math.abs(oldR.total - newR.total);
   const onBest = d.regime === better;
   const annual = d.regime === 'Old' ? oldR.total : newR.total;
 
-  const save = () => {
-    Object.keys(d.items).forEach((k) => {
-      d.items[k] = k === 'landlord_pan' ? String(items[k] ?? '') : Number(items[k]) || 0;
-    });
-    d.status = 'Submitted';
-    d.submittedOn = ymd(TODAY);
-    app.toast('Declaration saved and submitted to Finance', 'ok');
-    app.bump();
+  const save = async () => {
+    try {
+      await saveDeclaration.mutate(e.id, draft);
+      setItems(null);
+      app.toast('Declaration saved and submitted to Finance', 'ok');
+    } catch (err) {
+      app.toast(err instanceof Error ? err.message : 'Could not save the declaration', 'err');
+    }
   };
 
   const uploadProofs = () =>
@@ -114,11 +123,14 @@ function TaxMe() {
       footer: (close) => (
         <>
           <button className="btn" onClick={close}>Cancel</button>
-          <button className="btn primary" onClick={() => {
-            d.proofs = 'All proofs uploaded ' + fmtD(TODAY);
-            close();
-            app.toast('Proofs submitted for verification', 'ok');
-            app.bump();
+          <button className="btn primary" onClick={async () => {
+            try {
+              await submitProofs.mutate(e.id);
+              close();
+              app.toast('Proofs submitted for verification', 'ok');
+            } catch (err) {
+              app.toast(err instanceof Error ? err.message : 'Could not submit the proofs', 'err');
+            }
           }}>Submit proofs</button>
         </>
       ),
@@ -129,10 +141,14 @@ function TaxMe() {
       <Banner kind={onBest ? 'good' : 'warn'} icon={<span style={{ fontSize: 19 }}>{onBest ? '✅' : '💡'}</span>}
         title={onBest ? `You are on the optimal regime (${d.regime})` : `The ${better} Regime would save you ${inr(saving)} this year`}
         actions={
-          <button className={'btn' + (onBest ? '' : ' primary')} onClick={() => {
-            d.regime = d.regime === 'Old' ? 'New' : 'Old';
-            app.toast('Switched to ' + d.regime + ' Regime — TDS will be recomputed', 'ok');
-            app.bump();
+          <button className={'btn' + (onBest ? '' : ' primary')} onClick={async () => {
+            const next = d.regime === 'Old' ? 'New' : 'Old';
+            try {
+              await setRegime.mutate(e.id, next);
+              app.toast('Switched to ' + next + ' Regime — TDS will be recomputed', 'ok');
+            } catch (err) {
+              app.toast(err instanceof Error ? err.message : 'Could not switch regime', 'err');
+            }
           }}>Switch to {d.regime === 'Old' ? 'New' : 'Old'} Regime</button>
         }>
         Old Regime tax: {inr(oldR.total)} · New Regime tax: {inr(newR.total)} · Declaration status: {d.status}
@@ -156,31 +172,31 @@ function TaxMe() {
           }>
           <h4 style={{ margin: '0 0 10px', fontSize: 13 }}>Section 80C — maximum ₹1,50,000</h4>
           <div className="grid g2" style={{ gap: '0 14px' }}>
-            <NumField id="80C_pf" label="Employee Provident Fund" hint="Auto-populated from payroll" items={items} setItem={setItem} />
-            <NumField id="80C_elss" label="ELSS / Mutual funds" items={items} setItem={setItem} />
-            <NumField id="80C_lic" label="Life insurance premium" items={items} setItem={setItem} />
-            <NumField id="80C_tuition" label="Children's tuition fees" items={items} setItem={setItem} />
+            <NumField id="80C_pf" label="Employee Provident Fund" hint="Auto-populated from payroll" items={draft} setItem={setItem} />
+            <NumField id="80C_elss" label="ELSS / Mutual funds" items={draft} setItem={setItem} />
+            <NumField id="80C_lic" label="Life insurance premium" items={draft} setItem={setItem} />
+            <NumField id="80C_tuition" label="Children's tuition fees" items={draft} setItem={setItem} />
           </div>
           <div className="hint" style={{ marginBottom: 16 }}>Claimed: <b>{inr(t.c80)}</b> of ₹1,50,000</div>
 
           <Divide />
           <h4 style={{ margin: '0 0 10px', fontSize: 13 }}>Health, pension &amp; other deductions</h4>
           <div className="grid g2" style={{ gap: '0 14px' }}>
-            <NumField id="80D_self" label="80D — Medical insurance (self & family)" hint="Max ₹25,000" items={items} setItem={setItem} />
-            <NumField id="80D_parents" label="80D — Medical insurance (parents)" hint="Max ₹50,000 if senior citizen" items={items} setItem={setItem} />
-            <NumField id="80CCD1B" label="80CCD(1B) — NPS additional" hint="Max ₹50,000 over and above 80C" items={items} setItem={setItem} />
-            <NumField id="80E" label="80E — Education loan interest" hint="No upper limit" items={items} setItem={setItem} />
-            <NumField id="80G" label="80G — Donations" hint="50% or 100% deduction depending on institution" items={items} setItem={setItem} />
-            <NumField id="home_loan" label="Section 24(b) — Home loan interest" hint="Max ₹2,00,000 for self-occupied" items={items} setItem={setItem} />
+            <NumField id="80D_self" label="80D — Medical insurance (self & family)" hint="Max ₹25,000" items={draft} setItem={setItem} />
+            <NumField id="80D_parents" label="80D — Medical insurance (parents)" hint="Max ₹50,000 if senior citizen" items={draft} setItem={setItem} />
+            <NumField id="80CCD1B" label="80CCD(1B) — NPS additional" hint="Max ₹50,000 over and above 80C" items={draft} setItem={setItem} />
+            <NumField id="80E" label="80E — Education loan interest" hint="No upper limit" items={draft} setItem={setItem} />
+            <NumField id="80G" label="80G — Donations" hint="50% or 100% deduction depending on institution" items={draft} setItem={setItem} />
+            <NumField id="home_loan" label="Section 24(b) — Home loan interest" hint="Max ₹2,00,000 for self-occupied" items={draft} setItem={setItem} />
           </div>
 
           <Divide />
           <h4 style={{ margin: '0 0 10px', fontSize: 13 }}>House Rent Allowance exemption</h4>
           <div className="grid g2" style={{ gap: '0 14px' }}>
-            <NumField id="hra_rent" label="Monthly rent paid" hint={'Annual rent: ' + inr(Number(items.hra_rent) * 12)} items={items} setItem={setItem} />
+            <NumField id="hra_rent" label="Monthly rent paid" hint={'Annual rent: ' + inr(Number(draft.hra_rent) * 12)} items={draft} setItem={setItem} />
             <div className="field">
               <label>Landlord PAN (mandatory if annual rent &gt; ₹1,00,000)</label>
-              <input className="input" placeholder="AAAPZ1234C" value={String(items.landlord_pan ?? '')}
+              <input className="input" placeholder="AAAPZ1234C" value={String(draft.landlord_pan ?? '')}
                 onChange={(ev) => setItem('landlord_pan', ev.target.value)} />
             </div>
           </div>
@@ -250,33 +266,32 @@ function TaxMe() {
 function TaxAll() {
   const app = useApp();
   const [q, setQ] = useState('');
-  const list = ACTIVE();
-  const shown = q ? list.filter((e) => e.name.toLowerCase().includes(q.toLowerCase())) : list;
+  const { data: list = [] } = useTaxRows();
+  const verify = useVerifyDeclaration();
+  const needle = q.toLowerCase();
+  const shown = q ? list.filter((r) => r.employee.name.toLowerCase().includes(needle)) : list;
 
-  const byStatus = ['Draft', 'Submitted', 'Verified'].map((s, i) => ({
-    k: s, c: PAL[i], v: list.filter((e) => DECL[e.id]?.status === s).length,
+  const byStatus = ['Draft', 'Submitted', 'Verified'].map((st, i) => ({
+    k: st, c: PAL[i], v: list.filter((r) => r.declaration.status === st).length,
   }));
-  const submitted = list.filter((e) => DECL[e.id].status !== 'Draft').length;
-  const onNew = list.filter((e) => DECL[e.id].regime === 'New').length;
+  const submitted = list.filter((r) => r.declaration.status !== 'Draft').length;
+  const onNew = list.filter((r) => r.declaration.regime === 'New').length;
 
   const exportCsv = () =>
     downloadCSV('tax_declarations.csv',
       [['Emp Code', 'Name', 'Regime', 'Status', '80C', '80D', '80CCD1B', '80E', '80G', 'Annual Rent', 'Home Loan Interest', 'Total Deductions']].concat(
-        list.map((e) => {
-          const t = declTotals(e.id);
-          const d = DECL[e.id];
-          return [e.code, e.name, d.regime, d.status, String(t.c80), String(t.d80), String(t.nps),
-            String(t.e80), String(t.g80), String(t.hra), String(t.loan), String(t.total)];
-        }),
+        list.map(({ employee: e, declaration: d, totals: t }) =>
+          [e.code, e.name, d.regime, d.status, String(t.c80), String(t.d80), String(t.nps),
+            String(t.e80), String(t.g80), String(t.hra), String(t.loan), String(t.total)]),
       ));
 
   return (
     <div className="stack">
       <div className="grid g4">
         <Tile label="Declarations submitted" value={`${submitted} / ${list.length}`} foot={pct(submitted, list.length) + '% completion'} />
-        <Tile label="Proofs verified" value={list.filter((e) => DECL[e.id].status === 'Verified').length} foot="Finance team verification" />
+        <Tile label="Proofs verified" value={list.filter((r) => r.declaration.status === 'Verified').length} foot="Finance team verification" />
         <Tile label="On New Regime" value={onNew} foot={pct(onNew, list.length) + '% of employees'} />
-        <Tile label="Total 80C claimed" value={lakh(sum(list, (e) => declTotals(e.id).c80))} foot="Across all employees" />
+        <Tile label="Total 80C claimed" value={lakh(sum(list, (r) => r.totals.c80))} foot="Across all employees" />
       </div>
 
       <div className="grid g-2-1">
@@ -297,9 +312,7 @@ function TaxAll() {
                 </tr>
               </thead>
               <tbody>
-                {sortBy(shown, (e) => e.name).map((e) => {
-                  const t = declTotals(e.id);
-                  const d = DECL[e.id];
+                {sortBy(shown, (r) => r.employee.name).map(({ employee: e, declaration: d, totals: t }) => {
                   return (
                     <tr key={e.id}>
                       <td><PersonCell e={e} sub={e.code} /></td>
@@ -312,10 +325,13 @@ function TaxAll() {
                       <td><StatusBadge status={d.status} /></td>
                       <td className="right">
                         {d.status === 'Submitted' ? (
-                          <button className="btn sm primary" onClick={() => {
-                            d.status = 'Verified';
-                            app.toast('Declaration verified', 'ok');
-                            app.bump();
+                          <button className="btn sm primary" onClick={async () => {
+                            try {
+                              await verify.mutate(e.id);
+                              app.toast('Declaration verified', 'ok');
+                            } catch (err) {
+                              app.toast(err instanceof Error ? err.message : 'Could not verify it', 'err');
+                            }
                           }}>Verify</button>
                         ) : <span className="muted">—</span>}
                       </td>

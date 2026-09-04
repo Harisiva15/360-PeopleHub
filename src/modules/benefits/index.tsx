@@ -3,17 +3,20 @@ import { sortBy, sum } from '../../lib/collections';
 import { fmtD } from '../../lib/dates';
 import { inr, lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { ACTIVE, EMAP } from '../../data/employees';
-import { FBP, FBP_COMPONENTS, INSURANCE, PERKS, fbpTotal } from '../../data/benefits';
-import { LOANS, LOAN_TYPES } from '../../data/loans';
-import type { Loan } from '../../data/loans';
+import { FBP_COMPONENTS, INSURANCE, PERKS } from '../../data/benefits';
+import { LOAN_TYPES } from '../../data/loans';
+import type { Loan } from '../../services';
 import { GRADES, ORG } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Divide, ListRow } from '../../components/common';
 import { Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
-import { visibleIds } from '../../state/rbac';
 import { useShowEmployee } from '../employees/Profile';
+import {
+  useApproveLoan, useDeclareFbp, useFbpPlan, useFbpRows, useInsuranceCover, useLoans,
+  useVisiblePeople,
+} from './data';
+import type { Directory } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { Grade } from '../../types/country';
@@ -118,10 +121,19 @@ function BnMine() {
 function BnFbp() {
   const app = useApp();
   const e = app.me;
-  const f = FBP[e.id] || { pool: 0, alloc: {}, status: 'Not declared', lockedOn: null };
+  const { data: row } = useFbpPlan(e.id);
+  const declareFbp = useDeclareFbp();
 
-  /* edits are local until saved, so the pool check can run live */
-  const [alloc, setAlloc] = useState<Record<string, number>>({ ...f.alloc });
+  /* Edits are local until saved, so the pool check can run live. */
+  const [draft, setDraft] = useState<Record<string, number> | null>(null);
+
+  /* After every hook. */
+  if (!row) return <Card><EmptyState msg="Loading your benefit plan…" icon="🎁" /></Card>;
+
+  const f = row.plan;
+  const alloc = draft ?? f.alloc;
+  const setAlloc = (fn: (a: Record<string, number>) => Record<string, number>) =>
+    setDraft((d) => fn(d ?? f.alloc));
   const used = sum(Object.values(alloc));
   const left = f.pool - used;
   const over = used > f.pool;
@@ -151,11 +163,14 @@ function BnFbp() {
         <Card title="Declare your components"
           sub={`Locks on ${fmtD(f.lockedOn || '2026-04-30')} · claim against bills each month`} flush
           actions={
-            <button className="btn sm primary" disabled={over} onClick={() => {
-              FBP[e.id].alloc = { ...alloc };
-              FBP[e.id].status = 'Declared';
-              app.toast('FBP declaration saved', 'ok');
-              app.bump();
+            <button className="btn sm primary" disabled={over} onClick={async () => {
+              try {
+                await declareFbp.mutate(e.id, alloc);
+                setDraft(null);
+                app.toast('FBP declaration saved', 'ok');
+              } catch (err) {
+                app.toast(err instanceof Error ? err.message : 'Could not save the declaration', 'err');
+              }
             }}>Save declaration</button>
           }>
           <div className="tbl-wrap">
@@ -220,7 +235,10 @@ function BnFbp() {
 
 /* ---------------- Loans ---------------- */
 
-function LoanTable({ list, act, onApprove }: { list: Loan[]; act: boolean; onApprove: (l: Loan) => void }) {
+function LoanTable(
+  { list, dir, act, onApprove }:
+  { list: Loan[]; dir: Directory; act: boolean; onApprove: (l: Loan) => void },
+) {
   if (!list.length) return <EmptyState msg="No loans on record" icon="🏦" />;
   return (
     <div className="tbl-wrap">
@@ -236,7 +254,7 @@ function LoanTable({ list, act, onApprove }: { list: Loan[]; act: boolean; onApp
         <tbody>
           {list.map((l) => (
             <tr key={l.id}>
-              {act && <td><PersonCell e={EMAP[l.empId]} /></td>}
+              {act && <td><PersonCell e={dir.byId(l.empId)!} /></td>}
               <td className="mono">{l.id}</td>
               <td>{LOAN_TYPES.find((t) => t.id === l.type)?.n || l.type}</td>
               <td className="num">{inr(l.principal)}</td>
@@ -263,16 +281,24 @@ function LoanTable({ list, act, onApprove }: { list: Loan[]; act: boolean; onApp
 
 function BnLoans() {
   const app = useApp();
-  const ids = visibleIds(app.role, app.meId);
-  const mine = LOANS.filter((l) => l.empId === app.meId);
-  const team = app.role === 'employee' ? [] : LOANS.filter((l) => ids.includes(l.empId) && l.empId !== app.meId);
+  const dir = useVisiblePeople();
+  const { data: loans = [] } = useLoans();
+  const approveLoan = useApproveLoan();
+
+  const visible = loans.filter((l) => dir.ids.includes(l.empId));
+  const mine = visible.filter((l) => l.empId === app.meId);
+  const team = app.role === 'employee' ? [] : visible.filter((l) => l.empId !== app.meId);
   const active = mine.filter((l) => l.status === 'Active');
   const eligible = Math.round(((app.me.ctc / 12) * 3) / 1000) * 1000;
 
-  const approve = (l: Loan) => {
-    l.status = 'Active';
-    app.toast('Loan approved', 'ok');
-    app.bump();
+  /* Sanctioning puts the loan into recovery, so the service owns it. */
+  const approve = async (l: Loan) => {
+    try {
+      await approveLoan.mutate(l.id);
+      app.toast('Loan approved', 'ok');
+    } catch (err) {
+      app.toast(err instanceof Error ? err.message : 'Could not approve the loan', 'err');
+    }
   };
 
   return (
@@ -286,13 +312,13 @@ function BnLoans() {
 
       <Card title="My loans & advances" sub={`${mine.length} records`} flush
         actions={<button className="btn sm primary" onClick={() => app.toast('Loan application form is not wired in this build')}>＋ Apply for a loan</button>}>
-        <LoanTable list={mine} act={false} onApprove={approve} />
+        <LoanTable list={mine} dir={dir} act={false} onApprove={approve} />
       </Card>
 
       {app.role !== 'employee' && (
         <Card title="Team loans"
           sub={`${team.length} records · ${inr(sum(team.filter((l) => l.status === 'Active'), (l) => l.outstanding))} outstanding`} flush>
-          <LoanTable list={team} act={app.role === 'admin'} onApprove={approve} />
+          <LoanTable list={team} dir={dir} act={app.role === 'admin'} onApprove={approve} />
         </Card>
       )}
 
@@ -324,11 +350,13 @@ function BnLoans() {
 
 function BnAdmin() {
   const showEmp = useShowEmployee();
-  const active = ACTIVE();
-  const totalCover = sum(active, (e) => INSURANCE[0].sum[e.grade]);
+  const { data: rows = [] } = useFbpRows();
+  const { data: cover } = useInsuranceCover();
+  const active = rows.map((r) => r.employee);
+  const totalCover = cover?.totalSumAssured ?? 0;
   const grades = Object.keys(GRADES) as Grade[];
   const byGrade = grades.map((g, i) => ({ k: GRADES[g].label, c: PAL[i], v: active.filter((e) => e.grade === g).length })).filter((r) => r.v);
-  const declared = active.filter((e) => FBP[e.id]?.status === 'Declared');
+  const declared = rows.filter((r) => r.plan.status === 'Declared');
 
   return (
     <div className="stack">
@@ -376,10 +404,8 @@ function BnAdmin() {
         actions={<button className="btn sm" onClick={() =>
           downloadCSV('fbp_status.csv',
             [['Emp Code', 'Name', 'Grade', 'FBP pool', 'Allocated', 'Status']].concat(
-              active.map((e) => {
-                const f = FBP[e.id];
-                return [e.code, e.name, e.grade, String(f?.pool ?? 0), String(fbpTotal(e.id)), f?.status ?? ''];
-              }),
+              rows.map(({ employee: e, plan: f, allocated }) =>
+                [e.code, e.name, e.grade, String(f.pool), String(allocated), f.status]),
             ))}>⤓ Export</button>}>
         <div className="tbl-wrap" style={{ maxHeight: 460, overflow: 'auto' }}>
           <table className="tbl">
@@ -387,9 +413,7 @@ function BnAdmin() {
               <tr><th>Employee</th><th>Grade</th><th className="num">FBP pool</th><th className="num">Allocated</th><th className="num">Utilisation</th><th>Status</th></tr>
             </thead>
             <tbody>
-              {sortBy(active, (e) => e.name).map((e) => {
-                const f = FBP[e.id] || { pool: 0, alloc: {}, status: '—' };
-                const u = fbpTotal(e.id);
+              {sortBy(rows, (r) => r.employee.name).map(({ employee: e, plan: f, allocated: u }) => {
                 return (
                   <tr key={e.id} className="clickable" onClick={() => showEmp(e.id)}>
                     <td><PersonCell e={e} sub={e.code} /></td>

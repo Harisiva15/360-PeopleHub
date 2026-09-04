@@ -1,10 +1,11 @@
 import { ACTIVE, EMAP } from '../../data/employees';
-import { CUR_RUN, DECL, PAYRUNS, payrollTotals, payslip } from '../../data/payroll';
+import { CUR_RUN, DECL, declTotals, hraExempt, PAYRUNS, payrollTotals, payslip } from '../../data/payroll';
 import { BANK_BATCHES, COMPLIANCE_PAYS, PAY_INPUTS } from '../../data/payinputs';
 import { LOANS, loanEmiFor } from '../../data/loans';
-import { comp, compAllow, dailyRate, salaryStructure } from '../../data/salary';
-import type { CompRow, PayrollService, RegisterRow } from '../contracts';
+import { comp, compAllow, dailyRate, salaryStructure, taxNewRegime, taxOldRegime } from '../../data/salary';
+import type { CompRow, PayrollService, RegisterRow, TaxRow, TaxSummary } from '../contracts';
 import { ok } from './util';
+import { TODAY, ymd } from '../../lib/dates';
 
 /** Everyone who was on the books in time to be paid for that cycle. */
 const paidIn = (mk: string) => ACTIVE().filter((e) => e.doj <= mk + '-28');
@@ -79,6 +80,78 @@ export const payrollService: PayrollService = {
 
   declarations() {
     return ok(DECL);
+  },
+
+  taxSummary(empId) {
+    const e = EMAP[empId];
+    if (!e) return Promise.reject(new Error('No such employee: ' + empId));
+    const d = DECL[empId];
+    if (!d) return Promise.reject(new Error('No declaration on file for ' + empId));
+    const salary = salaryStructure(e);
+    const totals = declTotals(empId);
+    const hraExemption = hraExempt(e, totals.hra);
+    /* Both regimes are priced on the same gross, so the comparison is honest. */
+    const oldRegime = taxOldRegime(salary.grossA - hraExemption, totals.total);
+    const newRegime = taxNewRegime(salary.grossA);
+    return ok({
+      declaration: d,
+      salary,
+      totals,
+      hraExemption,
+      oldRegime,
+      newRegime,
+      better: oldRegime.total <= newRegime.total ? 'Old' : 'New',
+    } as TaxSummary);
+  },
+
+  taxRows() {
+    const rows: TaxRow[] = ACTIVE().map((e) => {
+      const d = DECL[e.id];
+      const totals = declTotals(e.id);
+      const salary = salaryStructure(e);
+      const payable = d.regime === 'Old'
+        ? taxOldRegime(salary.grossA - hraExempt(e, totals.hra), totals.total).total
+        : taxNewRegime(salary.grossA).total;
+      return { employee: e, declaration: d, totals, taxPayable: payable };
+    });
+    return ok(rows);
+  },
+
+  saveDeclaration(empId, items) {
+    const d = DECL[empId];
+    if (!d) return Promise.reject(new Error('No declaration on file for ' + empId));
+    if (d.status === 'Verified') return Promise.reject(new Error('Finance has verified this declaration — raise a ticket to reopen it'));
+    /* Only the keys the declaration already carries; the rest are numbers. */
+    Object.keys(d.items).forEach((k) => {
+      d.items[k] = k === 'landlord_pan' ? String(items[k] ?? '') : Number(items[k]) || 0;
+    });
+    d.status = 'Submitted';
+    d.submittedOn = ymd(TODAY);
+    return ok(d);
+  },
+
+  setRegime(empId, regime) {
+    const d = DECL[empId];
+    if (!d) return Promise.reject(new Error('No declaration on file for ' + empId));
+    if (d.status === 'Verified') return Promise.reject(new Error('The regime is locked once Finance has verified the proofs'));
+    d.regime = regime;
+    return ok(d);
+  },
+
+  submitProofs(empId) {
+    const d = DECL[empId];
+    if (!d) return Promise.reject(new Error('No declaration on file for ' + empId));
+    d.proofs = 'All proofs uploaded ' + ymd(TODAY);
+    return ok(d);
+  },
+
+  verifyDeclaration(empId) {
+    const d = DECL[empId];
+    if (!d) return Promise.reject(new Error('No declaration on file for ' + empId));
+    if (d.status === 'Draft') return Promise.reject(new Error('Nothing submitted to verify yet'));
+    if (d.status === 'Verified') return Promise.reject(new Error('Already verified'));
+    d.status = 'Verified';
+    return ok(d);
   },
 
   bankBatches() {

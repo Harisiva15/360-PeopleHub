@@ -9,7 +9,10 @@
 import { TODAY, ymd } from '../../lib/dates';
 import { sum } from '../../lib/collections';
 import { DOCS, DOC_TYPES, ASSETS } from '../../data/announcements';
-import { EMAP } from '../../data/employees';
+import { EMAP, empName, HRHEAD } from '../../data/employees';
+import { salaryStructure, taxNewRegime } from '../../data/salary';
+import { ytdFor } from '../../data/letters';
+import { CUR_CYCLE, reviewOf } from '../../data/performance';
 import { EXITS, exitOf, fnfSettlement } from '../../data/exit';
 import { leaveBalance } from '../../data/leave';
 import { activeLoans } from '../../data/loans';
@@ -23,6 +26,24 @@ import type {
 import { ok } from './util';
 
 export const documentService: DocumentService = {
+  letterContext(empId) {
+    const e = EMAP[empId];
+    if (!e) return Promise.reject(new Error('No such employee: ' + empId));
+    const salary = salaryStructure(e);
+    const x = exitOf(e.id);
+    return ok({
+      employee: e,
+      signatory: { name: HRHEAD.name, designation: HRHEAD.designation },
+      managerName: empName(e.managerId || ''),
+      salary,
+      lastWorkingDay: x ? x.lwd : null,
+      review: reviewOf(e.id) ?? null,
+      cycleName: CUR_CYCLE.name,
+      ytd: ytdFor(e.id),
+      annualTax: taxNewRegime(salary.grossA),
+    });
+  },
+
   documents(empIds) {
     if (!empIds) return ok(DOCS.slice());
     const want = new Set(empIds);

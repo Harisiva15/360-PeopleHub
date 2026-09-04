@@ -6,7 +6,6 @@ import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import type { AttRecord, Employee } from '../../services';
 import { DEPTS, deptOf, HOLIDAYS, siteOf, SITES } from '../../data/org';
-import { PAYRUNS } from '../../data/payroll';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
 import { ListRow, StatusBadge } from '../../components/common';
 import { BarChart, HBar, Legend, PAL } from '../../components/charts';
@@ -17,7 +16,7 @@ import { useShowEmployee } from '../employees/Profile';
 import { MapBox, PunchWidget } from './Punch';
 import {
   useActOnRegularisation, useAttendance, useMyAttendance, usePeople,
-  useRaiseRegularisation, useRegularisableDays, useRegularisations, useVisiblePeople,
+  usePayRuns, useRaiseRegularisation, useRegularisableDays, useRegularisations, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
 import { MonthCalendar } from '../dashboard/shared';
@@ -112,7 +111,8 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
   const me = app.me;
   const self = usePeople([me.id]);
   const detail = useAttDetail(self);
-  const months = PAYRUNS.map((p) => p.mk).slice(-8);
+  const { data: runs = [] } = usePayRuns();
+  const months = runs.map((p) => p.mk).slice(-8);
   const [mk, setMk] = useState(monthKey(TODAY));
 
   const { data: recs = [] } = useMyAttendance(me.id, mk + '-01', mk + '-31');

@@ -3,13 +3,10 @@ import { LOGO_LIGHT } from '../../assets/logo';
 import { fmtD, tenure, TODAY, ymd } from '../../lib/dates';
 import { inr } from '../../lib/format';
 import { ri } from '../../lib/rng';
-import { EMAP, empName, HRHEAD } from '../../data/employees';
-import type { Employee } from '../../types/employee';
+import type { Employee, LetterContext } from '../../services';
+import { useLetterContext, useVisiblePeople } from './data';
 import { deptOf, GRADES, ORG, siteOf } from '../../data/org';
-import { salaryStructure, taxNewRegime } from '../../data/salary';
-import { LETTER_TYPES, ytdFor } from '../../data/letters';
-import { exitOf } from '../../data/exit';
-import { CUR_CYCLE, reviewOf } from '../../data/performance';
+import { LETTER_TYPES } from '../../data/letters';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 
@@ -24,9 +21,9 @@ const P = ({ children }: { children: ReactNode }) => (
 
 /* ---------- the eight letter bodies ---------- */
 
-function ExperienceBody({ e, relieving }: { e: Employee; relieving: boolean }) {
-  const x = exitOf(e.id);
-  const lwd = x ? x.lwd : ymd(TODAY);
+function ExperienceBody({ ctx, relieving }: { ctx: LetterContext; relieving: boolean }) {
+  const e = ctx.employee;
+  const lwd = ctx.lastWorkingDay ?? ymd(TODAY);
   const p = pron(e);
   return (
     <>
@@ -53,8 +50,9 @@ function ExperienceBody({ e, relieving }: { e: Employee; relieving: boolean }) {
   );
 }
 
-function SalaryCertBody({ e }: { e: Employee }) {
-  const s = salaryStructure(e);
+function SalaryCertBody({ ctx }: { ctx: LetterContext }) {
+  const e = ctx.employee;
+  const s = ctx.salary;
   return (
     <>
       <P>
@@ -93,7 +91,8 @@ function SalaryCertBody({ e }: { e: Employee }) {
   );
 }
 
-function AddressBody({ e }: { e: Employee }) {
+function AddressBody({ ctx }: { ctx: LetterContext }) {
+  const e = ctx.employee;
   return (
     <>
       <P>To whomsoever it may concern,</P>
@@ -113,7 +112,8 @@ function AddressBody({ e }: { e: Employee }) {
   );
 }
 
-function AppointmentBody({ e }: { e: Employee }) {
+function AppointmentBody({ ctx }: { ctx: LetterContext }) {
+  const e = ctx.employee;
   return (
     <>
       <P>Dear {e.name.split(' ')[0]},</P>
@@ -129,7 +129,7 @@ function AppointmentBody({ e }: { e: Employee }) {
       <table style={{ marginTop: 12 }}>
         <tbody>
           <tr><th style={{ width: '32%' }}>Grade</th><td>{GRADES[e.grade].label}</td></tr>
-          <tr><th>Reporting to</th><td>{empName(e.managerId || '')}</td></tr>
+          <tr><th>Reporting to</th><td>{ctx.managerName}</td></tr>
           <tr><th>Probation</th><td>Six (6) months from the date of joining</td></tr>
           <tr><th>Notice period</th><td>30 days during probation, 60 days on confirmation</td></tr>
           <tr><th>Working hours</th><td>{e.shift} IST, Monday to Friday</td></tr>
@@ -140,16 +140,17 @@ function AppointmentBody({ e }: { e: Employee }) {
   );
 }
 
-function IncrementBody({ e }: { e: Employee }) {
-  const s = salaryStructure(e);
-  const rv = reviewOf(e.id);
+function IncrementBody({ ctx }: { ctx: LetterContext }) {
+  const e = ctx.employee;
+  const s = ctx.salary;
+  const rv = ctx.review;
   const hike = rv && rv.final ? rv.final.hike : 10;
   const newCtc = (Math.round((e.ctc * (1 + hike / 100)) / 1000) * 1000);
   return (
     <>
       <P>Dear {e.name.split(' ')[0]},</P>
       <P>
-        We are pleased to inform you that following the {CUR_CYCLE.name}, your compensation has been revised with
+        We are pleased to inform you that following the {ctx.cycleName}, your compensation has been revised with
         effect from <b>1 October 2026</b>.
       </P>
       <table style={{ marginTop: 12 }}>
@@ -183,7 +184,8 @@ function IncrementBody({ e }: { e: Employee }) {
   );
 }
 
-function NocBody({ e }: { e: Employee }) {
+function NocBody({ ctx }: { ctx: LetterContext }) {
+  const e = ctx.employee;
   const p = pron(e);
   return (
     <>
@@ -200,10 +202,11 @@ function NocBody({ e }: { e: Employee }) {
   );
 }
 
-function Form16Body({ e }: { e: Employee }) {
-  const s = salaryStructure(e);
-  const tax = taxNewRegime(s.grossA);
-  const yt = ytdFor(e.id);
+function Form16Body({ ctx }: { ctx: LetterContext }) {
+  const e = ctx.employee;
+  const s = ctx.salary;
+  const tax = ctx.annualTax;
+  const yt = ctx.ytd;
   return (
     <>
       <P>
@@ -242,16 +245,16 @@ function Form16Body({ e }: { e: Employee }) {
   );
 }
 
-function LetterBody({ type, e }: { type: string; e: Employee }) {
+function LetterBody({ type, ctx }: { type: string; ctx: LetterContext }) {
   switch (type) {
-    case 'exp': return <ExperienceBody e={e} relieving={false} />;
-    case 'rel': return <ExperienceBody e={e} relieving />;
-    case 'salcert': return <SalaryCertBody e={e} />;
-    case 'addr': return <AddressBody e={e} />;
-    case 'appt': return <AppointmentBody e={e} />;
-    case 'inc': return <IncrementBody e={e} />;
-    case 'noc': return <NocBody e={e} />;
-    case 'form16': return <Form16Body e={e} />;
+    case 'exp': return <ExperienceBody ctx={ctx} relieving={false} />;
+    case 'rel': return <ExperienceBody ctx={ctx} relieving />;
+    case 'salcert': return <SalaryCertBody ctx={ctx} />;
+    case 'addr': return <AddressBody ctx={ctx} />;
+    case 'appt': return <AppointmentBody ctx={ctx} />;
+    case 'inc': return <IncrementBody ctx={ctx} />;
+    case 'noc': return <NocBody ctx={ctx} />;
+    case 'form16': return <Form16Body ctx={ctx} />;
     default: return null;
   }
 }
@@ -261,8 +264,12 @@ function LetterBody({ type, e }: { type: string; e: Employee }) {
  * type, with the body switched on the letter chosen.
  */
 function LetterDoc({ type, empId, docRef }: { type: string; empId: string; docRef: string }) {
-  const e = EMAP[empId];
+  const { data: ctx } = useLetterContext(empId);
   const t = letterType(type);
+
+  /* After every hook: a letter states facts, so it waits for them. */
+  if (!ctx) return <div className="payslip"><p style={{ fontSize: 13 }}>Preparing the letter…</p></div>;
+
   return (
     <div className="payslip">
       <div className="ps-h">
@@ -279,15 +286,15 @@ function LetterDoc({ type, empId, docRef }: { type: string; empId: string; docRe
         </div>
       </div>
 
-      <LetterBody type={type} e={e} />
+      <LetterBody type={type} ctx={ctx} />
 
       <p style={{ fontSize: 13, marginTop: 26 }}>
         For <b>{ORG.legal}</b>
       </p>
       <p style={{ fontSize: 13, marginTop: 22 }}>
-        <b>{HRHEAD.name}</b>
+        <b>{ctx.signatory.name}</b>
         <br />
-        {HRHEAD.designation}
+        {ctx.signatory.designation}
         <br />
         <span className="muted" style={{ fontSize: 11 }}>
           This is a digitally generated letter and is valid without a physical signature. Verify authenticity at
@@ -305,9 +312,10 @@ function LetterDoc({ type, empId, docRef }: { type: string; empId: string; docRe
 export function useShowLetter() {
   const layer = useLayer();
   const app = useApp();
+  const dir = useVisiblePeople();
 
   return (type: string, empId: string) => {
-    const e = EMAP[empId];
+    const e = dir.byId(empId);
     if (!e) return;
     const t = letterType(type);
     /* Drawn once per open so the reference stays put while the letter is on screen. */
