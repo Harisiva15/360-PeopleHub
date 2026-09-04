@@ -1,8 +1,8 @@
 import { sortBy } from '../../lib/collections';
 import { fmtD, monthLabel } from '../../lib/dates';
 import { inr } from '../../lib/format';
-import { EMAP } from '../../data/employees';
-import type { Claim } from '../../data/expenses';
+import type { Claim } from '../../services';
+import type { Directory } from '../../services/people';
 import { Badge, EmptyState, PersonCell } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 
@@ -19,10 +19,11 @@ export function ClaimBadge({ status }: { status: string }) {
  * approvals queue.
  */
 export function ClaimTable({
-  list, showEmp, actions, onOpen, onApprove, onReject, onPay,
+  list, showEmp, actions, dir, onOpen, onApprove, onReject, onPay,
 }: {
   list: Claim[];
   showEmp?: boolean;
+  dir?: Directory;
   actions?: boolean;
   onOpen?: (c: Claim) => void;
   onApprove?: (c: Claim) => void;
@@ -46,7 +47,7 @@ export function ClaimTable({
         <tbody>
           {sortBy(list, (c) => c.submittedOn, 'desc').map((c) => (
             <tr key={c.id} className={onOpen ? 'clickable' : ''} onClick={() => onOpen?.(c)}>
-              {showEmp && <td><PersonCell e={EMAP[c.empId]} /></td>}
+              {showEmp && dir?.byId(c.empId) && <td><PersonCell e={dir.byId(c.empId)!} /></td>}
               <td>
                 <b>{c.title}</b>
                 <div className="muted" style={{ fontSize: 11 }}>{c.id}</div>

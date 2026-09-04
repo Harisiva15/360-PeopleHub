@@ -3,17 +3,20 @@ import { sortBy, sum, uniq } from '../../lib/collections';
 import { fmtD, MON, monthKey, monthLabel, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { uid } from '../../lib/rng';
-import { EMAP, empName } from '../../data/employees';
-import { ADVANCES, CLAIMS, EXP_CATS, expCat } from '../../data/expenses';
-import type { Advance, Claim, ExpItem } from '../../data/expenses';
+import { EXP_CATS, expCat } from '../../data/expenses';
+import type { Advance, Claim, ExpItem } from '../../services';
 import { DEPTS, PROJECTS, projOf } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Chip, Divide } from '../../components/common';
 import { BarChart, HBar } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { isMyReport, SCOPE, visibleIds } from '../../state/rbac';
+import { isMyReport, SCOPE } from '../../state/rbac';
+import {
+  useAdvances, useApproveAdvance, useApproveClaim, useClaims, usePeople,
+  useReimburseClaim, useRejectClaim, useRequestAdvance, useSubmitClaim, useVisiblePeople,
+} from './data';
+import type { Directory } from './data';
 import { ClaimBadge, ClaimTable } from './ClaimTable';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
@@ -42,14 +45,14 @@ const RULES: [string, string][] = [
   ['Client billing', 'Tag the project so recoverable expenses are invoiced to the client.'],
 ];
 
-function exportClaims(list: Claim[], name: string) {
+function exportClaims(list: Claim[], name: string, dir: Directory) {
   const rows: (string | number)[][] = [
     ['Claim ID', 'Emp Code', 'Name', 'Claim title', 'Category', 'Expense date', 'Merchant', 'Amount', 'Over limit', 'Project', 'Status', 'Submitted', 'Reimbursed with'],
   ];
   list.forEach((c) =>
     c.items.forEach((i) => {
-      const e = EMAP[c.empId];
-      rows.push([c.id, e.code, e.name, c.title, expCat(i.cat).n, i.date, i.merchant, i.amount,
+      const e = dir.byId(c.empId);
+      rows.push([c.id, e?.code ?? c.empId, e?.name ?? '—', c.title, expCat(i.cat).n, i.date, i.merchant, i.amount,
         i.overLimit ? 'Yes' : 'No', i.project ? projOf(i.project).name : '', c.status, c.submittedOn, c.payrollMonth || '']);
     }),
   );
@@ -60,52 +63,53 @@ function exportClaims(list: Claim[], name: string) {
 
 function useClaimActions() {
   const app = useApp();
+  const approveClaim = useApproveClaim();
+  const rejectClaim = useRejectClaim();
+  const reimburse = useReimburseClaim();
+  const fail = (e: unknown) => app.toast(e instanceof Error ? e.message : 'Action failed', 'err');
   return {
-    approve: (c: Claim) => {
-      c.status = 'Approved';
-      c.actedOn = ymd(TODAY);
-      app.toast('Claim approved — queued for reimbursement', 'ok');
-      app.bump();
+    approve: async (c: Claim) => {
+      try {
+        await approveClaim.mutate(c.id, app.meId);
+        app.toast('Claim approved — queued for reimbursement', 'ok');
+      } catch (e) { fail(e); }
     },
-    reject: (c: Claim) => {
-      c.status = 'Rejected';
-      c.note = 'Receipt not legible — please re-upload and resubmit.';
-      c.actedOn = ymd(TODAY);
-      app.toast('Claim rejected', 'err');
-      app.bump();
+    reject: async (c: Claim) => {
+      try {
+        await rejectClaim.mutate(c.id, app.meId, 'Receipt not legible — please re-upload and resubmit.');
+        app.toast('Claim rejected', 'err');
+      } catch (e) { fail(e); }
     },
-    pay: (c: Claim) => {
-      c.status = 'Reimbursed';
-      c.reimbursedOn = ymd(TODAY);
-      c.payrollMonth = monthKey(TODAY);
-      app.toast('Marked reimbursed with ' + monthLabel(c.payrollMonth) + ' payroll', 'ok');
-      app.bump();
+    pay: async (c: Claim) => {
+      try {
+        const paid = await reimburse.mutate(c.id);
+        app.toast('Marked reimbursed with ' + monthLabel(paid.payrollMonth!) + ' payroll', 'ok');
+      } catch (e) { fail(e); }
     },
   };
 }
 
 /* ---------------- claim drawer ---------------- */
 
-function useShowClaim() {
+function useShowClaim(dir: Directory, claims: Claim[]) {
   const layer = useLayer();
   const app = useApp();
   const { approve, reject } = useClaimActions();
 
   return (id: string) => {
-    const c = CLAIMS.find((x) => x.id === id);
+    const c = claims.find((x) => x.id === id);
     if (!c) return;
-    const e = EMAP[c.empId];
     const canAct = c.status === 'Submitted' && (app.role === 'admin' || isMyReport(app.meId, c.empId));
 
     layer.drawer({
       title: c.title,
-      sub: `${c.id} · ${e.name} · ${inr(c.total)}`,
+      sub: `${c.id} · ${dir.name(c.empId)} · ${inr(c.total)}`,
       body: (
         <>
           <div className="row" style={{ gap: 10, marginBottom: 14 }}>
             <ClaimBadge status={c.status} />
             <Chip>{c.items.length} line items</Chip>
-            <Chip>Approver: {empName(c.approverId || '')}</Chip>
+            <Chip>Approver: {dir.name(c.approverId)}</Chip>
           </div>
           {c.note && (
             <div style={{ marginBottom: 14 }}>
@@ -162,6 +166,8 @@ function useShowClaim() {
 
 function NewClaimForm({ close }: { close: () => void }) {
   const app = useApp();
+  const submitClaim = useSubmitClaim();
+  const approver = usePeople([app.me.managerId]);
   const [title, setTitle] = useState('');
   const [cat, setCat] = useState(EXP_CATS[0].id);
   const [date, setDate] = useState(ymd(TODAY));
@@ -208,25 +214,18 @@ function NewClaimForm({ close }: { close: () => void }) {
 
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
         <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" disabled={!amount} onClick={() => {
-          CLAIMS.unshift({
-            id: 'EXP-' + (4200 + CLAIMS.length),
+        <button className="btn primary" disabled={!amount || submitClaim.pending} onClick={async () => {
+          await submitClaim.mutate({
             empId: app.meId,
             title: title || 'Expense claim',
-            items: [{
-              id: uid('EX'), cat, date, amount, merchant: merchant || '—',
+            item: {
+              cat, date, amount, merchant: merchant || '—',
               desc: 'Self-service claim', receipt: expCat(cat).proof ? 'receipt.pdf' : null,
               project: project || null, overLimit: over,
-            }],
-            total: amount,
-            status: 'Submitted',
-            submittedOn: ymd(TODAY),
-            approverId: app.me.managerId,
-            actedOn: null, reimbursedOn: null, payrollMonth: null, note: '',
+            },
           });
           close();
-          app.toast('Claim submitted to ' + empName(app.me.managerId || ''), 'ok');
-          app.bump();
+          app.toast('Claim submitted to ' + approver.name(app.me.managerId), 'ok');
         }}>Submit claim</button>
       </div>
     </>
@@ -235,6 +234,7 @@ function NewClaimForm({ close }: { close: () => void }) {
 
 function NewAdvanceForm({ close }: { close: () => void }) {
   const app = useApp();
+  const requestAdvance = useRequestAdvance();
   const [amount, setAmount] = useState(25000);
   const [reason, setReason] = useState('');
   return (
@@ -250,14 +250,10 @@ function NewAdvanceForm({ close }: { close: () => void }) {
       </Banner>
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
         <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" onClick={() => {
-          ADVANCES.unshift({
-            id: 'ADV-' + (300 + ADVANCES.length), empId: app.meId, amount,
-            reason: reason || 'Travel advance', requestedOn: ymd(TODAY), status: 'Pending', settled: 0,
-          });
+        <button className="btn primary" disabled={requestAdvance.pending} onClick={async () => {
+          await requestAdvance.mutate(app.meId, amount, reason);
           close();
           app.toast('Advance request submitted', 'ok');
-          app.bump();
         }}>Request advance</button>
       </div>
     </>
@@ -276,10 +272,11 @@ function useExpenseModals() {
 
 function ExMy() {
   const app = useApp();
-  const show = useShowClaim();
+  const self = usePeople([app.meId, app.me.managerId]);
+  const { data: mine = [] } = useClaims([app.meId]);
+  const show = useShowClaim(self, mine);
   const { newClaim, newAdvance } = useExpenseModals();
 
-  const mine = CLAIMS.filter((c) => c.empId === app.meId);
   const settled = mine.filter((c) => c.status === 'Reimbursed');
   const pend = mine.filter((c) => ['Submitted', 'Approved'].includes(c.status));
   const byCat = EXP_CATS.map((c) => ({
@@ -293,7 +290,7 @@ function ExMy() {
         <button className="btn" onClick={newAdvance}>＋ Request travel advance</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12.5 }}>
-          Approver: {empName(app.me.managerId || '')} · reimbursed with the next payroll
+          Approver: {self.name(app.me.managerId)} · reimbursed with the next payroll
         </span>
       </div>
 
@@ -306,7 +303,7 @@ function ExMy() {
 
       <div className="grid g-2-1">
         <Card title="My claims" sub={`${mine.length} total`} flush
-          actions={<button className="btn sm" onClick={() => exportClaims(mine, 'my_expense_claims.csv')}>⤓ Export</button>}>
+          actions={<button className="btn sm" onClick={() => exportClaims(mine, 'my_expense_claims.csv', self)}>⤓ Export</button>}>
           <ClaimTable list={mine} onOpen={(c) => show(c.id)} />
         </Card>
         <Card title="Spend by category" sub="All time">
@@ -321,10 +318,12 @@ function ExMy() {
 
 function ExAppr() {
   const app = useApp();
-  const show = useShowClaim();
+  const dir = useVisiblePeople();
+  const ids = dir.ids.filter((i) => i !== app.meId);
+  const { data: teamClaims = [] } = useClaims(ids);
+  const show = useShowClaim(dir, teamClaims);
   const { approve, reject, pay } = useClaimActions();
-  const ids = visibleIds(app.role, app.meId).filter((i) => i !== app.meId);
-  const pend = CLAIMS.filter((c) => c.status === 'Submitted' && ids.includes(c.empId));
+  const pend = teamClaims.filter((c) => c.status === 'Submitted');
   const overLimit = pend.filter((c) => c.items.some((i) => i.overLimit));
 
   return (
@@ -333,20 +332,20 @@ function ExAppr() {
         <Tile label="Awaiting approval" value={pend.length} foot={inr(sum(pend, (c) => c.total)) + ' total value'} />
         <Tile label="Above policy limit" value={overLimit.length} foot="Need an explicit override" />
         <Tile label="Approved this month"
-          value={CLAIMS.filter((c) => ids.includes(c.empId) && c.actedOn && monthKey(c.actedOn) === monthKey(TODAY)).length}
+          value={teamClaims.filter((c) => c.actedOn && monthKey(c.actedOn) === monthKey(TODAY)).length}
           foot="Moving to payroll" />
         <Tile label="Avg claim value" value={inr(sum(pend, (c) => c.total) / Math.max(1, pend.length))} foot="Pending queue" />
       </div>
 
       <Card title="Claims awaiting your approval" sub={`${pend.length} claims`} flush
         actions={pend.length ? (
-          <button className="btn sm primary" onClick={() => {
+          <button className="btn sm primary" onClick={async () => {
             const within = pend.filter((c) => !c.items.some((i) => i.overLimit));
-            within.forEach(approve);
+            for (const c of within) await approve(c);
             app.toast(within.length + ' claims approved', 'ok');
           }}>Approve all within policy</button>
         ) : undefined}>
-        <ClaimTable list={pend} showEmp actions onOpen={(c) => show(c.id)} onApprove={approve} onReject={reject} onPay={pay} />
+        <ClaimTable list={pend} showEmp actions dir={dir} onOpen={(c) => show(c.id)} onApprove={approve} onReject={reject} onPay={pay} />
       </Card>
 
       {overLimit.length > 0 && (
@@ -362,11 +361,11 @@ function ExAppr() {
 
 function ExAll() {
   const app = useApp();
-  const show = useShowClaim();
+  const dir = useVisiblePeople();
+  const { data: list = [] } = useClaims(dir.ids);
+  const show = useShowClaim(dir, list);
   const { approve, reject, pay } = useClaimActions();
   const [status, setStatus] = useState('');
-  const ids = visibleIds(app.role, app.meId);
-  const list = CLAIMS.filter((c) => ids.includes(c.empId));
   const shown = status ? list.filter((c) => c.status === status) : list;
 
   return (
@@ -377,11 +376,11 @@ function ExAll() {
           {['Submitted', 'Approved', 'Reimbursed', 'Rejected'].map((s) => <option key={s}>{s}</option>)}
         </select>
         <div className="spacer" />
-        <button className="btn" onClick={() => exportClaims(list, 'expense_claims.csv')}>⤓ Export</button>
+        <button className="btn" onClick={() => exportClaims(list, 'expense_claims.csv', dir)}>⤓ Export</button>
       </div>
 
       <Card title="All claims" sub={`${list.length} records · ${SCOPE[app.role].label}`} flush>
-        <ClaimTable list={shown} showEmp actions={app.role === 'admin'} onOpen={(c) => show(c.id)}
+        <ClaimTable list={shown} showEmp dir={dir} actions={app.role === 'admin'} onOpen={(c) => show(c.id)}
           onApprove={approve} onReject={reject} onPay={pay} />
       </Card>
     </div>
@@ -390,7 +389,7 @@ function ExAll() {
 
 /* ---------------- Travel advances ---------------- */
 
-function AdvTable({ list, act, onApprove }: { list: Advance[]; act: boolean; onApprove: (a: Advance) => void }) {
+function AdvTable({ list, act, dir, onApprove }: { list: Advance[]; act: boolean; dir?: Directory; onApprove: (a: Advance) => void }) {
   if (!list.length) return <EmptyState msg="No advances" icon="💳" />;
   return (
     <div className="tbl-wrap">
@@ -406,7 +405,7 @@ function AdvTable({ list, act, onApprove }: { list: Advance[]; act: boolean; onA
         <tbody>
           {list.map((a) => (
             <tr key={a.id}>
-              {act && <td><PersonCell e={EMAP[a.empId]} /></td>}
+              {act && dir?.byId(a.empId) && <td><PersonCell e={dir.byId(a.empId)!} /></td>}
               <td className="mono">{a.id}</td>
               <td className="num strong">{inr(a.amount)}</td>
               <td>{a.reason}</td>
@@ -431,14 +430,15 @@ function AdvTable({ list, act, onApprove }: { list: Advance[]; act: boolean; onA
 function ExAdv() {
   const app = useApp();
   const { newAdvance } = useExpenseModals();
-  const ids = visibleIds(app.role, app.meId);
-  const mine = ADVANCES.filter((a) => a.empId === app.meId);
-  const team = app.role === 'employee' ? [] : ADVANCES.filter((a) => ids.includes(a.empId) && a.empId !== app.meId);
+  const dir = useVisiblePeople();
+  const { data: all = [] } = useAdvances(dir.ids);
+  const approveAdvance = useApproveAdvance();
+  const mine = all.filter((a) => a.empId === app.meId);
+  const team = app.role === 'employee' ? [] : all.filter((a) => a.empId !== app.meId);
 
-  const approve = (a: Advance) => {
-    a.status = 'Approved';
+  const approve = async (a: Advance) => {
+    await approveAdvance.mutate(a.id);
     app.toast('Advance approved — payout in 2 working days', 'ok');
-    app.bump();
   };
 
   return (
@@ -455,7 +455,7 @@ function ExAdv() {
 
       {app.role !== 'employee' && (
         <Card title="Team advances" sub={`${team.length} requests`} flush>
-          <AdvTable list={team} act onApprove={approve} />
+          <AdvTable list={team} act dir={dir} onApprove={approve} />
         </Card>
       )}
     </div>
@@ -465,14 +465,13 @@ function ExAdv() {
 /* ---------------- Analytics ---------------- */
 
 function ExAna() {
-  const app = useApp();
-  const ids = visibleIds(app.role, app.meId);
-  const list = CLAIMS.filter((c) => ids.includes(c.empId));
+  const dir = useVisiblePeople();
+  const { data: list = [] } = useClaims(dir.ids);
   const items = list.flatMap((c) => c.items.map((i) => ({ ...i, empId: c.empId, status: c.status })));
 
   const byCat = EXP_CATS.map((c) => ({ k: c.n, c: c.c, v: sum(items.filter((i) => i.cat === c.id), (i) => i.amount) })).filter((r) => r.v);
   const byDept = DEPTS.map((d) => ({
-    k: d.name, c: d.color, v: sum(items.filter((i) => EMAP[i.empId]?.dept === d.id), (i) => i.amount),
+    k: d.name, c: d.color, v: sum(items.filter((i) => dir.byId(i.empId)?.dept === d.id), (i) => i.amount),
   })).filter((r) => r.v);
   const byProject = PROJECTS.map((p) => ({
     k: p.name, c: p.color, v: sum(items.filter((i) => i.project === p.id), (i) => i.amount),

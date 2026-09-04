@@ -23,6 +23,7 @@ import type { AppRole, Employee } from '../types/employee';
 import type { LeaveBalance, LeaveRequest, LeaveStatus } from '../data/leave';
 import type { AttRecord } from '../data/attendance';
 import type { Timesheet, TSStatus } from '../data/timesheet';
+import type { Advance, Claim, ClaimStatus, ExpItem } from '../data/expenses';
 
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
@@ -30,6 +31,7 @@ export type { Employee } from '../types/employee';
 export type { LeaveRequest, LeaveStatus } from '../data/leave';
 export type { AttRecord, AttStatus, Regularisation } from '../data/attendance';
 export type { Timesheet, TSRow, TSStatus } from '../data/timesheet';
+export type { Advance, Claim, ClaimStatus, ExpItem } from '../data/expenses';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
 export interface Caller {
@@ -151,11 +153,38 @@ export interface TimesheetService {
   reject(id: string, approverId: string, note: string): Promise<Timesheet>;
 }
 
+/* ---------- expenses ---------- */
+
+export interface ClaimQuery {
+  empIds?: string[];
+  status?: ClaimStatus;
+}
+
+export interface NewClaim {
+  empId: string;
+  title: string;
+  item: Omit<ExpItem, 'id'>;
+}
+
+export interface ExpenseService {
+  claims(q: ClaimQuery): Promise<Claim[]>;
+  submitClaim(c: NewClaim): Promise<Claim>;
+  approveClaim(id: string, approverId: string): Promise<Claim>;
+  rejectClaim(id: string, approverId: string, note: string): Promise<Claim>;
+  /** Marks it paid and stamps the payroll month it rides out with. */
+  reimburseClaim(id: string): Promise<Claim>;
+
+  advances(empIds?: string[]): Promise<Advance[]>;
+  requestAdvance(empId: string, amount: number, reason: string): Promise<Advance>;
+  approveAdvance(id: string): Promise<Advance>;
+}
+
 /* ---------- the registry ---------- */
 
 export interface Services {
   employees: EmployeeService;
   attendance: AttendanceService;
   timesheet: TimesheetService;
+  expenses: ExpenseService;
   leave: LeaveService;
 }

@@ -133,6 +133,39 @@ const check = (label: string, got: unknown, want: unknown) => {
   const removed = await s.timesheet.removeRow(sheet.id, 0);
   check('removing a row recomputes the total', removed.total, 0);
 
+  /* ---- expenses ---- */
+  const claim = await s.expenses.submitClaim({
+    empId: DEMO_EMP.id,
+    title: 'Client visit',
+    item: {
+      cat: 'LOCAL', date: '2026-10-02', amount: 1800, merchant: 'Cab',
+      desc: 'Airport transfer', receipt: 'receipt.pdf', project: null,
+    },
+  });
+  check('a claim starts Submitted', claim.status, 'Submitted');
+  check('the total follows the line item', claim.total, 1800);
+
+  let payTooEarly = false;
+  try { await s.expenses.reimburseClaim(claim.id); } catch { payTooEarly = true; }
+  check('an unapproved claim cannot be paid', payTooEarly, true);
+
+  const okClaim = await s.expenses.approveClaim(claim.id, DEMO_MGR.id);
+  check('approving records the approver', okClaim.approverId, DEMO_MGR.id);
+
+  const paid = await s.expenses.reimburseClaim(claim.id);
+  check('reimbursing stamps a payroll month', !!paid.payrollMonth, true);
+
+  let rejectAfterPay = false;
+  try { await s.expenses.rejectClaim(claim.id, DEMO_MGR.id, 'too late'); } catch { rejectAfterPay = true; }
+  check('a paid claim cannot be rejected', rejectAfterPay, true);
+
+  const adv = await s.expenses.requestAdvance(DEMO_EMP.id, 25000, 'Client travel');
+  check('an advance starts Pending', adv.status, 'Pending');
+  await s.expenses.approveAdvance(adv.id);
+  let dblAdv = false;
+  try { await s.expenses.approveAdvance(adv.id); } catch { dblAdv = true; }
+  check('an advance is approved once', dblAdv, true);
+
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall service checks passed');
   process.exit(failed ? 1 : 0);
 })();
