@@ -40,6 +40,8 @@ import './reports';
 import './documents';
 import './security';
 import './settings';
+import './copilot';
+import './exec';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {

@@ -63,8 +63,14 @@ alongside every chart relieve. Assign hues in fixed order — never cycle them.
 
 ## Status
 
-Working: Dashboard, Attendance, Timesheet, Leave, Approvals, Employee
-Directory, Org Chart, Celebrations, Announcements, Payroll, Hiring (ATS).
+All 35 modules are ported and render for every role: the core HR suite
+(dashboard, attendance and geo-fencing, shifts, timesheet, leave, expenses,
+approvals), people (directory, org chart, celebrations, announcements,
+engagement, IT assets, WhatsApp, helpdesk), money (payroll, tax, benefits),
+talent (performance, learning, hiring, onboarding, exit), the staffing book
+(clients, requirements, bench, placements, billing, vendors), the AI layer
+(copilot and the executive view), and the admin surfaces (reports, documents,
+security, settings).
 
-The remaining routes are registered with a placeholder and are being ported in
-the same pattern. The data behind all of them is already complete.
+`scratch/routecheck.tsx` walks every route for every role and reports what is
+registered; `npx tsc --noEmit -p tsconfig.app.json` typechecks the app.
