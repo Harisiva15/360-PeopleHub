@@ -3,31 +3,33 @@ import { sortBy, sum } from '../../lib/collections';
 import { addDays, DOW, fmtD, fmtDS, isWeekend, mondayOf, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { EMAP, empName } from '../../data/employees';
 import { deptOf, PROJECTS, projOf, TASK_TYPES } from '../../data/org';
-import { TS, tsOf } from '../../data/timesheet';
-import type { Timesheet } from '../../data/timesheet';
+import type { Timesheet } from '../../services';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Chip, Dot, ListRow, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, LineChart, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { visibleIds } from '../../state/rbac';
+import {
+  useAddRow, useApproveSheet, useMySheets, usePeople, useRecallSheet, useRejectSheet,
+  useRemoveRow, useSetHours, useSetRow, useSheet, useSheets, useSubmitSheet, useVisiblePeople,
+} from './data';
+import type { Directory } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
 const billableHours = (t: Timesheet) =>
   sum(t.rows.filter((r) => projOf(r.proj).billable), (r) => sum(r.h));
 
-function exportTS(list: Timesheet[], name: string) {
+function exportTS(list: Timesheet[], name: string, dir: Directory) {
   const rows: (string | number)[][] = [
     ['Emp Code', 'Name', 'Week Start', 'Project', 'Client', 'Task', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Total', 'Billable', 'Status'],
   ];
   list.forEach((t) =>
     t.rows.forEach((r) => {
-      const e = EMAP[t.empId];
+      const e = dir.byId(t.empId);
       const p = projOf(r.proj);
-      rows.push([e.code, e.name, t.weekStart, p.name, p.client, r.task, ...r.h, sum(r.h), p.billable ? 'Yes' : 'No', t.status]);
+      rows.push([e?.code ?? t.empId, e?.name ?? '—', t.weekStart, p.name, p.client, r.task, ...r.h, sum(r.h), p.billable ? 'Yes' : 'No', t.status]);
     }),
   );
   downloadCSV(name, rows);
@@ -35,13 +37,14 @@ function exportTS(list: Timesheet[], name: string) {
 
 /* ---------------- read-only timesheet modal ---------------- */
 
-function useShowTS() {
+function useShowTS(dir: Directory) {
   const layer = useLayer();
   const app = useApp();
+  const approve = useApproveSheet();
   return (t: Timesheet) => {
     const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(parseYmd(t.weekStart), i));
     layer.modal({
-      title: empName(t.empId) + ' — timesheet',
+      title: dir.name(t.empId) + ' — timesheet',
       sub: `${fmtD(t.weekStart)} – ${fmtD(ymd(days[6]))} · ${t.total} h`,
       size: 'wide',
       body: (
@@ -74,11 +77,10 @@ function useShowTS() {
         <>
           <button className="btn" onClick={close}>Close</button>
           {t.status === 'Submitted' && app.role !== 'employee' && (
-            <button className="btn primary" onClick={() => {
-              t.status = 'Approved';
+            <button className="btn primary" onClick={async () => {
+              await approve.mutate(t.id, app.meId);
               close();
               app.toast('Timesheet approved', 'ok');
-              app.bump();
             }}>Approve</button>
           )}
         </>
@@ -111,45 +113,37 @@ function TsMy({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
   const app = useApp();
   const me = app.me;
 
-  let t = tsOf(me.id, ws);
-  if (!t) {
-    t = {
-      id: 'TS-' + me.id + '-' + ws, empId: me.id, weekStart: ws, rows: [], total: 0,
-      status: 'Draft', approverId: me.managerId, submittedOn: null, note: '',
-    };
-    TS.push(t);
-  }
-  const sheet = t;
+  const { data: sheet } = useSheet(me.id, ws);
+  const { data: allMine = [] } = useMySheets(me.id);
+  const approver = usePeople([sheet?.approverId ?? me.managerId]);
+  const addRow = useAddRow();
+  const removeRow = useRemoveRow();
+  const setHours = useSetHours();
+  const setRow = useSetRow();
+  const submitSheet = useSubmitSheet();
+  const recallSheet = useRecallSheet();
 
   const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(parseYmd(ws), i));
+
+  if (!sheet) return <EmptyState msg="Loading your timesheet…" icon="▤" />;
+
   const editable = sheet.status === 'Draft' || sheet.status === 'Rejected';
   const colTot = days.map((_, i) => sum(sheet.rows, (r) => r.h[i] || 0));
   const total = sum(colTot);
 
-  const recalc = () => {
-    sheet.total = sum(sheet.rows, (r) => sum(r.h));
-    app.bump();
-  };
+  const setHour = (ri: number, di: number, v: string) => { void setHours.mutate(sheet.id, ri, di, +v || 0); };
 
-  const setHour = (ri: number, di: number, v: string) => {
-    sheet.rows[ri].h[di] = +v || 0;
-    recalc();
-  };
-
-  const submit = () => {
-    if (!sheet.total) {
-      app.toast('Log at least one hour before submitting', 'err');
-      return;
+  const submit = async () => {
+    try {
+      await submitSheet.mutate(sheet.id);
+      app.toast('Timesheet submitted to ' + approver.name(sheet.approverId), 'ok');
+    } catch (err) {
+      app.toast(err instanceof Error ? err.message : 'Could not submit', 'err');
     }
-    sheet.status = 'Submitted';
-    sheet.submittedOn = ymd(TODAY);
-    sheet.note = '';
-    app.toast('Timesheet submitted to ' + empName(sheet.approverId || ''), 'ok');
-    app.bump();
   };
 
   const billable = billableHours(sheet);
-  const recent = sortBy(TS.filter((x) => x.empId === me.id), (x) => x.weekStart, 'desc').slice(0, 8);
+  const recent = sortBy(allMine, (x) => x.weekStart, 'desc').slice(0, 8);
 
   return (
     <div className="stack">
@@ -157,24 +151,19 @@ function TsMy({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
         <StatusBadge status={sheet.status} />
         {editable ? (
           <>
-            <button className="btn" onClick={() => {
-              sheet.rows.push({ proj: PROJECTS[0].id, task: 'Development', h: [0, 0, 0, 0, 0, 0, 0] });
-              recalc();
-            }}>＋ Add row</button>
+            <button className="btn" onClick={() => addRow.mutate(sheet.id, PROJECTS[0].id, 'Development')}>＋ Add row</button>
             <button className="btn primary" onClick={submit}>Submit for approval</button>
           </>
         ) : sheet.status === 'Submitted' ? (
-          <button className="btn" onClick={() => {
-            sheet.status = 'Draft';
-            sheet.submittedOn = null;
+          <button className="btn" onClick={async () => {
+            await recallSheet.mutate(sheet.id);
             app.toast('Timesheet recalled to draft');
-            app.bump();
           }}>Recall</button>
         ) : null}
       </WeekNav>
 
       {sheet.status === 'Rejected' && sheet.note && (
-        <Banner kind="warn" icon="⚠️" title={'Returned by ' + empName(sheet.approverId || '')}>{sheet.note}</Banner>
+        <Banner kind="warn" icon="⚠️" title={'Returned by ' + approver.name(sheet.approverId)}>{sheet.note}</Banner>
       )}
 
       <Card flush>
@@ -199,7 +188,7 @@ function TsMy({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
                   <td>
                     {editable ? (
                       <select className="input" style={{ padding: '5px 7px', fontSize: 12.5 }} value={r.proj}
-                        onChange={(e) => { r.proj = e.target.value; recalc(); }}>
+                        onChange={(e) => setRow.mutate(sheet.id, ri, { proj: e.target.value })}>
                         {PROJECTS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     ) : (
@@ -211,7 +200,7 @@ function TsMy({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
                   <td>
                     {editable ? (
                       <select className="input" style={{ padding: '5px 7px', fontSize: 12.5 }} value={r.task}
-                        onChange={(e) => { r.task = e.target.value; recalc(); }}>
+                        onChange={(e) => setRow.mutate(sheet.id, ri, { task: e.target.value })}>
                         {TASK_TYPES.map((x) => <option key={x}>{x}</option>)}
                       </select>
                     ) : r.task}
@@ -226,7 +215,7 @@ function TsMy({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
                   <td className="num strong">{sum(r.h)}</td>
                   <td>
                     {editable && (
-                      <button className="btn ghost sm" title="Remove" onClick={() => { sheet.rows.splice(ri, 1); recalc(); }}>✕</button>
+                      <button className="btn ghost sm" title="Remove" onClick={() => removeRow.mutate(sheet.id, ri)}>✕</button>
                     )}
                   </td>
                 </tr>
@@ -259,7 +248,7 @@ function TsMy({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
         <Tile label="Hours this week" value={total + ' h'} trend={total >= 40 ? 'up' : undefined}
           foot={total >= 40 ? '✓ Target met (40 h)' : `${40 - total} h below target`} />
         <Tile label="Billable" value={billable + ' h'} foot={pct(billable, Math.max(1, total)) + '% of logged time'} />
-        <Tile label="Approver" value={empName(sheet.approverId || '')}
+        <Tile label="Approver" value={approver.name(sheet.approverId)}
           foot={sheet.submittedOn ? 'Submitted ' + fmtD(sheet.submittedOn) : 'Not yet submitted'} />
       </div>
 
@@ -308,11 +297,13 @@ function TsMy({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
 
 function TsHist({ setWs, setTab }: { setWs: (s: string) => void; setTab: (t: 'my') => void }) {
   const app = useApp();
-  const list = sortBy(TS.filter((t) => t.empId === app.meId), (t) => t.weekStart, 'desc');
+  const { data: mine = [] } = useMySheets(app.meId);
+  const approvers = usePeople(mine.map((t) => t.approverId));
+  const list = sortBy(mine, (t) => t.weekStart, 'desc');
 
   return (
     <Card title="Timesheet history" sub={`${list.length} weeks`} flush
-      actions={<button className="btn sm" onClick={() => exportTS(list, 'my_timesheets.csv')}>⤓ Export</button>}>
+      actions={<button className="btn sm" onClick={() => exportTS(list, 'my_timesheets.csv', approvers)}>⤓ Export</button>}>
       <div className="tbl-wrap">
         <table className="tbl">
           <thead>
@@ -327,7 +318,7 @@ function TsHist({ setWs, setTab }: { setWs: (s: string) => void; setTab: (t: 'my
                 <td className="num">{billableHours(t)}</td>
                 <td><StatusBadge status={t.status} /></td>
                 <td className="nowrap">{t.submittedOn ? fmtD(t.submittedOn) : '—'}</td>
-                <td>{empName(t.approverId || '')}</td>
+                <td>{approvers.name(t.approverId)}</td>
               </tr>
             ))}
           </tbody>
@@ -341,24 +332,27 @@ function TsHist({ setWs, setTab }: { setWs: (s: string) => void; setTab: (t: 'my
 
 function TsTeam({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
   const app = useApp();
-  const showTS = useShowTS();
-  const ids = visibleIds(app.role, app.meId).filter((i) => i !== app.meId);
-  const rows = ids.map((id) => ({ e: EMAP[id], t: tsOf(id, ws) })).filter((r) => r.t) as { e: typeof EMAP[string]; t: Timesheet }[];
-  const missing = ids.filter((id) => !tsOf(id, ws) || tsOf(id, ws)!.total === 0);
+  const dir = useVisiblePeople();
+  const showTS = useShowTS(dir);
+  const ids = dir.ids.filter((i) => i !== app.meId);
+  const { data: weekSheets = [] } = useSheets(ids, { weekStart: ws });
+  const byEmp = new Map(weekSheets.map((t) => [t.empId, t]));
+  const rows = ids.map((id) => ({ e: dir.byId(id)!, t: byEmp.get(id)! })).filter((r) => r.e && r.t);
+  const missing = ids.filter((id) => !byEmp.get(id) || byEmp.get(id)!.total === 0);
 
   const totalH = sum(rows, (r) => r.t.total);
   const billH = sum(rows, (r) => billableHours(r.t));
 
-  const approve = (t: Timesheet) => {
-    t.status = 'Approved';
-    app.toast('Approved ' + empName(t.empId) + "'s timesheet", 'ok');
-    app.bump();
+  const approveSheet = useApproveSheet();
+  const approve = async (t: Timesheet) => {
+    await approveSheet.mutate(t.id, app.meId);
+    app.toast('Approved ' + dir.name(t.empId) + "'s timesheet", 'ok');
   };
 
   return (
     <div className="stack">
       <WeekNav ws={ws} setWs={setWs}>
-        <button className="btn" onClick={() => exportTS(TS.filter((x) => ids.includes(x.empId) && x.weekStart === ws), `team_timesheet_${ws}.csv`)}>
+        <button className="btn" onClick={() => exportTS(weekSheets, `team_timesheet_${ws}.csv`, dir)}>
           ⤓ Export
         </button>
       </WeekNav>
@@ -399,14 +393,14 @@ function TsTeam({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
               ))}
               {missing.map((id) => (
                 <tr key={id}>
-                  <td><PersonCell e={EMAP[id]} /></td>
-                  <td>{deptOf(EMAP[id].dept).name}</td>
+                  <td>{dir.byId(id) && <PersonCell e={dir.byId(id)!} />}</td>
+                  <td>{deptOf(dir.byId(id)?.dept ?? '').name}</td>
                   <td className="num">0</td>
                   <td className="num">0</td>
                   <td>—</td>
                   <td><StatusBadge status="Missing" /></td>
                   <td className="right">
-                    <button className="btn sm" onClick={() => app.toast('Reminder sent to ' + empName(id), 'ok')}>Remind</button>
+                    <button className="btn sm" onClick={() => app.toast('Reminder sent to ' + dir.name(id), 'ok')}>Remind</button>
                   </td>
                 </tr>
               ))}
@@ -420,45 +414,56 @@ function TsTeam({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
 
 /* ---------------- Approvals ---------------- */
 
+/**
+ * At module scope so the textarea keeps its DOM node between renders — an
+ * inline component would remount and drop focus on every keystroke.
+ */
+function ReturnForm({ t, close }: { t: Timesheet; close: () => void }) {
+  const app = useApp();
+  const rejectSheet = useRejectSheet();
+  const [note, setNote] = useState('Please split the hours by task type and resubmit.');
+  return (
+    <>
+      <div className="field">
+        <label>Reason for returning</label>
+        <textarea className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
+        <button className="btn" onClick={close}>Cancel</button>
+        <button
+          className="btn danger"
+          disabled={rejectSheet.pending}
+          onClick={async () => {
+            await rejectSheet.mutate(t.id, app.meId, note);
+            close();
+            app.toast('Timesheet returned', 'err');
+          }}
+        >
+          Return to employee
+        </button>
+      </div>
+    </>
+  );
+}
+
 function TsApprovals() {
   const app = useApp();
   const layer = useLayer();
-  const showTS = useShowTS();
-  const ids = visibleIds(app.role, app.meId).filter((i) => i !== app.meId);
-  const pend = TS.filter((t) => t.status === 'Submitted' && ids.includes(t.empId));
+  const dir = useVisiblePeople();
+  const showTS = useShowTS(dir);
+  const ids = dir.ids.filter((i) => i !== app.meId);
+  const { data: pend = [] } = useSheets(ids, { status: 'Submitted' });
+  const approveSheet = useApproveSheet();
 
-  const approve = (t: Timesheet) => {
-    t.status = 'Approved';
-    app.toast('Approved ' + empName(t.empId) + "'s timesheet", 'ok');
-    app.bump();
+  const approve = async (t: Timesheet) => {
+    await approveSheet.mutate(t.id, app.meId);
+    app.toast('Approved ' + dir.name(t.empId) + "'s timesheet", 'ok');
   };
-
-  function ReturnForm({ t, close }: { t: Timesheet; close: () => void }) {
-    const [note, setNote] = useState('Please split the hours by task type and resubmit.');
-    return (
-      <>
-        <div className="field">
-          <label>Reason for returning</label>
-          <textarea className="input" value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
-        <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
-          <button className="btn" onClick={close}>Cancel</button>
-          <button className="btn danger" onClick={() => {
-            t.status = 'Rejected';
-            t.note = note;
-            close();
-            app.toast('Timesheet returned', 'err');
-            app.bump();
-          }}>Return to employee</button>
-        </div>
-      </>
-    );
-  }
 
   const returnTs = (t: Timesheet) =>
     layer.modal({
       title: 'Return timesheet',
-      sub: empName(t.empId) + ' · week of ' + fmtD(t.weekStart),
+      sub: dir.name(t.empId) + ' · week of ' + fmtD(t.weekStart),
       size: 'narrow',
       body: (close) => <ReturnForm t={t} close={close} />,
       footer: null,
@@ -468,10 +473,10 @@ function TsApprovals() {
     <div className="stack">
       <Card title="Timesheets awaiting approval" sub={`${pend.length} submissions`} flush
         actions={pend.length ? (
-          <button className="btn primary sm" onClick={() => {
-            pend.forEach((x) => (x.status = 'Approved'));
-            app.toast(pend.length + ' timesheets approved', 'ok');
-            app.bump();
+          <button className="btn primary sm" onClick={async () => {
+            const n = pend.length;
+            for (const x of pend) await approveSheet.mutate(x.id, app.meId);
+            app.toast(n + ' timesheets approved', 'ok');
           }}>Approve all</button>
         ) : undefined}>
         {pend.length ? (
@@ -483,7 +488,7 @@ function TsApprovals() {
               <tbody>
                 {sortBy(pend, (t) => t.weekStart, 'desc').map((t) => (
                   <tr key={t.id}>
-                    <td><PersonCell e={EMAP[t.empId]} /></td>
+                    <td>{dir.byId(t.empId) && <PersonCell e={dir.byId(t.empId)!} />}</td>
                     <td className="nowrap">{fmtD(t.weekStart)}</td>
                     <td className="num strong">{t.total}</td>
                     <td className="num">{billableHours(t)}</td>
@@ -507,12 +512,12 @@ function TsApprovals() {
 /* ---------------- Utilisation ---------------- */
 
 function TsUtil() {
-  const app = useApp();
-  const ids = visibleIds(app.role, app.meId);
+  const dir = useVisiblePeople();
   const weeks: string[] = [];
   for (let w = 7; w >= 0; w--) weeks.push(ymd(mondayOf(addDays(TODAY, -w * 7))));
 
-  const sheetsIn = (ws: string) => TS.filter((t) => t.weekStart === ws && ids.includes(t.empId));
+  const { data: recent = [] } = useSheets(dir.ids, { since: weeks[0] });
+  const sheetsIn = (ws: string) => recent.filter((t) => t.weekStart === ws);
 
   const series = PROJECTS.map((p) => ({
     name: p.name, color: p.color,
@@ -525,7 +530,7 @@ function TsUtil() {
   const byTask = TASK_TYPES.map((tt, i) => ({
     k: tt, c: PAL[i % 8],
     v: sum(
-      TS.filter((t) => ids.includes(t.empId) && t.weekStart >= weeks[4]),
+      recent.filter((t) => t.weekStart >= weeks[4]),
       (t) => sum(t.rows.filter((r) => r.task === tt), (r) => sum(r.h)),
     ),
   })).filter((r) => r.v > 0);
@@ -533,9 +538,9 @@ function TsUtil() {
   return (
     <div className="stack">
       <div className="grid g4">
-        <Tile label="Hours logged (8 wks)" value={sum(totals).toLocaleString('en-IN') + ' h'} foot={`Across ${ids.length} employees`} />
+        <Tile label="Hours logged (8 wks)" value={sum(totals).toLocaleString('en-IN') + ' h'} foot={`Across ${dir.ids.length} employees`} />
         <Tile label="Billable ratio" value={pct(sum(billable), Math.max(1, sum(totals))) + '%'} foot="Target 75%" />
-        <Tile label="Avg per person / week" value={(sum(totals) / Math.max(1, ids.length) / 8).toFixed(1) + ' h'} foot="Standard week 40 h" />
+        <Tile label="Avg per person / week" value={(sum(totals) / Math.max(1, dir.ids.length) / 8).toFixed(1) + ' h'} foot="Standard week 40 h" />
         <Tile label="Active projects" value={series.length} foot={`${PROJECTS.filter((p) => p.billable).length} billable in catalogue`} />
       </div>
 

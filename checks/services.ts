@@ -96,6 +96,43 @@ const check = (label: string, got: unknown, want: unknown) => {
   try { await s.attendance.actOnRegularisation(DEMO_EMP.id, regDay, 'Approved'); } catch { regRefused = true; }
   check('a second decision is refused', regRefused, true);
 
+  /* ---- timesheet ---- */
+  const week = '2026-10-05';
+  const sheet = await s.timesheet.forWeek(DEMO_EMP.id, week);
+  check('a new week starts as an empty draft', [sheet.status, sheet.rows.length, sheet.total], ['Draft', 0, 0]);
+
+  let noHours = false;
+  try { await s.timesheet.submit(sheet.id); } catch { noHours = true; }
+  check('an empty sheet cannot be submitted', noHours, true);
+
+  await s.timesheet.addRow(sheet.id, 'P-NBFC', 'Development');
+  const withHours = await s.timesheet.setHours(sheet.id, 0, 0, 8);
+  check('the total is derived by the service', withHours.total, 8);
+
+  const more = await s.timesheet.setHours(sheet.id, 0, 1, 7.5);
+  check('the total tracks every cell', more.total, 15.5);
+
+  const submitted = await s.timesheet.submit(sheet.id);
+  check('submitting stamps the date', submitted.status, 'Submitted');
+
+  const recalled = await s.timesheet.recall(sheet.id);
+  check('recalling returns it to draft', [recalled.status, recalled.submittedOn], ['Draft', null]);
+
+  let recallRefused = false;
+  try { await s.timesheet.recall(sheet.id); } catch { recallRefused = true; }
+  check('a draft cannot be recalled', recallRefused, true);
+
+  await s.timesheet.submit(sheet.id);
+  const approved = await s.timesheet.approve(sheet.id, DEMO_MGR.id);
+  check('approving records the approver', [approved.status, approved.approverId], ['Approved', DEMO_MGR.id]);
+
+  let dblApprove = false;
+  try { await s.timesheet.approve(sheet.id, DEMO_MGR.id); } catch { dblApprove = true; }
+  check('a second approval is refused', dblApprove, true);
+
+  const removed = await s.timesheet.removeRow(sheet.id, 0);
+  check('removing a row recomputes the total', removed.total, 0);
+
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall service checks passed');
   process.exit(failed ? 1 : 0);
 })();

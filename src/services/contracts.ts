@@ -22,12 +22,14 @@
 import type { AppRole, Employee } from '../types/employee';
 import type { LeaveBalance, LeaveRequest, LeaveStatus } from '../data/leave';
 import type { AttRecord } from '../data/attendance';
+import type { Timesheet, TSStatus } from '../data/timesheet';
 
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
 export type { Employee } from '../types/employee';
 export type { LeaveRequest, LeaveStatus } from '../data/leave';
 export type { AttRecord, AttStatus, Regularisation } from '../data/attendance';
+export type { Timesheet, TSRow, TSStatus } from '../data/timesheet';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
 export interface Caller {
@@ -119,10 +121,41 @@ export interface LeaveService {
   balancesFor(empIds: string[]): Promise<Record<string, LeaveBalanceRow[]>>;
 }
 
+/* ---------- timesheet ---------- */
+
+export interface TimesheetQuery {
+  empIds?: string[];
+  weekStart?: string;
+  /** Weeks on or after this Monday. */
+  since?: string;
+  status?: TSStatus;
+}
+
+export interface TimesheetService {
+  list(q: TimesheetQuery): Promise<Timesheet[]>;
+  /**
+   * The sheet for one person's week, created as an empty draft if they have
+   * not started it. Creation belongs here rather than in the editor, which
+   * used to conjure the row mid-render.
+   */
+  forWeek(empId: string, weekStart: string): Promise<Timesheet>;
+  addRow(id: string, proj: string, task: string): Promise<Timesheet>;
+  removeRow(id: string, rowIndex: number): Promise<Timesheet>;
+  /** Repoint a row at a different project or task. */
+  setRow(id: string, rowIndex: number, patch: { proj?: string; task?: string }): Promise<Timesheet>;
+  /** Sets one cell and returns the sheet with its total already recomputed. */
+  setHours(id: string, rowIndex: number, dayIndex: number, hours: number): Promise<Timesheet>;
+  submit(id: string): Promise<Timesheet>;
+  recall(id: string): Promise<Timesheet>;
+  approve(id: string, approverId: string): Promise<Timesheet>;
+  reject(id: string, approverId: string, note: string): Promise<Timesheet>;
+}
+
 /* ---------- the registry ---------- */
 
 export interface Services {
   employees: EmployeeService;
   attendance: AttendanceService;
+  timesheet: TimesheetService;
   leave: LeaveService;
 }
