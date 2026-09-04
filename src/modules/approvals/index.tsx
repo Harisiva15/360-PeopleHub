@@ -1,25 +1,20 @@
 import { sum } from '../../lib/collections';
-import { fmtD, fmtDS, fmtTime, monthKey, TODAY, ymd } from '../../lib/dates';
+import { fmtD, fmtDS, fmtTime } from '../../lib/dates';
 import { inr } from '../../lib/format';
-import { ATT } from '../../data/attendance';
-import type { AttRecord } from '../../data/attendance';
-import { CANDS, INTERVIEWS, reqOf } from '../../data/ats';
-import { EMAP, empName } from '../../data/employees';
-import { CLAIMS } from '../../data/expenses';
-import type { Claim } from '../../data/expenses';
-import { LEAVE_BAL, LEAVES } from '../../data/leave';
-import type { LeaveRequest } from '../../data/leave';
-import { LETTER_REQS, LETTER_TYPES } from '../../data/letters';
-import { LOANS, LOAN_TYPES } from '../../data/loans';
+import { LETTER_TYPES } from '../../data/letters';
+import { LOAN_TYPES } from '../../data/loans';
 import { ltOf } from '../../data/org';
-import { OVERTIME } from '../../data/shifts';
-import type { Overtime } from '../../data/shifts';
-import { TS } from '../../data/timesheet';
-import type { Timesheet } from '../../data/timesheet';
+import type { AttRecord, Claim, LeaveRequest, Overtime, Timesheet } from '../../services';
 import { Avatar, Badge, Card, EmptyState, PersonCell, Tile } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { useApp } from '../../state/AppContext';
-import { visibleIds } from '../../state/rbac';
+import {
+  useActOnRegularisation, useApproveClaim, useApproveLeave, useApproveLoan, useApproveOvertime,
+  useApproveTimesheet, useIssueLetter, usePendingClaims, usePendingLeave, usePendingLetters,
+  usePendingLoans, usePendingOvertime, usePendingRegularisations, usePendingTimesheets,
+  useMyInterviews, useReimburseClaim, useRejectClaim, useRejectLeave, useReturnTimesheet,
+  useVisiblePeople,
+} from './data';
 import { ClaimTable } from '../expenses/ClaimTable';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
@@ -27,88 +22,103 @@ import { pendingCount } from '../../state/pending';
 
 function Approvals() {
   const app = useApp();
-  const ids = visibleIds(app.role, app.meId).filter((i) => i !== app.meId);
+  const dir = useVisiblePeople();
+  const ids = dir.ids.filter((i) => i !== app.meId);
+  const isAdmin = app.role === 'admin';
 
-  const lv = LEAVES.filter((l) => l.status === 'Pending' && ids.includes(l.empId));
-  const ts = TS.filter((t) => t.status === 'Submitted' && ids.includes(t.empId));
-  const rg = ATT.filter((a) => a.reg && a.reg.status === 'Pending' && ids.includes(a.empId));
-  const iv = INTERVIEWS.filter((i) => i.panelId === app.meId && i.status === 'Scheduled');
-  const cl = CLAIMS.filter((c) => c.status === 'Submitted' && ids.includes(c.empId));
-  const ot = OVERTIME.filter((o) => o.status === 'Pending' && ids.includes(o.empId));
-  const ln = app.role === 'admin' ? LOANS.filter((l) => l.status === 'Pending Approval') : [];
-  const lt = app.role === 'admin' ? LETTER_REQS.filter((l) => l.status === 'Pending') : [];
+  const { data: lv = [] } = usePendingLeave(ids);
+  const { data: ts = [] } = usePendingTimesheets(ids);
+  const { data: allRegs = [] } = usePendingRegularisations(ids);
+  const { data: cl = [] } = usePendingClaims(ids);
+  const { data: ot = [] } = usePendingOvertime(ids);
+  const { data: ln = [] } = usePendingLoans(isAdmin);
+  const { data: lt = [] } = usePendingLetters(isAdmin);
+  const rg = allRegs.filter((a) => a.reg && a.reg.status === 'Pending');
+  const { data: iv = [] } = useMyInterviews(app.meId);
 
-  const approveLeave = (l: LeaveRequest) => {
-    l.status = 'Approved';
-    l.actedOn = ymd(TODAY);
-    if (LEAVE_BAL[l.empId]?.[l.type]) LEAVE_BAL[l.empId][l.type].used += l.days;
-    app.toast('Leave approved for ' + empName(l.empId), 'ok');
-    app.bump();
+  const doApproveLeave = useApproveLeave();
+  const doRejectLeave = useRejectLeave();
+  const doApproveTs = useApproveTimesheet();
+  const doReturnTs = useReturnTimesheet();
+  const doReg = useActOnRegularisation();
+  const doApproveClaim = useApproveClaim();
+  const doRejectClaim = useRejectClaim();
+  const doPayClaim = useReimburseClaim();
+  const doApproveOt = useApproveOvertime();
+  const doApproveLoan = useApproveLoan();
+  const doIssueLetter = useIssueLetter();
+
+  /** Surfaces the reason rather than letting a refused transition pass silently. */
+  const fail = (e: unknown) => app.toast(e instanceof Error ? e.message : 'Action failed', 'err');
+
+  const approveLeave = async (l: LeaveRequest) => {
+    try {
+      await doApproveLeave.mutate(l.id, app.meId);
+      app.toast('Leave approved for ' + dir.name(l.empId), 'ok');
+    } catch (e) { fail(e); }
   };
 
-  const rejectLeave = (l: LeaveRequest) => {
-    l.status = 'Rejected';
-    l.actedOn = ymd(TODAY);
-    app.toast('Leave rejected', 'err');
-    app.bump();
+  const rejectLeave = async (l: LeaveRequest) => {
+    try {
+      await doRejectLeave.mutate(l.id, app.meId);
+      app.toast('Leave rejected', 'err');
+    } catch (e) { fail(e); }
   };
 
-  const approveTs = (t: Timesheet) => {
-    t.status = 'Approved';
-    app.toast('Approved ' + empName(t.empId) + "'s timesheet", 'ok');
-    app.bump();
+  const approveTs = async (t: Timesheet) => {
+    try {
+      await doApproveTs.mutate(t.id, app.meId);
+      app.toast('Approved ' + dir.name(t.empId) + "'s timesheet", 'ok');
+    } catch (e) { fail(e); }
   };
 
-  const returnTs = (t: Timesheet) => {
-    t.status = 'Rejected';
-    t.note = 'Please split the hours by task type and resubmit.';
-    app.toast('Timesheet returned', 'err');
-    app.bump();
+  const returnTs = async (t: Timesheet) => {
+    try {
+      await doReturnTs.mutate(t.id, app.meId, 'Please split the hours by task type and resubmit.');
+      app.toast('Timesheet returned', 'err');
+    } catch (e) { fail(e); }
   };
 
-  const approveReg = (r: AttRecord) => {
-    r.reg!.status = 'Approved';
-    r.status = 'P';
-    r.inT = r.reg!.inT;
-    r.outT = r.reg!.outT;
-    r.mins = 495;
-    app.toast('Regularisation approved', 'ok');
-    app.bump();
+  const approveReg = async (r: AttRecord) => {
+    try {
+      await doReg.mutate(r, 'Approved');
+      app.toast('Regularisation approved', 'ok');
+    } catch (e) { fail(e); }
   };
 
-  const rejectReg = (r: AttRecord) => {
-    r.reg!.status = 'Rejected';
-    app.toast('Regularisation rejected', 'err');
-    app.bump();
+  const rejectReg = async (r: AttRecord) => {
+    try {
+      await doReg.mutate(r, 'Rejected');
+      app.toast('Regularisation rejected', 'err');
+    } catch (e) { fail(e); }
   };
 
-  const approveClaim = (c: Claim) => {
-    c.status = 'Approved';
-    c.actedOn = ymd(TODAY);
-    app.toast('Claim approved', 'ok');
-    app.bump();
+  const approveClaim = async (c: Claim) => {
+    try {
+      await doApproveClaim.mutate(c.id, app.meId);
+      app.toast('Claim approved', 'ok');
+    } catch (e) { fail(e); }
   };
 
-  const rejectClaim = (c: Claim) => {
-    c.status = 'Rejected';
-    c.actedOn = ymd(TODAY);
-    c.note = 'Receipt not legible — please re-upload and resubmit.';
-    app.toast('Claim rejected', 'err');
-    app.bump();
+  const rejectClaim = async (c: Claim) => {
+    try {
+      await doRejectClaim.mutate(c.id, app.meId, 'Receipt not legible — please re-upload and resubmit.');
+      app.toast('Claim rejected', 'err');
+    } catch (e) { fail(e); }
   };
 
-  const payClaim = (c: Claim) => {
-    c.status = 'Reimbursed';
-    c.reimbursedOn = ymd(TODAY);
-    c.payrollMonth = monthKey(TODAY);
-    app.toast('Marked for reimbursement with payroll', 'ok');
-    app.bump();
+  const payClaim = async (c: Claim) => {
+    try {
+      await doPayClaim.mutate(c.id);
+      app.toast('Marked for reimbursement with payroll', 'ok');
+    } catch (e) { fail(e); }
   };
 
-  const approveOt = (o: Overtime) => {
-    o.status = 'Approved';
-    app.toast('Overtime approved', 'ok');
-    app.bump();
+  const approveOt = async (o: Overtime) => {
+    try {
+      await doApproveOt.mutate(o.id, app.meId);
+      app.toast('Overtime approved', 'ok');
+    } catch (e) { fail(e); }
   };
 
   const nothing = !lv.length && !ts.length && !rg.length && !iv.length && !cl.length && !ot.length && !ln.length && !lt.length;
@@ -131,7 +141,7 @@ function Approvals() {
               <tbody>
                 {lv.map((l) => (
                   <tr key={l.id}>
-                    <td><PersonCell e={EMAP[l.empId]} /></td>
+                    <td>{dir.byId(l.empId) && <PersonCell e={dir.byId(l.empId)!} />}</td>
                     <td>{ltOf(l.type).name}</td>
                     <td className="nowrap">{fmtDS(l.from)}{l.days > 1 ? ' – ' + fmtDS(l.to) : ''}</td>
                     <td className="num">{l.days}</td>
@@ -157,7 +167,7 @@ function Approvals() {
               <tbody>
                 {ts.map((t) => (
                   <tr key={t.id}>
-                    <td><PersonCell e={EMAP[t.empId]} /></td>
+                    <td>{dir.byId(t.empId) && <PersonCell e={dir.byId(t.empId)!} />}</td>
                     <td className="nowrap">{fmtD(t.weekStart)}</td>
                     <td className="num">{t.total}</td>
                     <td className="nowrap">{fmtD(t.submittedOn)}</td>
@@ -181,7 +191,7 @@ function Approvals() {
               <tbody>
                 {rg.map((r) => (
                   <tr key={r.id}>
-                    <td><PersonCell e={EMAP[r.empId]} /></td>
+                    <td>{dir.byId(r.empId) && <PersonCell e={dir.byId(r.empId)!} />}</td>
                     <td className="nowrap">{fmtD(r.date)}</td>
                     <td>{r.reg!.reason}</td>
                     <td className="mono nowrap">{fmtTime(r.reg!.inT)} – {fmtTime(r.reg!.outT)}</td>
@@ -199,19 +209,16 @@ function Approvals() {
 
       {iv.length > 0 && (
         <Card title="Your upcoming interviews" sub={`${iv.length} scheduled`} flush>
-          {iv.map((i) => {
-            const c = CANDS.find((x) => x.id === i.candId)!;
-            return (
-              <ListRow key={i.id} to="/hiring">
-                <Avatar name={c.name} size="sm" />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{c.name}</div>
-                  <div className="muted" style={{ fontSize: 11.5 }}>{i.round} · {reqOf(i.reqId)?.title}</div>
-                </div>
-                <Badge kind="info">{fmtD(i.date)} {fmtTime(i.time)}</Badge>
-              </ListRow>
-            );
-          })}
+          {iv.map(({ interview: i, candidate: c, requisitionTitle }) => (
+            <ListRow key={i.id} to="/hiring">
+              <Avatar name={c?.name ?? '—'} size="sm" />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 650, fontSize: 12.5 }}>{c?.name ?? 'Candidate'}</div>
+                <div className="muted" style={{ fontSize: 11.5 }}>{i.round} · {requisitionTitle}</div>
+              </div>
+              <Badge kind="info">{fmtD(i.date)} {fmtTime(i.time)}</Badge>
+            </ListRow>
+          ))}
         </Card>
       )}
 
@@ -237,7 +244,7 @@ function Approvals() {
               <tbody>
                 {ot.map((o) => (
                   <tr key={o.id}>
-                    <td><PersonCell e={EMAP[o.empId]} /></td>
+                    <td>{dir.byId(o.empId) && <PersonCell e={dir.byId(o.empId)!} />}</td>
                     <td className="nowrap">{fmtD(o.date)}</td>
                     <td className="num">{o.hours}</td>
                     <td>{o.reason}</td>
@@ -259,16 +266,17 @@ function Approvals() {
               <tbody>
                 {ln.map((l) => (
                   <tr key={l.id}>
-                    <td><PersonCell e={EMAP[l.empId]} /></td>
+                    <td>{dir.byId(l.empId) && <PersonCell e={dir.byId(l.empId)!} />}</td>
                     <td>{LOAN_TYPES.find((t) => t.id === l.type)?.n}</td>
                     <td className="num">{inr(l.principal)}</td>
                     <td className="num">{inr(l.emi)}</td>
                     <td>{l.reason}</td>
                     <td className="right">
-                      <button className="btn sm primary" onClick={() => {
-                        l.status = 'Active';
-                        app.toast('Loan approved', 'ok');
-                        app.bump();
+                      <button className="btn sm primary" onClick={async () => {
+                        try {
+                          await doApproveLoan.mutate(l.id);
+                          app.toast('Loan approved', 'ok');
+                        } catch (e) { fail(e); }
                       }}>Approve</button>
                     </td>
                   </tr>
@@ -287,16 +295,16 @@ function Approvals() {
               <tbody>
                 {lt.map((l) => (
                   <tr key={l.id}>
-                    <td><PersonCell e={EMAP[l.empId]} /></td>
+                    <td>{dir.byId(l.empId) && <PersonCell e={dir.byId(l.empId)!} />}</td>
                     <td>{LETTER_TYPES.find((t) => t.id === l.type)?.n}</td>
                     <td>{l.purpose}</td>
                     <td className="nowrap">{fmtD(l.requestedOn)}</td>
                     <td className="right nowrap">
-                      <button className="btn sm primary" onClick={() => {
-                        l.status = 'Issued';
-                        l.issuedOn = ymd(TODAY);
-                        app.toast('Letter issued', 'ok');
-                        app.bump();
+                      <button className="btn sm primary" onClick={async () => {
+                        try {
+                          await doIssueLetter.mutate(l.id);
+                          app.toast('Letter issued', 'ok');
+                        } catch (e) { fail(e); }
                       }}>Issue</button>
                     </td>
                   </tr>

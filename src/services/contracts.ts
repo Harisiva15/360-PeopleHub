@@ -34,6 +34,9 @@ import type { ExitRecord } from '../data/exit';
 import type { SalaryStructure } from '../data/salary';
 import type { Declaration, PayInput, PayRun, Payslip, PayrollTotals } from '../data/payroll';
 import type { BankBatch, CompliancePayment } from '../data/payinputs';
+import type { Overtime } from '../data/shifts';
+import type { LetterRequest } from '../data/letters';
+import type { Candidate, Interview, Requisition } from '../data/ats';
 
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
@@ -53,6 +56,9 @@ export type { ExitRecord } from '../data/exit';
 export type { SalaryStructure } from '../data/salary';
 export type { Declaration, PayInput, PayRun, Payslip, PayrollTotals } from '../data/payroll';
 export type { BankBatch, CompliancePayment } from '../data/payinputs';
+export type { Overtime } from '../data/shifts';
+export type { LetterRequest } from '../data/letters';
+export type { Candidate, Interview, Requisition } from '../data/ats';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
 export interface Caller {
@@ -278,6 +284,40 @@ export interface PayrollService {
   processRun(mk: string): Promise<PayRun>;
 }
 
+/* ---------- shifts, loans, letters ---------- */
+
+export interface ShiftService {
+  overtime(empIds?: string[], status?: Overtime['status']): Promise<Overtime[]>;
+  approveOvertime(id: string, approverId: string): Promise<Overtime>;
+}
+
+export interface LoanService {
+  list(status?: Loan['status']): Promise<Loan[]>;
+  /** Sanctioning a loan puts it into recovery from the next payroll cycle. */
+  approve(id: string): Promise<Loan>;
+}
+
+export interface LetterService {
+  requests(status?: LetterRequest['status']): Promise<LetterRequest[]>;
+  issue(id: string): Promise<LetterRequest>;
+}
+
+/* ---------- hiring ---------- */
+
+/** An interview with the candidate and requisition it belongs to, resolved. */
+export interface InterviewRow {
+  interview: Interview;
+  candidate: Candidate | null;
+  requisitionTitle: string;
+}
+
+export interface HiringService {
+  /** The panel member's own upcoming interviews. */
+  interviewsFor(panelId: string, status?: Interview['status']): Promise<InterviewRow[]>;
+  candidates(): Promise<Candidate[]>;
+  requisitions(): Promise<Requisition[]>;
+}
+
 /* ---------- the registry ---------- */
 
 export interface Services {
@@ -286,5 +326,9 @@ export interface Services {
   timesheet: TimesheetService;
   expenses: ExpenseService;
   payroll: PayrollService;
+  shifts: ShiftService;
+  loans: LoanService;
+  letters: LetterService;
+  hiring: HiringService;
   leave: LeaveService;
 }

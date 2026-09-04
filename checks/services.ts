@@ -198,6 +198,39 @@ const check = (label: string, got: unknown, want: unknown) => {
   try { await s.payroll.processRun(lastPaid.mk); } catch { rerun = true; }
   check('a paid cycle cannot be processed twice', rerun, true);
 
+  /* ---- the shared approval surfaces ---- */
+  const pendingOt = await s.shifts.overtime(undefined, 'Pending');
+  if (pendingOt.length) {
+    const o = pendingOt[0];
+    await s.shifts.approveOvertime(o.id, DEMO_MGR.id);
+    let otTwice = false;
+    try { await s.shifts.approveOvertime(o.id, DEMO_MGR.id); } catch { otTwice = true; }
+    check('overtime is approved once', otTwice, true);
+  }
+
+  const pendingLoans = await s.loans.list('Pending Approval');
+  if (pendingLoans.length) {
+    const l = pendingLoans[0];
+    const active = await s.loans.approve(l.id);
+    check('sanctioning a loan makes it active', active.status, 'Active');
+    let loanTwice = false;
+    try { await s.loans.approve(l.id); } catch { loanTwice = true; }
+    check('a sanctioned loan cannot be re-approved', loanTwice, true);
+  }
+
+  const pendingLetters = await s.letters.requests('Pending');
+  if (pendingLetters.length) {
+    const lr = pendingLetters[0];
+    const issued = await s.letters.issue(lr.id);
+    check('issuing a letter stamps the date', !!issued.issuedOn, true);
+    let letterTwice = false;
+    try { await s.letters.issue(lr.id); } catch { letterTwice = true; }
+    check('a letter is issued once', letterTwice, true);
+  }
+
+  const panel = await s.hiring.interviewsFor(DEMO_MGR.id, 'Scheduled');
+  check('interviews resolve their candidate', panel.every((r) => r.candidate !== null), true);
+
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall service checks passed');
   process.exit(failed ? 1 : 0);
 })();
