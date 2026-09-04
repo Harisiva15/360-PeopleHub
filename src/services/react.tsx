@@ -53,8 +53,14 @@ export function useQuery<T>(run: (s: Services) => Promise<T>, deps: unknown[] = 
   const alive = useRef(true);
   const [tick, setTick] = useState(0);
 
+  /*
+   * The latest runner is parked in a ref so the fetch effect does not re-fire
+   * on every render just because the closure is new. Writing it in an effect
+   * rather than during render keeps render pure — the fetch effect below is
+   * declared after this one, so it always sees the current value.
+   */
   const runRef = useRef(run);
-  runRef.current = run;
+  useEffect(() => { runRef.current = run; });
 
   useEffect(() => {
     alive.current = true;
@@ -109,8 +115,9 @@ export function useMutation<A extends unknown[], R>(
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  /* Same reason as useQuery: assigned in an effect, read from the handler. */
   const runRef = useRef(run);
-  runRef.current = run;
+  useEffect(() => { runRef.current = run; });
 
   const mutate = useCallback(async (...args: A): Promise<R> => {
     setPending(true);

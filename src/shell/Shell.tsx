@@ -24,8 +24,16 @@ export function Shell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  /* the nav is an overlay on a phone — close it whenever the route changes */
-  useEffect(() => setNavOpen(false), [pathname]);
+  /*
+   * The nav is an overlay on a phone, so it closes when the route changes.
+   * Adjusted during render rather than in an effect — an effect would paint
+   * the open overlay once on the new route before closing it.
+   */
+  const [shownPath, setShownPath] = useState(pathname);
+  if (shownPath !== pathname) {
+    setShownPath(pathname);
+    if (navOpen) setNavOpen(false);
+  }
 
   const mod = getModule(route);
   const accounts = ACCOUNTS();
