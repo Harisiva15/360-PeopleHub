@@ -95,3 +95,52 @@ export const POSTURE: PostureRecord[] = ACTIVE().map((e) => ({
   patched: chance(0.83),
   lastSeen: ymd(addDays(TODAY, -ri(0, 26))),
 }));
+
+/** Categories the audit trail is filtered by, in the order they are listed. */
+export const AUDIT_CATS = [
+  'Payroll', 'Access', 'Employee', 'Attendance', 'Hiring',
+  'Compliance', 'Security', 'Leave', 'Finance', 'Staffing',
+];
+
+export interface RetentionRow {
+  k: string;
+  d: string;
+  /** Lawful basis the data is held under. */
+  law: string;
+  keep: string;
+  basis: string;
+}
+
+/** What the company holds about its people, why, and for how long. */
+export const RETENTION: RetentionRow[] = [
+  { k: 'Employee master record', d: 'Name, contact, identifiers, job history', law: 'Contract · legitimate interest', keep: '7 years after exit', basis: 'Statutory record keeping' },
+  { k: 'Payroll and tax records', d: 'Salary, deductions, tax declarations, Form 16 / W-2 / P60', law: 'Legal obligation', keep: '8 years (IN) · 4 years (US) · 6 years (UK)', basis: 'Income tax and labour law' },
+  { k: 'Attendance and location', d: 'Punch records, geo-coordinates at punch, geo-fence result', law: 'Legitimate interest', keep: '24 months', basis: 'Payroll accuracy and dispute resolution' },
+  { k: 'Background verification', d: 'Identity, education, employment and criminal checks', law: 'Consent · legal obligation', keep: '3 years after exit', basis: 'Client contractual requirement' },
+  { k: 'Health and insurance', d: 'Insurance nominee, claims, medical certificates', law: 'Explicit consent', keep: '3 years after policy end', basis: 'Benefits administration' },
+  { k: 'Candidate applications', d: 'CV, interview notes, assessment scores', law: 'Consent', keep: '12 months (unhired)', basis: 'Future opportunity, withdrawable' },
+  { k: 'Performance and disciplinary', d: 'Reviews, ratings, PIP, warnings', law: 'Contract', keep: '3 years after exit', basis: 'Employment defence' },
+  { k: 'Access and audit logs', d: 'Sign-in, privileged actions, data exports', law: 'Legal obligation', keep: '2 years', basis: 'Security monitoring' },
+];
+
+export interface Control {
+  k: string;
+  d: string;
+  s: 'Met' | 'Partial';
+}
+
+/** The control framework the posture score is partly weighted on. */
+export const CONTROLS: Control[] = [
+  { k: 'Encryption in transit', d: 'TLS 1.3 on every connection', s: 'Met' },
+  { k: 'Encryption at rest', d: 'AES-256 on database and object storage', s: 'Met' },
+  { k: 'Role-based access control', d: 'Admin, Manager and Employee scopes enforced server side', s: 'Met' },
+  { k: 'Multi-factor authentication', d: 'Enforced for administrator and payroll roles', s: 'Partial' },
+  { k: 'Single sign-on', d: 'SAML 2.0 / OIDC with the corporate identity provider', s: 'Met' },
+  { k: 'Audit trail immutability', d: 'Append-only log with 2-year retention', s: 'Met' },
+  { k: 'Field-level masking', d: 'Bank, tax identifier and salary masked outside Payroll and HR', s: 'Met' },
+  { k: 'Data residency', d: 'India data held in-country; EU and UK data in-region', s: 'Partial' },
+  { k: 'Penetration testing', d: 'Independent test at least annually', s: 'Met' },
+  { k: 'Backup and recovery', d: 'Daily backup, 4-hour recovery objective, quarterly restore test', s: 'Met' },
+  { k: 'Vendor due diligence', d: 'Security review before any sub-processor is engaged', s: 'Partial' },
+  { k: 'Breach notification', d: '72-hour notification runbook, tested', s: 'Met' },
+];
