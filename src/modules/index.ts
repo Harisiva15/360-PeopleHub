@@ -16,6 +16,7 @@ import './attendance';
 import './leave';
 import './timesheet';
 import './approvals';
+import './people';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {
