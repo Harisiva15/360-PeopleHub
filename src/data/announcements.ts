@@ -5,6 +5,7 @@ import { sortBy } from '../lib/collections';
 import { addDays, nextOccur, parseYmd, TODAY, yearsSince, ymd } from '../lib/dates';
 import { chance, pick, ri, uid } from '../lib/rng';
 import { ACTIVE } from './employees';
+import type { Asset } from '../types/asset';
 
 export interface Announcement {
   id: string;
@@ -107,23 +108,6 @@ export const ASSET_TYPES = [
   'Dell 24" Monitor', 'Logitech MX Keys', 'Headset — Jabra Evolve', 'YubiKey',
 ];
 
-export interface Asset {
-  id: string;
-  empId: string;
-  type: string;
-  serial: string;
-  issued: string;
-  status: string;
-  /* enriched later by the asset-management layer */
-  cost?: number;
-  po?: string;
-  vendor?: string;
-  warranty?: string;
-  condition?: string;
-  age?: number;
-  depr?: number;
-  nbv?: number;
-}
 
 export const ASSETS: Asset[] = [];
 ACTIVE().forEach((e) => {
