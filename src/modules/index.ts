@@ -17,6 +17,8 @@ import './leave';
 import './timesheet';
 import './approvals';
 import './people';
+import './payroll';
+import './hiring';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {
