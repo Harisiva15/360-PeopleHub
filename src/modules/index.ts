@@ -29,6 +29,11 @@ import './onboarding';
 import './helpdesk';
 import './benefits';
 import './exit';
+import './staffing/clients';
+import './staffing/requirements';
+import './staffing/bench';
+import './staffing/billing';
+import './staffing/vendors';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {
