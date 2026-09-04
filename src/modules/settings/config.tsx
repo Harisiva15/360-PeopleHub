@@ -3,21 +3,24 @@ import { sortBy, sum, uniq } from '../../lib/collections';
 import { addDays, DOW, fmtD, MON, monthLabelLong, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh } from '../../lib/format';
 import { LOGO_LIGHT } from '../../assets/logo';
-import { ACTIVE, empName } from '../../data/employees';
-import {
-  BANKS, DEPTS, GRADES, HOLIDAYS, HOLIDAY_MAP, LEAVE_TYPES, ltOf, ORG, PROJECTS, SITES,
-} from '../../data/org';
+
+import { BANKS, DEPTS, GRADES, LEAVE_TYPES, ORG, PROJECTS } from '../../data/org';
 import type { Site } from '../../types/org';
-import { ATT } from '../../data/attendance';
-import { LEAVES, LEAVE_BAL } from '../../data/leave';
-import { TS } from '../../data/timesheet';
-import { PAYRUNS } from '../../data/payroll';
-import { CANDS, REQS } from '../../data/ats';
+
+
+
+
+
 import { Badge, Banner, Card, KV, Table, TableWrap } from '../../components/ui';
 import { Dot, ListRow } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { MapBox } from '../attendance/Punch';
+import {
+  useAddHoliday, useAllEmployees, useAttendanceAll, useCandidates, useCompensation,
+  useHolidays, useLeaveAll, usePayRuns, useRequisitions, useSetLeaveQuota, useSites,
+  useTimesheetsAll, useUpdateFence, useVisiblePeople,
+} from './data';
 
 /* ---------- Geo-fences ---------- */
 
@@ -30,23 +33,21 @@ const CAPTURE_TOGGLES: [string, boolean][] = [
   ['Capture selfie on punch-in', false],
 ];
 
-function SiteCard({ site }: { site: Site }) {
+function SiteCard({ site, assigned, exceptions }: { site: Site; assigned: number; exceptions: number }) {
   const app = useApp();
+  const updateFence = useUpdateFence();
   const [draft, setDraft] = useState({ lat: String(site.lat), lng: String(site.lng), radius: String(site.radius), shift: site.shift });
 
-  const save = () => {
-    site.lat = +draft.lat;
-    site.lng = +draft.lng;
-    site.radius = +draft.radius;
-    site.shift = draft.shift;
-    /* Everyone at the site inherits its shift timing. */
-    ACTIVE().filter((e) => e.site === site.id).forEach((e) => { e.shift = site.shift; });
-    app.toast(site.name + ' geo-fence updated', 'ok');
-    app.bump();
+  const save = async () => {
+    try {
+      await updateFence.mutate(site.id, {
+        lat: +draft.lat, lng: +draft.lng, radius: +draft.radius, shift: draft.shift,
+      });
+      app.toast(site.name + ' geo-fence updated', 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not save the fence', 'err');
+    }
   };
-
-  const assigned = ACTIVE().filter((e) => e.site === site.id).length;
-  const exceptions = ATT.filter((a) => a.site === site.id && a.geoOk === false).length;
 
   return (
     <Card title={site.name} sub={site.addr}>
@@ -83,6 +84,9 @@ function SiteCard({ site }: { site: Site }) {
 
 export function GeoTab() {
   const app = useApp();
+  const { data: sites = [] } = useSites();
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: attendance = [] } = useAttendanceAll(everyone.map((e) => e.id));
   return (
     <div className="stack">
       <Banner kind="info" icon="📍" title="How geo-fencing works">
@@ -92,7 +96,14 @@ export function GeoTab() {
       </Banner>
 
       <div className="grid g2">
-        {SITES.filter((s) => s.lat).map((s) => <SiteCard key={s.id} site={s} />)}
+        {sites.filter((s) => s.lat).map((s) => (
+          <SiteCard
+            key={s.id}
+            site={s}
+            assigned={everyone.filter((e) => e.site === s.id).length}
+            exceptions={attendance.filter((a) => a.site === s.id && a.geoOk === false).length}
+          />
+        ))}
       </div>
 
       <Card title="Attendance capture settings" sub="Applies to all sites">
@@ -157,17 +168,17 @@ function AddHolidayBody({ onChange }: { onChange: (v: { d: string; n: string; op
 export function LeavePolicyTab() {
   const app = useApp();
   const layer = useLayer();
+  const { data: HOLIDAYS = [] } = useHolidays();
+  const setLeaveQuota = useSetLeaveQuota();
+  const addHolidayCmd = useAddHoliday();
 
-  const setQuota = (id: string, quota: number) => {
-    const t = ltOf(id);
-    t.quota = quota;
-    /* An entitlement change reprices every open balance, not just new joiners. */
-    ACTIVE().forEach((e) => {
-      const bal = LEAVE_BAL[e.id]?.[t.id];
-      if (bal) bal.quota = quota;
-    });
-    app.toast(`${t.name} quota updated to ${quota} days`, 'ok');
-    app.bump();
+  const setQuota = async (id: string, quota: number) => {
+    try {
+      const r = await setLeaveQuota.mutate(id, quota);
+      app.toast(`${r.type} quota updated to ${r.quota} days · ${r.repriced} balances repriced`, 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not update the quota', 'err');
+    }
   };
 
   const addHoliday = () => {
@@ -181,14 +192,14 @@ export function LeavePolicyTab() {
           <button className="btn" onClick={close}>Cancel</button>
           <button
             className="btn primary"
-            onClick={() => {
-              const n = draft.n || 'Company holiday';
-              HOLIDAYS.push({ d: draft.d, n, opt: draft.opt });
-              HOLIDAYS.sort((a, b) => (a.d < b.d ? -1 : 1));
-              if (!draft.opt) HOLIDAY_MAP[draft.d] = n;
-              close();
-              app.toast('Holiday added to the calendar', 'ok');
-              app.bump();
+            onClick={async () => {
+              try {
+                await addHolidayCmd.mutate(draft.d, draft.n || 'Company holiday', draft.opt);
+                close();
+                app.toast('Holiday added to the calendar', 'ok');
+              } catch (e) {
+                app.toast(e instanceof Error ? e.message : 'Could not add the holiday', 'err');
+              }
             }}
           >
             Add holiday
@@ -320,6 +331,8 @@ const KIND_TONE: Record<CompKind, 'good' | 'crit' | 'info'> = { Earning: 'good',
 
 export function PayConfigTab() {
   const app = useApp();
+  const { data: comp = [] } = useCompensation();
+  const everyone = comp.map((c) => c.employee);
   const grades = Object.keys(GRADES) as (keyof typeof GRADES)[];
 
   return (
@@ -387,7 +400,7 @@ export function PayConfigTab() {
               </thead>
               <tbody>
                 {grades.map((g) => {
-                  const es = ACTIVE().filter((e) => e.grade === g);
+                  const es = everyone.filter((e) => e.grade === g);
                   const med = es.length ? sortBy(es, (e) => e.ctc)[Math.floor(es.length / 2)].ctc : 0;
                   return (
                     <tr key={g}>
@@ -412,6 +425,11 @@ export function PayConfigTab() {
 
 export function OrgTab() {
   const app = useApp();
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: sites = [] } = useSites();
+  const { data: reqs = [] } = useRequisitions();
+  const { data: sheets = [] } = useTimesheetsAll(everyone.map((e) => e.id));
+  const dir = useVisiblePeople();
   return (
     <div className="stack">
       <div className="grid g2">
@@ -434,10 +452,10 @@ export function OrgTab() {
                 {DEPTS.map((d) => (
                   <tr key={d.id}>
                     <td><Dot color={d.color} /> <b>{d.name}</b></td>
-                    <td className="nowrap">{empName(d.head || '')}</td>
-                    <td className="num">{ACTIVE().filter((e) => e.dept === d.id).length}</td>
-                    <td className="num">{lakh(sum(ACTIVE().filter((e) => e.dept === d.id), (e) => e.ctc))}</td>
-                    <td className="num">{sum(REQS.filter((r) => r.dept === d.id && r.status === 'Open'), (r) => r.openings - r.filled)}</td>
+                    <td className="nowrap">{dir.name(d.head)}</td>
+                    <td className="num">{everyone.filter((e) => e.dept === d.id).length}</td>
+                    <td className="num">{lakh(sum(everyone.filter((e) => e.dept === d.id), (e) => e.ctc))}</td>
+                    <td className="num">{sum(reqs.filter((r) => r.dept === d.id && r.status === 'Open'), (r) => r.openings - r.filled)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -445,18 +463,18 @@ export function OrgTab() {
           </TableWrap>
         </Card>
 
-        <Card title="Locations" sub={`${SITES.length} configured`} flush>
+        <Card title="Locations" sub={`${sites.length} configured`} flush>
           <TableWrap>
             <Table>
               <thead>
                 <tr><th>Location</th><th>City</th><th className="num">Headcount</th><th>Shift</th><th className="num">PT / month</th></tr>
               </thead>
               <tbody>
-                {SITES.map((s) => (
+                {sites.map((s) => (
                   <tr key={s.id}>
                     <td><b>{s.name}</b></td>
                     <td>{s.city}</td>
-                    <td className="num">{ACTIVE().filter((e) => e.site === s.id).length}</td>
+                    <td className="num">{everyone.filter((e) => e.site === s.id).length}</td>
                     <td>{s.shift}</td>
                     <td className="num">{inr(s.ptax)}</td>
                   </tr>
@@ -475,7 +493,7 @@ export function OrgTab() {
             </thead>
             <tbody>
               {PROJECTS.map((p) => {
-                const ts = TS.filter((t) => t.rows.some((r) => r.proj === p.id));
+                const ts = sheets.filter((t) => t.rows.some((r) => r.proj === p.id));
                 return (
                   <tr key={p.id}>
                     <td><Dot color={p.color} /> <b>{p.name}</b></td>
@@ -508,6 +526,15 @@ const INTEGRATIONS: [string, string, 'good' | 'mute'][] = [
 
 export function CompanyTab() {
   const app = useApp();
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: sites = [] } = useSites();
+  const { data: runs = [] } = usePayRuns();
+  const { data: reqs = [] } = useRequisitions();
+  const { data: cands = [] } = useCandidates();
+  const ids = everyone.map((e) => e.id);
+  const { data: attendance = [] } = useAttendanceAll(ids);
+  const { data: sheets = [] } = useTimesheetsAll(ids);
+  const { data: leave = [] } = useLeaveAll(ids);
   return (
     <div className="grid g-2-1">
       <Card
@@ -549,15 +576,15 @@ export function CompanyTab() {
         <Card title="At a glance" sub="Live system counts">
           <KV
             rows={[
-              ['Active employees', ACTIVE().length],
+              ['Active employees', everyone.length],
               ['Departments', DEPTS.length],
-              ['Locations', `${SITES.filter((s) => s.lat).length} offices + remote`],
-              ['Attendance records', ATT.length.toLocaleString('en-IN')],
-              ['Timesheets', TS.length.toLocaleString('en-IN')],
-              ['Leave requests', LEAVES.length.toLocaleString('en-IN')],
-              ['Payroll cycles', PAYRUNS.length],
-              ['Open requisitions', REQS.filter((r) => r.status === 'Open').length],
-              ['Candidates', CANDS.length],
+              ['Locations', `${sites.filter((s) => s.lat).length} offices + remote`],
+              ['Attendance records', attendance.length.toLocaleString('en-IN')],
+              ['Timesheets', sheets.length.toLocaleString('en-IN')],
+              ['Leave requests', leave.length.toLocaleString('en-IN')],
+              ['Payroll cycles', runs.length],
+              ['Open requisitions', reqs.filter((r) => r.status === 'Open').length],
+              ['Candidates', cands.length],
             ]}
           />
         </Card>
@@ -597,10 +624,11 @@ const CONFIG_ACTIONS: [string, string, string, number][] = [
 
 export function ConfigAuditTab() {
   const app = useApp();
+  const { data: runs = [] } = usePayRuns();
   const rows = CONFIG_ACTIONS.map((a, i) => ({
     cat: a[0],
     /* The first row names the last locked payroll cycle. */
-    action: a[1] || 'Payroll run locked for ' + monthLabelLong(PAYRUNS[PAYRUNS.length - 2].mk),
+    action: a[1] || (runs.length > 1 ? 'Payroll run locked for ' + monthLabelLong(runs[runs.length - 2].mk) : 'Payroll run locked'),
     by: a[2],
     on: fmtD(addDays(TODAY, -a[3])),
     at: `${9 + (i % 9)}:${String(10 + i * 5).padStart(2, '0')}`,

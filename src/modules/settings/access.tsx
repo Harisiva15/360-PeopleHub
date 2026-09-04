@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { sortBy } from '../../lib/collections';
 import { addDays, fmtD, TODAY } from '../../lib/dates';
 
-import { ACTIVE, EMAP, EMP } from '../../data/employees';
+
 import { deptOf } from '../../data/org';
 import type { Employee } from '../../types/employee';
 import type { AppRole } from '../../types/employee';
@@ -12,6 +12,7 @@ import { Divide } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { ACCOUNTS, PERMS, SCOPE } from '../../state/rbac';
+import { useAllEmployees, useSetRole } from './data';
 
 export const ROLES: AppRole[] = ['admin', 'manager', 'employee'];
 
@@ -101,22 +102,26 @@ const FIELD_VISIBILITY: [string, string, string, string][] = [
   ['Documents', '✓', '✗', '✓'],
 ];
 
-const adminCount = () => EMP.filter((e) => e.role === 'admin' && e.status === 'Active').length;
-const managerCount = () => ACTIVE().filter((e) => e.reports.length).length;
+const adminCount = (people: Employee[]) => people.filter((e) => e.role === 'admin').length;
+const managerCount = (people: Employee[]) => people.filter((e) => e.reports.length).length;
 
-const usersInRole = (r: AppRole) =>
-  r === 'admin' ? adminCount() : r === 'manager' ? managerCount() : ACTIVE().filter((e) => !e.reports.length).length;
+/** How many accounts sit in each role today. */
+const usersInRole = (r: AppRole, people: Employee[]) =>
+  r === 'admin' ? adminCount(people)
+    : r === 'manager' ? managerCount(people)
+      : people.filter((e) => !e.reports.length).length;
 
 export function RbacTab() {
   const app = useApp();
   const nav = useNavigate();
+  const { data: people = [] } = useAllEmployees();
 
   const preview = (r: AppRole) => {
     const acc = ACCOUNTS().find((a) => a.role === r);
     if (!acc) return;
     app.signInAs(r);
     nav('/dashboard');
-    app.toast(`Previewing as ${acc.label} — ${EMAP[acc.empId].name}`);
+    app.toast(`Previewing as ${acc.label} — ${people.find((e) => e.id === acc.empId)?.name ?? ''}`);
   };
 
   return (
@@ -137,7 +142,7 @@ export function RbacTab() {
               <KV
                 rows={[
                   ['Modules', `${PERMS[r].length} of ${MODULES.length}`],
-                  ['Users', usersInRole(r)],
+                  ['Users', usersInRole(r, people)],
                   ['Data scope', ROLE_SCOPE[r]],
                 ]}
               />
@@ -251,11 +256,13 @@ export function UsersTab() {
   const app = useApp();
   const layer = useLayer();
   const [q, setQ] = useState('');
+  const { data: people = [] } = useAllEmployees();
+  const setRole = useSetRole();
 
   const needle = q.toLowerCase();
   const list = needle
-    ? ACTIVE().filter((e) => (e.name + e.email + e.code).toLowerCase().includes(needle))
-    : ACTIVE();
+    ? people.filter((e) => (e.name + e.email + e.code).toLowerCase().includes(needle))
+    : people;
 
   /* Illustrative last-active dates, stable for the life of the row. */
   const lastActive = (e: Employee) => fmtD(addDays(TODAY, -(e.id.charCodeAt(e.id.length - 1) % 7)));
@@ -272,11 +279,10 @@ export function UsersTab() {
           <button className="btn" onClick={close}>Cancel</button>
           <button
             className="btn primary"
-            onClick={() => {
-              e.role = picked;
+            onClick={async () => {
+              await setRole.mutate(e.id, picked);
               close();
               app.toast('Role updated for ' + e.name, 'ok');
-              app.bump();
             }}
           >
             Apply
@@ -297,14 +303,14 @@ export function UsersTab() {
       </div>
 
       <div className="grid g4">
-        <Tile label="HR Administrators" value={adminCount()} foot="Full system access" />
-        <Tile label="Managers" value={managerCount()} foot="With at least one direct report" />
+        <Tile label="HR Administrators" value={adminCount(people)} foot="Full system access" />
+        <Tile label="Managers" value={managerCount(people)} foot="With at least one direct report" />
         <Tile
           label="Employees"
-          value={ACTIVE().filter((e) => !e.reports.length && e.role !== 'admin').length}
+          value={people.filter((e) => !e.reports.length && e.role !== 'admin').length}
           foot="Self-service only"
         />
-        <Tile label="Total accounts" value={ACTIVE().length} foot="Single sign-on enabled" />
+        <Tile label="Total accounts" value={people.length} foot="Single sign-on enabled" />
       </div>
 
       <Card title="User accounts" sub={`${list.length} active`} flush>

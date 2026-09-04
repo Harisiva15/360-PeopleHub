@@ -268,6 +268,36 @@ const check = (label: string, got: unknown, want: unknown) => {
     check('an exit is settled once', twice, true);
   }
 
+  /* ---- configuration writes ---- */
+  const chn = (await s.config.sites()).find((x) => x.id === 'CHN')!;
+  const moved = await s.config.updateFence('CHN', { lat: 13.0, lng: 80.25, radius: 300, shift: '10:00-19:00' });
+  check('the fence takes the new radius', moved.radius, 300);
+  const basedThere = (await s.employees.active()).filter((e) => e.site === 'CHN');
+  check('everyone at the site inherits the shift',
+    basedThere.every((e) => e.shift === '10:00-19:00'), true);
+  await s.config.updateFence('CHN', { lat: chn.lat!, lng: chn.lng!, radius: chn.radius, shift: '09:30-18:30' });
+
+  let badRadius = false;
+  try { await s.config.updateFence('CHN', { lat: 13, lng: 80, radius: 0, shift: '09:30-18:30' }); } catch { badRadius = true; }
+  check('a zero radius is refused', badRadius, true);
+
+  const clBefore = (await s.leave.balance(DEMO_EMP.id, 'CL'))!;
+  const quota = await s.config.setLeaveQuota('CL', 15);
+  check('the quota change reports how many balances it repriced', quota.repriced > 0, true);
+  const clAfter = (await s.leave.balance(DEMO_EMP.id, 'CL'))!;
+  check('an open balance is repriced, not just new joiners', clAfter.quota, 15);
+  await s.config.setLeaveQuota('CL', clBefore.quota);
+
+  let negative = false;
+  try { await s.config.setLeaveQuota('CL', -1); } catch { negative = true; }
+  check('a negative quota is refused', negative, true);
+
+  const added = await s.config.addHoliday('2026-12-24', 'Christmas Eve', false);
+  check('the holiday lands in the calendar', added.some((h) => h.d === '2026-12-24'), true);
+  let dupe = false;
+  try { await s.config.addHoliday('2026-12-24', 'Duplicate', false); } catch { dupe = true; }
+  check('two holidays cannot share a date', dupe, true);
+
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall service checks passed');
   process.exit(failed ? 1 : 0);
 })();

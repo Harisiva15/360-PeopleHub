@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Tabs } from '../../components/ui';
-import { ACTIVE } from '../../data/employees';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { MODULES, RbacTab, UsersTab } from './access';
@@ -39,6 +38,7 @@ function SettingsView() {
 registerModule({
   key: 'settings',
   title: TITLES.settings,
-  subtitle: () => `${ACTIVE().length} accounts · ${MODULES.length} modules configured`,
+  /* Static: the registry's callbacks are synchronous and cannot await. */
+  subtitle: () => `Access control, policy and company configuration · ${MODULES.length} modules`,
   Component: SettingsView,
 });

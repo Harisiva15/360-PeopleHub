@@ -50,6 +50,7 @@ import type { AssetRequest } from '../data/assetWorkflow';
 import type { AuditEntry, Control, PostureRecord, RetentionRow, Severity } from '../data/security';
 import type { FnF } from '../data/exit';
 import type { Onboarding } from '../data/onboarding';
+import type { Holiday, Site } from '../types/org';
 
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
@@ -83,6 +84,7 @@ export type {
 export type { MatchExplain } from '../data/matching';
 export type { AssetRequest } from '../data/assetWorkflow';
 export type { Onboarding } from '../data/onboarding';
+export type { Holiday, Site } from '../types/org';
 export type { AuditEntry, Control, PostureRecord, RetentionRow, Severity } from '../data/security';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
@@ -491,6 +493,31 @@ export interface OnboardingService {
   setTask(id: string, key: string, done: boolean): Promise<Onboarding>;
 }
 
+/* ---------- configuration ---------- */
+
+export interface FenceUpdate {
+  lat: number;
+  lng: number;
+  radius: number;
+  shift: string;
+}
+
+/**
+ * The settings writes. These are configuration changes with reach: moving a
+ * fence repoints everyone at that site, and changing an entitlement reprices
+ * every open balance — which is exactly why they belong on a server rather
+ * than in a save handler.
+ */
+export interface ConfigService {
+  sites(): Promise<Site[]>;
+  holidays(): Promise<Holiday[]>;
+  /** Updates the fence and pushes the shift to everyone based there. */
+  updateFence(siteId: string, patch: FenceUpdate): Promise<Site>;
+  /** Sets an entitlement and reprices open balances to match. */
+  setLeaveQuota(typeId: string, quota: number): Promise<{ type: string; quota: number; repriced: number }>;
+  addHoliday(date: string, name: string, optional: boolean): Promise<Holiday[]>;
+}
+
 /* ---------- security ---------- */
 
 export interface SecurityService {
@@ -525,5 +552,6 @@ export interface Services {
   assets: AssetService;
   security: SecurityService;
   onboarding: OnboardingService;
+  config: ConfigService;
   leave: LeaveService;
 }

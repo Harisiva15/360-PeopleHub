@@ -12,6 +12,7 @@ import { expenseService } from './expenses';
 import { leaveService } from './leave';
 import { hiringService, letterService, loanService, shiftService } from './misc';
 import { payrollService } from './payroll';
+import { configService } from './config';
 import { assetService, documentService, exitService, onboardingService, securityService } from './records';
 import { staffingService } from './staffing';
 import {
@@ -43,4 +44,5 @@ export const mockServices: Services = {
   assets: assetService,
   security: securityService,
   onboarding: onboardingService,
+  config: configService,
 };
