@@ -69,6 +69,28 @@ Anything that is a record, or derived from records, is a service call.
 [`docs/api-contract.md`](docs/api-contract.md) is the same contract expressed
 as HTTP.
 
+### Signing in
+
+The build has two modes, chosen by whether `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` are set:
+
+- **Demo** (unset) — no sign-in, the role switcher in the topbar, in-memory
+  data. This is what the public GitHub Pages site is.
+- **Configured** — Supabase Auth, and **no route renders without a session**.
+  The role switcher disappears, because being able to change your own role by
+  clicking would defeat the authorisation model entirely.
+
+Unset is the safe fallback on purpose: a missing variable cannot accidentally
+produce an unauthenticated *real* deployment, because without a project there
+is no real data to reach.
+
+Single sign-on providers come from `VITE_SSO_PROVIDERS` (`google`, `azure`,
+`github`). Listing one only draws the button — it must also be enabled under
+Authentication → Providers in Supabase.
+
+`npm run check:gate` renders all 35 routes with auth configured and no session
+and asserts none of them produces the app shell. It is in CI.
+
 ### Route loading
 
 Each module is its own chunk, fetched when its route is first visited. The

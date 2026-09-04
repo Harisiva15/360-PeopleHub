@@ -8,9 +8,13 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "check": "vite-node checks/services.ts"
+    "check": "vite-node checks/services.ts",
+    "check:routes": "vite-node checks/routes.tsx",
+    "check:gate": "vite-node checks/auth-gate.tsx",
+    "check:all": "npm run check && npm run check:routes && npm run check:gate"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.115.0",
     "react": "^19.2.8",
     "react-router-dom": "^7.18.3"
   },

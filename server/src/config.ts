@@ -23,7 +23,5 @@ export const config = {
    */
   supabaseJwtSecret: required('SUPABASE_JWT_SECRET'),
   supabaseUrl: process.env.SUPABASE_URL ?? '',
-  /** AES key for employee_identifier and bank account columns. */
-  fieldEncryptionKey: required('FIELD_ENCRYPTION_KEY'),
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').filter(Boolean),
 } as const;

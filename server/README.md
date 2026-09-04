@@ -180,12 +180,20 @@ present cannot.
 never move, so changing a salary component next year does not silently rewrite
 last year's payslip.
 
-**Regulated identifiers live in their own table.** `employee_identifier` and
-`employee_bank_account` keep PAN, national insurance numbers and account numbers
-out of `employee`. The value column is `bytea`, so you cannot accidentally write
-plaintext into it and have it look right, and a `value_hint` holds the last four
-characters in clear for `****1234` display. A redacting read simply does not
-join them — the contract's rule is *redact, do not send and hide*.
+**Regulated identifiers are not stored.** PAN, national insurance numbers,
+Aadhaar and bank accounts are out of scope for now, and not storing them is the
+strongest control available: no encryption to get wrong, no key to rotate,
+nothing to disclose in a breach.
+
+The cost is real and worth stating before a go-live: payroll can compute a
+payslip but cannot **pay** anyone, since disbursement needs a bank account; and
+Indian TDS filing needs PAN, so Form 16 and the 24Q return cannot be produced.
+Everything except moving money and filing returns.
+
+When they return they go in their own tables — so a redacting read simply does
+not join them — with `bytea` values encrypted before they reach the database and
+a hint column holding the last four characters for `****1234` display. Schema
+and encryption in one commit, so neither ships without the other.
 
 **Money is `numeric`, and `pg` is configured to return it as a string.** A
 payroll total in a JavaScript double is how a figure ends up a cent out and

@@ -31,11 +31,16 @@ jobs:
       - run: npm ci
 
       # The same gates that run locally. A red build should not reach the URL.
-      - name: Typecheck, lint and service checks
+      - name: Typecheck, lint and checks
         run: |
           npx tsc --noEmit -p tsconfig.app.json
           npx oxlint
           npm run check
+          npm run check:routes
+          # Proves the sign-in gate is closed. Needs a configured build, so it
+          # runs with placeholder credentials — nothing connects to Supabase,
+          # because the render never gets that far.
+          VITE_SUPABASE_URL=https://ci.invalid VITE_SUPABASE_ANON_KEY=ci npm run check:gate
 
       - name: Build
         # A project site is served from /<repo>/, not the domain root.

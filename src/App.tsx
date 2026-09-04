@@ -1,7 +1,9 @@
 import { lazy, Suspense } from 'react';
-import type { ComponentType } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppProvider, useApp } from './state/AppContext';
+import { AuthProvider, useAuth } from './auth/AuthContext';
+import { LoginPage } from './auth/LoginPage';
 import { LayerProvider } from './components/Layer';
 import { TooltipLayer } from './components/Tooltip';
 import { Shell } from './shell/Shell';
@@ -45,15 +47,46 @@ export function Routed() {
   );
 }
 
+/**
+ * Decides whether anything is rendered at all.
+ *
+ * In demo mode there is nothing to sign in to, so this is a pass-through. When
+ * the build has a Supabase project, no route renders without a session — the
+ * gate is here rather than per-route so a new route cannot forget it.
+ */
+export function AuthGate({ children }: { children: ReactNode }) {
+  const auth = useAuth();
+  const app = useApp();
+
+  if (!auth.configured) return <>{children}</>;
+
+  // Wait for the first session check. Rendering the login page during it would
+  // flash it at someone who is already signed in.
+  if (!auth.ready) {
+    return (
+      <div className="login-shell">
+        <div className="muted" style={{ fontSize: 13 }}>Checking your session…</div>
+      </div>
+    );
+  }
+
+  if (!auth.session) return <LoginPage theme={app.theme} />;
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <HashRouter>
-      <AppProvider>
-        <LayerProvider>
-          <TooltipLayer />
-          <Routed />
-        </LayerProvider>
-      </AppProvider>
+      <AuthProvider>
+        <AppProvider>
+          <LayerProvider>
+            <TooltipLayer />
+            <AuthGate>
+              <Routed />
+            </AuthGate>
+          </LayerProvider>
+        </AppProvider>
+      </AuthProvider>
     </HashRouter>
   );
 }

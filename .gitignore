@@ -25,3 +25,7 @@ dist-ssr
 
 # port scratch space
 scratch/
+
+# local build config
+.env.local
+.env

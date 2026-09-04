@@ -8,6 +8,7 @@ import { useNavBadges } from './badges';
 import { ORG } from '../data/org';
 import { ACCOUNTS } from '../state/rbac';
 import { useApp } from '../state/AppContext';
+import { useAuth } from '../auth/AuthContext';
 import { Avatar } from '../components/ui';
 import type { ReactNode } from 'react';
 
@@ -38,6 +39,7 @@ export function Shell({ children }: { children: ReactNode }) {
   }
 
   const accounts = ACCOUNTS();
+  const auth = useAuth();
   const ctx = { role: app.role, meId: app.meId, me: app.me };
   const badges = useNavBadges();
 
@@ -109,23 +111,33 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
           <div className="spacer" />
           {/*
-            * The role switcher is the honest signal that this is a demo: there
-            * is no login, so any visitor can become an admin. Say so, rather
-            * than letting a public URL read as a live HR system.
+            * The role switcher exists only when there is no sign-in. It is the
+            * honest signal that a build is a demo — and it must never appear
+            * beside a real session, where changing your own role by clicking
+            * would be the whole authorisation model defeated.
             */}
-          <span
-            className="demo-tag no-print"
-            title="Sample data, no sign-in — anyone can switch role. Not a live HR system."
-          >
-            Demo
-          </span>
-          <div className="seg" id="roleSeg" title="Switch the signed-in role">
-            {accounts.map((a) => (
-              <button key={a.role} className={app.role === a.role ? 'on' : ''} onClick={() => app.signInAs(a.role)}>
-                {a.role === 'admin' ? 'Admin' : a.role === 'manager' ? 'Manager' : 'Employee'}
-              </button>
-            ))}
-          </div>
+          {!auth.configured ? (
+            <>
+              <span
+                className="demo-tag no-print"
+                title="Sample data, no sign-in — anyone can switch role. Not a live HR system."
+              >
+                Demo
+              </span>
+              <div className="seg" id="roleSeg" title="Switch the signed-in role">
+                {accounts.map((a) => (
+                  <button key={a.role} className={app.role === a.role ? 'on' : ''} onClick={() => app.signInAs(a.role)}>
+                    {a.role === 'admin' ? 'Admin' : a.role === 'manager' ? 'Manager' : 'Employee'}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="row no-print" style={{ gap: 9 }}>
+              <span className="muted" style={{ fontSize: 12.5 }}>{auth.displayName}</span>
+              <button className="btn sm" onClick={() => void auth.signOut()}>Sign out</button>
+            </div>
+          )}
         </header>
 
         <main className="content">{children}</main>

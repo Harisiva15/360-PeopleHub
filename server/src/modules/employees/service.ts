@@ -7,10 +7,10 @@
  * fact. RLS keeps other tenants out; it says nothing about which of *this*
  * tenant's employees a manager may see, so that is enforced below.
  *
- * Second, compensation and national identifiers are omitted from the query
- * when the caller may not see them. Not fetched and hidden — not fetched. A
- * field that never leaves the database cannot leak through a log line, an
- * error payload or a future serialisation bug.
+ * Second, compensation is omitted from the query when the caller may not see
+ * it. Not fetched and hidden — not fetched. A field that never leaves the
+ * database cannot leak through a log line, an error payload or a future
+ * serialisation bug. That matters more once regulated identifiers return.
  */
 
 import { withTenantReadOnly } from '../../tenancy/context.ts';
@@ -56,7 +56,7 @@ function scopePredicate(caller: Caller): { sql: string; params: unknown[] } {
   }
 }
 
-/** May this caller see money and national identifiers? */
+/** May this caller see compensation? */
 const maySeeCompensation = (caller: Caller, subjectId: string | null): boolean =>
   caller.role === 'admin' || (subjectId !== null && subjectId === caller.employeeId);
 
@@ -107,8 +107,6 @@ export interface EmployeeProfile extends EmployeeSummary {
   joinedOn: string;
   managerName: string | null;
   reports: EmployeeSummary[];
-  /** Masked hints only — never the identifier itself. */
-  identifiers: { kind: string; hint: string | null }[];
 }
 
 export async function getEmployeeProfile(
@@ -140,13 +138,6 @@ export async function getEmployeeProfile(
       [employeeId],
     );
 
-    // Hints only. The encrypted value is never selected here; a caller who
-    // genuinely needs it goes through a separate, audited endpoint.
-    const identifiers = await db.query(
-      `SELECT kind, value_hint FROM employee_identifier WHERE employee_id = $1 ORDER BY kind`,
-      [employeeId],
-    );
-
     return {
       id: row.id,
       code: row.code,
@@ -170,7 +161,6 @@ export async function getEmployeeProfile(
         managerId: r.manager_id,
         status: r.status,
       })),
-      identifiers: identifiers.rows.map((r) => ({ kind: r.kind, hint: r.value_hint })),
     };
   });
 }

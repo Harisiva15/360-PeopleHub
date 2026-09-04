@@ -6,10 +6,9 @@
 -- so employment terms are effective-dated here and `employee` keeps only the
 -- current pointers, maintained from the dated rows.
 --
--- Identifiers that are regulated — PAN, national insurance numbers, bank
--- accounts — live in their own tables rather than as columns on `employee`.
--- That is not tidiness: it lets a redacting read simply not join them, and it
--- gives one place to encrypt and one place to honour a deletion request.
+-- Regulated identifiers — PAN, national insurance numbers, bank accounts —
+-- are deliberately not stored at all yet. See the note further down for what
+-- that costs and what has to arrive with them when they come back.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE employee (
@@ -135,58 +134,31 @@ CREATE UNIQUE INDEX employment_record_one_current
   ON employment_record (tenant_id, employee_id) WHERE valid_to IS NULL;
 
 -- ---------------------------------------------------------------------------
--- Regulated identifiers and bank details
+-- Regulated identifiers and bank details: deliberately NOT stored
+--
+-- PAN, national insurance numbers, Aadhaar and bank accounts are out of scope
+-- for now. Not storing them is the strongest control available: there is no
+-- encryption to get wrong, no key to rotate, no field to redact, and nothing
+-- to disclose if this database is ever breached.
+--
+-- What that costs, so nobody discovers it during a go-live:
+--
+--   * Payroll can compute a payslip but cannot pay anyone. Disbursement needs
+--     a bank account, so bank_batch has nothing to generate from.
+--   * Indian TDS filing needs PAN. Form 16 and the 24Q return cannot be
+--     produced, and tax_declaration can hold the investment amounts but not
+--     the landlord PAN that a rent claim over ₹1,00,000 legally requires.
+--   * PF and ESI registration need UAN and ESI numbers.
+--
+-- In other words: everything except actually moving money and filing returns.
+--
+-- When these come back, they belong in their own tables rather than as columns
+-- on employee — so a redacting read simply does not join them — with values in
+-- bytea columns encrypted before they reach the database, and a hint column
+-- holding the last four characters for ****1234 display. Add them in a new
+-- migration alongside the encryption code, in one commit, so the schema and
+-- the protection arrive together.
 -- ---------------------------------------------------------------------------
-
-CREATE TABLE employee_identifier (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id   uuid NOT NULL REFERENCES tenant (id) ON DELETE CASCADE,
-  employee_id uuid NOT NULL,
-  -- 'pan', 'uan', 'pf', 'esi', 'aadhaar', 'ssn', 'sin', 'nino', 'eid',
-  -- 'passport', 'work_authorisation'. Open rather than an enum, because the
-  -- list grows with every country onboarded.
-  kind        text NOT NULL,
-  country     char(2) REFERENCES country (code),
-  -- Encrypted at the application layer before it reaches here. The column is
-  -- bytea to make that non-optional: you cannot accidentally write plaintext
-  -- into it and have it look right.
-  value_encrypted bytea NOT NULL,
-  -- Last four characters, in clear, so a screen can show ****1234 without
-  -- decrypting anything.
-  value_hint  text,
-  verified    boolean NOT NULL DEFAULT false,
-  verified_on date,
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (tenant_id, id),
-  UNIQUE (tenant_id, employee_id, kind),
-  FOREIGN KEY (tenant_id, employee_id) REFERENCES employee (tenant_id, id) ON DELETE CASCADE
-);
-
-COMMENT ON TABLE employee_identifier IS
-  'National and statutory identifiers. Never returned to a caller without an '
-  'explicit payroll or HR-admin permission, and never in a list response.';
-
-CREATE TABLE employee_bank_account (
-  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id     uuid NOT NULL REFERENCES tenant (id) ON DELETE CASCADE,
-  employee_id   uuid NOT NULL,
-  bank_name     text NOT NULL,
-  account_number_encrypted bytea NOT NULL,
-  account_number_hint text,
-  -- IFSC in India, sort code in the UK, routing number in the US.
-  routing_code  text,
-  currency      char(3) NOT NULL REFERENCES currency (code),
-  -- Salary goes to exactly one account at a time; the rest are history.
-  is_primary    boolean NOT NULL DEFAULT true,
-  valid_from    date NOT NULL DEFAULT CURRENT_DATE,
-  valid_to      date,
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (tenant_id, id),
-  FOREIGN KEY (tenant_id, employee_id) REFERENCES employee (tenant_id, id) ON DELETE CASCADE
-);
-
-CREATE UNIQUE INDEX employee_bank_one_primary
-  ON employee_bank_account (tenant_id, employee_id) WHERE is_primary AND valid_to IS NULL;
 
 CREATE TABLE employee_skill (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),

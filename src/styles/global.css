@@ -538,3 +538,33 @@ kbd{font-family:var(--font)}
 .tl-i:before{content:"";position:absolute;left:-20px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--brand);border:2px solid var(--surface);box-shadow:0 0 0 2px var(--line)}
 .tl-i.alt:before{background:var(--s3)}
 .tl-i.warn:before{background:var(--s4)}
+
+/* ---------------- sign-in ---------------- */
+.login-shell{
+  min-height:100dvh;display:grid;place-items:center;padding:24px;
+  background:var(--surface-2);
+}
+.login-card{
+  width:100%;max-width:392px;background:var(--surface);border:1px solid var(--line);
+  border-radius:16px;padding:32px 30px;box-shadow:var(--shadow-lg);text-align:left;
+}
+.login-logo{height:30px;margin-bottom:16px}
+.login-card h1{margin:0;font-size:19px;font-weight:750;letter-spacing:-.3px}
+.login-card form{margin-top:6px}
+.login-sso{width:100%;justify-content:center;gap:9px;font-weight:650}
+.login-mark{
+  display:inline-grid;place-items:center;width:20px;height:20px;border-radius:5px;
+  background:var(--surface-3);font-weight:800;font-size:12px
+}
+.login-or{
+  display:flex;align-items:center;gap:11px;margin:20px 0 4px;
+  color:var(--ink-3);font-size:12px
+}
+.login-or::before,.login-or::after{content:'';flex:1;height:1px;background:var(--line)}
+.login-msg{font-size:12.5px;padding:9px 11px;border-radius:8px;margin-bottom:11px}
+.login-msg.err{background:var(--crit-wash);color:var(--crit)}
+.login-msg.ok{background:var(--good-wash);color:var(--good)}
+.login-foot{font-size:11.5px;line-height:1.6;margin:18px 0 0}
+@media (max-width:860px){
+  .login-card{padding:26px 20px;border-radius:14px}
+}
