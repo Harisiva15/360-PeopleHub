@@ -231,6 +231,43 @@ const check = (label: string, got: unknown, want: unknown) => {
   const panel = await s.hiring.interviewsFor(DEMO_MGR.id, 'Scheduled');
   check('interviews resolve their candidate', panel.every((r) => r.candidate !== null), true);
 
+  /* ---- assets and exits ---- */
+  const stock = (await s.assets.list()).find((a) => a.status === 'In stock');
+  if (stock) {
+    const issued = await s.assets.allocate(stock.id, DEMO_EMP.id);
+    check('allocating assigns the asset', [issued.status, issued.empId], ['Assigned', DEMO_EMP.id]);
+    let reAllocate = false;
+    try { await s.assets.allocate(stock.id, DEMO_MGR.id); } catch { reAllocate = true; }
+    check('an issued asset cannot be allocated again', reAllocate, true);
+
+    const back = await s.assets.markReturned(stock.id);
+    check('returning puts it back in stock', [back.status, back.empId], ['In stock', null]);
+    let reReturn = false;
+    try { await s.assets.markReturned(stock.id); } catch { reReturn = true; }
+    check('an asset in stock cannot be returned', reReturn, true);
+  }
+
+  const openExit = (await s.exits.list()).find((x) => x.status !== 'Settled');
+  if (openExit) {
+    const detail = await s.exits.detail(openExit.id);
+    check('the exit detail resolves its employee', detail?.employee.id, openExit.empId);
+    check('it carries a computed settlement', typeof detail?.settlement.net, 'number');
+
+    const stillOpen = openExit.clearance.filter((c) => !c.done).length;
+    if (stillOpen) {
+      let early = false;
+      try { await s.exits.settle(openExit.id); } catch { early = true; }
+      check('an exit cannot settle with clearance outstanding', early, true);
+    }
+
+    for (let i = 0; i < openExit.clearance.length; i++) await s.exits.setClearance(openExit.id, i, true);
+    const settled = await s.exits.settle(openExit.id);
+    check('settling closes the exit once clearance is done', settled.status, 'Settled');
+    let twice = false;
+    try { await s.exits.settle(openExit.id); } catch { twice = true; }
+    check('an exit is settled once', twice, true);
+  }
+
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nall service checks passed');
   process.exit(failed ? 1 : 0);
 })();

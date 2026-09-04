@@ -4,20 +4,25 @@ import { daysBetween, fmtD, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { inr, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { mbS } from '../../data/countries';
-import { ASSETS } from '../../data/announcements';
+
 import type { Asset } from '../../types/asset';
 import {
-  ASSET_CATS, ASSET_STATUS_BADGE, acatOf, assetAge, assetEol, assetKPI, bookValue, inWarranty, modelOf, pendingRecovery,
+  ASSET_CATS, ASSET_STATUS_BADGE, acatOf, assetAge, assetEol, assetKPI, bookValue, inWarranty, modelOf,
 } from '../../data/assets';
-import { ASSET_POLICY, ASSET_REQS, ASSET_REQ_BADGE, arOpen, entitledTo } from '../../data/assetWorkflow';
-import type { AssetRequest } from '../../data/assetWorkflow';
-import { ACTIVE, EMAP, empName } from '../../data/employees';
-import { EXITS } from '../../data/exit';
-import { ONBOARD } from '../../data/onboarding';
+import { ASSET_POLICY, ASSET_REQ_BADGE, entitledTo } from '../../data/assetWorkflow';
+import type { AssetRequest } from '../../services';
+
+
+
 import { deptOf, GRADES, siteOf } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { BarChart, HBar, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
+import {
+  useActOnRequest, useAllEmployees, useAllocateAsset, useAssetRequests, useAssets,
+  useExits, useMarkReturned, useOnboardingJourneys, useOpenAssetRequests, usePendingRecovery,
+  useVisiblePeople,
+} from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { Grade } from '../../types/country';
@@ -33,6 +38,7 @@ const ReqBadge = ({ s }: { s: string }) => (
 /* ---------------- My assets (employee) ---------------- */
 
 function AsMine() {
+  const { data: ASSETS = [] } = useAssets();
   const app = useApp();
   const mine = ASSETS.filter((a) => a.empId === app.meId);
 
@@ -81,6 +87,8 @@ function AsMine() {
 /* ---------------- Register ---------------- */
 
 function AsRegister() {
+  const { data: ASSETS = [] } = useAssets();
+  const dir = useVisiblePeople();
   const [q, setQ] = useState('');
   const [fc, setFc] = useState('');
   const [fs, setFs] = useState('');
@@ -91,7 +99,7 @@ function AsRegister() {
   if (q) {
     const needle = q.toLowerCase();
     list = list.filter((a) =>
-      (a.type + ' ' + a.serial + ' ' + a.tag + ' ' + (a.empId ? empName(a.empId) : '')).toLowerCase().includes(needle),
+      (a.type + ' ' + a.serial + ' ' + a.tag + ' ' + (a.empId ? dir.name(a.empId) : '')).toLowerCase().includes(needle),
     );
   }
 
@@ -117,7 +125,7 @@ function AsRegister() {
           downloadCSV('asset_register.csv',
             [['ID', 'Tag', 'Type', 'Category', 'Serial', 'Holder', 'Location', 'Purchased', 'Cost', 'Book value', 'Warranty end', 'Condition', 'Status']].concat(
               ASSETS.map((a) => [a.id, a.tag || '', a.type, acatOf(a.cat).n, a.serial,
-                a.empId ? empName(a.empId) : '', siteOf(a.site || 'CHN').name, a.purchased || '',
+                a.empId ? dir.name(a.empId) : '', siteOf(a.site || 'CHN').name, a.purchased || '',
                 String(a.cost ?? ''), String(bookValue(a)), a.warrantyEnd || '', a.condition || '', a.status]),
             ))}>⤓ Export</button>
       </div>
@@ -145,7 +153,7 @@ function AsRegister() {
                   <td><b>{a.type}</b><div className="mt">{a.serial}</div></td>
                   <td className="mono">{a.tag}</td>
                   <td className="nowrap">{acatOf(a.cat).n}</td>
-                  <td className="nowrap">{a.empId ? empName(a.empId) : <span className="muted">IT stock</span>}</td>
+                  <td className="nowrap">{a.empId ? dir.name(a.empId) : <span className="muted">IT stock</span>}</td>
                   <td className="nowrap">{siteOf(a.site || 'CHN').city}</td>
                   <td className="num">{inr(a.cost)}</td>
                   <td className="num">{inr(bookValue(a))}</td>
@@ -184,18 +192,19 @@ function AsRegister() {
 /* ---------------- Requests ---------------- */
 
 function AsRequests() {
+  const { data: ASSET_REQS = [] } = useAssetRequests();
+  const { data: open = [] } = useOpenAssetRequests();
+  const dir = useVisiblePeople();
+  const actOnRequest = useActOnRequest();
   const app = useApp();
   const [fs, setFs] = useState('');
   const scope = app.role === 'employee' ? ASSET_REQS.filter((r) => r.empId === app.meId) : ASSET_REQS;
   const list = fs ? scope.filter((r) => r.status === fs) : scope;
-  const open = arOpen();
   const spendPending = sum(open, (r) => r.cost);
 
-  const act = (r: AssetRequest, status: string, msg: string) => {
-    r.status = status;
-    if (status === 'Fulfilled') r.fulfilledOn = ymd(TODAY);
+  const act = async (r: AssetRequest, status: string, msg: string) => {
+    await actOnRequest.mutate(r.id, status);
     app.toast(msg, 'ok');
-    app.bump();
   };
 
   return (
@@ -230,7 +239,7 @@ function AsRequests() {
               {list.map((r) => (
                 <tr key={r.id}>
                   <td className="mono">{r.id}</td>
-                  <td><PersonCell e={EMAP[r.empId]} /></td>
+                  <td>{dir.byId(r.empId) && <PersonCell e={dir.byId(r.empId)!} />}</td>
                   <td><b>{r.type}</b><div className="mt">{acatOf(r.cat).n}</div></td>
                   <td className="num">{inr(r.cost)}</td>
                   <td>{r.reason}</td>
@@ -266,28 +275,35 @@ function AsRequests() {
 
 function AsAlloc() {
   const app = useApp();
-  const active = ACTIVE();
-  const noLaptop = active.filter((e) => !ASSETS.some((a) => a.empId === e.id && a.cat === 'LAPTOP' && a.status === 'Assigned'));
-  const rec = pendingRecovery();
-  const joiners = ONBOARD.filter((o) => o.status !== 'Completed');
+  const { data: ASSETS = [] } = useAssets();
+  const { data: EXITS = [] } = useExits();
+  const { data: active = [] } = useAllEmployees();
+  const { data: rec = [] } = usePendingRecovery();
+  const dir = useVisiblePeople();
+  const allocateAsset = useAllocateAsset();
+  const markReturnedAsset = useMarkReturned();
+  const { data: onboard = [] } = useOnboardingJourneys();
+  const joiners = onboard.filter((o) => o.status !== 'Completed');
 
-  const allocate = (empId: string) => {
+  const noLaptop = active.filter(
+    (e) => !ASSETS.some((a) => a.empId === e.id && a.cat === 'LAPTOP' && a.status === 'Assigned'),
+  );
+
+  const allocate = async (empId: string) => {
     const stock = ASSETS.find((a) => a.status === 'In stock' && a.cat === 'LAPTOP');
     if (!stock) {
       app.toast('No laptops in stock — raise a purchase order first', 'err');
       return;
     }
-    const e = EMAP[empId];
-    stock.empId = empId;
-    stock.status = 'Assigned';
-    stock.issued = ymd(TODAY);
-    stock.site = e.site;
-    stock.country = e.country;
-    app.toast(`${stock.type} allocated to ${e.name}`, 'ok');
-    app.bump();
+    try {
+      const issued = await allocateAsset.mutate(stock.id, empId);
+      app.toast(`${issued.type} allocated to ${dir.name(empId)}`, 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not allocate', 'err');
+    }
   };
 
-  const bulkAllocate = () => {
+  const bulkAllocate = async () => {
     const stock = ASSETS.filter((a) => a.status === 'In stock' && a.cat === 'LAPTOP');
     const n = Math.min(noLaptop.length, stock.length);
     if (!n) {
@@ -295,25 +311,20 @@ function AsAlloc() {
       return;
     }
     /* oldest joiner first, so the longest wait is cleared first */
-    sortBy(noLaptop, (e) => e.doj).slice(0, n).forEach((e, i) => {
-      const a = stock[i];
-      a.empId = e.id;
-      a.status = 'Assigned';
-      a.issued = ymd(TODAY);
-      a.site = e.site;
-      a.country = e.country;
-    });
+    const queue = sortBy(noLaptop, (e) => e.doj).slice(0, n);
+    for (let i = 0; i < queue.length; i++) {
+      await allocateAsset.mutate(stock[i].id, queue[i].id);
+    }
     app.toast(n + ' laptops allocated', 'ok');
-    app.bump();
   };
 
-  const markReturned = (a: Asset) => {
-    a.recoveredFrom = a.empId ?? undefined;
-    a.recoveredOn = ymd(TODAY);
-    a.empId = null;
-    a.status = 'In stock';
-    app.toast(a.type + ' marked returned and back in stock', 'ok');
-    app.bump();
+  const markReturned = async (a: Asset) => {
+    try {
+      await markReturnedAsset.mutate(a.id);
+      app.toast(a.type + ' marked returned and back in stock', 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not mark it returned', 'err');
+    }
   };
 
   return (
@@ -360,7 +371,7 @@ function AsAlloc() {
                     return (
                       <tr key={a.id}>
                         <td><b>{a.type}</b><div className="mt">{a.tag}</div></td>
-                        <td className="nowrap">{empName(a.empId!)}</td>
+                        <td className="nowrap">{dir.name(a.empId)}</td>
                         <td className="nowrap">{x ? fmtD(x.lwd) : '—'}</td>
                         <td className="num">{inr(bookValue(a))}</td>
                         <td className="right"><button className="btn sm" onClick={() => markReturned(a)}>Mark returned</button></td>
@@ -404,6 +415,8 @@ function AsAlloc() {
 /* ---------------- Stock & procurement ---------------- */
 
 function AsStock() {
+  const { data: ASSETS = [] } = useAssets();
+  const { data: active = [] } = useAllEmployees();
   const app = useApp();
   const stock = ASSETS.filter((a) => a.status === 'In stock');
   const repair = ASSETS.filter((a) => a.status === 'In repair');
@@ -414,7 +427,7 @@ function AsStock() {
   }));
 
   /* reorder point: less than one month of joining demand left on the shelf */
-  const monthlyJoiners = Math.max(1, Math.round(ACTIVE().filter((e) => daysBetween(e.doj, ymd(TODAY)) <= 365).length / 12));
+  const monthlyJoiners = Math.max(1, Math.round(active.filter((e) => daysBetween(e.doj, ymd(TODAY)) <= 365).length / 12));
   const reorder = byModel.filter((m) => m.cat === 'LAPTOP' && m.n < monthlyJoiners);
 
   const returnToStock = (a: Asset) => {
@@ -500,6 +513,8 @@ function AsStock() {
 /* ---------------- Lifecycle & depreciation ---------------- */
 
 function AsLife() {
+  const dir = useVisiblePeople();
+  const { data: ASSETS = [] } = useAssets();
   const live = ASSETS.filter((a) => a.status !== 'Retired');
 
   const bands = [
@@ -547,7 +562,7 @@ function AsLife() {
         actions={<button className="btn sm primary" onClick={() =>
           downloadCSV('asset_refresh_plan.csv',
             [['Asset', 'Tag', 'Serial', 'Holder', 'Purchased', 'Age (yrs)', 'Book value', 'Replacement cost']].concat(
-              refresh.map((a) => [a.type, a.tag || '', a.serial, a.empId ? empName(a.empId) : '',
+              refresh.map((a) => [a.type, a.tag || '', a.serial, a.empId ? dir.name(a.empId) : '',
                 a.purchased || '', assetAge(a).toFixed(1), String(bookValue(a)), String(modelOf(a.type).cost)]),
             ))}>⤓ Export refresh plan</button>}>
         {refresh.length ? (
@@ -560,7 +575,7 @@ function AsLife() {
                 {refresh.map((a) => (
                   <tr key={a.id}>
                     <td><b>{a.type}</b><div className="mt">{a.tag}</div></td>
-                    <td className="nowrap">{a.empId ? empName(a.empId) : '—'}</td>
+                    <td className="nowrap">{a.empId ? dir.name(a.empId) : '—'}</td>
                     <td className="nowrap">{fmtD(a.purchased)}</td>
                     <td className="num">{assetAge(a).toFixed(1)} yrs</td>
                     <td className="num">{inr(bookValue(a))}</td>

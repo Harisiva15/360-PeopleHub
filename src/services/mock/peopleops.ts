@@ -12,10 +12,9 @@ import { COURSES, ENROLL } from '../../data/learning';
 import { TICKETS } from '../../data/helpdesk';
 import { enpsOf, ENPS_HISTORY, SURVEYS } from '../../data/engagement';
 import { ANNOUNCE, celebrations } from '../../data/announcements';
-import { EXITS } from '../../data/exit';
 import { fbpTotal } from '../../data/benefits';
 import type {
-  BenefitsService, EngagementService, ExitService, HelpdeskService, LearningService,
+  BenefitsService, EngagementService, HelpdeskService, LearningService,
   NoticeboardService, PerformanceService,
 } from '../contracts';
 import { ok } from './util';
@@ -63,8 +62,4 @@ export const benefitsService: BenefitsService = {
 export const noticeboardService: NoticeboardService = {
   announcements() { return ok(ANNOUNCE.slice()); },
   celebrations(days) { return ok(celebrations(days)); },
-};
-
-export const exitService: ExitService = {
-  list() { return ok(EXITS.slice()); },
 };

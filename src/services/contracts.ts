@@ -46,6 +46,10 @@ import type {
   Submission, Vendor,
 } from '../data/staffing';
 import type { MatchExplain } from '../data/matching';
+import type { AssetRequest } from '../data/assetWorkflow';
+import type { AuditEntry, Control, PostureRecord, RetentionRow, Severity } from '../data/security';
+import type { FnF } from '../data/exit';
+import type { Onboarding } from '../data/onboarding';
 
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
@@ -77,6 +81,9 @@ export type {
   Submission, Vendor,
 } from '../data/staffing';
 export type { MatchExplain } from '../data/matching';
+export type { AssetRequest } from '../data/assetWorkflow';
+export type { Onboarding } from '../data/onboarding';
+export type { AuditEntry, Control, PostureRecord, RetentionRow, Severity } from '../data/security';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
 export interface Caller {
@@ -379,6 +386,12 @@ export interface NoticeboardService {
 
 export interface ExitService {
   list(): Promise<ExitRecord[]>;
+  /** One exit with its settlement computed. */
+  detail(exitId: string): Promise<ExitDetail | null>;
+  /** Tick or untick one clearance line. */
+  setClearance(exitId: string, index: number, done: boolean): Promise<ExitRecord>;
+  /** Close an exit once clearance is complete and the settlement is paid. */
+  settle(exitId: string): Promise<ExitRecord>;
 }
 
 /* ---------- the staffing book ---------- */
@@ -437,6 +450,57 @@ export interface StaffingService {
   benchStanding(consultantId: string): Promise<{ days: number; cost: number }>;
 }
 
+/* ---------- documents ---------- */
+
+export interface DocumentService {
+  /** Employment documents on file, for one person or everyone. */
+  documents(empIds?: string[]): Promise<EmpDoc[]>;
+  documentTypes(): Promise<string[]>;
+}
+
+/* ---------- exits ---------- */
+
+/** A full-and-final settlement, computed rather than assembled in the view. */
+export interface ExitDetail {
+  exit: ExitRecord;
+  employee: Employee;
+  settlement: FnF;
+  /** Earned-leave days available for encashment. */
+  leaveAvail: number;
+  loansOutstanding: number;
+}
+
+/* ---------- IT assets ---------- */
+
+export interface AssetService {
+  list(): Promise<Asset[]>;
+  requests(): Promise<AssetRequest[]>;
+  openRequests(): Promise<AssetRequest[]>;
+  /** Kit a leaver still holds — the exit clearance checklist. */
+  pendingRecovery(): Promise<Asset[]>;
+  actOnRequest(id: string, status: string): Promise<AssetRequest>;
+  /** Issue a specific asset to someone; refuses anything not in stock. */
+  allocate(assetId: string, empId: string): Promise<Asset>;
+  /** Take an asset back and return it to stock. */
+  markReturned(assetId: string): Promise<Asset>;
+}
+
+export interface OnboardingService {
+  list(): Promise<Onboarding[]>;
+  /** Tick or untick one checklist item on a joiner's journey. */
+  setTask(id: string, key: string, done: boolean): Promise<Onboarding>;
+}
+
+/* ---------- security ---------- */
+
+export interface SecurityService {
+  audit(cat?: string, sev?: Severity): Promise<AuditEntry[]>;
+  auditCategories(): Promise<string[]>;
+  posture(): Promise<PostureRecord[]>;
+  controls(): Promise<Control[]>;
+  retention(): Promise<RetentionRow[]>;
+}
+
 /* ---------- the registry ---------- */
 
 export interface Services {
@@ -457,5 +521,9 @@ export interface Services {
   noticeboard: NoticeboardService;
   exits: ExitService;
   staffing: StaffingService;
+  documents: DocumentService;
+  assets: AssetService;
+  security: SecurityService;
+  onboarding: OnboardingService;
   leave: LeaveService;
 }

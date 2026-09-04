@@ -3,17 +3,22 @@ import { sortBy, sum, uniq } from '../../lib/collections';
 import { addDays, daysBetween, fmtD, monthLabelLong, TODAY, yearsSince, ymd } from '../../lib/dates';
 import { inr, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { ACTIVE, EMAP, EMP, empName } from '../../data/employees';
-import { CLEARANCE_DEPTS, EXITS, exitOf, fnfSettlement } from '../../data/exit';
-import type { ExitRecord } from '../../data/exit';
-import { leaveBalance } from '../../data/leave';
-import { activeLoans } from '../../data/loans';
+
+import { CLEARANCE_DEPTS } from '../../data/exit';
+import type { ExitRecord } from '../../services';
+
+
 import { DEPTS, deptOf } from '../../data/org';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Chip, Divide, ListRow, StatusBadge } from '../../components/common';
 import { HBar, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
+import {
+  useActiveLoans, useAllEmployees, useExitDetail, useExits, useMyLeaveBalance,
+  useSetClearance, useSettleExit, useVisiblePeople,
+} from './data';
+import type { Directory } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -48,16 +53,22 @@ const EXIT_TIMELINE: [string, string][] = [
 ];
 
 /** Exits the signed-in user may act on. */
-function exitScope(role: string, meId: string): ExitRecord[] {
-  if (role === 'admin') return EXITS;
-  return EXITS.filter((x) => EMAP[x.empId] && (EMAP[x.empId].managerId === meId || isMyReport(meId, x.empId)));
+/** Managers see exits from their own line; admins see the whole book. */
+function exitScope(role: string, meId: string, exits: ExitRecord[], dir: Directory): ExitRecord[] {
+  if (role === 'admin') return exits;
+  return exits.filter((x) => {
+    const e = dir.byId(x.empId);
+    return !!e && (e.managerId === meId || isMyReport(meId, x.empId));
+  });
 }
 
 /* ---------------- Exit board ---------------- */
 
 function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
+  const { data: allExits = [] } = useExits();
+  const dir = useVisiblePeople();
   const app = useApp();
-  const list = exitScope(app.role, app.meId);
+  const list = exitScope(app.role, app.meId, allExits, dir);
   const byReason = uniq(list.map((x) => x.reason)).map((r, i) => ({
     k: r, c: PAL[i % 8], v: list.filter((x) => x.reason === r).length,
   }));
@@ -80,7 +91,7 @@ function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
             downloadCSV('exits.csv',
               [['Emp Code', 'Name', 'Department', 'Resigned', 'LWD', 'Reason', 'Destination', 'Status']].concat(
                 list.map((x) => {
-                  const e = EMAP[x.empId];
+                  const e = dir.byId(x.empId)!;
                   return [e.code, e.name, deptOf(e.dept).name, x.resignedOn, x.lwd, x.reason, x.destination, x.status];
                 }),
               ))}>⤓ Export</button>}>
@@ -94,7 +105,7 @@ function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
               </thead>
               <tbody>
                 {sortBy(list, (x) => x.lwd).map((x) => {
-                  const e = EMAP[x.empId];
+                  const e = dir.byId(x.empId)!;
                   const left = daysBetween(ymd(TODAY), x.lwd);
                   const done = x.clearance.filter((c) => c.done).length;
                   return (
@@ -148,17 +159,24 @@ function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
 
 function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => void }) {
   const app = useApp();
-  const list = exitScope(app.role, app.meId);
-  const x = list.find((a) => a.id === sel) || list[0];
-  if (!x) return <Card><EmptyState msg="No exits to settle" /></Card>;
+  const dir = useVisiblePeople();
+  const { data: allExits = [] } = useExits();
+  const setClearance = useSetClearance();
+  const settleExit = useSettleExit();
+  const list = exitScope(app.role, app.meId, allExits, dir);
+  const picked = list.find((a) => a.id === sel) || list[0];
+  const { data: detail } = useExitDetail(picked?.id ?? '');
 
-  const e = EMAP[x.empId];
-  const f = fnfSettlement(x);
+  if (!picked) return <Card><EmptyState msg="No exits to settle" /></Card>;
+  if (!detail) return <Card><EmptyState msg="Loading the settlement…" icon="↩" /></Card>;
+
+  const x = detail.exit;
+  const e = detail.employee;
+  const f = detail.settlement;
   const done = x.clearance.filter((c) => c.done).length;
 
   const toggleClearance = (i: number, checked: boolean) => {
-    x.clearance[i].done = checked;
-    app.bump();
+    void setClearance.mutate(x.id, i, checked);
   };
 
   return (
@@ -169,9 +187,9 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
             {list.map((a) => (
               <ListRow key={a.id} onClick={() => setSel(a.id)}
                 style={a.id === x.id ? { background: 'var(--brand-wash)' } : undefined}>
-                <Avatar name={empName(a.empId)} size="sm" />
+                <Avatar name={dir.name(a.empId)} size="sm" />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{empName(a.empId)}</div>
+                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(a.empId)}</div>
                   <div className="muted" style={{ fontSize: 11 }}>LWD {fmtD(a.lwd)}</div>
                 </div>
                 <ExitBadge s={a.status} />
@@ -187,10 +205,13 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
               <div className="row">
                 <button className="btn sm" onClick={() => window.print()}>🖨 Statement</button>
                 {app.role === 'admin' && x.status !== 'Settled' && (
-                  <button className="btn sm primary" onClick={() => {
-                    x.status = 'Settled';
-                    app.toast('Settlement released — credited within 45 days', 'ok');
-                    app.bump();
+                  <button className="btn sm primary" onClick={async () => {
+                    try {
+                      await settleExit.mutate(x.id);
+                      app.toast('Settlement released — credited within 45 days', 'ok');
+                    } catch (err) {
+                      app.toast(err instanceof Error ? err.message : 'Could not settle', 'err');
+                    }
                   }}>Settle &amp; pay</button>
                 )}
               </div>
@@ -303,6 +324,8 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
 /* ---------------- Exit interviews ---------------- */
 
 function XtInterviews() {
+  const { data: EXITS = [] } = useExits();
+  const dir = useVisiblePeople();
   const done = EXITS.filter((x) => x.interview && x.interview.done);
   const avg = (k: string) => sum(done, (x) => x.interview.ratings![k]) / Math.max(1, done.length);
   const scores = INTERVIEW_DIMS.map(([k, label]) => ({ k: label, key: k, v: +avg(k).toFixed(1) }));
@@ -325,11 +348,11 @@ function XtInterviews() {
           {done.length ? done.map((x) => (
             <div key={x.id} style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
               <div className="row" style={{ gap: 9, marginBottom: 7 }}>
-                <Avatar name={empName(x.empId)} size="sm" />
+                <Avatar name={dir.name(x.empId)} size="sm" />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{empName(x.empId)}</div>
+                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(x.empId)}</div>
                   <div className="muted" style={{ fontSize: 11 }}>
-                    {deptOf(EMAP[x.empId].dept).name} · left {fmtD(x.lwd)} · {x.reason}
+                    {deptOf(dir.byId(x.empId)!.dept).name} · left {fmtD(x.lwd)} · {x.reason}
                   </div>
                 </div>
                 <Badge kind={x.interview.wouldRejoin ? 'good' : 'mute'}>
@@ -367,7 +390,14 @@ function XtInterviews() {
 /* ---------------- Attrition insights ---------------- */
 
 function XtAna() {
-  const past = EMP.filter((e) => e.dol);
+  const { data: everyone = [] } = useAllEmployees();
+  const { data: EXITS = [] } = useExits();
+  const dir = useVisiblePeople();
+  /* Everyone who has left, resolved from the exit records. */
+  const past = EXITS.flatMap((x) => {
+    const e = dir.byId(x.empId);
+    return e ? [e] : [];
+  });
   const byTenure = ([['< 1 year', 0, 1], ['1–2 years', 1, 2], ['2–4 years', 2, 4], ['4+ years', 4, 99]] as [string, number, number][])
     .map((b, i) => ({
       k: b[0], c: PAL[i],
@@ -379,11 +409,11 @@ function XtAna() {
 
   const byDept = DEPTS.map((d) => ({ k: d.name, c: d.color, v: past.filter((e) => e.dept === d.id).length })).filter((r) => r.v);
   const byMgr = sortBy(
-    uniq(past.map((e) => e.managerId)).map((m) => ({ k: empName(m || ''), c: 'var(--s8)', v: past.filter((e) => e.managerId === m).length })),
+    uniq(past.map((e) => e.managerId)).map((m) => ({ k: dir.name(m || ''), c: 'var(--s8)', v: past.filter((e) => e.managerId === m).length })),
     (r) => -r.v,
   ).slice(0, 8);
 
-  const rate = pct(past.filter((e) => e.dol! >= ymd(addDays(TODAY, -365))).length, ACTIVE().length);
+  const rate = pct(past.filter((e) => e.dol! >= ymd(addDays(TODAY, -365))).length, everyone.length);
 
   return (
     <div className="stack">
@@ -425,10 +455,15 @@ function XtAna() {
 function XtMe() {
   const app = useApp();
   const me = app.me;
-  const x = exitOf(me.id);
+  /* Every hook runs before the branch — the exit may or may not exist. */
+  const { data: allExits = [] } = useExits();
+  const { data: allLoans = [] } = useActiveLoans();
+  const { data: elBalance } = useMyLeaveBalance(me.id, 'EL');
+  const mine = allExits.find((e) => e.empId === me.id);
+  const { data: detail } = useExitDetail(mine?.id ?? '');
 
-  if (!x) {
-    const loans = activeLoans(me.id);
+  if (!mine) {
+    const loans = allLoans.filter((l) => l.empId === me.id);
     const yrs = yearsSince(me.doj);
     return (
       <div className="stack">
@@ -440,7 +475,7 @@ function XtMe() {
           <Divide />
           <KV rows={[
             ['Your notice period', me.probation ? '30 days (on probation)' : '60 days (confirmed)'],
-            ['Earned leave balance', `${leaveBalance(me.id, 'EL')?.avail ?? 0} days — encashable at exit`],
+            ['Earned leave balance', `${elBalance?.avail ?? 0} days — encashable at exit`],
             ['Gratuity eligibility', yrs >= 5 ? `Eligible · ${yrs} years of service` : `Not yet — needs 5 years (${5 - yrs} to go)`],
             ['Active loans', loans.length ? `${inr(sum(loans, (l) => l.outstanding))} outstanding — recovered from F&F` : 'None'],
           ]} />
@@ -451,7 +486,9 @@ function XtMe() {
     );
   }
 
-  const f = fnfSettlement(x);
+  if (!detail) return <Card><EmptyState msg="Loading your settlement…" icon="↩" /></Card>;
+  const x = detail.exit;
+  const f = detail.settlement;
   const done = x.clearance.filter((c) => c.done).length;
 
   return (
@@ -532,6 +569,6 @@ function ExitView() {
 registerModule({
   key: 'exit',
   title: TITLES.exit,
-  subtitle: () => `${EXITS.filter((x) => x.status !== 'Settled').length} exits in progress`,
+  subtitle: () => 'Notice periods, clearance and full-and-final settlement',
   Component: ExitView,
 });

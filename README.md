@@ -55,7 +55,7 @@ double approval.
 
 **Migration status.** On the seam: `leave`, `attendance`, `timesheet`,
 `expenses`, `employees`, `payroll`, `approvals`, `reports`, `dashboard`, `people`,
-`copilot`, `exec`. Each has a `data.ts` holding its reads and writes as service
+`copilot`, `exec`, the staffing book, `documents`, `exit`, `security`, `assets`. Each has a `data.ts` holding its reads and writes as service
 calls; `src/modules/leave/data.ts` is the reference to copy, including the
 two-stage fetch (rows, then the people they reference) that a real client
 needs when the API does not denormalise names into the row.
@@ -63,10 +63,10 @@ needs when the API does not denormalise names into the row.
 The remaining modules still import `src/data` directly. `AppProvider`
 subscribes to service invalidations and re-renders them, which is the bridge
 that keeps them correct until they are moved. Rough order of remaining work,
-heaviest first: the staffing book (five files, though its service already
-exists), `settings`, `documents`, `assets`, `security`, `exit`, then the
-smaller screens — `shifts`, `benefits`, `tax`, `performance`, `onboarding`,
-`learning`, `hiring`, `helpdesk`, `engagement`, `whatsapp`.
+`settings`, then the smaller screens — `shifts`, `benefits`, `tax`,
+`performance`, `onboarding`, `learning`, `hiring`, `helpdesk`, `engagement`,
+`whatsapp`. Most of their services already exist, so the remaining work is
+wiring rather than contract design.
 
 **One constraint worth knowing before the next pass.** The module registry's
 `subtitle` and `badge` callbacks are synchronous, so they cannot await a

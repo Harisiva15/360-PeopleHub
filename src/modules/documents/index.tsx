@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { sortBy } from '../../lib/collections';
-import { fmtD, monthKey, TODAY, ymd } from '../../lib/dates';
+import { fmtD, monthKey, TODAY } from '../../lib/dates';
 import { pct } from '../../lib/format';
-import { DOCS, DOC_TYPES } from '../../data/announcements';
-import { ACTIVE, EMAP } from '../../data/employees';
+
+
 import { deptOf } from '../../data/org';
-import { LETTER_REQS, LETTER_TYPES } from '../../data/letters';
+import { LETTER_TYPES } from '../../data/letters';
 import { HBar, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { Badge, Banner, Card, EmptyState, PersonCell, Table, TableWrap, Tabs, Tile } from '../../components/ui';
@@ -15,6 +15,10 @@ import { useShowEmployee } from '../employees/Profile';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { useShowLetter } from './Letter';
+import {
+  useAllEmployees, useDocuments, useDocumentTypes, useIssueLetter, useLetterRequests,
+  useVisiblePeople,
+} from './data';
 
 type Tab = 'gen' | 'mine' | 'queue' | 'repo';
 
@@ -23,7 +27,9 @@ const letterName = (id: string) => LETTER_TYPES.find((t) => t.id === id)?.n || i
 /** Documents an employee can upload themselves, outside the HR-issued set. */
 const UPLOADABLE = ['PAN Card', 'Aadhaar', 'Passport', 'Degree Certificate', 'Previous Relieving Letter', 'Address Proof'];
 
-const missingFor = (empId: string) => DOC_TYPES.filter((t) => !DOCS.some((d) => d.empId === empId && d.type === t));
+/** Document types this person has not filed, over rows already fetched. */
+const missingFor = (empId: string, types: string[], docs: { empId: string; type: string }[]) =>
+  types.filter((t) => !docs.some((d) => d.empId === empId && d.type === t));
 
 /* ---------- Generate / request ---------- */
 
@@ -86,8 +92,9 @@ function GenTab() {
 
 function MineTab() {
   const app = useApp();
-  const docs = DOCS.filter((d) => d.empId === app.meId);
-  const reqs = LETTER_REQS.filter((l) => l.empId === app.meId);
+  const { data: docs = [] } = useDocuments([app.meId]);
+  const { data: allReqs = [] } = useLetterRequests();
+  const reqs = allReqs.filter((l) => l.empId === app.meId);
 
   return (
     <div className="stack">
@@ -148,16 +155,19 @@ function MineTab() {
 function QueueTab() {
   const app = useApp();
   const showLetter = useShowLetter();
+  const { data: LETTER_REQS = [] } = useLetterRequests();
+  const dir = useVisiblePeople();
+  const issueLetter = useIssueLetter();
   const pend = LETTER_REQS.filter((l) => l.status === 'Pending');
   const thisMonth = LETTER_REQS.filter((l) => l.issuedOn && monthKey(l.issuedOn) === monthKey(TODAY)).length;
 
-  const markIssued = (id: string) => {
-    const l = LETTER_REQS.find((x) => x.id === id);
-    if (!l) return;
-    l.status = 'Issued';
-    l.issuedOn = ymd(TODAY);
-    app.toast('Letter issued and emailed to the employee', 'ok');
-    app.bump();
+  const markIssued = async (id: string) => {
+    try {
+      await issueLetter.mutate(id);
+      app.toast('Letter issued and emailed to the employee', 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not issue the letter', 'err');
+    }
   };
 
   return (
@@ -182,7 +192,7 @@ function QueueTab() {
               {sortBy(LETTER_REQS, (l) => l.requestedOn, 'desc').map((l) => (
                 <tr key={l.id}>
                   <td className="mono">{l.id}</td>
-                  <td><PersonCell e={EMAP[l.empId]} /></td>
+                  <td>{dir.byId(l.empId) && <PersonCell e={dir.byId(l.empId)!} />}</td>
                   <td>{letterName(l.type)}</td>
                   <td>{l.purpose}</td>
                   <td className="nowrap">{fmtD(l.requestedOn)}</td>
@@ -212,14 +222,17 @@ function QueueTab() {
 function RepoTab() {
   const app = useApp();
   const showEmp = useShowEmployee();
+  const { data: DOCS = [] } = useDocuments();
+  const { data: DOC_TYPES = [] } = useDocumentTypes();
+  const { data: everyone = [] } = useAllEmployees();
   const byType: HBarRow[] = DOC_TYPES.map((t, i) => ({ k: t, c: PAL[i % 8], v: DOCS.filter((d) => d.type === t).length }));
-  const missing = ACTIVE().filter((e) => missingFor(e.id).length > 2);
+  const missing = everyone.filter((e) => missingFor(e.id, DOC_TYPES, DOCS).length > 2);
   const verified = DOCS.filter((d) => d.verified).length;
 
   return (
     <div className="stack">
       <div className="grid g4">
-        <Tile label="Documents on file" value={DOCS.length.toLocaleString('en-IN')} foot={`Across ${ACTIVE().length} employees`} />
+        <Tile label="Documents on file" value={DOCS.length.toLocaleString('en-IN')} foot={`Across ${everyone.length} employees`} />
         <Tile label="Verified" value={pct(verified, Math.max(1, DOCS.length)) + '%'} foot={`${DOCS.length - verified} pending verification`} />
         <Tile label="Incomplete files" value={missing.length} foot="Missing 3 or more documents" />
         <Tile label="Retention policy" value="7 years" foot="After the last working day" />
@@ -250,7 +263,7 @@ function RepoTab() {
                       <td className="nowrap">{fmtD(e.doj)}</td>
                       <td>
                         <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
-                          {missingFor(e.id).map((t) => <Chip key={t}>{t}</Chip>)}
+                          {missingFor(e.id, DOC_TYPES, DOCS).map((t) => <Chip key={t}>{t}</Chip>)}
                         </div>
                       </td>
                     </tr>
@@ -305,10 +318,7 @@ function DocumentsView() {
 registerModule({
   key: 'documents',
   title: TITLES.documents,
-  subtitle: (ctx) =>
-    ctx.role === 'employee'
-      ? `${DOCS.filter((d) => d.empId === ctx.meId).length} documents on file`
-      : `${LETTER_REQS.filter((l) => l.status === 'Pending').length} letter requests pending`,
-  badge: (ctx) => (ctx.role === 'admin' ? LETTER_REQS.filter((l) => l.status === 'Pending').length : 0),
+  /* Static: the registry's callbacks are synchronous and cannot await. */
+  subtitle: () => 'Self-service letters and the document repository',
   Component: DocumentsView,
 });

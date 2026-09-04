@@ -5,14 +5,14 @@ import { addDays, fmtD, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { ri } from '../../lib/rng';
-import { ACTIVE, EMAP } from '../../data/employees';
+
 import { DEPTS, deptOf } from '../../data/org';
 import { COUNTRIES, countryOf } from '../../data/countries';
 import type { CountryId } from '../../types/country';
-import { ASSETS } from '../../data/announcements';
-import { EXITS } from '../../data/exit';
-import { AUDIT, AUDIT_CATS, CONTROLS, POSTURE, RETENTION } from '../../data/security';
-import type { Severity } from '../../data/security';
+
+
+
+import type { Severity } from '../../services';
 import { HBar, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { Badge, Banner, Card, EmptyState, Table, TableWrap, Tabs, Tile } from '../../components/ui';
@@ -20,6 +20,10 @@ import { Chip } from '../../components/common';
 import { PERMS } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
 import { useShowEmployee } from '../employees/Profile';
+import {
+  useAllEmployees, useAssets, useAudit, useAuditCategories, useControls, useExits,
+  usePosture, useRetention,
+} from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -35,7 +39,11 @@ const TABS: { v: Tab; label: string }[] = [
 /* ---------- Posture ---------- */
 
 function PostureTab() {
-  const n = POSTURE.length;
+  const { data: POSTURE = [] } = usePosture();
+  const { data: CONTROLS = [] } = useControls();
+  const { data: AUDIT = [] } = useAudit();
+  const { data: AUDIT_CATS = [] } = useAuditCategories();
+  const n = Math.max(1, POSTURE.length);
   const mfa = POSTURE.filter((p) => p.mfa).length;
   const mgd = POSTURE.filter((p) => p.managed).length;
   const enc = POSTURE.filter((p) => p.encrypted).length;
@@ -116,9 +124,14 @@ const SEV_KIND: Record<FindingSev, 'crit' | 'warn' | 'info'> = { crit: 'crit', w
 function useAccessFindings(goToAudit: () => void): Finding[] {
   const showEmp = useShowEmployee();
   const nav = useNavigate();
+  const { data: POSTURE = [] } = usePosture();
+  const { data: AUDIT = [] } = useAudit();
+  const { data: EXITS = [] } = useExits();
+  const { data: ASSETS = [] } = useAssets();
+  const { data: everyone = [] } = useAllEmployees();
 
   const out: Finding[] = [];
-  const admins = ACTIVE().filter((e) => e.dept === 'HR' && e.grade >= 'L4');
+  const admins = everyone.filter((e) => e.dept === 'HR' && e.grade >= 'L4');
   /* A settled exit has had its access closed, so it is no longer a finding. */
   const leavers = EXITS.filter((x) => x.status !== 'Settled' && x.lwd <= ymd(addDays(TODAY, 14)));
 
@@ -133,7 +146,7 @@ function useAccessFindings(goToAudit: () => void): Finding[] {
   );
 
   leavers.forEach((x) => {
-    const e = EMAP[x.empId];
+    const e = everyone.find((y) => y.id === x.empId);
     if (!e) return;
     const held = ASSETS.filter((a) => a.empId === e.id && a.status === 'Assigned').length;
     out.push({
@@ -193,6 +206,7 @@ const ROLES: AppRole[] = ['admin', 'manager', 'employee'];
 
 function AccessTab({ goToAudit }: { goToAudit: () => void }) {
   const findings = useAccessFindings(goToAudit);
+  const { data: everyone = [] } = useAllEmployees();
   const cats = uniq(findings.map((x) => x.cat));
   const modules = uniq(ROLES.flatMap((r) => PERMS[r]));
 
@@ -210,7 +224,7 @@ function AccessTab({ goToAudit }: { goToAudit: () => void }) {
       <div className="grid g4">
         <Tile label="Findings open" value={findings.length} foot={`Across ${cats.length} categories`} />
         <Tile label="Critical" value={findings.filter((x) => x.sev === 'crit').length} foot="Identity and leaver access" />
-        <Tile label="Accounts in scope" value={ACTIVE().length} foot="Active employees with a login" />
+        <Tile label="Accounts in scope" value={everyone.length} foot="Active employees with a login" />
         <Tile label="Last review" value={cadence.last} foot={`Quarterly cadence · next due in ${cadence.next} days`} />
       </div>
 
@@ -288,10 +302,10 @@ const AUDIT_PAGE = 200;
 function AuditTab() {
   const [cat, setCat] = useState('');
   const [sev, setSev] = useState('');
-
-  let list = AUDIT;
-  if (cat) list = list.filter((a) => a.cat === cat);
-  if (sev) list = list.filter((a) => a.sev === sev);
+  const { data: AUDIT = [] } = useAudit();
+  const { data: AUDIT_CATS = [] } = useAuditCategories();
+  /* Filtering happens in the service — the query re-runs when either changes. */
+  const { data: list = [] } = useAudit(cat, sev);
 
   const exportCSV = () =>
     downloadCSV('audit_trail.csv', [
@@ -372,6 +386,8 @@ const TRANSFERS: Record<CountryId, { residency: string; safeguard: string }> = {
 };
 
 function PrivacyTab() {
+  const { data: RETENTION = [] } = useRetention();
+  const { data: everyone = [] } = useAllEmployees();
   /* Illustrative counts, drawn once on mount so the panel holds still. */
   const dsr = useMemo(
     () => [
@@ -382,7 +398,7 @@ function PrivacyTab() {
     ],
     []
   );
-  const entities = COUNTRIES.filter((c) => ACTIVE().some((e) => e.country === c.id));
+  const entities = COUNTRIES.filter((c) => everyone.some((e) => e.country === c.id));
 
   const exportCSV = () =>
     downloadCSV('data_inventory.csv', [
@@ -486,6 +502,6 @@ function SecurityView() {
 registerModule({
   key: 'security',
   title: TITLES.security,
-  subtitle: () => `${AUDIT.length} events logged · ${AUDIT.filter((a) => a.sev === 'high').length} high severity`,
+  subtitle: () => 'Posture, access review, audit trail and data retention',
   Component: SecurityView,
 });
