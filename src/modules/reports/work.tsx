@@ -2,27 +2,30 @@ import { sortBy, sum, uniq } from '../../lib/collections';
 import { addDays, daysBetween, fmtDS, mondayOf, TODAY, ymd } from '../../lib/dates';
 import { lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { CANDS, SOURCES, STAGES } from '../../data/ats';
-import { ACTIVE, EMAP, empName } from '../../data/employees';
+import { SOURCES, STAGES } from '../../data/ats';
 import { DEPTS, deptOf, PROJECTS, projOf } from '../../data/org';
-import { TS } from '../../data/timesheet';
-import { CUR_CYCLE, GOALS, NINEBOX, POTENTIAL, PRAISE, RATINGS, REVIEWS, VALUES } from '../../data/performance';
-import { tCat, TICKET_CATS, TICKETS } from '../../data/helpdesk';
-import { ENPS_HISTORY, SURVEYS } from '../../data/engagement';
-import { COURSES, ENROLL } from '../../data/learning';
+import { NINEBOX, POTENTIAL, RATINGS, VALUES } from '../../data/performance';
+import type { Timesheet } from '../../services';
+import { tCat, TICKET_CATS } from '../../data/helpdesk';
 import { HBar, Legend, LineChart, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { Card, PersonCell, Table, TableWrap, Tile } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
 import { hiringScope, reqScope } from '../hiring';
+import {
+  useAllEmployees, useCandidates, useCourses, useCurrentCycle, useEnpsHistory, useEnrolments,
+  useGoals, usePraise, useReviews, useSurveys, useTickets, useTimesheetsIn,
+  useVisiblePeople,
+} from './data';
 import { RepHead } from './shared';
 
 /* ---------- Hiring effectiveness ---------- */
 
 export function RepHiring() {
   const app = useApp();
-  const cands = hiringScope(app.role, app.meId, CANDS);
+  const { data: allCands = [] } = useCandidates();
+  const cands = hiringScope(app.role, app.meId, allCands);
   const reqs = reqScope(app.role, app.meId);
   const openReqs = reqs.filter((r) => r.status === 'Open');
   const today = ymd(TODAY);
@@ -61,7 +64,7 @@ export function RepHiring() {
     downloadCSV('report_hiring.csv', [
       ['Requisition', 'Title', 'Department', 'Openings', 'Filled', 'Applicants', 'In pipeline', 'Age (days)', 'Status'],
       ...reqs.map((r) => {
-        const cs = CANDS.filter((c) => c.reqId === r.id);
+        const cs = allCands.filter((c) => c.reqId === r.id);
         return [
           r.id,
           r.title,
@@ -131,19 +134,18 @@ export function RepHiring() {
 
 /* ---------- Timesheet utilisation ---------- */
 
-const billableHours = (t: (typeof TS)[number]) =>
+const billableHours = (t: Timesheet) =>
   sum(t.rows.filter((r) => projOf(r.proj).billable), (r) => sum(r.h));
 
 export function RepUtil() {
-  const app = useApp();
   const showEmp = useShowEmployee();
-  const ids = app.visibleIds();
-  const inScope = new Set(ids);
+  const dir = useVisiblePeople();
+  const ids = dir.ids;
 
   const weeks: string[] = [];
   for (let w = 11; w >= 0; w--) weeks.push(ymd(mondayOf(addDays(TODAY, -w * 7))));
 
-  const mine = TS.filter((t) => inScope.has(t.empId));
+  const { data: mine = [] } = useTimesheetsIn(ids);
   const totals = weeks.map((ws) => sum(mine.filter((t) => t.weekStart === ws), (t) => t.total));
   const bill = weeks.map((ws) => sum(mine.filter((t) => t.weekStart === ws), billableHours));
 
@@ -154,12 +156,12 @@ export function RepUtil() {
   })).filter((r) => r.v);
 
   const perPerson = sortBy(
-    ids
-      .map((id) => {
-        const ts = TS.filter((t) => t.empId === id && t.weekStart >= weeks[8]);
+    dir.list
+      .map((e) => {
+        const ts = mine.filter((t) => t.empId === e.id && t.weekStart >= weeks[8]);
         const h = sum(ts, (t) => t.total);
         const b = sum(ts, billableHours);
-        return { e: EMAP[id], h, b, u: pct(b, Math.max(1, h)) };
+        return { e, h, b, u: pct(b, Math.max(1, h)) };
       })
       .filter((r) => r.h),
     (r) => -r.u
@@ -170,9 +172,8 @@ export function RepUtil() {
   const exportCSV = () =>
     downloadCSV('report_utilisation.csv', [
       ['Emp Code', 'Name', 'Department', 'Hours (12w)', 'Billable (12w)', 'Utilisation %'],
-      ...ids.map((i) => {
-        const e = EMAP[i];
-        const ts = TS.filter((t) => t.empId === i);
+      ...dir.list.map((e) => {
+        const ts = mine.filter((t) => t.empId === e.id);
         const h = sum(ts, (t) => t.total);
         const b = sum(ts, billableHours);
         return [e.code, e.name, deptOf(e.dept).name, h, b, pct(b, Math.max(1, h))];
@@ -251,20 +252,22 @@ export function RepUtil() {
 /* ---------- Performance & talent ---------- */
 
 export function RepTalent() {
-  const app = useApp();
   const showEmp = useShowEmployee();
-  const ids = app.visibleIds();
-  const inScope = new Set(ids);
+  const dir = useVisiblePeople();
+  const ids = dir.ids;
 
-  const g = GOALS.filter((x) => inScope.has(x.empId));
-  const rv = REVIEWS.filter((r) => inScope.has(r.empId) && r.manager.rating);
+  const { data: g = [] } = useGoals(ids);
+  const { data: allReviews = [] } = useReviews(ids);
+  const { data: praise = [] } = usePraise();
+  const { data: cycle } = useCurrentCycle();
+  const rv = allReviews.filter((r) => r.manager.rating);
   const dist: HBarRow[] = RATINGS.map((r) => ({
     k: r.v + ' — ' + r.label,
     c: r.c,
     v: rv.filter((x) => x.manager.rating === r.v).length,
   }));
   const byDept: HBarRow[] = DEPTS.map((d) => {
-    const dg = g.filter((x) => EMAP[x.empId] && EMAP[x.empId].dept === d.id);
+    const dg = g.filter((x) => dir.byId(x.empId)?.dept === d.id);
     return { k: d.name, c: d.color, v: Math.round(sum(dg, (x) => x.progress * x.weight) / Math.max(1, sum(dg, (x) => x.weight))) };
   }).filter((r) => r.v);
   const byCat: HBarRow[] = uniq(g.map((x) => x.category)).map((c, i) => ({
@@ -272,19 +275,19 @@ export function RepTalent() {
     c: PAL[i % 8],
     v: g.filter((x) => x.category === c).length,
   }));
-  const praiseByValue: HBarRow[] = VALUES.map((v) => ({ k: v.k, c: v.c, v: PRAISE.filter((p) => p.value === v.k).length }));
-  const hikeCost = sum(rv.filter((r) => r.final), (r) => (EMAP[r.empId].ctc * r.final!.hike) / 100);
+  const praiseByValue: HBarRow[] = VALUES.map((v) => ({ k: v.k, c: v.c, v: praise.filter((p) => p.value === v.k).length }));
+  const hikeCost = sum(rv.filter((r) => r.final), (r) => ((dir.byId(r.empId)?.ctc ?? 0) * r.final!.hike) / 100);
   const goalPct = Math.round(sum(g, (x) => x.progress * x.weight) / Math.max(1, sum(g, (x) => x.weight)));
 
   const exportCSV = () =>
     downloadCSV('report_talent.csv', [
       ['Emp Code', 'Name', 'Department', 'Goal %', 'Self rating', 'Manager rating', 'Potential', 'Increment %'],
-      ...REVIEWS.filter((r) => inScope.has(r.empId)).map((r) => {
-        const e = EMAP[r.empId];
+      ...allReviews.map((r) => {
+        const e = dir.byId(r.empId);
         return [
-          e.code,
-          e.name,
-          deptOf(e.dept).name,
+          e?.code ?? r.empId,
+          e?.name ?? '—',
+          e ? deptOf(e.dept).name : '—',
           r.goalAchievement,
           r.self.rating || '',
           r.manager.rating || '',
@@ -298,7 +301,7 @@ export function RepTalent() {
     <>
       <RepHead
         title="Performance & Talent"
-        sub={`${CUR_CYCLE.name} · ${ids.length} employees in scope`}
+        sub={`${cycle?.name ?? '—'} · ${ids.length} employees in scope`}
         onExport={exportCSV}
       />
       <div className="stack">
@@ -314,7 +317,7 @@ export function RepTalent() {
             value={(sum(rv, (r) => r.manager.rating || 0) / Math.max(1, rv.length)).toFixed(2)}
             foot="Target band 3.10 – 3.40"
           />
-          <Tile label="Increment commitment" value={lakh(hikeCost)} foot={`Annualised, pool ${CUR_CYCLE.hikePool}%`} />
+          <Tile label="Increment commitment" value={lakh(hikeCost)} foot={`Annualised, pool ${cycle?.hikePool ?? 0}%`} />
         </div>
 
         <div className="grid g2">
@@ -330,7 +333,7 @@ export function RepTalent() {
           <Card title="Goals by category" sub="What the company is optimising for">
             <HBar rows={sortBy(byCat, (r) => -r.v)} />
           </Card>
-          <Card title="Recognition by value" sub={`${PRAISE.length} shout-outs`}>
+          <Card title="Recognition by value" sub={`${praise.length} shout-outs`}>
             <HBar rows={sortBy(praiseByValue, (r) => -r.v)} />
           </Card>
         </div>
@@ -355,7 +358,8 @@ export function RepTalent() {
                   {sortBy(rv, (r) => -(r.manager.rating || 0))
                     .slice(0, 60)
                     .map((r) => {
-                      const e = EMAP[r.empId];
+                      const e = dir.byId(r.empId);
+                      if (!e) return null;
                       const rating = r.manager.rating!;
                       const perf = rating >= 4 ? 3 : rating === 3 ? 2 : 1;
                       const box = NINEBOX[perf + '-' + r.potential];
@@ -396,7 +400,13 @@ export function RepTalent() {
 /* ---------- Helpdesk & engagement ---------- */
 
 export function RepService() {
-  const t = TICKETS;
+  const { data: t = [] } = useTickets();
+  const people = useVisiblePeople();
+  const { data: surveys = [] } = useSurveys();
+  const { data: enps = [] } = useEnpsHistory();
+  const { data: courses = [] } = useCourses();
+  const { data: enrolments = [] } = useEnrolments();
+  const { data: everyone = [] } = useAllEmployees();
   const resolved = t.filter((x) => x.resolutionHrs != null);
   const rated = t.filter((x) => x.csat);
   const byCat: HBarRow[] = TICKET_CATS.map((c, i) => {
@@ -404,12 +414,15 @@ export function RepService() {
     return { k: c.n, c: PAL[i % 8], v: ts.length ? Math.round(sum(ts, (x) => x.resolutionHrs!) / ts.length) : 0 };
   }).filter((r) => r.v);
 
-  const pulse = SURVEYS.find((s) => s.id === 'SV1')!;
-  const questions = pulse.questions || [];
-  const mand = COURSES.filter((c) => c.mandatory);
+  const pulse = surveys.find((s) => s.id === 'SV1');
+  const questions = pulse?.questions || [];
+  const mand = courses.filter((c) => c.mandatory);
   const courseCompletion = (courseId: string) =>
-    pct(ACTIVE().filter((e) => ENROLL.some((x) => x.empId === e.id && x.courseId === courseId && x.status === 'Completed')).length, ACTIVE().length);
-  const compliance = Math.round(sum(mand, (c) => courseCompletion(c.id)) / mand.length);
+    pct(
+      everyone.filter((e) => enrolments.some((x) => x.empId === e.id && x.courseId === courseId && x.status === 'Completed')).length,
+      Math.max(1, everyone.length),
+    );
+  const compliance = mand.length ? Math.round(sum(mand, (c) => courseCompletion(c.id)) / mand.length) : 0;
 
   const exportCSV = () =>
     downloadCSV('report_service.csv', [
@@ -417,7 +430,7 @@ export function RepService() {
       ...t.map((x) => [
         x.id,
         tCat(x.cat).n,
-        empName(x.empId),
+        people.name(x.empId),
         x.priority,
         x.status,
         x.resolutionHrs || '',
@@ -445,7 +458,7 @@ export function RepService() {
           <Tile
             label="Engagement score"
             value={(sum(questions, (q) => q.score) / Math.max(1, questions.length)).toFixed(2) + ' / 5'}
-            foot={`${pct(pulse.responded, pulse.sent)}% response rate`}
+            foot={`${pulse ? pct(pulse.responded, pulse.sent) : 0}% response rate`}
           />
           <Tile label="Training compliance" value={compliance + '%'} foot={`${mand.length} mandatory courses`} />
         </div>
@@ -469,11 +482,11 @@ export function RepService() {
         <div className="grid g2">
           <Card title="eNPS trend" sub="Last 4 quarters">
             <LineChart
-              labels={ENPS_HISTORY.map((x) => x.k)}
+              labels={enps.map((x) => x.k)}
               height={200}
               padLeft={34}
               area
-              series={[{ name: 'eNPS', color: 'var(--s1)', data: ENPS_HISTORY.map((x) => x.v) }]}
+              series={[{ name: 'eNPS', color: 'var(--s1)', data: enps.map((x) => x.v) }]}
             />
           </Card>
           <Card title="Compliance training by course" sub="% of employees complete">

@@ -2,17 +2,16 @@ import { sortBy, sum } from '../../lib/collections';
 import { monthLabel, monthLabelLong } from '../../lib/dates';
 import { inr, lakh } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { ACTIVE } from '../../data/employees';
 import { DEPTS, deptOf, ORG, SITES } from '../../data/org';
-import { PAYRUNS, payrollTotals, payslip } from '../../data/payroll';
-import { salaryStructure } from '../../data/salary';
-import { CLAIMS, EXP_CATS } from '../../data/expenses';
-import { LOANS } from '../../data/loans';
-import { fbpTotal } from '../../data/benefits';
+import { EXP_CATS } from '../../data/expenses';
 import { BarChart, HBar, Legend, LineChart, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { Badge, Card, PersonCell, Table, TableWrap, Tile } from '../../components/ui';
 import { useShowEmployee } from '../employees/Profile';
+import {
+  useActiveLoans, useAllEmployees, useClaimsIn, useCompensation, useFbpTotals, usePayRuns,
+  usePayrollTotalsFor, useRegister,
+} from './data';
 import { RepHead } from './shared';
 
 /** Group insurance premium per head — GMC, GPA and GTL bundled. */
@@ -21,26 +20,30 @@ const INSURANCE_PER_HEAD = 14500;
 /* ---------- Payroll cost analysis ---------- */
 
 export function RepPayroll() {
-  const runs = PAYRUNS.map((r) => ({ r, t: payrollTotals(r.mk) }));
-  const last = runs[runs.length - 1];
+  const { data: payRuns = [] } = usePayRuns();
+  const { data: totalsBy = {} } = usePayrollTotalsFor(payRuns.map((r) => r.mk));
+  const { data: comp = [] } = useCompensation();
+  const runs = payRuns.filter((r) => totalsBy[r.mk]).map((r) => ({ r, t: totalsBy[r.mk] }));
+  const grossOf = new Map(comp.map((c) => [c.employee.id, c.salary.grossA]));
+  const everyone = comp.map((c) => c.employee);
+
   const byDept: HBarRow[] = DEPTS.map((d) => ({
     k: d.name,
     c: d.color,
-    v: sum(ACTIVE().filter((e) => e.dept === d.id), (e) => salaryStructure(e).grossA / 12),
+    v: sum(everyone.filter((e) => e.dept === d.id), (e) => (grossOf.get(e.id) ?? 0) / 12),
   }));
   const bySite: HBarRow[] = SITES.filter((s) => s.lat).map((s, i) => ({
     k: s.name,
     c: PAL[i],
-    v: sum(ACTIVE().filter((e) => e.site === s.id), (e) => salaryStructure(e).grossA / 12),
+    v: sum(everyone.filter((e) => e.site === s.id), (e) => (grossOf.get(e.id) ?? 0) / 12),
   }));
+  if (!runs.length) return <RepHead title="Payroll Cost Analysis" sub="Loading…" onExport={() => {}} />;
+  const last = runs[runs.length - 1];
 
   const exportCSV = () =>
     downloadCSV('report_payroll.csv', [
       ['Period', 'Employees', 'Gross', 'PF', 'ESI', 'PT', 'TDS', 'Deductions', 'Net', 'LOP days'],
-      ...PAYRUNS.map((r) => {
-        const t = payrollTotals(r.mk);
-        return [monthLabelLong(r.mk), t.count, t.gross, t.pf, t.esi, t.pt, t.tds, t.ded, t.net, t.lop];
-      }),
+      ...runs.map(({ r, t }) => [monthLabelLong(r.mk), t.count, t.gross, t.pf, t.esi, t.pt, t.tds, t.ded, t.net, t.lop]),
     ]);
 
   const trend = [
@@ -53,7 +56,7 @@ export function RepPayroll() {
     <>
       <RepHead
         title="Payroll Cost Analysis"
-        sub={`Last ${runs.length} payroll cycles · ${ACTIVE().length} employees`}
+        sub={`Last ${runs.length} payroll cycles · ${everyone.length} employees`}
         onExport={exportCSV}
       />
       <div className="stack">
@@ -131,9 +134,16 @@ export function RepPayroll() {
 /* ---------- Statutory compliance ---------- */
 
 export function RepCompliance() {
-  const runs = PAYRUNS.filter((r) => r.status === 'Paid').map((r) => ({ r, t: payrollTotals(r.mk) }));
+  const { data: payRuns = [] } = usePayRuns();
+  const { data: totalsBy = {} } = usePayrollTotalsFor(payRuns.map((r) => r.mk));
+  const { data: comp = [] } = useCompensation();
+  const paid = payRuns.filter((r) => r.status === 'Paid' && totalsBy[r.mk]);
+  const runs = paid.map((r) => ({ r, t: totalsBy[r.mk] }));
+  const lastMk = paid.length ? paid[paid.length - 1].mk : '';
+  const { data: lastRegister = [] } = useRegister(lastMk);
+  const esiCovered = lastRegister.filter((r) => r.payslip.gross <= 21000).length;
+  if (!runs.length) return <RepHead title="Statutory Compliance" sub="Loading…" onExport={() => {}} />;
   const last = runs[runs.length - 1];
-  const esiCovered = ACTIVE().filter((e) => payslip(e, last.r.mk).gross <= 21000).length;
 
   /** The filing calendar, with the last remitted amount where one applies. */
   const items: [string, string, string, string][] = [
@@ -145,7 +155,7 @@ export function RepCompliance() {
     ['Form 16 — Annual TDS certificate', 'Annual, by 15 June', '—', 'Issued'],
     ['Shops & Establishment renewal', 'Annual', '—', 'Valid till Mar 2027'],
     ['POSH Annual Report', 'Annual, by 31 Jan', '—', 'Submitted'],
-    ['Gratuity actuarial valuation', 'Annual', lakh(sum(ACTIVE(), (e) => salaryStructure(e).gratuity)), 'Provisioned'],
+    ['Gratuity actuarial valuation', 'Annual', lakh(sum(comp, (c) => c.salary.gratuity)), 'Provisioned'],
   ];
 
   const exportCSV = () =>
@@ -222,18 +232,22 @@ export function RepCompliance() {
 
 export function RepSpend() {
   const showEmp = useShowEmployee();
-  const emps = ACTIVE();
-  const claimTotal = sum(CLAIMS, (c) => c.total);
+  const { data: emps = [] } = useAllEmployees();
+  const ids = emps.map((e) => e.id);
+  const { data: claims = [] } = useClaimsIn(ids);
+  const { data: activeLoans = [] } = useActiveLoans();
+  const { data: fbp = {} } = useFbpTotals(ids);
+  const claimTotal = sum(claims, (c) => c.total);
   const byCat: HBarRow[] = EXP_CATS.map((c) => ({
     k: c.n,
     c: c.c,
-    v: sum(CLAIMS.flatMap((x) => x.items).filter((i) => i.cat === c.id), (i) => i.amount),
+    v: sum(claims.flatMap((x) => x.items).filter((i) => i.cat === c.id), (i) => i.amount),
   })).filter((r) => r.v);
 
   const rows = sortBy(
     emps.map((e) => {
-      const cl = sum(CLAIMS.filter((c) => c.empId === e.id), (c) => c.total);
-      return { e, ctc: e.ctc, cl, ins: INSURANCE_PER_HEAD, fbp: fbpTotal(e.id), total: e.ctc + cl + INSURANCE_PER_HEAD };
+      const cl = sum(claims.filter((c) => c.empId === e.id), (c) => c.total);
+      return { e, ctc: e.ctc, cl, ins: INSURANCE_PER_HEAD, fbp: fbp[e.id] ?? 0, total: e.ctc + cl + INSURANCE_PER_HEAD };
     }),
     (r) => -r.total
   );
@@ -242,7 +256,7 @@ export function RepSpend() {
     c: d.color,
     v: sum(rows.filter((r) => r.e.dept === d.id), (r) => r.total),
   })).filter((r) => r.v);
-  const activeLoans = LOANS.filter((l) => l.status === 'Active');
+
 
   const exportCSV = () =>
     downloadCSV('report_employee_cost.csv', [
@@ -265,7 +279,7 @@ export function RepSpend() {
       <div className="stack">
         <div className="grid g5">
           <Tile label="Total CTC" value={lakh(sum(emps, (e) => e.ctc))} foot={`${emps.length} employees`} />
-          <Tile label="Expense claims" value={lakh(claimTotal)} foot={`${CLAIMS.length} claims all time`} />
+          <Tile label="Expense claims" value={lakh(claimTotal)} foot={`${claims.length} claims all time`} />
           <Tile label="Insurance premium" value={lakh(emps.length * INSURANCE_PER_HEAD)} foot="GMC, GPA and GTL" />
           <Tile
             label="Loans outstanding"

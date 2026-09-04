@@ -2,18 +2,18 @@ import { sortBy, sum, uniq } from '../../lib/collections';
 import { addDays, daysBetween, fmtD, MON, monthKey, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { ATT, ATT_IDX } from '../../data/attendance';
-import type { AttRecord } from '../../data/attendance';
-import { ACTIVE, EMAP, EMP, empName } from '../../data/employees';
+import type { AttRecord } from '../../services';
 import { DEPTS, deptOf, GRADES, LEAVE_TYPES, ORG, SITES, siteOf } from '../../data/org';
-import { LEAVES, leaveBalance } from '../../data/leave';
-import { dailyRate } from '../../data/salary';
 import { BarChart, Donut, HBar, Legend, LineChart, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { Card, PersonCell, Table, TableWrap, Tile } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 import { headcountTrend } from '../dashboard/shared';
 import { useShowEmployee } from '../employees/Profile';
+import {
+  useAllEmployees, useAttendanceIn, useDailyRates, useExitedEmployees, useLeaveBalancesIn,
+  useLeaveIn, useVisiblePeople,
+} from './data';
 import { RepHead } from './shared';
 
 /** Person-days that count towards an attendance rate; holidays and offs do not. */
@@ -33,11 +33,13 @@ function lastMonths(n: number) {
 /* ---------- Attendance summary ---------- */
 
 export function RepAttendance() {
-  const app = useApp();
   const showEmp = useShowEmployee();
-  const ids = app.visibleIds();
-  const inScope = new Set(ids);
+  const dir = useVisiblePeople();
+  const ids = dir.ids;
   const since90 = ymd(addDays(TODAY, -90));
+  const months6 = lastMonths(6);
+  const { data: window6 = [] } = useAttendanceIn(ids, months6[0].k + '-01', ymd(TODAY));
+  const { data: window90 = [] } = useAttendanceIn(ids, since90, ymd(TODAY));
 
   /**
    * NOTE: the prototype spreads the month over a `l` (leave days) key, so its
@@ -45,9 +47,9 @@ export function RepAttendance() {
    * leave counts. The label is kept under `label` here so the axis reads as
    * months, which is plainly what was meant; every figure is unchanged.
    */
-  const data = lastMonths(6)
+  const data = months6
     .map((m) => {
-      const rs = ATT.filter((r) => inScope.has(r.empId) && r.date.slice(0, 7) === m.k);
+      const rs = window6.filter((r) => r.date.slice(0, 7) === m.k);
       return {
         label: m.l,
         p: rs.filter((r) => r.status === 'P').length,
@@ -62,16 +64,22 @@ export function RepAttendance() {
     .filter((m) => m.tot > 0);
 
   const byDept: HBarRow[] = DEPTS.map((d) => {
-    const es = new Set(ACTIVE().filter((e) => e.dept === d.id && inScope.has(e.id)).map((e) => e.id));
-    const rs = ATT.filter((r) => es.has(r.empId) && r.date >= since90);
+    const es = new Set(dir.list.filter((e) => e.dept === d.id).map((e) => e.id));
+    const rs = window90.filter((r) => es.has(r.empId));
     return { k: d.name, c: d.color, v: pct(rs.filter(attended).length, Math.max(1, rs.filter(isWorking).length)) };
   }).filter((r) => r.v);
 
+  const byEmp90 = new Map<string, AttRecord[]>();
+  window90.forEach((r) => {
+    const list = byEmp90.get(r.empId) || [];
+    list.push(r);
+    byEmp90.set(r.empId, list);
+  });
+
   const worst = sortBy(
-    ACTIVE()
-      .filter((e) => inScope.has(e.id))
+    dir.list
       .map((e) => {
-        const rs = Object.values(ATT_IDX[e.id] || {}).filter((r) => r.date >= since90);
+        const rs = byEmp90.get(e.id) || [];
         return {
           e,
           rate: pct(rs.filter(attended).length, Math.max(1, rs.filter(isWorking).length)),
@@ -86,9 +94,8 @@ export function RepAttendance() {
   const exportCSV = () =>
     downloadCSV('report_attendance.csv', [
       ['Emp Code', 'Name', 'Department', 'Present', 'WFH', 'Leave', 'Absent', 'Late', 'Geo flags', 'Rate %'],
-      ...ids.map((i) => {
-        const e = EMAP[i];
-        const rs = Object.values(ATT_IDX[i] || {}).filter((r) => r.date >= since90);
+      ...dir.list.map((e) => {
+        const rs = byEmp90.get(e.id) || [];
         return [
           e.code,
           e.name,
@@ -187,7 +194,8 @@ const LEADER_GRADES = ['L4', 'L5', 'L6'];
 
 export function RepHeadcount() {
   const app = useApp();
-  const act = app.visibleEmps();
+  const dir = useVisiblePeople();
+  const act = dir.list;
   const today = ymd(TODAY);
 
   const byDept: HBarRow[] = DEPTS.map((d) => ({ k: d.name, c: d.color, v: act.filter((e) => e.dept === d.id).length })).filter((r) => r.v);
@@ -226,7 +234,7 @@ export function RepHeadcount() {
         siteOf(e.site).name,
         e.doj,
         (daysBetween(e.doj, today) / 365).toFixed(1),
-        empName(e.managerId || ''),
+        dir.name(e.managerId),
       ]),
     ]);
 
@@ -284,10 +292,11 @@ export function RepHeadcount() {
 /* ---------- Attrition & retention ---------- */
 
 export function RepAttrition() {
-  const exits = EMP.filter((e) => e.dol);
+  const { data: exits = [] } = useExitedEmployees();
+  const { data: everyone = [] } = useAllEmployees();
   const months = lastMonths(12);
   const ex12 = exits.filter((e) => e.dol! >= ymd(addDays(TODAY, -365)));
-  const rate = pct(ex12.length, ACTIVE().length + ex12.length);
+  const rate = pct(ex12.length, everyone.length + ex12.length);
   const reasonOf = (e: (typeof exits)[number]) => e.exitReason || '—';
   const byReason: HBarRow[] = uniq(exits.map(reasonOf)).map((r, i) => ({
     k: r,
@@ -313,7 +322,7 @@ export function RepAttrition() {
     ]);
 
   const flow = [
-    { name: 'Joiners', color: 'var(--s3)', data: months.map((m) => EMP.filter((e) => e.doj.slice(0, 7) === m.k).length) },
+    { name: 'Joiners', color: 'var(--s3)', data: months.map((m) => everyone.filter((e) => e.doj.slice(0, 7) === m.k).length) },
     { name: 'Exits', color: 'var(--s8)', data: months.map((m) => exits.filter((e) => e.dol!.slice(0, 7) === m.k).length) },
   ];
 
@@ -386,21 +395,24 @@ export function RepAttrition() {
 /* ---------- Leave liability ---------- */
 
 export function RepLeave() {
-  const app = useApp();
   const showEmp = useShowEmployee();
-  const ids = app.visibleIds();
-  const inScope = new Set(ids);
-  const emps = ids.map((i) => EMAP[i]);
+  const dir = useVisiblePeople();
+  const ids = dir.ids;
+  const emps = dir.list;
+  const { data: leaveRows = [] } = useLeaveIn(ids);
+  const { data: balances = {} } = useLeaveBalancesIn(ids);
+  const { data: rates = {} } = useDailyRates(ids);
+  const balOf = (id: string, type: string) => balances[id]?.find((b) => b.type === type);
 
   const byType: HBarRow[] = LEAVE_TYPES.map((t) => ({
     k: t.name,
     c: t.color,
-    v: sum(LEAVES.filter((l) => inScope.has(l.empId) && l.type === t.id && l.status === 'Approved'), (l) => l.days),
+    v: sum(leaveRows.filter((l) => l.type === t.id && l.status === 'Approved'), (l) => l.days),
   })).filter((r) => r.v);
 
   const liabilityRows = emps.map((e) => {
-    const el = leaveBalance(e.id, 'EL');
-    const perDay = dailyRate(e);
+    const el = balOf(e.id, 'EL');
+    const perDay = rates[e.id] ?? 0;
     const avail = el ? el.avail : 0;
     return { e, avail, perDay, liab: avail * perDay };
   });
@@ -415,9 +427,9 @@ export function RepLeave() {
     k: t.name,
     c: t.color,
     v: pct(
-      sum(emps.map((e) => leaveBalance(e.id, t.id)?.used || 0)),
+      sum(emps.map((e) => balOf(e.id, t.id)?.used || 0)),
       Math.max(1, sum(emps.map((e) => {
-        const b = leaveBalance(e.id, t.id);
+        const b = balOf(e.id, t.id);
         return b ? b.quota + b.carry : 0;
       })))
     ),
@@ -426,16 +438,15 @@ export function RepLeave() {
   const exportCSV = () =>
     downloadCSV('report_leave_liability.csv', [
       ['Emp Code', 'Name', 'Department', 'CL avail', 'SL avail', 'EL avail', 'Per-day cost', 'EL liability'],
-      ...ids.map((i) => {
-        const e = EMAP[i];
-        const el = leaveBalance(i, 'EL');
-        const pd = dailyRate(e);
+      ...emps.map((e) => {
+        const el = balOf(e.id, 'EL');
+        const pd = rates[e.id] ?? 0;
         return [
           e.code,
           e.name,
           deptOf(e.dept).name,
-          leaveBalance(i, 'CL')?.avail || 0,
-          leaveBalance(i, 'SL')?.avail || 0,
+          balOf(e.id, 'CL')?.avail || 0,
+          balOf(e.id, 'SL')?.avail || 0,
           el ? el.avail : 0,
           pd,
           Math.round((el ? el.avail : 0) * pd),
@@ -451,7 +462,7 @@ export function RepLeave() {
           <Tile label="Encashment liability" value={lakh(totalLiab)} foot="Unused earned leave at Basic + HRA" />
           <Tile
             label="Leave days taken"
-            value={sum(LEAVES.filter((l) => inScope.has(l.empId) && l.status === 'Approved'), (l) => l.days)}
+            value={sum(leaveRows.filter((l) => l.status === 'Approved'), (l) => l.days)}
             foot="Approved this year"
           />
           <Tile label="Avg utilisation" value={Math.round(sum(util, (u) => u.v) / Math.max(1, util.length)) + '%'} foot="Of entitlement consumed" />

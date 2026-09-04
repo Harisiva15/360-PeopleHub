@@ -12,6 +12,9 @@ import { expenseService } from './expenses';
 import { leaveService } from './leave';
 import { hiringService, letterService, loanService, shiftService } from './misc';
 import { payrollService } from './payroll';
+import {
+  benefitsService, engagementService, helpdeskService, learningService, performanceService,
+} from './peopleops';
 import { timesheetService } from './timesheet';
 
 export const mockServices: Services = {
@@ -25,4 +28,9 @@ export const mockServices: Services = {
   loans: loanService,
   letters: letterService,
   hiring: hiringService,
+  performance: performanceService,
+  learning: learningService,
+  helpdesk: helpdeskService,
+  engagement: engagementService,
+  benefits: benefitsService,
 };

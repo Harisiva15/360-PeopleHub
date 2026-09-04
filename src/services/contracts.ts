@@ -29,7 +29,7 @@ import type { EmpDoc } from '../data/announcements';
 import type { Ticket } from '../data/helpdesk';
 import type { LifecycleEvent } from '../data/lifecycle';
 import type { Loan } from '../data/loans';
-import type { Goal } from '../data/performance';
+import type { Goal, Praise } from '../data/performance';
 import type { ExitRecord } from '../data/exit';
 import type { SalaryStructure } from '../data/salary';
 import type { Declaration, PayInput, PayRun, Payslip, PayrollTotals } from '../data/payroll';
@@ -37,6 +37,9 @@ import type { BankBatch, CompliancePayment } from '../data/payinputs';
 import type { Overtime } from '../data/shifts';
 import type { LetterRequest } from '../data/letters';
 import type { Candidate, Interview, Requisition } from '../data/ats';
+import type { Review, Cycle } from '../data/performance';
+import type { Course, Enrollment } from '../data/learning';
+import type { Survey } from '../data/engagement';
 
 /* Row shapes screens render. Re-exported so a view imports them from the
    service it calls, not from the dataset behind it. */
@@ -59,6 +62,9 @@ export type { BankBatch, CompliancePayment } from '../data/payinputs';
 export type { Overtime } from '../data/shifts';
 export type { LetterRequest } from '../data/letters';
 export type { Candidate, Interview, Requisition } from '../data/ats';
+export type { Review, Cycle } from '../data/performance';
+export type { Course } from '../data/learning';
+export type { Survey } from '../data/engagement';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
 export interface Caller {
@@ -270,6 +276,8 @@ export interface PayrollService {
   payslip(empId: string, mk: string): Promise<Payslip>;
   /** One person's payslip history — every paid cycle since they joined. */
   payslipHistory(empId: string): Promise<{ run: PayRun; payslip: Payslip }[]>;
+  /** Per-day cost for a set of people — drives leave encashment liability. */
+  dailyRates(empIds: string[]): Promise<Record<string, number>>;
   /** The salary structure behind one person's own pay. */
   structure(empId: string): Promise<SalaryStructure>;
   /** Off-cycle inputs (bonus, arrears, incentive) keyed by employee. */
@@ -318,6 +326,35 @@ export interface HiringService {
   requisitions(): Promise<Requisition[]>;
 }
 
+/* ---------- people operations ---------- */
+
+export interface PerformanceService {
+  goals(empIds?: string[]): Promise<Goal[]>;
+  reviews(empIds?: string[]): Promise<Review[]>;
+  praise(): Promise<Praise[]>;
+  currentCycle(): Promise<Cycle>;
+}
+
+export interface LearningService {
+  courses(): Promise<Course[]>;
+  enrolments(empIds?: string[]): Promise<Enrollment[]>;
+}
+
+export interface HelpdeskService {
+  tickets(empIds?: string[]): Promise<Ticket[]>;
+}
+
+export interface EngagementService {
+  surveys(): Promise<Survey[]>;
+  /** eNPS by quarter, oldest first. */
+  enpsHistory(): Promise<{ k: string; v: number }[]>;
+}
+
+export interface BenefitsService {
+  /** Flexible-benefit allocation per employee, keyed by id. */
+  fbpTotals(empIds: string[]): Promise<Record<string, number>>;
+}
+
 /* ---------- the registry ---------- */
 
 export interface Services {
@@ -330,5 +367,10 @@ export interface Services {
   loans: LoanService;
   letters: LetterService;
   hiring: HiringService;
+  performance: PerformanceService;
+  learning: LearningService;
+  helpdesk: HelpdeskService;
+  engagement: EngagementService;
+  benefits: BenefitsService;
   leave: LeaveService;
 }

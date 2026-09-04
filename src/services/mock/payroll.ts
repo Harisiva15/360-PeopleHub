@@ -2,7 +2,7 @@ import { ACTIVE, EMAP } from '../../data/employees';
 import { CUR_RUN, DECL, PAYRUNS, payrollTotals, payslip } from '../../data/payroll';
 import { BANK_BATCHES, COMPLIANCE_PAYS, PAY_INPUTS } from '../../data/payinputs';
 import { LOANS, loanEmiFor } from '../../data/loans';
-import { comp, compAllow, salaryStructure } from '../../data/salary';
+import { comp, compAllow, dailyRate, salaryStructure } from '../../data/salary';
 import type { CompRow, PayrollService, RegisterRow } from '../contracts';
 import { ok } from './util';
 
@@ -48,6 +48,15 @@ export const payrollService: PayrollService = {
     if (!e) return Promise.reject(new Error('No such employee: ' + empId));
     const runs = PAYRUNS.filter((r) => r.status === 'Paid' && r.mk >= e.doj.slice(0, 7));
     return ok(runs.map((run) => ({ run, payslip: payslip(e, run.mk) })));
+  },
+
+  dailyRates(empIds) {
+    const out: Record<string, number> = {};
+    empIds.forEach((id) => {
+      const e = EMAP[id];
+      if (e) out[id] = dailyRate(e);
+    });
+    return ok(out);
   },
 
   structure(empId) {
