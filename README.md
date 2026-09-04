@@ -20,10 +20,45 @@ top bar; every module changes what it shows based on the active role.
 | `src/lib/` | Pure helpers — deterministic RNG, dates, money formatting, CSV export |
 | `src/types/` | Domain models shared across modules |
 | `src/data/` | The dataset and the business logic over it |
+| `src/services/` | The API seam — contracts, the in-memory implementation, query hooks |
 | `src/state/` | Session (role, theme), RBAC scoping, pending-approval counts |
 | `src/components/` | UI primitives, charts, modal/drawer layer, tooltips |
 | `src/shell/` | Sidebar, topbar, mobile tab bar |
 | `src/modules/` | One folder per route |
+
+### The service seam
+
+Screens are not supposed to know where their data comes from. `src/services`
+is where that promise is kept:
+
+- `contracts.ts` — the interfaces. Everything touching *records* is async,
+  because a network round trip cannot be retrofitted onto a synchronous call
+  site. Derived figures a server would compute (balances, payslips, totals)
+  are service calls too, so the business logic does not stay welded to the
+  client.
+- `mock/` — the implementation over `src/data`. It resolves immediately, but
+  through a promise, so every call site is already written for latency.
+- `index.ts` — the swap point. `setServices()` takes an HTTP implementation
+  or a test double; no screen changes.
+- `react.tsx` — `useQuery` / `useMutation`. Small on purpose: what they get
+  right is out-of-order responses, responses after unmount, and refetching
+  after a mutation so no screen hand-rolls cache updates.
+
+Static configuration — departments, sites, grades, leave types, currencies —
+stays a synchronous import from `src/data/org`. It is config, fetched once and
+cached in any real deployment, and making it async would poison every
+component for nothing.
+
+`npm run check` exercises the seam end to end: role scoping, apply → approve
+→ balance debit, cancellation crediting the days back, and refusal of a
+double approval.
+
+**Migration status.** `leave` is on the seam and is the reference to copy —
+see `src/modules/leave/data.ts` for the pattern, including the two-stage
+fetch (rows, then the people they reference) that a real client needs when
+the API does not denormalise names. The other modules still import `src/data`
+directly; `AppProvider` subscribes to service invalidations and re-renders
+them, which is the bridge that keeps them correct until they are moved.
 
 ### The data layer
 

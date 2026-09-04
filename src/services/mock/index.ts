@@ -1,0 +1,15 @@
+/**
+ * The in-memory implementation, backed by the generated dataset in `src/data`.
+ *
+ * It exists to prove the contracts are honest — if a screen can run against
+ * this without reaching for `src/data`, it can run against HTTP.
+ */
+
+import type { Services } from '../contracts';
+import { employeeService } from './employees';
+import { leaveService } from './leave';
+
+export const mockServices: Services = {
+  employees: employeeService,
+  leave: leaveService,
+};

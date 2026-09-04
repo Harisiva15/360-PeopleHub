@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 import { ACCOUNTS, can, SCOPE, visibleEmps, visibleIds } from './rbac';
 import { EMAP } from '../data/employees';
+import { subscribe } from '../services/react';
 import type { AppRole, Employee } from '../types/employee';
 
 export type Theme = 'light' | 'dark';
@@ -68,6 +69,10 @@ export function AppProvider({ children, initialRole = 'admin' }: { children: Rea
   }, [theme]);
 
   const bump = useCallback(() => setRevision((r) => r + 1), []);
+
+  /* Screens still reading the dataset directly need a nudge when a service
+     mutation changes it. Removable once every module is on the service layer. */
+  useEffect(() => subscribe(bump), [bump]);
 
   const signInAs = useCallback((next: AppRole) => {
     const acc = ACCOUNTS().find((a) => a.role === next);

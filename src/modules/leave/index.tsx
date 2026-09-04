@@ -3,28 +3,29 @@ import { sortBy, sum } from '../../lib/collections';
 import { addDays, DOW, fmtD, fmtDS, isWeekend, MON, mondayOf, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { uid } from '../../lib/rng';
-import { EMAP, empName } from '../../data/employees';
-import { LEAVE_BAL, leaveBalance, LEAVES } from '../../data/leave';
-import type { LeaveRequest } from '../../data/leave';
 import { BANKABLE, HOLIDAY_MAP, LEAVE_TYPES, ltOf, ORG } from '../../data/org';
+import type { LeaveRequest } from '../../services';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Divide, Dot, ListRow, StatusBadge } from '../../components/common';
 import { Donut, HBar, Legend } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { visibleIds } from '../../state/rbac';
 import { useShowEmployee } from '../employees/Profile';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import {
+  balanceOf, useApplyLeaveRequest, useApproveLeave, useBalancesFor, useCancelLeave, useLeaveFor,
+  useMyBalances, useMyLeave, usePeople, useRejectLeave, useVisiblePeople,
+} from './data';
+import type { Directory } from './data';
 
-const exportLeaves = (list: LeaveRequest[], name: string) =>
+const exportLeaves = (list: LeaveRequest[], name: string, dir: Directory) =>
   downloadCSV(
     name,
     [['Emp Code', 'Name', 'Leave Type', 'From', 'To', 'Days', 'Reason', 'Status', 'Applied On', 'Approver']].concat(
       sortBy(list, (l) => l.from, 'desc').map((l) => {
-        const e = EMAP[l.empId];
-        return [e.code, e.name, ltOf(l.type).name, l.from, l.to, String(l.days), l.reason, l.status, l.appliedOn, empName(l.approverId || '')];
+        const e = dir.byId(l.empId);
+        return [e?.code ?? l.empId, e?.name ?? '—', ltOf(l.type).name, l.from, l.to, String(l.days), l.reason, l.status, l.appliedOn, dir.name(l.approverId)];
       }),
     ),
   );
@@ -39,9 +40,11 @@ function TypeDot({ type }: { type: string }) {
 function ApplyForm({ close }: { close: () => void }) {
   const app = useApp();
   const me = app.me;
-  const bals = Object.keys(LEAVE_BAL[me.id] || {}).map((t) => ({ t, ...leaveBalance(me.id, t)! }));
+  const { data: bals = [] } = useMyBalances(me.id);
+  const applyLeave = useApplyLeaveRequest();
+  const approver = usePeople([me.managerId]);
 
-  const [type, setType] = useState(bals[0]?.t || 'CL');
+  const [type, setType] = useState('CL');
   const [dur, setDur] = useState('full');
   const [from, setFrom] = useState(ymd(addDays(TODAY, 3)));
   const [to, setTo] = useState(ymd(addDays(TODAY, 3)));
@@ -59,23 +62,27 @@ function ApplyForm({ close }: { close: () => void }) {
     }
     if (dur !== 'full') days = 0.5;
   }
-  const bal = leaveBalance(me.id, type);
+  /* The list arrives asynchronously, so hold the selection to something real. */
+  const activeType = bals.some((b) => b.type === type) ? type : bals[0]?.type ?? type;
+  const bal = bals.find((b) => b.type === activeType);
   const enough = !bal || bal.avail >= days;
 
-  const submit = () => {
+  const submit = async () => {
     if (invalid || !days) {
       app.toast('Check the dates', 'err');
       return;
     }
-    LEAVES.push({
-      id: uid('LV'), empId: me.id, type, from, to, days,
-      half: dur === 'full' ? null : dur,
-      reason: reason || 'Personal',
-      status: 'Pending', approverId: me.managerId, appliedOn: ymd(TODAY), actedOn: null, note: '',
-    });
-    close();
-    app.toast('Leave request sent to ' + empName(me.managerId || ''), 'ok');
-    app.bump();
+    try {
+      await applyLeave.mutate({
+        empId: me.id, type: activeType, from, to, days,
+        half: dur === 'full' ? null : dur,
+        reason,
+      });
+      close();
+      app.toast('Leave request sent to ' + approver.name(me.managerId), 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not submit the request', 'err');
+    }
   };
 
   return (
@@ -83,8 +90,8 @@ function ApplyForm({ close }: { close: () => void }) {
       <div className="grid g2" style={{ gap: '0 14px' }}>
         <div className="field">
           <label>Leave type</label>
-          <select className="input" value={type} onChange={(e) => setType(e.target.value)}>
-            {bals.map((b) => <option key={b.t} value={b.t}>{ltOf(b.t).name} — {b.avail} available</option>)}
+          <select className="input" value={activeType} onChange={(e) => setType(e.target.value)}>
+            {bals.map((b) => <option key={b.type} value={b.type}>{ltOf(b.type).name} — {b.avail} available</option>)}
           </select>
         </div>
         <div className="field">
@@ -123,7 +130,9 @@ function ApplyForm({ close }: { close: () => void }) {
 
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
         <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" onClick={submit}>Submit request</button>
+        <button className="btn primary" onClick={submit} disabled={applyLeave.pending}>
+          {applyLeave.pending ? 'Submitting…' : 'Submit request'}
+        </button>
       </div>
     </>
   );
@@ -132,10 +141,11 @@ function ApplyForm({ close }: { close: () => void }) {
 function useApplyLeave() {
   const layer = useLayer();
   const app = useApp();
+  const approver = usePeople([app.me.managerId]);
   return () =>
     layer.modal({
       title: 'Apply for leave',
-      sub: 'Approver: ' + empName(app.me.managerId || ''),
+      sub: 'Approver: ' + approver.name(app.me.managerId),
       body: (close) => <ApplyForm close={close} />,
       footer: null,
     });
@@ -148,17 +158,20 @@ function LvMe() {
   const apply = useApplyLeave();
   const me = app.me;
 
-  const bals = Object.keys(LEAVE_BAL[me.id] || {}).map((t) => ({ t, ...leaveBalance(me.id, t)! }));
-  const mine = sortBy(LEAVES.filter((l) => l.empId === me.id), (l) => l.from, 'desc');
+  const { data: bals = [] } = useMyBalances(me.id);
+  const { data: rows = [] } = useMyLeave(me.id);
+  const approver = usePeople([me.managerId]);
+  const cancelLeave = useCancelLeave();
+
+  const mine = sortBy(rows, (l) => l.from, 'desc');
   const upcoming = mine.filter((l) => l.from >= ymd(TODAY) && l.status !== 'Rejected' && l.status !== 'Cancelled');
 
-  const bank = bals.filter((b) => BANKABLE.includes(b.t) && b.avail > 0);
-  const other = bals.filter((b) => !BANKABLE.includes(b.t) && b.quota > 0);
+  const bank = bals.filter((b) => BANKABLE.includes(b.type) && b.avail > 0);
+  const other = bals.filter((b) => !BANKABLE.includes(b.type) && b.quota > 0);
 
-  const cancel = (l: LeaveRequest) => {
-    l.status = 'Cancelled';
+  const cancel = async (l: LeaveRequest) => {
+    await cancelLeave.mutate(l.id);
     app.toast('Request cancelled');
-    app.bump();
   };
 
   return (
@@ -166,19 +179,19 @@ function LvMe() {
       <div className="toolbar">
         <button className="btn primary" onClick={apply}>＋ Apply for leave</button>
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12.5 }}>Approver: {empName(me.managerId || '')}</span>
+        <span className="muted" style={{ fontSize: 12.5 }}>Approver: {approver.name(me.managerId)}</span>
       </div>
 
       <div className="grid g4">
         {bals.filter((b) => b.quota + b.carry > 0).slice(0, 4).map((b) => (
-          <div className="tile" key={b.t}>
-            <div className="lbl">{ltOf(b.t).name}</div>
+          <div className="tile" key={b.type}>
+            <div className="lbl">{ltOf(b.type).name}</div>
             <div className="val">
               {b.avail} <span style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 600 }}>/ {b.quota + b.carry}</span>
             </div>
             <div className="foot">{b.used} used{b.carry ? ` · ${b.carry} carried forward` : ''}</div>
             <div className="bar" style={{ marginTop: 8 }}>
-              <i style={{ width: pct(b.used, b.quota + b.carry) + '%', background: ltOf(b.t).color }} />
+              <i style={{ width: pct(b.used, b.quota + b.carry) + '%', background: ltOf(b.type).color }} />
             </div>
           </div>
         ))}
@@ -186,7 +199,7 @@ function LvMe() {
 
       <div className="grid g-2-1">
         <Card title="My leave requests" sub={`${mine.length} total`} flush
-          actions={<button className="btn sm" onClick={() => exportLeaves(mine, 'my_leave.csv')}>⤓ Export</button>}>
+          actions={<button className="btn sm" onClick={() => exportLeaves(mine, 'my_leave.csv', approver)}>⤓ Export</button>}>
           <div className="tbl-wrap" style={{ maxHeight: 460, overflow: 'auto' }}>
             <table className="tbl">
               <thead>
@@ -229,13 +242,13 @@ function LvMe() {
 
           <Card title="Balance breakdown" sub={ORG.fy}>
             <Donut size={150} center={sum(bank, (b) => b.avail).toFixed(0)} centerSub="days left"
-              slices={bank.map((b) => ({ k: ltOf(b.t).name, v: b.avail, c: ltOf(b.t).color }))} />
-            <Legend items={bank.map((b) => ({ k: ltOf(b.t).name, v: b.avail, c: ltOf(b.t).color }))} />
+              slices={bank.map((b) => ({ k: ltOf(b.type).name, v: b.avail, c: ltOf(b.type).color }))} />
+            <Legend items={bank.map((b) => ({ k: ltOf(b.type).name, v: b.avail, c: ltOf(b.type).color }))} />
             {other.length > 0 && (
               <>
                 <Divide />
                 <div className="muted" style={{ fontSize: 11.5 }}>
-                  Statutory event leave (not part of the annual bank): {other.map((b) => `${ltOf(b.t).name} ${b.quota} d`).join(' · ')}
+                  Statutory event leave (not part of the annual bank): {other.map((b) => `${ltOf(b.type).name} ${b.quota} d`).join(' · ')}
                 </div>
               </>
             )}
@@ -248,61 +261,70 @@ function LvMe() {
 
 /* ---------------- Approvals ---------------- */
 
+/**
+ * Defined at module scope so the textarea keeps its DOM node between renders —
+ * an inline component would remount and drop focus on every keystroke.
+ */
+function RejectForm({ l, close }: { l: LeaveRequest; close: () => void }) {
+  const app = useApp();
+  const rejectLeave = useRejectLeave();
+  const [note, setNote] = useState('Critical release week — please re-plan these dates.');
+  return (
+    <>
+      <div className="field">
+        <label>Reason (shared with the employee)</label>
+        <textarea className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
+        <button className="btn" onClick={close}>Cancel</button>
+        <button
+          className="btn danger"
+          disabled={rejectLeave.pending}
+          onClick={async () => {
+            await rejectLeave.mutate(l.id, app.meId, note);
+            close();
+            app.toast('Leave rejected', 'err');
+          }}
+        >
+          Reject request
+        </button>
+      </div>
+    </>
+  );
+}
+
 function LvAppr() {
   const app = useApp();
   const layer = useLayer();
-  const ids = visibleIds(app.role, app.meId).filter((i) => i !== app.meId);
-  const pend = sortBy(LEAVES.filter((l) => l.status === 'Pending' && ids.includes(l.empId)), (l) => l.from);
+  const dir = useVisiblePeople();
+  const teamIds = dir.ids.filter((i) => i !== app.meId);
 
-  const approve = (l: LeaveRequest) => {
-    l.status = 'Approved';
-    l.actedOn = ymd(TODAY);
-    if (LEAVE_BAL[l.empId]?.[l.type]) LEAVE_BAL[l.empId][l.type].used += l.days;
-    app.toast('Leave approved for ' + empName(l.empId), 'ok');
-    app.bump();
+  const { data: pending = [] } = useLeaveFor(teamIds, 'Pending');
+  const { data: teamApproved = [] } = useLeaveFor(teamIds, 'Approved');
+  const { data: balances } = useBalancesFor(teamIds);
+  const approveLeave = useApproveLeave();
+
+  const pend = sortBy(pending, (l) => l.from);
+
+  const approve = async (l: LeaveRequest) => {
+    await approveLeave.mutate(l.id, app.meId);
+    app.toast('Leave approved for ' + dir.name(l.empId), 'ok');
   };
 
-  const approveAll = () => {
-    pend.forEach((l) => {
-      l.status = 'Approved';
-      l.actedOn = ymd(TODAY);
-      if (LEAVE_BAL[l.empId]?.[l.type]) LEAVE_BAL[l.empId][l.type].used += l.days;
-    });
-    app.toast(pend.length + ' leave requests approved', 'ok');
-    app.bump();
+  const approveAll = async () => {
+    const n = pend.length;
+    for (const l of pend) await approveLeave.mutate(l.id, app.meId);
+    app.toast(n + ' leave requests approved', 'ok');
   };
 
   const reject = (l: LeaveRequest) =>
     layer.modal({
       title: 'Reject leave request',
-      sub: empName(l.empId) + ' · ' + ltOf(l.type).name,
+      sub: dir.name(l.empId) + ' · ' + ltOf(l.type).name,
       size: 'narrow',
       body: (close) => <RejectForm l={l} close={close} />,
       footer: null,
     });
-
-  function RejectForm({ l, close }: { l: LeaveRequest; close: () => void }) {
-    const [note, setNote] = useState('Critical release week — please re-plan these dates.');
-    return (
-      <>
-        <div className="field">
-          <label>Reason (shared with the employee)</label>
-          <textarea className="input" value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
-        <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
-          <button className="btn" onClick={close}>Cancel</button>
-          <button className="btn danger" onClick={() => {
-            l.status = 'Rejected';
-            l.note = note;
-            l.actedOn = ymd(TODAY);
-            close();
-            app.toast('Leave rejected', 'err');
-            app.bump();
-          }}>Reject request</button>
-        </div>
-      </>
-    );
-  }
 
   return (
     <div className="stack">
@@ -316,14 +338,14 @@ function LvAppr() {
               </thead>
               <tbody>
                 {pend.map((l) => {
-                  const b = leaveBalance(l.empId, l.type);
+                  const b = balanceOf(balances, l.empId, l.type);
                   /* flag when teammates are already away over the same dates */
-                  const conflict = LEAVES.filter(
-                    (x) => x.status === 'Approved' && x.empId !== l.empId && ids.includes(x.empId) && !(x.to < l.from || x.from > l.to),
+                  const conflict = teamApproved.filter(
+                    (x) => x.empId !== l.empId && !(x.to < l.from || x.from > l.to),
                   ).length;
                   return (
                     <tr key={l.id}>
-                      <td><PersonCell e={EMAP[l.empId]} /></td>
+                      <td>{dir.byId(l.empId) && <PersonCell e={dir.byId(l.empId)!} />}</td>
                       <td><TypeDot type={l.type} />{ltOf(l.type).name}</td>
                       <td className="nowrap">
                         {fmtD(l.from)}{l.days > 1 ? ' – ' + fmtD(l.to) : ''}{l.half && <> <Badge>{l.half}</Badge></>}
@@ -356,11 +378,15 @@ function LvAppr() {
 /* ---------------- Team leave ---------------- */
 
 function LvTeam() {
-  const app = useApp();
   const showEmp = useShowEmployee();
-  const ids = visibleIds(app.role, app.meId);
-  const list = sortBy(LEAVES.filter((l) => ids.includes(l.empId)), (l) => l.from, 'desc');
-  const approved = LEAVES.filter((l) => ids.includes(l.empId) && l.status === 'Approved');
+  const dir = useVisiblePeople();
+  const ids = dir.ids;
+
+  const { data: rows = [] } = useLeaveFor(ids);
+  const { data: balances } = useBalancesFor(ids);
+
+  const list = sortBy(rows, (l) => l.from, 'desc');
+  const approved = rows.filter((l) => l.status === 'Approved');
 
   const byType = LEAVE_TYPES.map((t) => ({
     k: t.name, c: t.color,
@@ -368,16 +394,16 @@ function LvTeam() {
   })).filter((r) => r.v);
 
   /* unused earned leave, valued at current CTC — the accrued encashment liability */
-  const liability = sum(ids.map((id) => {
-    const b = leaveBalance(id, 'EL');
-    return b ? b.avail * Math.round(EMAP[id].ctc / 365) : 0;
+  const liability = sum(dir.list.map((e) => {
+    const b = balanceOf(balances, e.id, 'EL');
+    return b ? b.avail * Math.round(e.ctc / 365) : 0;
   }));
 
   return (
     <div className="stack">
       <div className="grid g4">
         <Tile label="Leave days taken" value={sum(approved, (l) => l.days)} foot={`Across ${ids.length} employees`} />
-        <Tile label="Pending requests" value={LEAVES.filter((l) => ids.includes(l.empId) && l.status === 'Pending').length}
+        <Tile label="Pending requests" value={rows.filter((l) => l.status === 'Pending').length}
           foot="Awaiting manager action" />
         <Tile label="Avg leave / employee" value={(sum(approved, (l) => l.days) / Math.max(1, ids.length)).toFixed(1) + ' d'}
           foot="Company average" />
@@ -386,7 +412,7 @@ function LvTeam() {
 
       <div className="grid g-2-1">
         <Card title="All leave records" sub={`${list.length} requests`} flush
-          actions={<button className="btn sm" onClick={() => exportLeaves(list, 'team_leave.csv')}>⤓ Export</button>}>
+          actions={<button className="btn sm" onClick={() => exportLeaves(list, 'team_leave.csv', dir)}>⤓ Export</button>}>
           <div className="tbl-wrap" style={{ maxHeight: 520, overflow: 'auto' }}>
             <table className="tbl">
               <thead>
@@ -395,12 +421,12 @@ function LvTeam() {
               <tbody>
                 {list.slice(0, 300).map((l) => (
                   <tr key={l.id} className="clickable" onClick={() => showEmp(l.empId)}>
-                    <td><PersonCell e={EMAP[l.empId]} /></td>
+                    <td>{dir.byId(l.empId) && <PersonCell e={dir.byId(l.empId)!} />}</td>
                     <td className="nowrap"><TypeDot type={l.type} />{ltOf(l.type).name}</td>
                     <td className="nowrap">{fmtDS(l.from)}{l.days > 1 ? ' – ' + fmtDS(l.to) : ''}</td>
                     <td className="num">{l.days}</td>
                     <td><StatusBadge status={l.status} /></td>
-                    <td className="nowrap">{empName(l.approverId || '')}</td>
+                    <td className="nowrap">{dir.name(l.approverId)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -419,12 +445,12 @@ function LvTeam() {
 /* ---------------- Team calendar ---------------- */
 
 function LvCal() {
-  const app = useApp();
-  const ids = visibleIds(app.role, app.meId);
+  const dir = useVisiblePeople();
   const start = mondayOf(TODAY);
   const days: Date[] = [];
   for (let i = 0; i < 28; i++) days.push(addDays(start, i));
-  const people = ids.map((i) => EMAP[i]).slice(0, 40);
+  const people = dir.list.slice(0, 40);
+  const { data: approved = [] } = useLeaveFor(dir.ids, 'Approved');
 
   return (
     <Card title="Team leave calendar"
@@ -452,7 +478,7 @@ function LvCal() {
                 </td>
                 {days.map((d, i) => {
                   const ds = ymd(d);
-                  const l = LEAVES.find((x) => x.empId === e.id && x.status === 'Approved' && x.from <= ds && x.to >= ds);
+                  const l = approved.find((x) => x.empId === e.id && x.from <= ds && x.to >= ds);
                   if (l) {
                     return (
                       <td key={i} style={{ background: ltOf(l.type).color, opacity: 0.85 }}
