@@ -11,7 +11,7 @@ import { sortBy, sum } from '../../lib/collections';
 import { toBase } from '../../data/countries';
 import {
   benchCost, benchDays, benchList, CLIENTS, CONSULTANTS, INVOICES, PLACEMENTS,
-  REQUIREMENTS, reqOf2, SOWS, SUBMISSIONS, staffingKPI, VENDORS,
+  RATE_CARDS, REQUIREMENTS, reqOf2, SOWS, SUBMISSIONS, staffingKPI, VENDORS,
 } from '../../data/staffing';
 import type { Consultant, StaffingRequirement } from '../../data/staffing';
 import { matchExplain, matchScore, MATCH_FLOOR, openReqs } from '../../data/matching';
@@ -32,9 +32,18 @@ export const staffingService: StaffingService = {
   bench() { return ok(benchList()); },
   placements() { return ok(PLACEMENTS.slice()); },
   submissions() { return ok(SUBMISSIONS.slice()); },
+
+  moveSubmission(id, stage) {
+    const sub = SUBMISSIONS.find((x) => x.id === id);
+    if (!sub) return Promise.reject(new Error('No such submission: ' + id));
+    if (sub.stage === stage) return ok(sub);
+    sub.stage = stage;
+    return ok(sub);
+  },
   invoices() { return ok(INVOICES.slice()); },
   vendors() { return ok(VENDORS.slice()); },
   sows() { return ok(SOWS.slice()); },
+  rateCards() { return ok(RATE_CARDS.slice()); },
   kpi() { return ok(staffingKPI()); },
 
   matchesForConsultant(consultantId) {

@@ -42,7 +42,7 @@ import type { Course, Enrollment } from '../data/learning';
 import type { Survey } from '../data/engagement';
 import type { Announcement, Celebration } from '../data/announcements';
 import type {
-  Client, Consultant, Invoice, Placement, Sow, StaffingKPI, StaffingRequirement,
+  Client, Consultant, Invoice, Placement, RateCard, Sow, StaffingKPI, StaffingRequirement,
   Submission, Vendor,
 } from '../data/staffing';
 import type { MatchExplain } from '../data/matching';
@@ -73,7 +73,7 @@ export type { Course } from '../data/learning';
 export type { Survey } from '../data/engagement';
 export type { Announcement, Celebration } from '../data/announcements';
 export type {
-  Client, Consultant, Invoice, Placement, Sow, StaffingKPI, StaffingRequirement,
+  Client, Consultant, Invoice, Placement, RateCard, Sow, StaffingKPI, StaffingRequirement,
   Submission, Vendor,
 } from '../data/staffing';
 export type { MatchExplain } from '../data/matching';
@@ -419,9 +419,12 @@ export interface StaffingService {
   bench(): Promise<Consultant[]>;
   placements(): Promise<Placement[]>;
   submissions(): Promise<Submission[]>;
+  /** Move a submission along the pipeline. Reaching 'placed' starts billing. */
+  moveSubmission(id: string, stage: string): Promise<Submission>;
   invoices(): Promise<Invoice[]>;
   vendors(): Promise<Vendor[]>;
   sows(): Promise<Sow[]>;
+  rateCards(): Promise<RateCard[]>;
   /** Utilisation, margin, fill rate, DSO — the operating numbers. */
   kpi(): Promise<StaffingKPI>;
 

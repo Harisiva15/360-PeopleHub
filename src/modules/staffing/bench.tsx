@@ -4,10 +4,9 @@ import { daysBetween, fmtD, fmtDS, MON, monthKey, TODAY, ymd } from '../../lib/d
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { countryOf, mb, mbS, money, toBase } from '../../data/countries';
-import {
-  CONSULTANTS, PLACEMENTS, benchCost, benchDays, benchList, clientOf, conOf, staffingKPI, vendorOf,
-} from '../../data/staffing';
-import type { Consultant } from '../../data/staffing';
+import { benchCost, benchDays, clientOf, conOf, vendorOf } from '../../data/staffing';
+import type { Consultant, Placement } from '../../services';
+import { useBench, useConsultants, useKpi, usePlacements } from './data';
 import { Avatar, Badge, Card, EmptyState, Tabs, Tile } from '../../components/ui';
 import { Chip, Divide } from '../../components/common';
 import { BarChart, HBar, Legend, LineChart, PAL } from '../../components/charts';
@@ -33,8 +32,11 @@ const supplierOf = (c: Consultant) => (c.external ? vendorOf(c.vendorId || '')?.
 
 function BnBench() {
   const app = useApp();
-  const list = sortBy(benchList(), (c) => -benchDays(c));
-  const k = staffingKPI();
+  const { data: bench = [] } = useBench();
+  const { data: CONSULTANTS = [] } = useConsultants();
+  const { data: k } = useKpi();
+  const list = sortBy(bench, (c) => -benchDays(c));
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
 
   const bands = BANDS.map((b) => ({ k: b.k, c: b.c, v: list.filter((c) => bandOf(benchDays(c)).k === b.k).length }));
   const bySkill = uniq(list.flatMap((c) => c.skills))
@@ -120,6 +122,8 @@ function BnBench() {
 /* ---------------- All consultants ---------------- */
 
 function BnAll() {
+  const { data: CONSULTANTS = [] } = useConsultants();
+  const { data: PLACEMENTS = [] } = usePlacements();
   const [f, setF] = useState('');
   const list = f ? CONSULTANTS.filter((c) => c.status === f) : CONSULTANTS;
 
@@ -189,8 +193,11 @@ function BnAll() {
 /* ---------------- Bench cost & forecast ---------------- */
 
 function BnForecast() {
-  const list = benchList();
-  const k = staffingKPI();
+  const { data: bench = [] } = useBench();
+  const { data: PLACEMENTS = [] } = usePlacements();
+  const { data: k } = useKpi();
+  const list = bench;
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
 
   const months: { k: string; l: string }[] = [];
   for (let i = 0; i < 6; i++) {
@@ -294,8 +301,11 @@ function Bench() {
 registerModule({
   key: 'bench',
   title: TITLES.bench,
-  subtitle: () => `${benchList().length} on bench · ${staffingKPI().utilisation}% utilisation`,
-  badge: () => benchList().length,
+  /*
+   * Static: the registry's subtitle and badge callbacks are synchronous and
+   * cannot await a service. The live figures are on the page.
+   */
+  subtitle: () => 'Consultants between assignments, and what they cost',
   Component: Bench,
 });
 
@@ -311,9 +321,11 @@ const MARGIN_BANDS: [string, number, number, string][] = [
 ];
 
 function Placements() {
+  const { data: PLACEMENTS = [] } = usePlacements();
+  const { data: k } = useKpi();
   const list = sortBy(PLACEMENTS, (p) => p.start, 'desc');
-  const k = staffingKPI();
-  const byClient = clientPlacementCounts();
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
+  const byClient = clientPlacementCounts(PLACEMENTS);
   const marginBands = MARGIN_BANDS.map(([label, lo, hi, c]) => ({
     k: label, c, v: PLACEMENTS.filter((p) => p.margin >= lo && p.margin < hi).length,
   }));
@@ -402,14 +414,14 @@ function Placements() {
   );
 }
 
-function clientPlacementCounts() {
+/** Live assignments per client, over placements the caller has fetched. */
+function clientPlacementCounts(placements: Placement[]) {
   return sortBy(
-    CONSULTANTS.length
-      ? uniq(PLACEMENTS.map((p) => p.clientId)).map((id) => ({
-          k: clientOf(id).name, c: 'var(--s1)',
-          v: PLACEMENTS.filter((p) => p.clientId === id && ['Active', 'Ending Soon'].includes(p.status)).length,
-        }))
-      : [],
+    uniq(placements.map((p) => p.clientId)).map((id) => ({
+      k: clientOf(id).name,
+      c: 'var(--s1)',
+      v: placements.filter((p) => p.clientId === id && ['Active', 'Ending Soon'].includes(p.status)).length,
+    })),
     (r) => -r.v,
   ).filter((r) => r.v);
 }
@@ -417,6 +429,6 @@ function clientPlacementCounts() {
 registerModule({
   key: 'placements',
   title: TITLES.placements,
-  subtitle: () => `${PLACEMENTS.filter((p) => p.status === 'Active').length} active assignments · ${staffingKPI().grossMargin}% blended margin`,
+  subtitle: () => 'Live assignments, rates and blended margin',
   Component: Placements,
 });

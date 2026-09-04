@@ -4,10 +4,10 @@ import { daysBetween, fmtD, fmtDS, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { money } from '../../data/countries';
-import { EMAP } from '../../data/employees';
+import { SUB_STAGES, clientOf, conOf, reqOf2, subStage, vendorOf } from '../../data/staffing';
 import {
-  CLIENTS, REQUIREMENTS, SUBMISSIONS, SUB_STAGES, clientOf, conOf, reqOf2, staffingKPI, subStage, vendorOf,
-} from '../../data/staffing';
+  useClients, useKpi, useMoveSubmission, useRequirements, useSubmissions, useVisiblePeople,
+} from './data';
 import { Avatar, Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { Chip, Dot } from '../../components/common';
 import { HBar, PAL } from '../../components/charts';
@@ -26,8 +26,11 @@ const INTERVIEWED = ['interview', 'selected', 'placed'];
 
 function RqOpen() {
   const app = useApp();
-  const k = staffingKPI();
+  const { data: k } = useKpi();
+  const { data: REQUIREMENTS = [] } = useRequirements();
+  const { data: SUBMISSIONS = [] } = useSubmissions();
   const list = sortBy(REQUIREMENTS.filter((r) => r.status === 'Open' && r.filled < r.positions), (r) => r.closeBy);
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
 
   return (
     <div className="stack">
@@ -101,6 +104,8 @@ function RqOpen() {
 /* ---------------- Submission pipeline ---------------- */
 
 function RqPipe() {
+  const { data: SUBMISSIONS = [] } = useSubmissions();
+  const moveSubmission = useMoveSubmission();
   const app = useApp();
   const [dragId, setDragId] = useState<string | null>(null);
   const stages = SUB_STAGES.filter((s) => s.id !== 'rejected');
@@ -108,18 +113,17 @@ function RqPipe() {
 
   const drop = (stageId: string) => {
     if (!dragId) return;
-    const s = SUBMISSIONS.find((x) => x.id === dragId);
-    if (s && s.stage !== stageId) {
-      s.stage = stageId;
+    const sub = SUBMISSIONS.find((x) => x.id === dragId);
+    setDragId(null);
+    if (!sub || sub.stage === stageId) return;
+    void moveSubmission.mutate(sub.id, stageId).then(() =>
       app.toast(
         stageId === 'placed'
           ? 'Placed — rate locked and billing clock started'
           : 'Moved to ' + subStage(stageId).n,
         'ok',
-      );
-      app.bump();
-    }
-    setDragId(null);
+      ),
+    );
   };
 
   return (
@@ -186,6 +190,7 @@ function RqPipe() {
 /* ---------------- All submissions ---------------- */
 
 function RqSubs() {
+  const { data: SUBMISSIONS = [] } = useSubmissions();
   const [f, setF] = useState('');
   const list = sortBy(f ? SUBMISSIONS.filter((s) => s.stage === f) : SUBMISSIONS, (s) => s.submittedOn, 'desc');
 
@@ -276,7 +281,12 @@ function RqSubs() {
 
 function RqAna() {
   const showEmp = useShowEmployee();
-  const k = staffingKPI();
+  const { data: k } = useKpi();
+  const { data: REQUIREMENTS = [] } = useRequirements();
+  const { data: SUBMISSIONS = [] } = useSubmissions();
+  const { data: CLIENTS = [] } = useClients();
+  const recruiters = useVisiblePeople();
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
 
   const funnel = [
     { k: 'Requirements received', c: 'var(--s1)', v: REQUIREMENTS.length },
@@ -289,7 +299,7 @@ function RqAna() {
   const byRecruiter = uniq(SUBMISSIONS.map((s) => s.submittedById)).map((id) => {
     const subs = SUBMISSIONS.filter((s) => s.submittedById === id);
     const placed = subs.filter((s) => s.stage === 'placed').length;
-    return { e: EMAP[id], n: subs.length, placed, conv: pct(placed, Math.max(1, subs.length)) };
+    return { e: recruiters.byId(id)!, n: subs.length, placed, conv: pct(placed, Math.max(1, subs.length)) };
   });
 
   const rejReasons = uniq(SUBMISSIONS.filter((s) => s.feedback).map((s) => s.feedback)).map((r, i) => ({
@@ -369,9 +379,6 @@ function Requirements() {
 registerModule({
   key: 'requirements',
   title: TITLES.requirements,
-  subtitle: () => {
-    const k = staffingKPI();
-    return `${REQUIREMENTS.filter((r) => r.status === 'Open' && r.filled < r.positions).length} open requirements · ${k.openPositions} positions to fill`;
-  },
+  subtitle: () => 'The demand book, the pipeline and submission analytics',
   Component: Requirements,
 });

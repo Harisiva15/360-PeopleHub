@@ -4,10 +4,9 @@ import { addDays, fmtD, monthKey, monthLabel, monthLabelLong, TODAY } from '../.
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { mbS, money, toBase } from '../../data/countries';
-import { empName } from '../../data/employees';
-import { PAYRUNS } from '../../data/payroll';
-import { CLIENTS, INVOICES, PLACEMENTS, clientOf, invAgeing, staffingKPI } from '../../data/staffing';
-import { Badge, Banner, Card, Tabs, Tile } from '../../components/ui';
+import { clientOf, invAgeing } from '../../data/staffing';
+import { useClients, useInvoices, useKpi, usePayRuns, usePlacements, useVisiblePeople } from './data';
+import { Badge, Banner, Card, EmptyState, Tabs, Tile } from '../../components/ui';
 import { HBar } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
@@ -27,8 +26,10 @@ const OPEN = (s: string) => !['Paid', 'Draft'].includes(s);
 /* ---------------- Invoices ---------------- */
 
 function BlInv() {
+  const { data: k } = useKpi();
+  const { data: INVOICES = [] } = useInvoices();
   const [f, setF] = useState('');
-  const k = staffingKPI();
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
   const list = sortBy(f ? INVOICES.filter((i) => i.status === f) : INVOICES, (i) => i.issuedOn, 'desc');
 
   return (
@@ -109,6 +110,9 @@ const BUCKETS: [string, number, number][] = [
 ];
 
 function BlAr() {
+  const { data: INVOICES = [] } = useInvoices();
+  const { data: CLIENTS = [] } = useClients();
+  const owners = useVisiblePeople();
   const app = useApp();
   const open = INVOICES.filter((i) => OPEN(i.status));
 
@@ -168,7 +172,7 @@ function BlAr() {
                         ? <><Badge kind="warn">Disputed</Badge> <span className="muted" style={{ fontSize: 11 }}>{i.dispute}</span></>
                         : <span className="muted">—</span>}
                     </td>
-                    <td className="nowrap">{empName(c.ownerId)}</td>
+                    <td className="nowrap">{owners.name(c.ownerId)}</td>
                     <td className="right">
                       <button className="btn sm" onClick={() => app.toast('Chase sent to ' + c.contacts[1].n, 'ok')}>Chase</button>
                     </td>
@@ -186,6 +190,9 @@ function BlAr() {
 /* ---------------- Generate billing ---------------- */
 
 function BlGen() {
+  const { data: PLACEMENTS = [] } = usePlacements();
+  const { data: PAYRUNS = [] } = usePayRuns();
+  const { data: INVOICES = [] } = useInvoices();
   const app = useApp();
   const [mk, setMk] = useState(monthKey(addDays(TODAY, -30)));
   const pls = PLACEMENTS.filter((p) => ['Active', 'Ending Soon', 'Completed'].includes(p.status) && p.start.slice(0, 7) <= mk);
@@ -272,9 +279,6 @@ function Billing() {
 registerModule({
   key: 'billing',
   title: TITLES.billing,
-  subtitle: () => {
-    const k = staffingKPI();
-    return `${mbS(k.ar)} outstanding · ${k.dso} day DSO`;
-  },
+  subtitle: () => 'Invoices, receivables ageing and the billing run',
   Component: Billing,
 });

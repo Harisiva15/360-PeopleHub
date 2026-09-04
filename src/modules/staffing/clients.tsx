@@ -4,11 +4,12 @@ import { daysBetween, fmtD, fmtDS, MON, monthKey, parseYmd, TODAY, ymd } from '.
 import { clamp, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { COUNTRIES, countryOf, mb, mbS, money, sumBase, toBase } from '../../data/countries';
-import { empName } from '../../data/employees';
+import { clientOf } from '../../data/staffing';
+import type { Placement } from '../../services';
 import {
-  CLIENTS, INVOICES, PLACEMENTS, RATE_CARDS, SOWS, clientOf, staffingKPI,
-} from '../../data/staffing';
-import { Badge, Banner, Card, Tabs, Tile } from '../../components/ui';
+  useClients, useInvoices, useKpi, usePlacements, useRateCards, useSows, useVisiblePeople,
+} from './data';
+import { Badge, Banner, Card, EmptyState, Tabs, Tile } from '../../components/ui';
 import { StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, PAL } from '../../components/charts';
 import { registerModule } from '../registry';
@@ -18,19 +19,24 @@ import { monthlyUnits, Rate, TierBadge } from './shared';
 /** Active placements are the ones that carry revenue. */
 const LIVE = ['Active', 'Ending Soon'];
 
-const monthlyRevenue = (clientId: string) =>
+/** Monthly billed value for one client, over placements already fetched. */
+const monthlyRevenue = (clientId: string, placements: Placement[]) =>
   sum(
-    PLACEMENTS.filter((p) => p.clientId === clientId && LIVE.includes(p.status)),
+    placements.filter((p) => p.clientId === clientId && LIVE.includes(p.status)),
     (p) => toBase(p.billRate * monthlyUnits(p.unit), p.ccy),
   );
 
 /* ---------------- Clients ---------------- */
 
 function ClList() {
-  const k = staffingKPI();
+  const { data: k } = useKpi();
+  const { data: CLIENTS = [] } = useClients();
+  const { data: PLACEMENTS = [] } = usePlacements();
+  const owners = useVisiblePeople();
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
   const act = CLIENTS.filter((c) => c.status === 'Active');
   const byCountry = COUNTRIES.map((c, i) => ({ k: c.name, c: PAL[i], v: CLIENTS.filter((x) => x.country === c.id).length })).filter((r) => r.v);
-  const rev = CLIENTS.map((c) => ({ k: c.name, c: 'var(--s1)', v: monthlyRevenue(c.id) })).filter((r) => r.v);
+  const rev = CLIENTS.map((c) => ({ k: c.name, c: 'var(--s1)', v: monthlyRevenue(c.id, PLACEMENTS) })).filter((r) => r.v);
   const largest = Math.max(...rev.map((r) => r.v), 0);
 
   return (
@@ -41,7 +47,7 @@ function ClList() {
           downloadCSV('clients.csv',
             [['ID', 'Name', 'Country', 'Industry', 'Tier', 'Payment terms', 'Since', 'MSA expiry', 'Owner', 'Status']].concat(
               CLIENTS.map((c) => [c.id, c.name, c.country, c.industry, c.tier, String(c.paymentTerms),
-                c.since, c.msaExpiry, empName(c.ownerId), c.status]),
+                c.since, c.msaExpiry, owners.name(c.ownerId), c.status]),
             ))}>⤓ Export</button>
       </div>
 
@@ -85,7 +91,7 @@ function ClList() {
                     <td className="num">{pls.length}</td>
                     <td className="num strong">{r ? money(r, c.ccy) : '—'}</td>
                     <td className="num">{r ? (((r - co) / r) * 100).toFixed(1) + '%' : '—'}</td>
-                    <td className="nowrap">{empName(c.ownerId)}</td>
+                    <td className="nowrap">{owners.name(c.ownerId)}</td>
                     <td className="nowrap">
                       {fmtD(c.msaExpiry)}{renewSoon && <> <Badge kind="warn">Renew</Badge></>}
                     </td>
@@ -122,6 +128,8 @@ function ClList() {
 /* ---------------- SOWs ---------------- */
 
 function ClSow() {
+  const { data: SOWS = [] } = useSows();
+  const { data: PLACEMENTS = [] } = usePlacements();
   const list = sortBy(SOWS, (s) => s.end);
   const activeSows = SOWS.filter((s) => s.status === 'Active');
 
@@ -198,6 +206,9 @@ function ClSow() {
 /* ---------------- Rate cards ---------------- */
 
 function ClRates() {
+  const { data: RATE_CARDS = [] } = useRateCards();
+  const { data: CLIENTS = [] } = useClients();
+  const { data: PLACEMENTS = [] } = usePlacements();
   const [cid, setCid] = useState(CLIENTS[0].id);
   const c = clientOf(cid);
   const cards = RATE_CARDS.filter((r) => r.clientId === cid);
@@ -261,7 +272,11 @@ function ClRates() {
 /* ---------------- Revenue & margin ---------------- */
 
 function ClRev() {
-  const k = staffingKPI();
+  const { data: CLIENTS = [] } = useClients();
+  const { data: PLACEMENTS = [] } = usePlacements();
+  const { data: INVOICES = [] } = useInvoices();
+  const { data: k } = useKpi();
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
   const months: { k: string; l: string }[] = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1);
@@ -336,7 +351,6 @@ function Clients() {
 registerModule({
   key: 'clients',
   title: TITLES.clients,
-  subtitle: () =>
-    `${CLIENTS.filter((c) => c.status === 'Active').length} active clients across ${uniq(CLIENTS.map((c) => c.country)).length} countries`,
+  subtitle: () => 'Accounts, statements of work and rate cards',
   Component: Clients,
 });

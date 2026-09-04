@@ -4,9 +4,9 @@ import { fmtD, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { countryOf, money } from '../../data/countries';
-import {
-  CONSULTANTS, PLACEMENTS, SUBMISSIONS, VENDORS, clientOf, conOf, reqOf2, subStage, vendorOf,
-} from '../../data/staffing';
+import { clientOf, conOf, reqOf2, subStage, vendorOf } from '../../data/staffing';
+import type { Vendor } from '../../services';
+import { useConsultants, usePlacements, useSubmissions, useVendors } from './data';
 import { Badge, Banner, Card, Tabs, Tile } from '../../components/ui';
 import { HBar } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -15,7 +15,7 @@ import { TITLES } from '../titles';
 import { TierBadge } from './shared';
 
 /** Scorecard weights, shown to vendors so the number is not a black box. */
-const SCORE_DIMS: [keyof NonNullable<(typeof VENDORS)[number]['metrics']>, string, boolean][] = [
+const SCORE_DIMS: [keyof NonNullable<Vendor['metrics']>, string, boolean][] = [
   ['sub2int', 'Submission quality', true],
   ['int2plc', 'Closing rate', true],
   ['speed', 'Speed of submission', false],
@@ -25,11 +25,14 @@ const SCORE_DIMS: [keyof NonNullable<(typeof VENDORS)[number]['metrics']>, strin
 
 const scoreColor = (s: number) => (s >= 70 ? 'var(--good)' : s >= 50 ? 'var(--warn)' : 'var(--crit)');
 
-const isCompliant = (v: (typeof VENDORS)[number]) => v.w9 && v.coi && v.insuranceExpiry >= ymd(TODAY);
+const isCompliant = (v: Vendor) => v.w9 && v.coi && v.insuranceExpiry >= ymd(TODAY);
 
 /* ---------------- Vendor register ---------------- */
 
 function VnList() {
+  const { data: VENDORS = [] } = useVendors();
+  const { data: CONSULTANTS = [] } = useConsultants();
+  const { data: PLACEMENTS = [] } = usePlacements();
   const act = VENDORS.filter((v) => v.status === 'Active');
 
   return (
@@ -101,6 +104,7 @@ function VnList() {
 /* ---------------- Scorecard ---------------- */
 
 function VnScore() {
+  const { data: VENDORS = [] } = useVendors();
   return (
     <div className="stack">
       <Banner kind="info" icon="📊" title="How the vendor score is calculated">
@@ -161,6 +165,7 @@ function VnScore() {
 /* ---------------- Compliance ---------------- */
 
 function VnComp() {
+  const { data: VENDORS = [] } = useVendors();
   const app = useApp();
   return (
     <div className="stack">
@@ -208,6 +213,8 @@ function VnComp() {
 /* ---------------- Vendor submissions ---------------- */
 
 function VnSub() {
+  const { data: VENDORS = [] } = useVendors();
+  const { data: SUBMISSIONS = [] } = useSubmissions();
   const subs = SUBMISSIONS.filter((s) => s.vendorId);
   const byVendor = VENDORS.map((v) => ({ k: v.name, c: 'var(--s1)', v: subs.filter((s) => s.vendorId === v.id).length })).filter((r) => r.v);
 
@@ -288,7 +295,6 @@ function Vendors() {
 registerModule({
   key: 'vendors',
   title: TITLES.vendors,
-  subtitle: () =>
-    `${VENDORS.filter((v) => v.status === 'Active').length} active suppliers · ${CONSULTANTS.filter((c) => c.external).length} sourced consultants`,
+  subtitle: () => 'The supplier panel, scorecards and compliance',
   Component: Vendors,
 });
