@@ -19,6 +19,7 @@ import './approvals';
 import './people';
 import './payroll';
 import './hiring';
+import './tax';
 
 /* ---- placeholders for the remainder ---- */
 NAV.flatMap((g) => g.items).forEach((i) => {
