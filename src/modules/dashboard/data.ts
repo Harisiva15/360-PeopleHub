@@ -8,6 +8,8 @@
 
 import { useQuery } from '../../services/react';
 
+import { useCaller } from '../../services/people';
+
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
 
@@ -48,3 +50,13 @@ export const useSurveys = () => useQuery((s) => s.engagement.surveys(), []);
 export const useAnnouncements = () => useQuery((s) => s.noticeboard.announcements(), []);
 export const useCelebrations = (days: number) => useQuery((s) => s.noticeboard.celebrations(days), [days]);
 export const useExits = () => useQuery((s) => s.exits.list(), []);
+
+/** The approval inbox, assembled and scoped by the service. */
+export const usePendingItems = () => {
+  const caller = useCaller();
+  return useQuery((s) => s.approvals.pending(caller), [caller.role, caller.meId]);
+};
+export const usePendingCount = () => {
+  const caller = useCaller();
+  return useQuery((s) => s.approvals.pendingCount(caller), [caller.role, caller.meId]);
+};

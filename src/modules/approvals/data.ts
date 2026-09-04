@@ -11,6 +11,8 @@
 import { useMutation, useQuery } from '../../services/react';
 import type { AttRecord } from '../../services';
 
+import { useCaller } from '../../services/people';
+
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
 
@@ -70,3 +72,13 @@ export const useReimburseClaim = () => useMutation((s, id: string) => s.expenses
 export const useApproveOvertime = () => useMutation((s, id: string, by: string) => s.shifts.approveOvertime(id, by));
 export const useApproveLoan = () => useMutation((s, id: string) => s.loans.approve(id));
 export const useIssueLetter = () => useMutation((s, id: string) => s.letters.issue(id));
+
+/** The approval inbox, assembled and scoped by the service. */
+export const usePendingItems = () => {
+  const caller = useCaller();
+  return useQuery((s) => s.approvals.pending(caller), [caller.role, caller.meId]);
+};
+export const usePendingCount = () => {
+  const caller = useCaller();
+  return useQuery((s) => s.approvals.pendingCount(caller), [caller.role, caller.meId]);
+};

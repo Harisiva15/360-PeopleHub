@@ -13,12 +13,11 @@ import {
   useApproveTimesheet, useIssueLetter, usePendingClaims, usePendingLeave, usePendingLetters,
   usePendingLoans, usePendingOvertime, usePendingRegularisations, usePendingTimesheets,
   useMyInterviews, useReimburseClaim, useRejectClaim, useRejectLeave, useReturnTimesheet,
-  useVisiblePeople,
+  usePendingCount, useVisiblePeople,
 } from './data';
 import { ClaimTable } from '../expenses/ClaimTable';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
-import { pendingCount } from '../../state/pending';
 
 function Approvals() {
   const app = useApp();
@@ -26,6 +25,7 @@ function Approvals() {
   const ids = dir.ids.filter((i) => i !== app.meId);
   const isAdmin = app.role === 'admin';
 
+  const { data: pendingTotal = 0 } = usePendingCount();
   const { data: lv = [] } = usePendingLeave(ids);
   const { data: ts = [] } = usePendingTimesheets(ids);
   const { data: allRegs = [] } = usePendingRegularisations(ids);
@@ -126,7 +126,7 @@ function Approvals() {
   return (
     <div className="stack">
       <div className="grid g4">
-        <Tile label="Total pending" value={pendingCount(app.role, app.meId)} foot="Across all approval types" />
+        <Tile label="Total pending" value={pendingTotal ?? 0} foot="Across all approval types" />
         <Tile label="Leave" value={lv.length} foot={`${sum(lv, (l) => l.days)} days requested`} />
         <Tile label="Timesheets" value={ts.length} foot={`${sum(ts, (t) => t.total)} hours to verify`} />
         <Tile label="Regularisations" value={rg.length} foot="Attendance corrections" />
@@ -326,6 +326,5 @@ registerModule({
   key: 'approvals',
   title: TITLES.approvals,
   subtitle: () => 'Everything waiting on your action',
-  badge: (c) => pendingCount(c.role, c.meId),
   Component: Approvals,
 });

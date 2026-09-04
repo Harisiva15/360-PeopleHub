@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { logoFor } from '../assets/logo';
 import { NAV, TABBAR } from '../nav';
 import { getModule } from '../modules/registry';
+import { useNavBadges } from './badges';
 import { ORG } from '../data/org';
 import { ACCOUNTS } from '../state/rbac';
 import { useApp } from '../state/AppContext';
@@ -38,6 +39,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const mod = getModule(route);
   const accounts = ACCOUNTS();
   const ctx = { role: app.role, meId: app.meId, me: app.me };
+  const badges = useNavBadges();
 
   return (
     <div id="app">
@@ -57,7 +59,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <div className="nav-group" key={g.group}>
                 <h6>{g.group}</h6>
                 {items.map((i) => {
-                  const badge = getModule(i.k)?.badge?.(ctx) || 0;
+                  const badge = badges[i.k] || 0;
                   return (
                     <Link key={i.k} to={'/' + i.k} className={route === i.k ? 'on' : ''}>
                       <span className="ic">{i.ic}</span>
@@ -121,7 +123,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <nav className="tabbar">
         {TABBAR.filter((k) => app.can(k)).map((k) => {
           const item = NAV.flatMap((g) => g.items).find((i) => i.k === k)!;
-          const badge = getModule(k)?.badge?.(ctx) || 0;
+          const badge = badges[k] || 0;
           return (
             <Link key={k} to={'/' + k} className={route === k ? 'on' : ''}>
               <span className="ic">{item.ic}</span>

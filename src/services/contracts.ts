@@ -673,6 +673,36 @@ export interface WhatsAppService {
   setRuleEnabled(id: string, on: boolean): Promise<{ id: string; on: boolean }>;
 }
 
+/* ---------- the approval inbox ---------- */
+
+/** One queue waiting on the signed-in user. */
+export interface PendingItem {
+  ic: string;
+  k: string;
+  n: number;
+  /** Route the row opens. */
+  r: string;
+}
+
+export interface ApprovalsService {
+  /**
+   * Everything waiting on the caller, scoped to what their role may see and
+   * excluding their own records — nobody approves their own request.
+   */
+  pending(caller: Caller): Promise<PendingItem[]>;
+  /**
+   * The count shown as a pill against Approvals. Deliberately narrower than
+   * `pending` — only the core approval queues.
+   */
+  pendingCount(caller: Caller): Promise<number>;
+  /**
+   * Sidebar pills, keyed by route. One call rather than one per module: the
+   * navigation renders on every route change, and it is not the place to fan
+   * out requests.
+   */
+  navBadges(caller: Caller): Promise<Record<string, number>>;
+}
+
 /* ---------- configuration ---------- */
 
 export interface FenceUpdate {
@@ -735,4 +765,5 @@ export interface Services {
   config: ConfigService;
   leave: LeaveService;
   whatsapp: WhatsAppService;
+  approvals: ApprovalsService;
 }

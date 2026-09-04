@@ -21,6 +21,7 @@ import {
 } from './peopleops';
 import { timesheetService } from './timesheet';
 import { whatsappService } from './whatsapp';
+import { approvalsService } from './approvals';
 
 export const mockServices: Services = {
   employees: employeeService,
@@ -47,4 +48,5 @@ export const mockServices: Services = {
   onboarding: onboardingService,
   config: configService,
   whatsapp: whatsappService,
+  approvals: approvalsService,
 };

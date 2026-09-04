@@ -9,15 +9,17 @@ export interface ModuleCtx {
 }
 
 /**
- * One entry per route. `subtitle` and `badge` run against live data on every
- * render, which is how the topbar and sidebar counts stay current.
+ * One entry per route.
+ *
+ * `subtitle` is synchronous, so it may depend only on the session and on
+ * static configuration — never on records. Sidebar pills used to be a
+ * `badge` callback here, which could not await a service; they now come from
+ * `approvals.navBadges` and are rendered by the shell.
  */
 export interface ModuleDef {
   key: string;
   title: string;
   subtitle?: (ctx: ModuleCtx) => string;
-  /** Count shown as a pill in the sidebar; 0 or undefined hides it. */
-  badge?: (ctx: ModuleCtx) => number;
   Component: ComponentType;
 }
 

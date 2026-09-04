@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery } from '../../services/react';
 
+import { useCaller } from '../../services/people';
+
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
 
@@ -21,3 +23,13 @@ export const useSetRuleEnabled = () =>
 export const useCurrentRun = () => useQuery((s) => s.payroll.currentRun(), []);
 export const usePayslip = (empId: string, mk: string) =>
   useQuery((s) => s.payroll.payslip(empId, mk), [empId, mk]);
+
+/** The approval inbox, assembled and scoped by the service. */
+export const usePendingItems = () => {
+  const caller = useCaller();
+  return useQuery((s) => s.approvals.pending(caller), [caller.role, caller.meId]);
+};
+export const usePendingCount = () => {
+  const caller = useCaller();
+  return useQuery((s) => s.approvals.pendingCount(caller), [caller.role, caller.meId]);
+};

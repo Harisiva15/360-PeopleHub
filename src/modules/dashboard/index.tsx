@@ -25,7 +25,6 @@ import { PunchWidget } from '../attendance/Punch';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { useApp } from '../../state/AppContext';
-import { pendingCount } from '../../state/pending';
 import {
   ApprovalSummary, attendanceToday, attendanceTrend, CelebRows, GoLink,
   headcountTrend, joinersExits, MonthCalendar,
@@ -34,7 +33,8 @@ import {
   useAllEmployees, useAnnouncements, useAttendanceIn, useCandidates, useCelebrations,
   useClaimsIn, useCompliancePayments, useCourses, useCurrentCycle, useCurrentRun,
   useDeclarations, useEnrolments, useExits, useGoals, useLeaveIn, useMyAttendance,
-  useMyBalances, usePayRuns, usePayrollTotals, usePayslipHistory, useRequisitions,
+  useMyBalances, usePayRuns, usePayrollTotals, usePayslipHistory, usePendingCount,
+  useRequisitions,
   useSurveys, useTeam, useTickets, useTimesheetsIn,
 } from './data';
 import type { Directory } from './data';
@@ -51,8 +51,8 @@ const asDirectory = (list: { id: string; name: string }[]): Directory => ({
 /* ---------------- admin ---------------- */
 
 function DashAdmin() {
-  const app = useApp();
   const today = ymd(TODAY);
+  const { data: pendingTotal = 0 } = usePendingCount();
   const { data: act = [] } = useAllEmployees();
   const { data: leavers = [] } = useExits();
   const ids = act.map((e) => e.id);
@@ -98,7 +98,7 @@ function DashAdmin() {
 
   const byDept = DEPTS.map((d) => ({ k: d.name, v: act.filter((e) => e.dept === d.id).length, c: d.color }));
   const bySite = ['CHN', 'BLR', 'HYD'].map((s, i) => ({ k: siteOf(s).city, v: act.filter((e) => e.site === s).length, c: PAL[i] }));
-  const pend = pendingCount(app.role, app.meId);
+  const pend = pendingTotal ?? 0;
   const funnel = STAGES.filter((s) => s.id !== 'rejected').map((s) => ({
     k: s.name, v: cands.filter((c) => c.stage === s.id).length, c: s.color,
   }));

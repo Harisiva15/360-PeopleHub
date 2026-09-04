@@ -8,8 +8,7 @@ import type { Directory } from '../../services/people';
 import { Avatar, Badge, EmptyState } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { Legend } from '../../components/charts';
-import { pendingItems } from '../../state/pending';
-import { useApp } from '../../state/AppContext';
+import { usePendingItems } from './data';
 
 /** Today's attendance split, over records the caller has already fetched. */
 export function attendanceToday(recs: AttRecord[]) {
@@ -35,8 +34,7 @@ export function headcountTrend(n: number, roster: Employee[]) {
 }
 
 export function ApprovalSummary() {
-  const app = useApp();
-  const items = pendingItems(app.role, app.meId);
+  const { data: items = [] } = usePendingItems();
   if (!items.length) return <EmptyState msg="Nothing waiting on you ✓" />;
   return (
     <>

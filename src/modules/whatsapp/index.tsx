@@ -12,10 +12,10 @@ import type { WaTemplate } from '../../services';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
 import { BarChart, HBar, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
-import { pendingCount } from '../../state/pending';
 import {
   useConsent, useConsentRows, useCurrentRun, useLog, usePayslip, useSetConsent,
-  useSetRuleEnabled, useSetTemplateEnabled, useTemplates, useVisiblePeople, useWaStats,
+  usePendingCount, useSetRuleEnabled, useSetTemplateEnabled, useTemplates, useVisiblePeople,
+  useWaStats,
 } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
@@ -58,13 +58,14 @@ function useSampleFor() {
   const f = e.name.split(' ')[0];
   const ct = countryOf(e.country);
   const { data: run } = useCurrentRun();
+  const { data: pendingTotal = 0 } = usePendingCount();
   const { data: slip } = usePayslip(e.id, run?.mk ?? '');
 
   return (t: WaTemplate): string => {
     const map: Record<string, string[]> = {
       payslip_ready: [f, run ? monthLabelLong(run.mk) : 'this month', slip ? money(slip.net, e.ccy) : '—', '4417'],
       leave_decision: [f, 'Earned Leave', '12–14 Sep 2026', 'approved', dir.name(e.managerId), '9'],
-      approval_pending: [f, String(pendingCount(app.role, app.meId) || 4), '3'],
+      approval_pending: [f, String(pendingTotal || 4), '3'],
       birthday: [f, ORG.name],
       anniversary: [f, String(Math.max(1, yearsSince(e.doj))), ORG.name],
       interview_invite: ['Anjali', 'Technical', 'Senior Software Engineer', fmtD(ymd(addDays(TODAY, 2))), '11:00 IST'],
