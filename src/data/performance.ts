@@ -125,7 +125,7 @@ export const GOALS: Goal[] = [];
 export const CHECKINS: CheckIn[] = [];
 
 /** Stable per-employee offset so goal selection does not repeat across the org. */
-function empSeqHash(id: string): number {
+export function empSeqHash(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return h;
