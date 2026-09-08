@@ -16,6 +16,7 @@
     "ci:bootstrap": "node scripts/ci-bootstrap.mjs"
   },
   "dependencies": {
+    "jose": "^6.2.12",
     "pg": "^8.13.1"
   },
   "devDependencies": {

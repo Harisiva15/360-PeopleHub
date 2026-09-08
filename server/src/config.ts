@@ -16,13 +16,14 @@ export const config = {
    * service_role — that exists to skip every policy.
    */
   databaseUrl: required('DATABASE_URL'),
+  supabaseUrl: required('SUPABASE_URL'),
   /**
-   * Supabase's JWT secret, used to verify tokens it issued. Found under
-   * Project Settings -> API. Projects on asymmetric signing keys verify
-   * against the JWKS endpoint instead — see src/auth/session.ts.
+   * Where Supabase publishes the public keys it signs tokens with. This
+   * server holds no signing secret at all — it can verify a token and cannot
+   * mint one, which is the point of asymmetric signing.
    */
-  supabaseJwtSecret: required('SUPABASE_JWT_SECRET'),
-  supabaseUrl: process.env.SUPABASE_URL ?? '',
+  jwksUrl: process.env.SUPABASE_JWKS_URL
+    ?? `${process.env.SUPABASE_URL ?? ''}/auth/v1/.well-known/jwks.json`,
   /** Path to Supabase's CA certificate. Required in production. */
   sslRootCert: process.env.PGSSLROOTCERT ?? '',
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').filter(Boolean),

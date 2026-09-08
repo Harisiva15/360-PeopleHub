@@ -40,7 +40,7 @@ jobs:
           # Proves the sign-in gate is closed. Needs a configured build, so it
           # runs with placeholder credentials — nothing connects to Supabase,
           # because the render never gets that far.
-          VITE_SUPABASE_URL=https://ci.invalid VITE_SUPABASE_ANON_KEY=ci npm run check:gate
+          VITE_SUPABASE_URL=https://ci.invalid VITE_SUPABASE_PUBLISHABLE_KEY=ci npm run check:gate
 
       - name: Build
         # A project site is served from /<repo>/, not the domain root.

@@ -16,78 +16,13 @@
  * belongs to several. It can never widen access beyond what the table says.
  */
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { verifyAccessToken, AuthError } from './verify.ts';
+import type { SupabaseClaims } from './verify.ts';
 import { withoutTenantForAuth } from '../tenancy/context.ts';
 import type { Caller } from '../tenancy/context.ts';
-import { config } from '../config.ts';
 
-export class AuthError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AuthError';
-  }
-}
-
-interface SupabaseClaims {
-  sub: string;
-  exp: number;
-  /** Set with the service role only; a user cannot edit their own. */
-  app_metadata?: { tenant_id?: string; app_role?: string };
-}
-
-const b64urlToBuffer = (input: string): Buffer =>
-  Buffer.from(input.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-
-/**
- * Verify a Supabase HS256 JWT.
- *
- * Hand-rolled deliberately narrowly: the algorithm is pinned to HS256 and
- * anything else is rejected outright, which closes the two classic holes —
- * `alg: none`, and an RS256 token replayed as HS256 with the public key as the
- * HMAC secret.
- *
- * Projects using Supabase's newer asymmetric signing keys (ES256/RS256 with a
- * JWKS endpoint) cannot use this path. Verify against the JWKS with a
- * maintained library instead; do not extend this function to cover it.
- */
-function verifyJwt(token: string): SupabaseClaims {
-  const parts = token.split('.');
-  if (parts.length !== 3) throw new AuthError('malformed token');
-
-  const [headerPart, payloadPart, signaturePart] = parts as [string, string, string];
-
-  let header: { alg?: string; typ?: string };
-  try {
-    header = JSON.parse(b64urlToBuffer(headerPart).toString('utf8'));
-  } catch {
-    throw new AuthError('malformed token header');
-  }
-  if (header.alg !== 'HS256') throw new AuthError(`unsupported token algorithm ${header.alg}`);
-
-  const expected = createHmac('sha256', config.supabaseJwtSecret)
-    .update(`${headerPart}.${payloadPart}`)
-    .digest();
-  const provided = b64urlToBuffer(signaturePart);
-
-  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
-    throw new AuthError('bad token signature');
-  }
-
-  let claims: SupabaseClaims;
-  try {
-    claims = JSON.parse(b64urlToBuffer(payloadPart).toString('utf8'));
-  } catch {
-    throw new AuthError('malformed token payload');
-  }
-
-  if (typeof claims.sub !== 'string' || !claims.sub) throw new AuthError('token has no subject');
-  if (typeof claims.exp !== 'number') throw new AuthError('token has no expiry');
-  // Seconds, per the JWT spec. A small skew allowance would go here if clocks
-  // between Supabase and this server ever proved to be a problem.
-  if (claims.exp * 1000 <= Date.now()) throw new AuthError('token expired');
-
-  return claims;
-}
+export { AuthError };
+export type { SupabaseClaims };
 
 interface MembershipRow {
   tenant_id: string;
@@ -107,7 +42,7 @@ interface MembershipRow {
 export async function callerFromToken(token: string | undefined): Promise<Caller> {
   if (!token) throw new AuthError('no bearer token');
 
-  const claims = verifyJwt(token);
+  const claims = await verifyAccessToken(token);
   const preferredTenant = claims.app_metadata?.tenant_id ?? null;
 
   const row = await withoutTenantForAuth(async (db) => {

@@ -17,10 +17,19 @@ import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const url = import.meta.env.VITE_SUPABASE_URL ?? '';
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
+
+/*
+ * Supabase renamed the browser-side key: newer projects issue
+ * `sb_publishable_...` where older ones issued an anon JWT. Both go in the same
+ * argument and both are safe to ship in a bundle — they identify the project,
+ * they do not authorise anything. Row-level security is what authorises.
+ */
+const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+  ?? import.meta.env.VITE_SUPABASE_ANON_KEY
+  ?? '';
 
 /** True when this build has a project to authenticate against. */
-export const authConfigured = Boolean(url && anonKey);
+export const authConfigured = Boolean(url && publishableKey);
 
 /**
  * Null in demo mode. Every caller checks `authConfigured` first, so the null
@@ -28,7 +37,7 @@ export const authConfigured = Boolean(url && anonKey);
  * mistake fails loudly at the call site instead of silently doing nothing.
  */
 export const supabase: SupabaseClient | null = authConfigured
-  ? createClient(url, anonKey, {
+  ? createClient(url, publishableKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,

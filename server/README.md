@@ -207,6 +207,12 @@ unique index that makes a second debit impossible. The mock could not race; a
 real API does, and "check then write" without a lock is where double-debits come
 from.
 
+**Tokens are verified against Supabase's JWKS, with `jose`.** The project signs
+ES256, so this server holds only a *public* key: a leak of everything it knows
+does not let an attacker mint a token. Issuer and audience are pinned, not
+merely read — a signature check alone proves a token came from *a* Supabase
+project, and anyone can create one.
+
 **The JWT is trusted for identity and nothing else.** Supabase signs it, so
 `sub` is reliable — but the tenant and the role are read from
 `tenant_membership` on every request. A JWT is a cached copy of a decision, and

@@ -29,7 +29,7 @@ await loadAllRoutes();
 
 console.log(`authConfigured = ${authConfigured}`);
 if (!authConfigured) {
-  console.log('\nSKIPPED: run with VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY set.');
+  console.log('\nSKIPPED: run with VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY set.');
   console.log('Without them this build is demo mode, which is what routecheck covers.');
   process.exit(0);
 }
