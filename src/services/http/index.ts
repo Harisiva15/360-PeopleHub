@@ -73,6 +73,32 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    payroll: {
+      runs: () => api.get('/payroll/runs'),
+      currentRun: () => api.get('/payroll/runs/current'),
+      totals: (mk) => api.get(`/payroll/${mk}/totals`),
+      totalsFor: (mks) => api.get(`/payroll/totals${qs({ mks: mks.join(',') })}`),
+      register: (mk) => api.get(`/payroll/${mk}/register`),
+      payslip: (empId, mk) => api.get(`/payroll/payslips/${empId}/${mk}`),
+      payslipHistory: (empId) => api.get(`/payroll/payslips/${empId}`),
+      dailyRates: (empIds) =>
+        (empIds.length ? api.get(`/payroll/daily-rates${qs({ empIds: empIds.join(',') })}`)
+          : Promise.resolve({})),
+      structure: (empId) => api.get(`/payroll/structure/${empId}`),
+      inputs: (mk) => api.get(`/payroll/${mk}/inputs`),
+      compensation: () => api.get('/payroll/compensation'),
+      bankBatches: () => api.get('/payroll/bank-batches'),
+      compliancePayments: () => api.get('/payroll/compliance'),
+      activeLoans: () => api.get('/payroll/loans'),
+      processRun: (mk) => api.post(`/payroll/${mk}/process`),
+      /*
+       * The tax-declaration half of PayrollService is deliberately absent.
+       * Declarations price a regime against PAN-backed proofs, and the
+       * schema holds no PAN; claiming a method the server cannot honour is
+       * worse than not claiming it.
+       */
+    },
+
     onboarding: {
       list: () => api.get('/onboarding'),
       setTask: (id, key, done) =>

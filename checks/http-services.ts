@@ -30,8 +30,10 @@ check('a mapped method is replaced',
 check('an unmapped method on the same service is untouched',
   merged.employees.profile === mockServices.employees.profile);
 
+// staffing, not payroll: payroll went live and this probe has to name a
+// service that is still entirely mock, or it passes for the wrong reason.
 check('an untouched service is the same object',
-  merged.payroll === mockServices.payroll);
+  merged.staffing === mockServices.staffing);
 
 check('the mock is not mutated',
   mockServices.employees.visible !== merged.employees.visible);

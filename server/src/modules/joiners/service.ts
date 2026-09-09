@@ -11,7 +11,7 @@
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
-import { provisionEmployee, ProvisionError } from '../people/provision.ts';
+import { provisionEmployee } from '../people/provision.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
 export class JoinerError extends Error {

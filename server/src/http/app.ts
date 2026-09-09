@@ -47,6 +47,11 @@ import {
 } from '../modules/assets/service.ts';
 import { ProvisionError } from '../modules/people/provision.ts';
 import {
+  activeLoans, bankBatches, compensation, compliancePayments, currentRun, dailyRates,
+  inputsFor, listRuns, PayrollError, payslipFor, payslipHistory, processRun, register,
+  salaryStructureOf, totals, totalsFor,
+} from '../modules/payroll/service.ts';
+import {
   completeOnboarding, listOnboarding, OnboardingError, setTask,
 } from '../modules/onboarding/service.ts';
 import {
@@ -187,6 +192,51 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       actOnRegularisation(c, p.empId!, p.date!,
         (body as { decision: 'Approved' | 'Rejected' }).decision),
+  },
+  { method: 'GET', pattern: '/payroll/runs', handler: (c) => listRuns(c) },
+  { method: 'GET', pattern: '/payroll/runs/current', handler: (c) => currentRun(c) },
+  { method: 'GET', pattern: '/payroll/compensation', handler: (c) => compensation(c) },
+  { method: 'GET', pattern: '/payroll/bank-batches', handler: (c) => bankBatches(c) },
+  { method: 'GET', pattern: '/payroll/compliance', handler: (c) => compliancePayments(c) },
+  { method: 'GET', pattern: '/payroll/loans', handler: (c) => activeLoans(c) },
+  {
+    method: 'GET',
+    pattern: '/payroll/daily-rates',
+    handler: (c, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('empIds');
+      return dailyRates(c, ids ? ids.split(',').filter(Boolean) : []);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/payroll/totals',
+    handler: (c, req) => {
+      const mks = new URL(req.url ?? '/', 'http://x').searchParams.get('mks');
+      return totalsFor(c, mks ? mks.split(',').filter(Boolean) : []);
+    },
+  },
+  { method: 'GET', pattern: '/payroll/:mk/totals', handler: (c, _r, p) => totals(c, p.mk!) },
+  { method: 'GET', pattern: '/payroll/:mk/register', handler: (c, _r, p) => register(c, p.mk!) },
+  { method: 'GET', pattern: '/payroll/:mk/inputs', handler: (c, _r, p) => inputsFor(c, p.mk!) },
+  {
+    method: 'POST',
+    pattern: '/payroll/:mk/process',
+    handler: (c, _r, p) => processRun(c, p.mk!),
+  },
+  {
+    method: 'GET',
+    pattern: '/payroll/structure/:empId',
+    handler: (c, _r, p) => salaryStructureOf(c, p.empId!),
+  },
+  {
+    method: 'GET',
+    pattern: '/payroll/payslips/:empId',
+    handler: (c, _r, p) => payslipHistory(c, p.empId!),
+  },
+  {
+    method: 'GET',
+    pattern: '/payroll/payslips/:empId/:mk',
+    handler: (c, _r, p) => payslipFor(c, p.empId!, p.mk!),
   },
   { method: 'GET', pattern: '/onboarding', handler: (c) => listOnboarding(c) },
   {
@@ -494,6 +544,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof BadRequest) return { status: 400, message: error.message };
   if (error instanceof AttendanceError) {
     const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof PayrollError) {
+    const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };
