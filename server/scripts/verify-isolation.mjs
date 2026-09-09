@@ -203,6 +203,25 @@ await refuses(
   app, 'SELECT count(*) FROM employee');
 await app.query('ROLLBACK');
 
+/*
+ * The authentication lookup must work with NO tenant set — that is the whole
+ * point of it. This is the check that was missing when callerFromToken shipped
+ * unable to read tenant_membership as app_rw: every earlier test ran as the
+ * owner, which bypasses RLS and hides the problem entirely.
+ */
+await app.query('BEGIN');
+{
+  const anyUser = await owner.query('SELECT id FROM auth.users LIMIT 1');
+  const probe = anyUser.rows[0]?.id ?? '00000000-0000-0000-0000-000000000000';
+  try {
+    const { rows } = await app.query('SELECT * FROM auth_membership($1)', [probe]);
+    ok(`the auth lookup works with no tenant set (${rows.length} membership row(s))`);
+  } catch (e) {
+    bad('the auth lookup works with no tenant set', e.message.split('\n')[0]);
+  }
+}
+await app.query('ROLLBACK');
+
 /* the default fills the tenant in, so code cannot omit it */
 await app.query('BEGIN');
 await app.query('SELECT set_config($1, $2, true)', ['app.tenant_id', tenantA]);

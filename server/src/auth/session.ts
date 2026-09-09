@@ -46,18 +46,15 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
   const preferredTenant = claims.app_metadata?.tenant_id ?? null;
 
   const row = await withoutTenantForAuth(async (db) => {
+    // auth_membership is a SECURITY DEFINER function, and deliberately so:
+    // this read happens before any tenant is established, which is exactly
+    // what the row-level policy on tenant_membership denies. See migration
+    // 0011 for why a narrow function beats a wider policy here.
     const result = await db.query<MembershipRow>(
-      `SELECT m.tenant_id,
-              m.role,
-              m.employee_id,
-              m.status AS membership_status,
-              t.status AS tenant_status
-         FROM tenant_membership m
-         JOIN tenant t ON t.id = m.tenant_id
-        WHERE m.user_id = $1
-          AND m.status = 'active'
-          AND ($2::uuid IS NULL OR m.tenant_id = $2::uuid)
-        ORDER BY (m.tenant_id = $2::uuid) DESC
+      `SELECT tenant_id, role, employee_id, membership_status, tenant_status
+         FROM auth_membership($1)
+        WHERE ($2::uuid IS NULL OR tenant_id = $2::uuid)
+        ORDER BY (tenant_id = $2::uuid) DESC
         LIMIT 1`,
       [claims.sub, preferredTenant],
     );
@@ -83,17 +80,15 @@ export async function membershipsFor(
 ): Promise<{ tenantId: string; slug: string; name: string; role: string }[]> {
   return withoutTenantForAuth(async (db) => {
     const { rows } = await db.query(
-      `SELECT m.tenant_id, t.slug, t.display_name, m.role
-         FROM tenant_membership m
-         JOIN tenant t ON t.id = m.tenant_id
-        WHERE m.user_id = $1 AND m.status = 'active' AND t.status IN ('trial', 'active')
-        ORDER BY t.display_name`,
+      `SELECT tenant_id, tenant_slug, tenant_name, role
+         FROM auth_membership($1)
+        WHERE tenant_status IN ('trial', 'active')`,
       [userId],
     );
     return rows.map((r) => ({
       tenantId: r.tenant_id,
-      slug: r.slug,
-      name: r.display_name,
+      slug: r.tenant_slug,
+      name: r.tenant_name,
       role: r.role,
     }));
   });
