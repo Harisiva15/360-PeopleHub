@@ -61,6 +61,30 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
     return result.rows[0] ?? null;
   });
 
+  /*
+   * No membership yet. If their verified address matches exactly one unlinked
+   * active employee, this is a first sign-in after HR added them — link it and
+   * carry on. Anything ambiguous returns nothing and the error below stands.
+   */
+  if (!row && claims.email && claims.user_metadata?.email_verified) {
+    const claimed = await withoutTenantForAuth(async (db) => {
+      const r = await db.query<MembershipRow>(
+        `SELECT tenant_id, role, employee_id, membership_status, tenant_status
+           FROM auth_claim_membership($1, $2::citext)`,
+        [claims.sub, claims.email],
+      );
+      return r.rows[0] ?? null;
+    });
+    if (claimed) {
+      return {
+        tenantId: claimed.tenant_id,
+        userId: claims.sub,
+        employeeId: claimed.employee_id,
+        role: claimed.role,
+      };
+    }
+  }
+
   if (!row) throw new AuthError('no active membership for this user');
   if (row.tenant_status === 'suspended' || row.tenant_status === 'closed') {
     throw new AuthError('tenant is not active');

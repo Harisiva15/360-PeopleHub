@@ -36,6 +36,9 @@ const jwks = createRemoteJWKSet(new URL(config.jwksUrl), {
 
 export interface SupabaseClaims extends JWTPayload {
   sub: string;
+  email?: string;
+  /** Set by Supabase once the address is confirmed. Never trust the address without it. */
+  user_metadata?: { email_verified?: boolean };
   app_metadata?: { tenant_id?: string; app_role?: string };
 }
 
