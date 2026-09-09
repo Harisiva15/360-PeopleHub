@@ -69,7 +69,6 @@ export const NAV: NavGroup[] = [
   {
     group: 'Insights',
     items: [
-      { k: 'copilot', ic: '✨', n: 'AI Copilot' },
       { k: 'exec', ic: '◮', n: 'Executive View' },
       { k: 'reports', ic: '▥', n: 'Reports' },
       { k: 'documents', ic: '▧', n: 'Documents & Letters' },

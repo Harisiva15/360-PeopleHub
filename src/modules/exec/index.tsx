@@ -10,14 +10,14 @@ import { ORG } from '../../data/org';
 import { Badge, Card, EmptyState, Table, Tile } from '../../components/ui';
 import { Donut, HBar, LineChart, PAL, Spark } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
+import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
-import { useAiDraft } from '../copilot/ai';
 import {
   useAllEmployees, useClients, useCompensation, useConsultants, useCurrentRun, useExits,
   usePayrollTotals, usePlacements, useRequirements, useStaffingKpi,
-} from '../copilot/data';
+} from './data';
 
 /**
  * Indicative month-on-month headcount drift for the sparkline. Fixed rather
@@ -40,7 +40,7 @@ interface Risk {
 
 function ExecView() {
   const app = useApp();
-  const draft = useAiDraft();
+  const layer = useLayer();
   const { data: k } = useStaffingKpi();
   const { data: requirements = [] } = useRequirements();
   const { data: curRun } = useCurrentRun();
@@ -151,11 +151,12 @@ function ExecView() {
 
   const period = TODAY.toLocaleString('en', { month: 'long', year: 'numeric' });
 
-  const boardNote = () =>
-    draft('summary', {
-      t: 'Board note — ' + period,
-      s: `${ORG.legal} · prepared by ${app.me.name}`,
-      text:
+  /*
+   * The board note is a template over the figures already on this screen, so
+   * it is assembled here rather than fetched from anywhere.
+   */
+  const boardNote = () => {
+    const text =
         `BOARD NOTE — ${period.toUpperCase()}\n${ORG.legal}\n\n` +
         `1. TRADING\nMonthly billed revenue of ${mbS(k.revenueMonthly)} across ${k.placements} active placements, ` +
         `at a gross margin of ${k.grossMargin}%. Delivery cost was ${mbS(k.costMonthly)}.\n\n` +
@@ -168,8 +169,31 @@ function ExecView() {
         `5. CASH\nReceivables of ${mbS(k.ar)}, of which ${mbS(k.arOverdue)} is overdue. Days sales outstanding is ${k.dso}.\n\n` +
         '6. ACTIONS REQUESTED\n• Approve the redeployment plan for the bench.\n' +
         '• Note the escalation path on overdue receivables.\n' +
-        '• Approve rate-card review for accounts trading below the 18% margin floor.',
+      '• Approve rate-card review for accounts trading below the 18% margin floor.';
+
+    layer.modal({
+      title: 'Board note — ' + period,
+      sub: `${ORG.legal} · prepared by ${app.me.name}`,
+      size: 'wide',
+      body: <pre className="draft-body">{text}</pre>,
+      footer: (close: () => void) => (
+        <>
+          <button className="btn" onClick={close}>Close</button>
+          <button
+            className="btn primary"
+            onClick={() => {
+              navigator.clipboard?.writeText(text).then(
+                () => app.toast('Copied to clipboard'),
+                () => app.toast('Select and copy manually'),
+              );
+            }}
+          >
+            Copy
+          </button>
+        </>
+      ),
     });
+  };
 
   return (
     <div className="stack">
@@ -272,14 +296,14 @@ function ExecView() {
       <Card
         title="Executive summary"
         sub="Auto-drafted from this period’s numbers"
-        actions={<button className="btn sm primary" onClick={boardNote}>✨ Draft board note</button>}
+        actions={<button className="btn sm primary" onClick={boardNote}>Draft board note</button>}
       >
         <p className="muted" style={{ margin: 0, lineHeight: 1.7 }}>
           {ORG.name} is running {k.placements} billable placements generating {mbS(rev)} of monthly revenue at a{' '}
           {k.grossMargin}% gross margin. Headcount stands at {everyone.length} across {byCountry.length} entities with
           a monthly people cost of {mbS(sum(byCountry, (r) => r.cost))}.{' '}
           {k.bench
-            ? `${k.bench} consultants sit on bench carrying ${mbS(k.benchCostMonthly)} a month of unrecovered cost; the AI redeployment plan identifies matches for a portion of them. `
+            ? `${k.bench} consultants sit on bench carrying ${mbS(k.benchCostMonthly)} a month of unrecovered cost. `
             : 'The bench is clear. '}
           Receivables total {mbS(k.ar)} with {mbS(k.arOverdue)} overdue at a {k.dso}-day DSO. The demand book holds{' '}
           {k.openReqs} open requirements covering {k.openPositions} positions at a {k.fillRate}% fill rate.

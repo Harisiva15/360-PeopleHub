@@ -10,7 +10,6 @@ import { useBench, useConsultants, useKpi, usePlacements } from './data';
 import { Avatar, Badge, Card, EmptyState, Tabs, Tile } from '../../components/ui';
 import { Chip, Divide } from '../../components/common';
 import { BarChart, HBar, Legend, LineChart, PAL } from '../../components/charts';
-import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { monthlyUnits } from './shared';
@@ -31,7 +30,6 @@ const supplierOf = (c: Consultant) => (c.external ? vendorOf(c.vendorId || '')?.
 /* ---------------- Bench ---------------- */
 
 function BnBench() {
-  const app = useApp();
   const { data: bench = [] } = useBench();
   const { data: CONSULTANTS = [] } = useConsultants();
   const { data: k } = useKpi();
@@ -56,7 +54,6 @@ function BnBench() {
       <Card title="Bench register" sub={`${list.length} consultants available`} flush
         actions={
           <div className="row">
-            <button className="btn sm" onClick={() => app.toast('AI matching runs from the Copilot module')}>✨ AI match to open roles</button>
             <button className="btn sm" onClick={() =>
               downloadCSV('bench.csv',
                 [['ID', 'Name', 'Role', 'Skills', 'Country', 'Work auth', 'Bench since', 'Bench days', 'Cost to date', 'Redeployment']].concat(

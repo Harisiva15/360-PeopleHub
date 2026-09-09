@@ -7,13 +7,13 @@ export const PERMS: Record<AppRole, string[]> = {
     'dashboard', 'attendance', 'shifts', 'timesheet', 'leave', 'expenses', 'approvals', 'employees', 'org',
     'celebrations', 'announcements', 'helpdesk', 'engagement', 'payroll', 'tax', 'benefits', 'hiring',
     'onboarding', 'performance', 'learning', 'exit', 'reports', 'documents', 'settings', 'assets', 'security',
-    'whatsapp', 'clients', 'requirements', 'bench', 'placements', 'billing', 'vendors', 'copilot', 'exec',
+    'whatsapp', 'clients', 'requirements', 'bench', 'placements', 'billing', 'vendors', 'exec',
   ],
   manager: [
     'dashboard', 'attendance', 'shifts', 'timesheet', 'leave', 'expenses', 'approvals', 'employees', 'org',
     'celebrations', 'announcements', 'helpdesk', 'engagement', 'payroll', 'tax', 'benefits', 'hiring',
     'onboarding', 'performance', 'learning', 'exit', 'reports', 'documents', 'assets', 'whatsapp', 'clients',
-    'requirements', 'bench', 'placements', 'vendors', 'copilot',
+    'requirements', 'bench', 'placements', 'vendors',
   ],
   employee: [
     'dashboard', 'attendance', 'shifts', 'timesheet', 'leave', 'expenses', 'employees', 'org', 'celebrations',

@@ -53,7 +53,6 @@ const LOADERS: Record<string, () => Promise<unknown>> = {
   billing: () => import('./staffing/billing'),
   vendors: () => import('./staffing/vendors'),
 
-  copilot: () => import('./copilot'),
   exec: () => import('./exec'),
   reports: () => import('./reports'),
   documents: () => import('./documents'),

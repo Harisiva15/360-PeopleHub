@@ -1,9 +1,9 @@
 /**
- * The AI layer's data access.
+ * The executive view's data access.
  *
- * Matching goes through the service rather than running in the browser: it
- * scores a pairing from consultant cost bases and client bill rates, and that
- * is not data every caller should be holding.
+ * This file was shared with the AI copilot before that module was removed.
+ * What is left is what the board view reads: the staffing book, headcount,
+ * payroll totals and exits.
  */
 
 import { useMutation, useQuery } from '../../services/react';

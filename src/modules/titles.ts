@@ -34,7 +34,6 @@ export const TITLES: Record<string, string> = {
   billing: 'Billing & Receivables',
   vendors: 'Vendor Management',
 
-  copilot: 'AI Copilot',
   exec: 'Executive View',
   reports: 'Reports & Analytics',
   documents: 'Documents & Letters',

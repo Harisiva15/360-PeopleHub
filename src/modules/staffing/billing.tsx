@@ -151,7 +151,7 @@ function BlAr() {
       </div>
 
       <Card title="Collection worklist" sub="Ordered by ageing and value" flush
-        actions={<button className="btn sm" onClick={() => app.toast('Chase emails are drafted from the Copilot module')}>✨ Draft chase emails</button>}>
+        >
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>

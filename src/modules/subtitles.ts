@@ -58,7 +58,6 @@ export const SUBTITLES: Record<string, (ctx: ModuleCtx) => string> = {
   billing: () => 'Invoices, receivables ageing and the billing run',
   vendors: () => 'The supplier panel, scorecards and compliance',
 
-  copilot: () => 'Signals computed from live records · nothing leaves the system',
   exec: () => 'Trading, people and cash — one page for the board',
   reports: () => 'Cross-module analytics, exportable to CSV',
   documents: () => 'Self-service letters and the document repository',

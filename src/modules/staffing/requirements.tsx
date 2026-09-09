@@ -25,7 +25,6 @@ const INTERVIEWED = ['interview', 'selected', 'placed'];
 /* ---------------- Open requirements ---------------- */
 
 function RqOpen() {
-  const app = useApp();
   const { data: k } = useKpi();
   const { data: REQUIREMENTS = [] } = useRequirements();
   const { data: SUBMISSIONS = [] } = useSubmissions();
@@ -35,9 +34,6 @@ function RqOpen() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <button className="btn" onClick={() => app.toast('AI matching runs from the Copilot module')}>
-          ✨ AI match bench to open roles
-        </button>
         <div className="spacer" />
         <button className="btn" onClick={() =>
           downloadCSV('requirements.csv',
