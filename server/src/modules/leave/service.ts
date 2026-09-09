@@ -20,9 +20,18 @@ import { withTenant } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
 export class LeaveError extends Error {
-  constructor(message: string, readonly code: string) {
+  /*
+   * Declared rather than a constructor parameter property: Node runs this file
+   * by stripping types, which cannot synthesise the assignment a parameter
+   * property implies. It typechecks either way, so the failure only appears at
+   * runtime.
+   */
+  readonly code: string;
+
+  constructor(message: string, code: string) {
     super(message);
     this.name = 'LeaveError';
+    this.code = code;
   }
 }
 

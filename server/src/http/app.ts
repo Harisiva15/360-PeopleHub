@@ -11,6 +11,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { callerFromToken, AuthError } from '../auth/session.ts';
+import { applyCors } from './cors.ts';
 import type { Caller } from '../tenancy/context.ts';
 import { TenantContextError } from '../tenancy/context.ts';
 import { LeaveError } from '../modules/leave/service.ts';
@@ -34,12 +35,32 @@ interface Route {
 /**
  * The routes wired so far. The remaining endpoints in docs/api-contract.md
  * follow the same shape; these two modules are the pattern to copy.
+ *
+ * **Order matters.** Matching stops at the first hit, so a literal segment has
+ * to precede the parameter that would also match it — `/employees/active`
+ * before `/employees/:id`, or "active" is read as an employee id and every
+ * request 404s with a confusing message. A router with proper specificity
+ * ranking removes this hazard; until then, keep literals above parameters.
  */
 const routes: Route[] = [
   {
     method: 'GET',
     pattern: '/employees',
     handler: (caller) => listVisibleEmployees(caller),
+  },
+  {
+    method: 'GET',
+    pattern: '/employees/active',
+    handler: (caller) => listVisibleEmployees(caller),
+  },
+  {
+    method: 'GET',
+    pattern: '/employees/:id',
+    handler: async (caller, _req, params) => {
+      const one = await getEmployeeProfile(caller, params.id!);
+      if (!one) throw new NotFound('no such employee');
+      return one;
+    },
   },
   {
     method: 'GET',
@@ -146,6 +167,10 @@ const send = (res: ServerResponse, status: number, payload: unknown): void => {
 export function createApp() {
   return createServer((req, res) => {
     void (async () => {
+      // Before anything else, including auth: a preflight carries no
+      // credentials and must be answered whatever the route turns out to be.
+      if (applyCors(req, res)) return;
+
       const url = new URL(req.url ?? '/', 'http://localhost');
 
       if (url.pathname === '/health') {
