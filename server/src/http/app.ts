@@ -19,7 +19,10 @@ import {
   getEmployee, getEmployeeProfile, getEmployeesByIds, getTeam,
   listActiveEmployees, listExitedEmployees, listVisibleEmployees, setEmployeeRole,
 } from '../modules/employees/service.ts';
-import { applyForLeave, approveLeave, cancelLeave } from '../modules/leave/service.ts';
+import {
+  applyForLeave, approveLeave, balanceFor, balancesFor, balancesForMany,
+  cancelLeave, listLeave, rejectLeave,
+} from '../modules/leave/service.ts';
 import {
   addHoliday, ConfigError, listHolidays, listSites, setLeaveQuota, updateFence,
 } from '../modules/config/service.ts';
@@ -126,6 +129,40 @@ const routes: Route[] = [
       const b = body as { date: string; name: string; optional?: boolean };
       return addHoliday(c, b.date, b.name, Boolean(b.optional));
     },
+  },
+  {
+    method: 'GET',
+    pattern: '/leave',
+    handler: (c, req) => {
+      const p = new URL(req.url ?? '/', 'http://x').searchParams;
+      const ids = p.get('empIds');
+      return listLeave(c, {
+        ...(ids ? { empIds: ids.split(',').filter(Boolean) } : {}),
+        ...(p.get('status') ? { status: p.get('status') as 'Pending' } : {}),
+      });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/leave/balances',
+    handler: (c, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('empIds');
+      return balancesForMany(c, ids ? ids.split(',').filter(Boolean) : []);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/leave/balances/:empId',
+    handler: (c, req, p) => {
+      const type = new URL(req.url ?? '/', 'http://x').searchParams.get('type');
+      return type ? balanceFor(c, p.empId!, type) : balancesFor(c, p.empId!);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/leave/:id/reject',
+    handler: (c, _r, p, body) =>
+      rejectLeave(c, p.id!, (body as { note?: string } | undefined)?.note),
   },
   {
     method: 'POST',

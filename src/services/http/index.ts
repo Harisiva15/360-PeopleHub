@@ -64,8 +64,21 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
     },
 
     leave: {
-      apply: (req) => api.post<LeaveRequest>('/leave', req),
+      list: (q) => api.get<LeaveRequest[]>(`/leave${qs({
+        empIds: q.empIds?.join(','), status: q.status,
+      })}`),
+      balances: (empId) => api.get(`/leave/balances/${empId}`),
+      balance: (empId, type) => api.get(`/leave/balances/${empId}${qs({ type })}`),
+      balancesFor: (empIds) =>
+        (empIds.length ? api.get(`/leave/balances${qs({ empIds: empIds.join(',') })}`)
+          : Promise.resolve({})),
+      apply: (req) => api.post<LeaveRequest>('/leave', {
+        employeeId: req.empId, typeCode: req.type, startsOn: req.from,
+        endsOn: req.to, days: req.days, reason: req.reason, half: req.half,
+      }),
       approve: (id: string) => api.post<LeaveRequest>(`/leave/${id}/approve`),
+      reject: (id: string, _approverId: string, note?: string) =>
+        api.post<LeaveRequest>(`/leave/${id}/reject`, { note }),
       cancel: (id: string) => api.post<LeaveRequest>(`/leave/${id}/cancel`),
     },
   };

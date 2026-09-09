@@ -16,8 +16,23 @@
  * whether somebody is paid for a day they did not work.
  */
 
-import { withTenant } from '../../tenancy/context.ts';
+import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
+import { toBalanceRow, toHalfDayColumn, toLeaveRequest } from './mapper.ts';
+import type { LeaveBalanceRow, LeaveRequest } from './mapper.ts';
+
+export type { LeaveBalanceRow, LeaveRequest };
+
+/**
+ * Every read joins leave_type so the screens get the code they filter by
+ * ('CL', 'EL') rather than the uuid the row stores.
+ */
+const REQUEST_PROJECTION = `
+  SELECT lr.id, lr.employee_id, lt.code AS type_code, lr.starts_on, lr.ends_on,
+         lr.days, lr.half_day, lr.reason, lr.status, lr.approver_id,
+         lr.applied_on, lr.acted_on, lr.approver_note
+    FROM leave_request lr
+    JOIN leave_type lt ON lt.id = lr.leave_type_id`;
 
 export class LeaveError extends Error {
   /*
@@ -35,27 +50,6 @@ export class LeaveError extends Error {
   }
 }
 
-export interface LeaveRequestRow {
-  id: string;
-  employeeId: string;
-  leaveTypeId: string;
-  startsOn: string;
-  endsOn: string;
-  days: string;
-  status: string;
-  approverId: string | null;
-}
-
-const toRow = (r: Record<string, unknown>): LeaveRequestRow => ({
-  id: r.id as string,
-  employeeId: r.employee_id as string,
-  leaveTypeId: r.leave_type_id as string,
-  startsOn: r.starts_on as string,
-  endsOn: r.ends_on as string,
-  days: r.days as string,
-  status: r.status as string,
-  approverId: (r.approver_id as string | null) ?? null,
-});
 
 /** The leave year a date falls in, per the tenant's configured start month. */
 async function leaveYearStart(db: TenantClient, onDate: string): Promise<string> {
@@ -73,14 +67,28 @@ async function leaveYearStart(db: TenantClient, onDate: string): Promise<string>
   return row.year_start as string;
 }
 
+/**
+ * Re-read a request through the same projection the list uses.
+ *
+ * A mutation returning its own RETURNING row is how a create and a fetch end
+ * up shaped differently — the create lacks the joined type code, and the bug
+ * only shows after a refresh makes it reappear correctly.
+ */
+async function reload(db: TenantClient, id: string): Promise<LeaveRequest> {
+  const { rows } = await db.query(`${REQUEST_PROJECTION} WHERE lr.id = $1`, [id]);
+  if (!rows[0]) throw new LeaveError('no such leave request', 'not_found');
+  return toLeaveRequest(rows[0]);
+}
+
 export interface ApplyLeaveInput {
   employeeId: string;
-  leaveTypeId: string;
+  /** The screens work in codes ('CL', 'EL'); the uuid is resolved here. */
+  typeCode: string;
   startsOn: string;
   endsOn: string;
   days: number;
   reason: string;
-  halfDay?: 'first_half' | 'second_half';
+  half?: string | null;
 }
 
 /**
@@ -91,7 +99,7 @@ export interface ApplyLeaveInput {
 export async function applyForLeave(
   caller: Caller,
   input: ApplyLeaveInput,
-): Promise<LeaveRequestRow> {
+): Promise<LeaveRequest> {
   if (caller.role !== 'admin' && input.employeeId !== caller.employeeId) {
     throw new LeaveError('you can only apply for your own leave', 'forbidden');
   }
@@ -109,6 +117,10 @@ export async function applyForLeave(
       throw new LeaveError('those dates overlap a request you already have', 'overlap');
     }
 
+    const type = await db.query('SELECT id FROM leave_type WHERE code = $1 AND active',
+      [input.typeCode]);
+    if (type.rowCount === 0) throw new LeaveError('no such leave type', 'invalid');
+
     const approver = await db.query(
       'SELECT manager_id FROM employee WHERE id = $1',
       [input.employeeId],
@@ -120,12 +132,12 @@ export async function applyForLeave(
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
-        input.employeeId, input.leaveTypeId, input.startsOn, input.endsOn,
-        input.days, input.halfDay ?? null, input.reason,
+        input.employeeId, type.rows[0].id, input.startsOn, input.endsOn,
+        input.days, toHalfDayColumn(input.half ?? null), input.reason,
         approver.rows[0]?.manager_id ?? null,
       ],
     );
-    return toRow(rows[0]!);
+    return reload(db, rows[0]!.id as string);
   });
 }
 
@@ -135,7 +147,7 @@ export async function applyForLeave(
 export async function approveLeave(
   caller: Caller,
   requestId: string,
-): Promise<LeaveRequestRow> {
+): Promise<LeaveRequest> {
   if (caller.role === 'employee') {
     throw new LeaveError('only a manager or admin may approve leave', 'forbidden');
   }
@@ -225,12 +237,12 @@ export async function approveLeave(
       [caller.employeeId, requestId, request.days],
     );
 
-    return toRow(updated.rows[0]!);
+    return reload(db, requestId);
   });
 }
 
 /** Cancelling an approved request credits the days back. */
-export async function cancelLeave(caller: Caller, requestId: string): Promise<LeaveRequestRow> {
+export async function cancelLeave(caller: Caller, requestId: string): Promise<LeaveRequest> {
   return withTenant(caller, async (db) => {
     const { rows } = await db.query(
       'SELECT * FROM leave_request WHERE id = $1 FOR UPDATE',
@@ -272,6 +284,178 @@ export async function cancelLeave(caller: Caller, requestId: string): Promise<Le
         WHERE id = $1 RETURNING *`,
       [requestId],
     );
-    return toRow(updated.rows[0]!);
+    return reload(db, requestId);
+  });
+}
+
+/* ---------------------------------------------------------------------------
+ * Reads
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Requests, narrowed to the caller's scope.
+ *
+ * `empIds` is a filter the caller may apply *within* what they can already
+ * see — never a way to widen it. The scope clause is ANDed last, so a manager
+ * asking for someone else's team gets nothing rather than everything.
+ */
+export async function listLeave(
+  caller: Caller,
+  q: { empIds?: string[]; status?: LeaveRequest['status'] } = {},
+): Promise<LeaveRequest[]> {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (caller.role === 'employee') {
+    params.push(caller.employeeId);
+    where.push(`lr.employee_id = $${params.length}`);
+  } else if (caller.role === 'manager') {
+    params.push(caller.employeeId);
+    where.push(`(lr.employee_id = $${params.length} OR lr.employee_id IN (
+       WITH RECURSIVE r AS (
+         SELECT id FROM employee WHERE manager_id = $${params.length}
+         UNION ALL
+         SELECT c.id FROM employee c JOIN r ON c.manager_id = r.id
+       ) SELECT id FROM r))`);
+  }
+
+  if (q.empIds?.length) {
+    params.push(q.empIds);
+    where.push(`lr.employee_id = ANY($${params.length}::uuid[])`);
+  }
+  if (q.status) {
+    params.push(q.status.toLowerCase());
+    where.push(`lr.status = $${params.length}`);
+  }
+
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `${REQUEST_PROJECTION}
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY lr.applied_on DESC, lr.starts_on DESC`,
+      params,
+    );
+    return rows.map(toLeaveRequest);
+  });
+}
+
+/** Whether the caller may see this person's balances. */
+async function maySee(db: TenantClient, caller: Caller, empId: string): Promise<boolean> {
+  if (caller.role === 'admin') return true;
+  if (empId === caller.employeeId) return true;
+  if (caller.role !== 'manager') return false;
+  const r = await db.query(
+    `WITH RECURSIVE t AS (
+       SELECT id FROM employee WHERE manager_id = $1
+       UNION ALL
+       SELECT c.id FROM employee c JOIN t ON c.manager_id = t.id
+     ) SELECT 1 FROM t WHERE id = $2`,
+    [caller.employeeId, empId],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+const CURRENT_YEAR_START = `
+  make_date(
+    CASE WHEN EXTRACT(MONTH FROM CURRENT_DATE) >= t.fiscal_year_start_month
+         THEN EXTRACT(YEAR FROM CURRENT_DATE)::int
+         ELSE EXTRACT(YEAR FROM CURRENT_DATE)::int - 1 END,
+    t.fiscal_year_start_month, 1)`;
+
+/** The full balance sheet for one person, current leave year. */
+export async function balancesFor(caller: Caller, empId: string): Promise<LeaveBalanceRow[]> {
+  return withTenantReadOnly(caller, async (db) => {
+    if (!(await maySee(db, caller, empId))) return [];
+    const { rows } = await db.query(
+      `SELECT lt.code AS type_code, lb.quota, lb.carried_over, lb.used
+         FROM leave_balance lb
+         JOIN leave_type lt ON lt.id = lb.leave_type_id
+         JOIN tenant t ON t.id = current_tenant_id()
+        WHERE lb.employee_id = $1 AND lb.year_start = ${CURRENT_YEAR_START}
+        ORDER BY lt.code`,
+      [empId],
+    );
+    return rows.map(toBalanceRow);
+  });
+}
+
+/** One type's balance, or null when the person has none of that type. */
+export async function balanceFor(
+  caller: Caller,
+  empId: string,
+  typeCode: string,
+): Promise<LeaveBalanceRow | null> {
+  const all = await balancesFor(caller, empId);
+  return all.find((b) => b.type === typeCode) ?? null;
+}
+
+/**
+ * Balance sheets for several people in one call, keyed by employee id.
+ *
+ * A team leave screen shows a row per person; without this it would be one
+ * query per row.
+ */
+export async function balancesForMany(
+  caller: Caller,
+  empIds: string[],
+): Promise<Record<string, LeaveBalanceRow[]>> {
+  if (!empIds.length) return {};
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `SELECT lb.employee_id, lt.code AS type_code, lb.quota, lb.carried_over, lb.used
+         FROM leave_balance lb
+         JOIN leave_type lt ON lt.id = lb.leave_type_id
+         JOIN tenant t ON t.id = current_tenant_id()
+        WHERE lb.employee_id = ANY($1::uuid[]) AND lb.year_start = ${CURRENT_YEAR_START}
+        ORDER BY lb.employee_id, lt.code`,
+      [empIds],
+    );
+    const out: Record<string, LeaveBalanceRow[]> = {};
+    for (const r of rows) {
+      const id = r.employee_id as string;
+      (out[id] ??= []).push(toBalanceRow(r));
+    }
+    return out;
+  });
+}
+
+/**
+ * Reject a request.
+ *
+ * No balance moves: a rejected request was never debited, because the debit
+ * happens on approval rather than on application.
+ */
+export async function rejectLeave(
+  caller: Caller,
+  requestId: string,
+  note?: string,
+): Promise<LeaveRequest> {
+  if (caller.role === 'employee') {
+    throw new LeaveError('only a manager or admin may reject leave', 'forbidden');
+  }
+
+  return withTenant(caller, async (db) => {
+    const { rows } = await db.query(
+      'SELECT * FROM leave_request WHERE id = $1 FOR UPDATE', [requestId]);
+    const request = rows[0];
+    if (!request) throw new LeaveError('no such leave request', 'not_found');
+    if (request.status !== 'pending') {
+      throw new LeaveError(`this request is already ${request.status}`, 'not_pending');
+    }
+    if (request.employee_id === caller.employeeId) {
+      throw new LeaveError('you cannot reject your own leave', 'self_approval');
+    }
+    if (!(await maySee(db, caller, request.employee_id as string))) {
+      throw new LeaveError('that person is not in your team', 'forbidden');
+    }
+
+    await db.query(
+      `UPDATE leave_request
+          SET status = 'rejected', approver_id = $1, acted_on = CURRENT_DATE,
+              approver_note = COALESCE($2, approver_note)
+        WHERE id = $3`,
+      [caller.employeeId, note ?? null, requestId]);
+
+    return reload(db, requestId);
   });
 }
