@@ -53,6 +53,32 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
        */
     },
 
+    attendance: {
+      list: (q) => api.get(`/attendance${qs({
+        empIds: q.empIds?.join(','), from: q.from, to: q.to,
+        regularisedOnly: q.regularisedOnly ? 'true' : undefined,
+      })}`),
+      forDay: (empId, date) => api.get(`/attendance/${empId}/${date}`),
+      regularisable: (empId, since) =>
+        api.get(`/attendance/${empId}/regularisable${qs({ since })}`),
+      /*
+       * geoOk, dist and site are in PunchAt because the mock computed them in
+       * the browser. They are deliberately not sent: the server recomputes
+       * everything from the coordinates, because a browser can claim it was
+       * inside the fence from anywhere.
+       */
+      punchIn: (empId, date, at) =>
+        api.post(`/attendance/${empId}/${date}/punch-in`,
+          { lat: at.lat, lng: at.lng, src: at.src, wfh: at.wfh, at: at.at }),
+      punchOut: (empId, date, at) =>
+        api.post(`/attendance/${empId}/${date}/punch-out`,
+          { lat: at.lat, lng: at.lng, src: at.src, wfh: at.wfh, at: at.at }),
+      raiseRegularisation: (empId, date, inT, outT, reason) =>
+        api.post(`/attendance/${empId}/${date}/regularise`, { inT, outT, reason }),
+      actOnRegularisation: (empId, date, decision) =>
+        api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
+    },
+
     joiners: {
       request: (draft) => api.post('/joiners', draft),
       list: (status) => api.get(`/joiners${qs({ status })}`),

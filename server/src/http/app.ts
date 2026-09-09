@@ -29,6 +29,10 @@ import {
 import {
   approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
 } from '../modules/joiners/service.ts';
+import {
+  actOnRegularisation, AttendanceError, attendanceForDay, listAttendance,
+  punchIn, punchOut, raiseRegularisation, regularisableDays,
+} from '../modules/attendance/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -111,6 +115,58 @@ const routes: Route[] = [
       if (!profile) throw new NotFound('no such employee');
       return profile;
     },
+  },
+  {
+    method: 'GET',
+    pattern: '/attendance',
+    handler: (c, req) => {
+      const p = new URL(req.url ?? '/', 'http://x').searchParams;
+      const ids = p.get('empIds');
+      return listAttendance(c, {
+        ...(ids ? { empIds: ids.split(',').filter(Boolean) } : {}),
+        ...(p.get('from') ? { from: p.get('from')! } : {}),
+        ...(p.get('to') ? { to: p.get('to')! } : {}),
+        ...(p.get('regularisedOnly') === 'true' ? { regularisedOnly: true } : {}),
+      });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/attendance/:empId/regularisable',
+    handler: (c, req, p) => {
+      const since = new URL(req.url ?? '/', 'http://x').searchParams.get('since');
+      return regularisableDays(c, p.empId!, since ?? '1970-01-01');
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/attendance/:empId/:date',
+    handler: (c, _r, p) => attendanceForDay(c, p.empId!, p.date!),
+  },
+  {
+    method: 'POST',
+    pattern: '/attendance/:empId/:date/punch-in',
+    handler: (c, _r, p, body) => punchIn(c, p.empId!, p.date!, (body ?? {}) as never),
+  },
+  {
+    method: 'POST',
+    pattern: '/attendance/:empId/:date/punch-out',
+    handler: (c, _r, p, body) => punchOut(c, p.empId!, p.date!, (body ?? {}) as never),
+  },
+  {
+    method: 'POST',
+    pattern: '/attendance/:empId/:date/regularise',
+    handler: (c, _r, p, body) => {
+      const b = body as { inT: string; outT: string; reason: string };
+      return raiseRegularisation(c, p.empId!, p.date!, b.inT, b.outT, b.reason);
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: '/attendance/:empId/:date/regularise',
+    handler: (c, _r, p, body) =>
+      actOnRegularisation(c, p.empId!, p.date!,
+        (body as { decision: 'Approved' | 'Rejected' }).decision),
   },
   {
     method: 'GET',
@@ -264,6 +320,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof TenantContextError) return { status: 401, message: 'no tenant context' };
   if (error instanceof NotFound) return { status: 404, message: error.message };
   if (error instanceof BadRequest) return { status: 400, message: error.message };
+  if (error instanceof AttendanceError) {
+    const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
   if (error instanceof JoinerError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
