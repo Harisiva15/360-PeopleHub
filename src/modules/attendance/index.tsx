@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { groupBy, sortBy, sum } from '../../lib/collections';
 import { addDays, DOW, dowOf, fmtD, fmtDS, fmtTime, hhmm, monthKey, monthLabelLong, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
@@ -13,7 +12,7 @@ import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { SCOPE } from '../../state/rbac';
 import { useShowEmployee } from '../employees/Profile';
-import { MapBox, PunchWidget } from './Punch';
+import { PunchWidget } from './Punch';
 import {
   useActOnRegularisation, useAttendance, useMyAttendance, usePeople,
   usePayRuns, useRaiseRegularisation, useRegularisableDays, useRegularisations, useVisiblePeople,
@@ -36,20 +35,10 @@ const STATUS_TEXT: Record<string, string> = {
   P: 'Present (in office)', W: 'Work from home', L: 'On leave', A: 'Absent', H: 'Holiday', O: 'Week off',
 };
 
-/** Geo-fence cell — WFH and client punches are logged but not enforced. */
-function GeoCell({ r }: { r: AttRecord }) {
-  if (!r.inT) return <>—</>;
-  if (r.site === 'WFH' || r.site === 'CLIENT') return <Badge>Logged</Badge>;
-  return r.geoOk
-    ? <Badge kind="good">✓ {r.dist == null ? 'OK' : r.dist + ' m'}</Badge>
-    : <Badge kind="crit">⚠ {r.dist} m</Badge>;
-}
-
 function useAttDetail(dir: Directory) {
   const layer = useLayer();
   return (r: AttRecord) => {
     const name = dir.name(r.empId);
-    const s = siteOf(r.site);
     layer.modal({
       title: name + ' — ' + fmtD(r.date),
       sub: dowOf(r.date) + ' · ' + siteOf(r.site).name,
@@ -61,21 +50,10 @@ function useAttDetail(dir: Directory) {
             ['Punch out', <span className="mono">{r.outT ? fmtTime(r.outT) : '—'}</span>],
             ['Net hours', r.mins ? hhmm(r.mins) + ' h (excl. 45 min break)' : '—'],
             ['Source', r.src || '—'],
-            ...(r.lat ? [['Coordinates', <span className="mono">{r.lat}, {r.lng}</span>]] as [string, React.ReactNode][] : []),
-            ...(r.dist != null ? [['Distance from site', `${r.dist} m (fence ${s.radius} m)`]] as [string, React.ReactNode][] : []),
-            ['Geo-fence', r.site === 'WFH' || r.site === 'CLIENT'
-              ? 'Not enforced — location logged for audit'
-              : r.geoOk ? <Badge kind="good">Verified</Badge> : <Badge kind="crit">Exception — outside radius</Badge>],
+            ['Work mode', siteOf(r.site).name],
             ...(r.notes ? [['Notes', r.notes]] as [string, React.ReactNode][] : []),
             ...(r.reg ? [['Regularisation', <><StatusBadge status={r.reg.status} /> — {r.reg.reason}</>]] as [string, React.ReactNode][] : []),
           ]} />
-          {r.lat && (
-            <MapBox
-              points={[{ lat: r.lat, lng: r.lng, label: name, me: true, bad: !r.geoOk }]}
-              site={r.site === 'WFH' || r.site === 'CLIENT' ? null : s}
-              height={220}
-            />
-          )}
         </>
       ),
     });
@@ -98,7 +76,6 @@ function AttRow({ r, person, onClick }: { r: AttRecord; person?: Employee; onCli
       <td className="mono">{r.outT ? fmtTime(r.outT) : '—'}</td>
       <td className="num">{r.mins ? hhmm(r.mins) : '—'}</td>
       <td className="nowrap">{r.inT ? siteOf(r.site).name : '—'}</td>
-      <td><GeoCell r={r} /></td>
       <td className="muted">{r.src || '—'}</td>
     </tr>
   );
@@ -126,10 +103,10 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
   const exportCsv = () =>
     downloadCSV(
       `attendance_${me.code}_${mk}.csv`,
-      [['Date', 'Day', 'Status', 'In', 'Out', 'Hours', 'Mode', 'Distance (m)', 'Geo OK', 'Source', 'Notes']].concat(
+      [['Date', 'Day', 'Status', 'In', 'Out', 'Hours', 'Mode', 'Source', 'Notes']].concat(
         sortBy(recs, (r) => r.date).map((r) => [
           r.date, dowOf(r.date), r.status, r.inT || '', r.outT || '', (r.mins / 60).toFixed(2),
-          siteOf(r.site).name, r.dist == null ? '' : String(r.dist), r.inT ? (r.geoOk ? 'Yes' : 'No') : '', r.src || '', r.notes || '',
+          siteOf(r.site).name, r.src || '', r.notes || '',
         ]),
       ),
     );
@@ -165,7 +142,7 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
           <div style={{ maxHeight: 520, overflow: 'auto' }} className="tbl-wrap">
             <table className="tbl">
               <thead>
-                <tr><th>Date</th><th>Status</th><th>In</th><th>Out</th><th className="num">Hours</th><th>Mode</th><th>Geo-fence</th><th>Source</th></tr>
+                <tr><th>Date</th><th>Status</th><th>In</th><th>Out</th><th className="num">Hours</th><th>Mode</th><th>Source</th></tr>
               </thead>
               <tbody>
                 {sortBy(recs, (r) => r.date, 'desc').map((r) => (
@@ -194,7 +171,6 @@ function AttLive() {
   const c: Record<string, number> = { P: 0, W: 0, L: 0, A: 0, H: 0, O: 0 };
   recs.forEach((r) => c[r.status]++);
 
-  const flagged = recs.filter((r) => r.geoOk === false);
   const lateOnes = recs.filter((r) => r.late);
   const bySite = ['CHN', 'BLR', 'HYD', 'WFH', 'CLIENT']
     .map((s, i) => ({ k: siteOf(s).name, v: recs.filter((r) => r.inT && r.site === s).length, c: PAL[i] }))
@@ -207,12 +183,11 @@ function AttLive() {
   const exportCsv = () =>
     downloadCSV(
       `attendance_${ds}.csv`,
-      [['Emp Code', 'Name', 'Department', 'Status', 'In', 'Out', 'Hours', 'Mode', 'Distance (m)', 'Geo OK']].concat(
+      [['Emp Code', 'Name', 'Department', 'Status', 'In', 'Out', 'Hours', 'Mode']].concat(
         recs.map((r) => {
           const e = dir.byId(r.empId);
           return [e?.code ?? r.empId, e?.name ?? '—', e ? deptOf(e.dept).name : '—', r.status, r.inT || '', r.outT || '',
-            (r.mins / 60).toFixed(2), siteOf(r.site).name, r.dist == null ? '' : String(r.dist),
-            r.inT ? (r.geoOk ? 'Yes' : 'No') : ''];
+            (r.mins / 60).toFixed(2), siteOf(r.site).name];
         }),
       ),
     );
@@ -223,11 +198,11 @@ function AttLive() {
     <div className="stack">
       <div className="grid g5">
         <Tile label="In office" value={c.P} foot={pct(c.P, Math.max(1, recs.length - c.H - c.O)) + '% of expected'} />
-        <Tile label="Work from home" value={c.W} foot="Location logged, fence not enforced" />
+        <Tile label="Work from home" value={c.W} foot="Declared work mode" />
         <Tile label="On leave" value={c.L} foot="Approved leave today" />
         <Tile label="Absent" value={c.A} foot={`${pendingRegs} regularisation pending`} />
-        <Tile label="Geo exceptions" value={flagged.length} trend={flagged.length ? 'down' : undefined}
-          foot={flagged.length ? 'Needs review' : 'All punches verified'} />
+        <Tile label="Late marks" value={lateOnes.length} trend={lateOnes.length ? 'down' : undefined}
+          foot={lateOnes.length ? 'Past the shift grace period' : 'Everyone on time'} />
       </div>
 
       <div className="grid g-2-1">
@@ -248,7 +223,7 @@ function AttLive() {
           <div style={{ maxHeight: 560, overflow: 'auto' }} className="tbl-wrap">
             <table className="tbl">
               <thead>
-                <tr><th>Employee</th><th>Department</th><th>Status</th><th>In</th><th>Out</th><th className="num">Hrs</th><th>Mode</th><th>Geo-fence</th></tr>
+                <tr><th>Employee</th><th>Department</th><th>Status</th><th>In</th><th>Out</th><th className="num">Hrs</th><th>Mode</th></tr>
               </thead>
               <tbody>
                 {sortBy(shown, (r) => dir.name(r.empId)).map((r) => {
@@ -266,7 +241,6 @@ function AttLive() {
                       <td className="mono">{r.outT ? fmtTime(r.outT) : r.inT ? <Badge kind="info">Active</Badge> : '—'}</td>
                       <td className="num">{r.mins ? hhmm(r.mins) : '—'}</td>
                       <td className="nowrap">{r.inT ? siteOf(r.site).name : '—'}</td>
-                      <td><GeoCell r={r} /></td>
                     </tr>
                   );
                 })}
@@ -329,7 +303,6 @@ function AttLog() {
       absent: rs.filter((r) => r.status === 'A').length,
       late: rs.filter((r) => r.late).length,
       hrs: sum(rs, (r) => r.mins) / 60,
-      flags: rs.filter((r) => r.geoOk === false).length,
       rate: pct(p.length, Math.max(1, w.length)),
     };
   });
@@ -350,12 +323,11 @@ function AttLog() {
   const exportCsv = () =>
     downloadCSV(
       `muster_roll_${from}_${to}.csv`,
-      [['Emp Code', 'Name', 'Department', 'Location', 'Date', 'Status', 'In', 'Out', 'Hours', 'Mode', 'Geo OK', 'Source']].concat(
+      [['Emp Code', 'Name', 'Department', 'Location', 'Date', 'Status', 'In', 'Out', 'Hours', 'Mode', 'Source']].concat(
         sortBy(recs, (r) => r.date).map((r) => {
           const e = dir.byId(r.empId);
           return [e?.code ?? r.empId, e?.name ?? '—', e ? deptOf(e.dept).name : '—', e ? siteOf(e.site).name : '—', r.date, r.status,
-            r.inT || '', r.outT || '', (r.mins / 60).toFixed(2), siteOf(r.site).name,
-            r.inT ? (r.geoOk ? 'Yes' : 'No') : '', r.src || ''];
+            r.inT || '', r.outT || '', (r.mins / 60).toFixed(2), siteOf(r.site).name, r.src || ''];
         }),
       ),
     );
@@ -385,7 +357,7 @@ function AttLog() {
           foot={`Avg ${(sum(recs, (r) => r.mins) / 60 / Math.max(1, present.length)).toFixed(1)} h/day`} />
         <Tile label="WFH share" value={pct(recs.filter((r) => r.status === 'W').length, Math.max(1, present.length)) + '%'}
           foot={`${recs.filter((r) => r.status === 'W').length} WFH days logged`} />
-        <Tile label="Geo exceptions" value={recs.filter((r) => r.geoOk === false).length} foot="Punches outside fence radius" />
+        <Tile label="Late marks" value={recs.filter((r) => r.late).length} foot="Past the shift grace period" />
       </div>
 
       <Card title="Daily attendance" sub={`${fmtD(from)} – ${fmtD(to)}`}>
@@ -410,7 +382,7 @@ function AttLog() {
                 <th>Employee</th><th>Department</th><th>Location</th>
                 <th className="num">Days</th><th className="num">Present</th><th className="num">WFH</th>
                 <th className="num">Leave</th><th className="num">Absent</th><th className="num">Late</th>
-                <th className="num">Hours</th><th className="num">Flags</th><th className="num">Rate</th>
+                <th className="num">Hours</th><th className="num">Rate</th>
               </tr>
             </thead>
             <tbody>
@@ -426,7 +398,6 @@ function AttLog() {
                   <td className="num">{r.absent ? <b style={{ color: 'var(--crit)' }}>{r.absent}</b> : '0'}</td>
                   <td className="num">{r.late}</td>
                   <td className="num">{r.hrs.toFixed(1)}</td>
-                  <td className="num">{r.flags ? <Badge kind="crit">{r.flags}</Badge> : '—'}</td>
                   <td className="num"><b>{r.rate}%</b></td>
                 </tr>
               ))}
@@ -434,87 +405,6 @@ function AttLog() {
           </table>
         </div>
       </Card>
-    </div>
-  );
-}
-
-/* ---------------- Geo map ---------------- */
-
-function AttGeo() {
-  const app = useApp();
-  const dir = useVisiblePeople();
-  const detail = useAttDetail(dir);
-  const [focusSite, setFocusSite] = useState('CHN');
-  const [ds, setDs] = useState(ymd(TODAY));
-
-  const { data: dayRows = [] } = useAttendance(dir.ids, ds, ds);
-  const { data: recent = [] } = useAttendance(dir.ids, ymd(addDays(TODAY, -30)), ymd(TODAY));
-  const recs = dayRows.filter((r) => r.lat != null);
-  const flagged = recent.filter((r) => r.geoOk === false);
-  const site = siteOf(focusSite);
-  const pts = recs.filter((r) => r.site === focusSite).map((r) => ({
-    lat: r.lat, lng: r.lng, label: dir.name(r.empId),
-    sub: fmtTime(r.inT) + ' · ' + (r.dist == null ? '' : r.dist + ' m'),
-    bad: !r.geoOk,
-  }));
-
-  return (
-    <div className="stack">
-      <div className="toolbar">
-        <div className="seg">
-          {['CHN', 'BLR', 'HYD'].map((s) => (
-            <button key={s} className={focusSite === s ? 'on' : ''} onClick={() => setFocusSite(s)}>{siteOf(s).city}</button>
-          ))}
-        </div>
-        <input type="date" className="input" style={{ width: 'auto' }} value={ds} onChange={(e) => setDs(e.target.value)} />
-        <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12.5 }}>{pts.length} punches plotted · fence radius {site.radius} m</span>
-      </div>
-
-      <div className="grid g-2-1">
-        <Card title={site.name + ' — punch map'} sub={`${site.addr} · ${site.lat}, ${site.lng}`}>
-          <MapBox points={pts} site={site} height={380} />
-          <div className="legend" style={{ marginTop: 10 }}>
-            <span>🏢 Office centre</span>
-            <span>👤 Punch inside fence</span>
-            <span>❗ Punch outside fence</span>
-            <span style={{ color: 'var(--ink-3)' }}>Hover a pin for details</span>
-          </div>
-        </Card>
-
-        <div className="stack">
-          <Card title="Fence configuration" sub="Configured sites" flush>
-            {SITES.filter((s) => s.lat).map((s) => (
-              <ListRow key={s.id}>
-                <span>📍</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{s.name}</div>
-                  <div className="muted mono" style={{ fontSize: 11 }}>{s.lat}, {s.lng}</div>
-                </div>
-                <Badge kind="info">{s.radius} m</Badge>
-              </ListRow>
-            ))}
-            {app.role === 'admin' && (
-              <ListRow><Link className="btn sm" to="/settings">⚙ Edit geo-fences</Link></ListRow>
-            )}
-          </Card>
-
-          <Card title="Exceptions — last 30 days" sub={`${flagged.length} flagged punches`} flush>
-            <div style={{ maxHeight: 330, overflow: 'auto' }}>
-              {flagged.length ? sortBy(flagged, (r) => r.date, 'desc').slice(0, 40).map((r) => (
-                <ListRow key={r.id} onClick={() => detail(r)}>
-                  <Avatar name={dir.name(r.empId)} size="sm" />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 650, fontSize: 12.5 }}>{dir.name(r.empId)}</div>
-                    <div className="muted" style={{ fontSize: 11.5 }}>{fmtD(r.date)} · {fmtTime(r.inT)} · {siteOf(r.site).name}</div>
-                  </div>
-                  <Badge kind="crit">{r.dist} m</Badge>
-                </ListRow>
-              )) : <EmptyState msg="No geo-fence exceptions 🎯" />}
-            </div>
-          </Card>
-        </div>
-      </div>
     </div>
   );
 }
@@ -590,8 +480,8 @@ function AttReg({ onRegularise }: { onRegularise: () => void }) {
   return (
     <div className="stack">
       <Banner kind="info" icon={<span style={{ fontSize: 17 }}>ℹ️</span>} title="How regularisation works">
-        Raise a request when a punch is missing or was recorded outside the geo-fence. Your reporting manager approves it,
-        and the day stops counting as Loss of Pay in payroll.
+        Raise a request when a punch is missing or a day was marked absent by mistake. Your reporting manager approves
+        it, and the day stops counting as Loss of Pay in payroll.
       </Banner>
 
       {canAct && pending.length > 0 && (
@@ -657,11 +547,11 @@ function AttCal() {
           <KV rows={[
             ['Work week', 'Monday – Friday (5 days)'],
             ['Week off', 'Saturday, Sunday'],
-            ...SITES.filter((s) => s.lat).map((s) => [s.city + ' shift', s.shift + ' IST'] as [string, string]),
+            ...SITES.filter((s) => !s.remote).map((s) => [s.city + ' shift', s.shift + ' IST'] as [string, string]),
             ['Grace period', '20 minutes · 3 late marks = ½ day CL'],
             ['Full day', '≥ 8 h 0 m · Half day 4 h 0 m'],
             ['Optional holidays', 'Any 2 per calendar year'],
-            ['Geo-fence', 'Enforced for in-office punches only'],
+            ['Location tracking', 'None — punches record a work mode, not a place'],
           ]} />
         </Card>
       </div>
@@ -700,7 +590,7 @@ function RegForm({ close }: { close: () => void }) {
         <select className="input" value={date} onChange={(e) => setDate(e.target.value)}>
           {missing.length ? missing.map((r) => (
             <option key={r.date} value={r.date}>
-              {fmtD(r.date)} — {r.status === 'A' ? 'Absent' : 'Geo-fence exception'}
+              {fmtD(r.date)} — {r.status === 'A' ? 'Absent' : 'Missing punch'}
             </option>
           )) : <option value={ymd(addDays(TODAY, -1))}>{fmtD(addDays(TODAY, -1))}</option>}
         </select>
@@ -730,7 +620,7 @@ function RegForm({ close }: { close: () => void }) {
 
 /* ---------------- entry ---------------- */
 
-type Tab = 'me' | 'live' | 'log' | 'geo' | 'reg' | 'cal';
+type Tab = 'me' | 'live' | 'log' | 'reg' | 'cal';
 
 function Attendance() {
   const app = useApp();
@@ -740,7 +630,7 @@ function Attendance() {
     ? [{ v: 'me', label: 'My Attendance' }, { v: 'reg', label: 'Regularisation' }, { v: 'cal', label: 'Holiday Calendar' }]
     : [
         { v: 'live', label: 'Live Board' }, { v: 'me', label: 'My Attendance' }, { v: 'log', label: 'Attendance Log' },
-        { v: 'geo', label: 'Geo Map & Exceptions' }, { v: 'reg', label: 'Regularisation' }, { v: 'cal', label: 'Holiday Calendar' },
+        { v: 'reg', label: 'Regularisation' }, { v: 'cal', label: 'Holiday Calendar' },
       ];
 
   const [tab, setTab] = useState<Tab>(tabs[0].v);
@@ -761,7 +651,6 @@ function Attendance() {
       {active === 'me' && <AttMe onRegularise={openReg} />}
       {active === 'live' && <AttLive />}
       {active === 'log' && <AttLog />}
-      {active === 'geo' && <AttGeo />}
       {active === 'reg' && <AttReg onRegularise={openReg} />}
       {active === 'cal' && <AttCal />}
     </>

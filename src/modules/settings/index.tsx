@@ -3,14 +3,14 @@ import { Tabs } from '../../components/ui';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { RbacTab, UsersTab } from './access';
-import { CompanyTab, ConfigAuditTab, GeoTab, LeavePolicyTab, OrgTab, PayConfigTab } from './config';
+import { CompanyTab, ConfigAuditTab, LeavePolicyTab, LocationsTab, OrgTab, PayConfigTab } from './config';
 
-type Tab = 'rbac' | 'users' | 'geo' | 'leave' | 'pay' | 'org' | 'company' | 'audit';
+type Tab = 'rbac' | 'users' | 'sites' | 'leave' | 'pay' | 'org' | 'company' | 'audit';
 
 const TABS: { v: Tab; label: string }[] = [
   { v: 'rbac', label: 'Access Control' },
   { v: 'users', label: 'User Roles' },
-  { v: 'geo', label: 'Geo-fences' },
+  { v: 'sites', label: 'Locations' },
   { v: 'leave', label: 'Leave Policy' },
   { v: 'pay', label: 'Salary Components' },
   { v: 'org', label: 'Org Structure' },
@@ -25,7 +25,7 @@ function SettingsView() {
       <Tabs value={tab} options={TABS} onChange={setTab} />
       {tab === 'rbac' && <RbacTab />}
       {tab === 'users' && <UsersTab />}
-      {tab === 'geo' && <GeoTab />}
+      {tab === 'sites' && <LocationsTab />}
       {tab === 'leave' && <LeavePolicyTab />}
       {tab === 'pay' && <PayConfigTab />}
       {tab === 'org' && <OrgTab />}

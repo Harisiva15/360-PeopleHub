@@ -1,8 +1,7 @@
 import { addDays, hhmm, isWeekend, parseYmd, TODAY, ymd } from '../lib/dates';
-import { distM } from '../lib/format';
 import { chance, pick, rnd } from '../lib/rng';
 import { ACTIVE } from './employees';
-import { HOLIDAY_MAP, siteOf } from './org';
+import { HOLIDAY_MAP } from './org';
 
 /** How far back attendance history is generated. */
 export const ATT_DAYS = 165;
@@ -27,12 +26,8 @@ export interface AttRecord {
   outT: string | null;
   /** Worked minutes, excluding the break. */
   mins: number;
-  lat: number | null;
-  lng: number | null;
-  /** Metres from the site centre; null when there is no fence to measure against. */
-  dist: number | null;
+  /** Work mode: an office site code, or WFH / CLIENT. */
   site: string;
-  geoOk: boolean;
   src: string;
   late: boolean;
   /** A raised regularisation request, when the day was missed. */
@@ -65,11 +60,7 @@ const jitter = (base: number, m: number): number => base + (rnd() - 0.5) * m;
         inT: null,
         outT: null,
         mins: 0,
-        lat: null,
-        lng: null,
-        dist: null,
         site: e.site,
-        geoOk: true,
         src: 'Web',
         late: false,
         reg: null,
@@ -98,34 +89,15 @@ const jitter = (base: number, m: number): number => base + (rnd() - 0.5) * m;
         rec.mins = work;
         rec.late = inMin > base + 20;
 
-        /* home sites have no fence, so WFH punches are placed near the base office */
-        const homeSite = siteOf(e.site === 'WFH' ? 'CHN' : e.site);
-
         if (rec.status === 'W') {
           rec.site = 'WFH';
           rec.src = pick(['Mobile', 'Web']);
-          rec.geoOk = true;
-          rec.lat = +jitter(homeSite.lat!, 0.11).toFixed(5);
-          rec.lng = +jitter(homeSite.lng!, 0.11).toFixed(5);
-          rec.dist = null;
         } else if (chance(0.03)) {
           rec.site = 'CLIENT';
           rec.src = 'Mobile';
-          const s = siteOf(e.site);
-          rec.lat = +jitter(s.lat!, 0.16).toFixed(5);
-          rec.lng = +jitter(s.lng!, 0.16).toFixed(5);
-          rec.dist = distM(s.lat!, s.lng!, rec.lat, rec.lng);
-          rec.geoOk = true;
           rec.notes = 'Client visit';
         } else {
-          const s = homeSite;
-          const off = chance(0.055) ? 0.0075 : 0.0028;
-          rec.lat = +jitter(s.lat!, off).toFixed(5);
-          rec.lng = +jitter(s.lng!, off).toFixed(5);
-          rec.dist = distM(s.lat!, s.lng!, rec.lat, rec.lng);
-          rec.geoOk = rec.dist <= s.radius;
           rec.src = pick(['Biometric', 'Mobile', 'Mobile', 'Web']);
-          if (!rec.geoOk) rec.notes = 'Outside geo-fence — flagged';
         }
 
         if (rec.mins < 420 && chance(0.5)) rec.notes = rec.notes || 'Short hours';

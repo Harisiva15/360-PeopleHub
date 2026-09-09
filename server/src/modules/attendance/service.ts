@@ -1,15 +1,18 @@
 /**
- * Attendance — punches, geo-fences and regularisation.
+ * Attendance — punches and regularisation.
  *
- * Two things this service refuses to take from the client.
+ * A punch records four things that decide pay: when someone started, when they
+ * stopped, how long that was net of their break, and whether they were late.
+ * It does not record where they were. Location tracking was removed in 0016 —
+ * a punch history with coordinates is a movement history, and none of those
+ * four figures ever needed one.
  *
- * **Whether the punch was inside the fence.** The contract's `PunchAt` carries
- * `geoOk`, `dist` and `site`, because the mock computed them in the browser.
- * A browser can send `geoOk: true` from anywhere, and this decides whether a
- * day is paid. So the coordinates are accepted and everything derived from
- * them is recomputed here; the client's answer is discarded, not trusted.
+ * What the punch still carries is a *work mode*: an office, from home, or at a
+ * client. That is a category the employee states, not a place the server
+ * measures, and it is what the WFH figures have always been counted from.
  *
- * **Whether the punch was late.** That depends on the employee's shift and the
+ * The one thing this service still refuses to take from the client is
+ * **whether the punch was late**. That depends on the employee's shift and the
  * timezone it is measured in — someone in Chennai on the US shift is judged
  * against New York. Only the server knows their shift, so only the server can
  * decide, and it does so in SQL against the stored timezone rather than
@@ -45,11 +48,8 @@ export interface AttRecord {
   inT: string | null;
   outT: string | null;
   mins: number;
-  lat: number | null;
-  lng: number | null;
-  dist: number | null;
+  /** Work mode: a site code, or WFH / CLIENT. */
   site: string;
-  geoOk: boolean;
   src: string;
   late: boolean;
   reg: Regularisation | null;
@@ -68,8 +68,7 @@ const PROJECTION = `
   SELECT a.id, a.employee_id, a.work_date, a.status,
          to_char(a.punch_in  AT TIME ZONE sh.timezone, 'HH24:MI') AS in_t,
          to_char(a.punch_out AT TIME ZONE sh.timezone, 'HH24:MI') AS out_t,
-         a.worked_minutes, a.latitude, a.longitude, a.distance_m,
-         s.code AS site_code, a.geo_ok, a.source, a.late, a.notes,
+         a.worked_minutes, s.code AS site_code, a.source, a.late, a.notes,
          r.status AS reg_status, r.reason AS reg_reason, r.raised_on AS reg_raised,
          to_char(r.requested_in  AT TIME ZONE sh.timezone, 'HH24:MI') AS reg_in,
          to_char(r.requested_out AT TIME ZONE sh.timezone, 'HH24:MI') AS reg_out
@@ -87,11 +86,7 @@ const toRecord = (r: Record<string, unknown>): AttRecord => ({
   inT: (r.in_t as string | null) ?? null,
   outT: (r.out_t as string | null) ?? null,
   mins: Number(r.worked_minutes ?? 0),
-  lat: r.latitude === null ? null : Number(r.latitude),
-  lng: r.longitude === null ? null : Number(r.longitude),
-  dist: r.distance_m === null ? null : Number(r.distance_m),
   site: (r.site_code as string) ?? '',
-  geoOk: r.geo_ok === null ? true : Boolean(r.geo_ok),
   src: (r.source as string) ?? 'web',
   late: Boolean(r.late),
   reg: r.reg_status
@@ -120,22 +115,26 @@ async function maySee(db: TenantClient, caller: Caller, empId: string): Promise<
 }
 
 export interface PunchAt {
-  lat: number | null;
-  lng: number | null;
+  /**
+   * Work mode: an office site code, or WFH / CLIENT. A mode the caller states
+   * rather than a place the server measures — unrecognised codes fall back to
+   * the employee's own site rather than being refused, because a punch is
+   * worth more than the label on it.
+   */
+  site?: string;
   src?: string;
-  /** A work-from-home punch records a W day rather than P. */
-  wfh?: boolean;
   /** ISO instant. Defaults to now; a client clock is not authoritative. */
   at?: string;
 }
 
+/** WFH records a W day rather than P; every other mode is a present day. */
+const WFH = 'WFH';
+
 /**
- * Distance in metres from a site's centre, and the lateness verdict.
+ * The resolved work mode, the lateness verdict, and the break to deduct.
  *
- * Both computed in SQL so they read the employee's own shift and site rather
- * than anything the caller sent. Haversine inline rather than via earthdistance
- * — one formula is cheaper than an extension dependency, and the accuracy at
- * these distances is far better than a phone's GPS.
+ * Lateness is computed in SQL so it reads the employee's own shift rather than
+ * anything the caller sent — the same reason it was here before location was.
  */
 const DERIVE = `
   WITH me AS (
@@ -143,19 +142,14 @@ const DERIVE = `
       FROM employee e JOIN shift sh ON sh.id = e.shift_id
      WHERE e.id = $1
   )
-  SELECT me.site_id,
+  SELECT COALESCE(
+           (SELECT s.id FROM site s WHERE s.code = $3::text AND s.active),
+           me.site_id) AS site_id,
          me.timezone,
-         CASE WHEN s.latitude IS NULL OR $3::numeric IS NULL THEN NULL
-              ELSE round(6371000 * acos(least(1, greatest(-1,
-                     cos(radians($3::numeric)) * cos(radians(s.latitude))
-                     * cos(radians(s.longitude) - radians($4::numeric))
-                   + sin(radians($3::numeric)) * sin(radians(s.latitude))))))
-         END AS distance_m,
-         s.fence_radius_m,
          (($2::timestamptz AT TIME ZONE me.timezone)::time
             > (me.starts_at + (me.grace_minutes || ' minutes')::interval)) AS is_late,
          me.break_minutes
-    FROM me LEFT JOIN site s ON s.id = me.site_id`;
+    FROM me`;
 
 async function reload(db: TenantClient, empId: string, date: string): Promise<AttRecord> {
   const { rows } = await db.query(
@@ -176,18 +170,9 @@ export async function punchIn(
 
   return withTenant(caller, async (db) => {
     const when = at.at ?? new Date().toISOString();
-    const { rows } = await db.query(DERIVE, [empId, when, at.lat, at.lng]);
+    const { rows } = await db.query(DERIVE, [empId, when, at.site ?? null]);
     const d = rows[0];
     if (!d) throw new AttendanceError('no such employee', 'not_found');
-
-    /*
-     * geo_ok is null when there is nothing to measure against — a site with no
-     * fence, or a punch with no coordinates. Null is "not applicable"; false is
-     * a real exception someone has to explain.
-     */
-    const geoOk = d.distance_m === null || d.fence_radius_m === null
-      ? null
-      : Number(d.distance_m) <= Number(d.fence_radius_m);
 
     const existing = await db.query(
       'SELECT id, punch_in FROM attendance WHERE employee_id = $1 AND work_date = $2 FOR UPDATE',
@@ -198,17 +183,13 @@ export async function punchIn(
 
     await db.query(
       `INSERT INTO attendance
-         (employee_id, work_date, status, punch_in, site_id, shift_id, latitude, longitude,
-          distance_m, geo_ok, source, late)
-       SELECT $1, $2, $3, $4::timestamptz, $5, e.shift_id, $6, $7, $8, $9, $10, $11
+         (employee_id, work_date, status, punch_in, site_id, shift_id, source, late)
+       SELECT $1, $2, $3, $4::timestamptz, $5, e.shift_id, $6, $7
          FROM employee e WHERE e.id = $1
        ON CONFLICT (tenant_id, employee_id, work_date) DO UPDATE
          SET punch_in = EXCLUDED.punch_in, status = EXCLUDED.status,
-             latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
-             distance_m = EXCLUDED.distance_m, geo_ok = EXCLUDED.geo_ok,
              source = EXCLUDED.source, late = EXCLUDED.late, updated_at = now()`,
-      [empId, date, at.wfh ? 'W' : 'P', when, d.site_id, at.lat, at.lng,
-        d.distance_m, geoOk, at.src ?? 'web', d.is_late]);
+      [empId, date, at.site === WFH ? 'W' : 'P', when, d.site_id, at.src ?? 'web', d.is_late]);
 
     return reload(db, empId, date);
   });
@@ -226,7 +207,7 @@ export async function punchOut(
 
   return withTenant(caller, async (db) => {
     const when = at.at ?? new Date().toISOString();
-    const { rows } = await db.query(DERIVE, [empId, when, at.lat, at.lng]);
+    const { rows } = await db.query(DERIVE, [empId, when, at.site ?? null]);
     const d = rows[0];
     if (!d) throw new AttendanceError('no such employee', 'not_found');
 
@@ -311,7 +292,13 @@ export async function listAttendance(
   });
 }
 
-/** Days worth regularising: absent, missing a punch, or outside the fence. */
+/**
+ * Days worth regularising: absent, or missing one of the two punches.
+ *
+ * "Outside the fence" used to be a third trigger. Nothing replaces it — it was
+ * the only one that flagged a day because of where someone was rather than
+ * what they did.
+ */
 export async function regularisableDays(
   caller: Caller,
   empId: string,
@@ -322,7 +309,7 @@ export async function regularisableDays(
     const { rows } = await db.query(
       `${PROJECTION}
         WHERE a.employee_id = $1 AND a.work_date >= $2
-          AND (a.status = 'A' OR a.punch_in IS NULL OR a.punch_out IS NULL OR a.geo_ok = false)
+          AND (a.status = 'A' OR a.punch_in IS NULL OR a.punch_out IS NULL)
           AND (r.id IS NULL OR r.status = 'rejected')
         ORDER BY a.work_date DESC`, [empId, since]);
     return rows.map(toRecord);
@@ -409,7 +396,7 @@ export async function actOnRegularisation(
     if (decision === 'Approved') {
       await db.query(
         `UPDATE attendance a
-            SET punch_in = $2, punch_out = $3, status = 'P', geo_ok = NULL, late = false,
+            SET punch_in = $2, punch_out = $3, status = 'P', late = false,
                 worked_minutes = GREATEST(0,
                   EXTRACT(EPOCH FROM ($3::timestamptz - $2::timestamptz))::int / 60
                   - COALESCE(sh.break_minutes, 0)),

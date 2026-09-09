@@ -2,9 +2,9 @@
  * Configuration writes.
  *
  * Each of these has reach beyond the row it edits, which is the argument for
- * putting them behind a service: a fence move repoints every employee based
- * at that site, and an entitlement change reprices balances that are already
- * open. A save handler in a settings screen is the wrong place to own that.
+ * putting them behind a service: an entitlement change reprices balances that
+ * are already open. A save handler in a settings screen is the wrong place to
+ * own that.
  */
 
 import { ACTIVE } from '../../data/employees';
@@ -16,23 +16,6 @@ import { ok } from './util';
 export const configService: ConfigService = {
   sites() { return ok(SITES.slice()); },
   holidays() { return ok(HOLIDAYS.slice()); },
-
-  updateFence(siteId, patch) {
-    const site = SITES.find((s) => s.id === siteId);
-    if (!site) return Promise.reject(new Error('No such site: ' + siteId));
-    if (!Number.isFinite(patch.lat) || !Number.isFinite(patch.lng)) {
-      return Promise.reject(new Error('Latitude and longitude must be numbers'));
-    }
-    if (patch.radius <= 0) return Promise.reject(new Error('The fence radius must be greater than zero'));
-
-    site.lat = patch.lat;
-    site.lng = patch.lng;
-    site.radius = patch.radius;
-    site.shift = patch.shift;
-    /* Everyone based here inherits the site's shift timing. */
-    ACTIVE().filter((e) => e.site === siteId).forEach((e) => { e.shift = site.shift; });
-    return ok(site);
-  },
 
   setLeaveQuota(typeId, quota) {
     if (quota < 0) return Promise.reject(new Error('A leave quota cannot be negative'));

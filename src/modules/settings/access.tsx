@@ -40,7 +40,7 @@ export const MODULES: { k: string; n: string }[] = [
 /** What each role can actually do inside a module it can reach. */
 const CAPS: Record<AppRole, Record<string, string>> = {
   admin: {
-    dashboard: 'Org-wide', attendance: 'All employees · configure fences', timesheet: 'All · approve any',
+    dashboard: 'Org-wide', attendance: 'All employees · configure policy', timesheet: 'All · approve any',
     leave: 'All · approve & override balances', approvals: 'All queues', employees: 'Full record incl. salary · create & edit',
     org: 'Full tree', celebrations: 'All', announcements: 'Post company-wide',
     payroll: 'Run payroll · all payslips · registers', tax: 'All declarations · verify proofs',

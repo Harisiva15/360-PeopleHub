@@ -245,8 +245,8 @@ function DashAdmin() {
           <HBar rows={bySite} />
           <Divide />
           <div className="row wrap" style={{ gap: 8 }}>
-            {SITES.filter((s) => s.lat).map((s) => (
-              <Chip key={s.id}>📍 {s.name} · {s.radius} m fence</Chip>
+            {SITES.filter((s) => !s.remote).map((s) => (
+              <Chip key={s.id}>📍 {s.name} · {s.tz}</Chip>
             ))}
           </div>
         </Card>
@@ -346,7 +346,7 @@ function DashManager() {
           <div className="tbl-wrap">
             <table className="tbl">
               <thead>
-                <tr><th>Employee</th><th>Status</th><th>In</th><th>Out</th><th>Mode</th><th>Geo</th></tr>
+                <tr><th>Employee</th><th>Status</th><th>In</th><th>Out</th><th>Mode</th><th>Timing</th></tr>
               </thead>
               <tbody>
                 {team.map((t) => {
@@ -360,8 +360,8 @@ function DashManager() {
                       <td className="mono">{r?.outT ? fmtTime(r.outT) : '—'}</td>
                       <td>{r ? siteOf(r.site).name : '—'}</td>
                       <td>
-                        {r && r.status === 'P'
-                          ? <Badge kind={r.geoOk ? 'good' : 'crit'}>{r.geoOk ? '✓' : '⚠'} {r.dist} m</Badge>
+                        {r?.inT
+                          ? <Badge kind={r.late ? 'crit' : 'good'}>{r.late ? '⚠ Late' : '✓ On time'}</Badge>
                           : '—'}
                       </td>
                     </tr>

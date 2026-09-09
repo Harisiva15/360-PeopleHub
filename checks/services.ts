@@ -61,10 +61,7 @@ const check = (label: string, got: unknown, want: unknown) => {
 
   /* ---- attendance ---- */
   const day = '2026-10-07';
-  const at = {
-    lat: 12.99, lng: 80.25, site: 'CHN', geoOk: true, dist: 40,
-    src: 'Mobile GPS', wfh: false, at: '09:20',
-  };
+  const at = { site: 'CHN', src: 'Web', at: '09:20' };
   const inRec = await s.attendance.punchIn(DEMO_EMP.id, day, at);
   check('punch in stamps the time', inRec.inT, '09:20');
   check('punch in marks present', inRec.status, 'P');
@@ -72,15 +69,16 @@ const check = (label: string, got: unknown, want: unknown) => {
   const outRec = await s.attendance.punchOut(DEMO_EMP.id, day, { ...at, at: '18:35' });
   check('punch out deducts the 45m break', outRec.mins, (18 * 60 + 35) - (9 * 60 + 20) - 45);
 
-  /* a WFH punch records a W day and is not fence-enforced */
+  /* the work mode picks the day's status; there is nothing else location-shaped left */
   const wfhDay = '2026-10-08';
-  const wfh = await s.attendance.punchIn(DEMO_EMP.id, wfhDay, { ...at, site: 'WFH', wfh: true, at: '09:05' });
+  const wfh = await s.attendance.punchIn(DEMO_EMP.id, wfhDay, { ...at, site: 'WFH', at: '09:05' });
   check('WFH punch records a W day', wfh.status, 'W');
+  check('and keeps the work mode', wfh.site, 'WFH');
 
-  /* an out-of-fence punch is flagged rather than silently accepted */
-  const badDay = '2026-10-09';
-  const bad = await s.attendance.punchIn(DEMO_EMP.id, badDay, { ...at, geoOk: false, dist: 900, at: '09:40' });
-  check('outside the fence is flagged', bad.notes, 'Outside geo-fence — flagged');
+  const clientDay = '2026-10-09';
+  const client = await s.attendance.punchIn(DEMO_EMP.id, clientDay, { ...at, site: 'CLIENT', at: '09:40' });
+  check('a client punch is still a present day', client.status, 'P');
+  check('with the client work mode', client.site, 'CLIENT');
 
   /* regularisation credits a full day only once approved */
   const regDay = '2026-09-15';
@@ -270,16 +268,8 @@ const check = (label: string, got: unknown, want: unknown) => {
 
   /* ---- configuration writes ---- */
   const chn = (await s.config.sites()).find((x) => x.id === 'CHN')!;
-  const moved = await s.config.updateFence('CHN', { lat: 13.0, lng: 80.25, radius: 300, shift: '10:00-19:00' });
-  check('the fence takes the new radius', moved.radius, 300);
-  const basedThere = (await s.employees.active()).filter((e) => e.site === 'CHN');
-  check('everyone at the site inherits the shift',
-    basedThere.every((e) => e.shift === '10:00-19:00'), true);
-  await s.config.updateFence('CHN', { lat: chn.lat!, lng: chn.lng!, radius: chn.radius, shift: '09:30-18:30' });
-
-  let badRadius = false;
-  try { await s.config.updateFence('CHN', { lat: 13, lng: 80, radius: 0, shift: '09:30-18:30' }); } catch { badRadius = true; }
-  check('a zero radius is refused', badRadius, true);
+  check('an office is not a remote work mode', chn.remote, false);
+  check('but WFH is', (await s.config.sites()).find((x) => x.id === 'WFH')!.remote, true);
 
   const clBefore = (await s.leave.balance(DEMO_EMP.id, 'CL'))!;
   const quota = await s.config.setLeaveQuota('CL', 15);

@@ -25,9 +25,8 @@ function ensure(empId: string, date: string, status: AttRecord['status']): AttRe
     id: 'A-' + empId + '-' + date,
     empId, date, status,
     inT: null, outT: null, mins: 0,
-    lat: null, lng: null, dist: null,
     site: e?.site ?? 'CHN',
-    geoOk: true, src: 'Web', late: false, reg: null, notes: '',
+    src: 'Web', late: false, reg: null, notes: '',
   };
   ATT.push(row);
   (ATT_IDX[empId] = ATT_IDX[empId] || {})[date] = row;
@@ -35,15 +34,10 @@ function ensure(empId: string, date: string, status: AttRecord['status']): AttRe
 }
 
 /** Everything a punch stamps onto the day, shared by punch-in and punch-out. */
-function applyGeo(r: AttRecord, at: PunchAt): void {
-  r.lat = at.lat;
-  r.lng = at.lng;
+function applyMode(r: AttRecord, at: PunchAt): void {
   r.site = at.site;
-  r.geoOk = at.geoOk;
-  r.dist = at.dist;
   r.src = at.src;
-  r.status = at.wfh ? 'W' : 'P';
-  if (!at.geoOk) r.notes = 'Outside geo-fence — flagged';
+  r.status = at.site === 'WFH' ? 'W' : 'P';
 }
 
 export const attendanceService: AttendanceService = {
@@ -67,14 +61,14 @@ export const attendanceService: AttendanceService = {
     const rows = Object.values(ATT_IDX[empId] || {}).filter(
       (r) =>
         r.date >= since &&
-        (r.status === 'A' || (!r.inT && (r.status === 'P' || r.status === 'W')) || r.geoOk === false),
+        (r.status === 'A' || (!r.inT && (r.status === 'P' || r.status === 'W'))),
     );
     return ok(rows);
   },
 
   punchIn(empId, date, at) {
     const r = ensure(empId, date, 'P');
-    applyGeo(r, at);
+    applyMode(r, at);
     r.inT = at.at;
     r.late = false;
     return ok(r);
@@ -82,7 +76,7 @@ export const attendanceService: AttendanceService = {
 
   punchOut(empId, date, at) {
     const r = ensure(empId, date, 'P');
-    applyGeo(r, at);
+    applyMode(r, at);
     r.outT = at.at;
     if (r.inT) r.mins = Math.max(0, toMins(r.outT) - toMins(r.inT) - BREAK_MINS);
     return ok(r);

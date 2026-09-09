@@ -58,7 +58,6 @@ export function RepAttendance() {
         a: rs.filter((r) => r.status === 'A').length,
         tot: rs.filter(isWorking).length,
         late: rs.filter((r) => r.late).length,
-        flags: rs.filter((r) => r.geoOk === false).length,
       };
     })
     .filter((m) => m.tot > 0);
@@ -85,7 +84,6 @@ export function RepAttendance() {
           rate: pct(rs.filter(attended).length, Math.max(1, rs.filter(isWorking).length)),
           absent: rs.filter((r) => r.status === 'A').length,
           late: rs.filter((r) => r.late).length,
-          flags: rs.filter((r) => r.geoOk === false).length,
         };
       }),
     (x) => x.rate
@@ -93,7 +91,7 @@ export function RepAttendance() {
 
   const exportCSV = () =>
     downloadCSV('report_attendance.csv', [
-      ['Emp Code', 'Name', 'Department', 'Present', 'WFH', 'Leave', 'Absent', 'Late', 'Geo flags', 'Rate %'],
+      ['Emp Code', 'Name', 'Department', 'Present', 'WFH', 'Leave', 'Absent', 'Late', 'Rate %'],
       ...dir.list.map((e) => {
         const rs = byEmp90.get(e.id) || [];
         return [
@@ -105,7 +103,6 @@ export function RepAttendance() {
           rs.filter((r) => r.status === 'L').length,
           rs.filter((r) => r.status === 'A').length,
           rs.filter((r) => r.late).length,
-          rs.filter((r) => r.geoOk === false).length,
           pct(rs.filter(attended).length, Math.max(1, rs.filter(isWorking).length)),
         ];
       }),
@@ -134,7 +131,7 @@ export function RepAttendance() {
             foot="Of all present days"
           />
           <Tile label="Late marks" value={sum(data, (d) => d.late)} foot="Beyond 20-minute grace" />
-          <Tile label="Geo-fence exceptions" value={sum(data, (d) => d.flags)} foot="Punches outside radius" />
+          <Tile label="Absent days" value={sum(data, (d) => d.a)} foot="Unapproved, before regularisation" />
         </div>
 
         <Card title="Monthly attendance mix" sub="Person-days by status">
@@ -156,7 +153,6 @@ export function RepAttendance() {
                       <th className="num">Rate</th>
                       <th className="num">Absent</th>
                       <th className="num">Late</th>
-                      <th className="num">Flags</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -166,7 +162,6 @@ export function RepAttendance() {
                         <td className="num"><b>{w.rate}%</b></td>
                         <td className="num">{w.absent}</td>
                         <td className="num">{w.late}</td>
-                        <td className="num">{w.flags || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

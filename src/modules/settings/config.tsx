@@ -15,93 +15,61 @@ import { Badge, Banner, Card, KV, Table, TableWrap } from '../../components/ui';
 import { Dot, ListRow } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { MapBox } from '../attendance/Punch';
 import {
   useAddHoliday, useAllEmployees, useAttendanceAll, useCandidates, useCompensation,
   useHolidays, useLeaveAll, usePayRuns, useRequisitions, useSetLeaveQuota, useSites,
-  useTimesheetsAll, useUpdateFence, useVisiblePeople,
+  useTimesheetsAll, useVisiblePeople,
 } from './data';
 
-/* ---------- Geo-fences ---------- */
+/* ---------- Locations ---------- */
 
-/** The capture toggles, with the four that ship enabled. */
+/** The capture toggles, with the three that ship enabled. */
 const CAPTURE_TOGGLES: [string, boolean][] = [
-  ['Require GPS for mobile punch', true],
   ['Allow biometric device sync', true],
-  ['Auto-flag punches outside fence', true],
   ['Allow employee self-regularisation', true],
-  ['Capture selfie on punch-in', false],
+  ['Auto-flag missing punches', true],
+  ['Require a reason on regularisation', true],
 ];
 
-function SiteCard({ site, assigned, exceptions }: { site: Site; assigned: number; exceptions: number }) {
-  const app = useApp();
-  const updateFence = useUpdateFence();
-  const [draft, setDraft] = useState({ lat: String(site.lat), lng: String(site.lng), radius: String(site.radius), shift: site.shift });
-
-  const save = async () => {
-    try {
-      await updateFence.mutate(site.id, {
-        lat: +draft.lat, lng: +draft.lng, radius: +draft.radius, shift: draft.shift,
-      });
-      app.toast(site.name + ' geo-fence updated', 'ok');
-    } catch (e) {
-      app.toast(e instanceof Error ? e.message : 'Could not save the fence', 'err');
-    }
-  };
-
+function SiteCard({ site, assigned }: { site: Site; assigned: number }) {
   return (
     <Card title={site.name} sub={site.addr}>
-      <div className="grid g2" style={{ gap: '0 12px' }}>
-        <div className="field">
-          <label>Latitude</label>
-          <input className="input" value={draft.lat} onChange={(e) => setDraft({ ...draft, lat: e.target.value })} />
-        </div>
-        <div className="field">
-          <label>Longitude</label>
-          <input className="input" value={draft.lng} onChange={(e) => setDraft({ ...draft, lng: e.target.value })} />
-        </div>
-        <div className="field">
-          <label>Fence radius (metres)</label>
-          <input type="number" className="input" value={draft.radius} onChange={(e) => setDraft({ ...draft, radius: e.target.value })} />
-        </div>
-        <div className="field">
-          <label>Shift timing</label>
-          <input className="input" value={draft.shift} onChange={(e) => setDraft({ ...draft, shift: e.target.value })} />
-        </div>
-      </div>
-
-      <MapBox points={[]} site={site} height={180} />
-
-      <div className="row" style={{ marginTop: 12, justifyContent: 'space-between' }}>
-        <span className="muted" style={{ fontSize: 12 }}>
-          {assigned} employees assigned · {exceptions} historic exceptions
-        </span>
-        <button className="btn sm primary" onClick={save}>Save</button>
-      </div>
+      <KV rows={[
+        ['City', site.city || '—'],
+        ['Country', site.country],
+        ['Timezone', site.tz],
+        ['Shift timing', site.shift],
+        ['Employees based here', String(assigned)],
+      ]} />
     </Card>
   );
 }
 
-export function GeoTab() {
+/**
+ * Locations are read-only here.
+ *
+ * They were editable when a site owned a geo-fence and a default shift that
+ * was pushed to everyone based there. The fence is gone, and the shift is now
+ * a regional tag on the employee record — an India-shift and a US-shift person
+ * can sit in the same office, so a site-wide push would overwrite one of them.
+ */
+export function LocationsTab() {
   const app = useApp();
   const { data: sites = [] } = useSites();
   const { data: everyone = [] } = useAllEmployees();
-  const { data: attendance = [] } = useAttendanceAll(everyone.map((e) => e.id));
   return (
     <div className="stack">
-      <Banner kind="info" icon="📍" title="How geo-fencing works">
-        Every in-office punch captures device GPS coordinates. The distance to the assigned site centre is compared
-        against the fence radius — anything outside is flagged for manager approval. WFH and client-site punches log
-        location for audit but do not enforce a fence.
+      <Banner kind="info" icon="📍" title="No location tracking">
+        Punching in and out records a time and a work mode — office, home or client site. No coordinates are requested
+        from the browser and none are stored, so there is nothing here to configure a radius against.
       </Banner>
 
       <div className="grid g2">
-        {sites.filter((s) => s.lat).map((s) => (
+        {sites.filter((s) => !s.remote).map((s) => (
           <SiteCard
             key={s.id}
             site={s}
             assigned={everyone.filter((e) => e.site === s.id).length}
-            exceptions={attendance.filter((a) => a.site === s.id && a.geoOk === false).length}
           />
         ))}
       </div>
@@ -578,7 +546,7 @@ export function CompanyTab() {
             rows={[
               ['Active employees', everyone.length],
               ['Departments', DEPTS.length],
-              ['Locations', `${sites.filter((s) => s.lat).length} offices + remote`],
+              ['Locations', `${sites.filter((s) => !s.remote).length} offices + remote`],
               ['Attendance records', attendance.length.toLocaleString('en-IN')],
               ['Timesheets', sheets.length.toLocaleString('en-IN')],
               ['Leave requests', leave.length.toLocaleString('en-IN')],

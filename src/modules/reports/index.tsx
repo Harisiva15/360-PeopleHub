@@ -23,7 +23,7 @@ interface ReportDef {
  * manager sees only the ones that stay meaningful inside their own team.
  */
 const REPORTS: ReportDef[] = [
-  { id: 'attendance', n: 'Attendance Summary', d: 'Presence, WFH, late marks and geo-fence exceptions', ic: '◉', roles: ['admin', 'manager'], Body: RepAttendance },
+  { id: 'attendance', n: 'Attendance Summary', d: 'Presence, WFH, late marks and absence', ic: '◉', roles: ['admin', 'manager'], Body: RepAttendance },
   { id: 'payroll', n: 'Payroll Cost Analysis', d: 'Gross, deductions and net across months and departments', ic: '₹', roles: ['admin'], Body: RepPayroll },
   { id: 'headcount', n: 'Headcount & Diversity', d: 'Distribution by department, grade, location and gender', ic: '☰', roles: ['admin', 'manager'], Body: RepHeadcount },
   { id: 'attrition', n: 'Attrition & Retention', d: 'Exits, reasons, tenure at exit and retention rate', ic: '↘', roles: ['admin'], Body: RepAttrition },

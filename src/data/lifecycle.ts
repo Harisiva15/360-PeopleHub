@@ -72,7 +72,7 @@ export const LIFECYCLE: Record<string, LifecycleEvent[]> = {};
         on: ymd(addDays(TODAY, -ri(60, 500))),
         type: 'Transfer',
         note: 'Location change',
-        from: pick(SITES.filter((s) => s.lat)).name,
+        from: pick(SITES.filter((s) => !s.remote)).name,
         to: siteOf(e.site).name,
       });
 

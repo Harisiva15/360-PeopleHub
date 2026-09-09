@@ -59,13 +59,14 @@ const DEPARTMENTS = [
   ['HR', 'Human Resources'], ['FIN', 'Finance & Admin'],
 ];
 const SITES = [
-  ['CHN', 'Chennai HQ', 'Chennai', 'IN', 12.9911, 80.2503, 250],
-  ['BLR', 'Bengaluru Office', 'Bengaluru', 'IN', 12.9352, 77.6245, 220],
-  ['HYD', 'Hyderabad Office', 'Hyderabad', 'IN', 17.4435, 78.3772, 200],
-  ['NJ', 'New Jersey Office', 'Jersey City', 'US', null, null, null],
-  ['LON', 'London Office', 'London', 'GB', null, null, null],
-  ['DXB', 'Dubai Office', 'Dubai', 'AE', null, null, null],
-  ['WFH', 'Work From Home', null, 'IN', null, null, null],
+  ['CHN', 'Chennai HQ', 'Chennai', 'IN'],
+  ['BLR', 'Bengaluru Office', 'Bengaluru', 'IN'],
+  ['HYD', 'Hyderabad Office', 'Hyderabad', 'IN'],
+  ['NJ', 'New Jersey Office', 'Jersey City', 'US'],
+  ['LON', 'London Office', 'London', 'GB'],
+  ['DXB', 'Dubai Office', 'Dubai', 'AE'],
+  ['WFH', 'Work From Home', null, 'IN'],
+  ['CLIENT', 'Client Site', null, 'IN'],
 ];
 const GRADES = [
   ['L1', 'L1 · Associate', 1, 450000, 750000],
@@ -149,11 +150,11 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, start, end, night, code === 'FLEX']);
   }
-  for (const [code, name, city, country, lat, lng, radius] of SITES) {
-    await q(`INSERT INTO site (tenant_id, code, name, city, country, latitude, longitude, fence_radius_m)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+  for (const [code, name, city, country] of SITES) {
+    await q(`INSERT INTO site (tenant_id, code, name, city, country)
+             VALUES ($1,$2,$3,$4,$5)
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
-      [tenant, code, name, city, country, lat, lng, radius]);
+      [tenant, code, name, city, country]);
   }
   for (const [code, label, rank, min, max] of GRADES) {
     await q(`INSERT INTO grade_band (tenant_id, code, label, rank, min_ctc, max_ctc)

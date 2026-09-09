@@ -342,21 +342,6 @@ table.tbl td.num,table.tbl th.num{text-align:right;font-variant-numeric:tabular-
 .tipbox b{color:#fff}
 html[data-theme="dark"] .tipbox{background:#3a3a37;color:#fff}
 
-/* ---------- Map ---------- */
-.map{
-  position:relative;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);
-  background:
-    radial-gradient(circle at 30% 25%, color-mix(in srgb,var(--s3) 12%,transparent), transparent 42%),
-    radial-gradient(circle at 72% 68%, color-mix(in srgb,var(--s1) 12%,transparent), transparent 45%),
-    var(--surface-2);
-  height:280px;
-}
-.map .mapsq{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);aspect-ratio:1}
-.map .grid-lines{position:absolute;inset:0;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:38px 38px;opacity:.65}
-.map .fence{position:absolute;border-radius:50%;border:2px dashed color-mix(in srgb,var(--s1) 60%,transparent);background:color-mix(in srgb,var(--s1) 9%,transparent)}
-.map .pin{position:absolute;transform:translate(-50%,-100%);font-size:19px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3));cursor:pointer}
-.map .lbl{position:absolute;transform:translate(-50%,0);font-size:10.5px;font-weight:650;color:var(--ink-2);background:var(--surface);padding:1px 6px;border-radius:5px;border:1px solid var(--line);white-space:nowrap}
-
 /* ---------- Kanban ---------- */
 .kb{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}
 .kb-col{flex:0 0 262px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;max-height:calc(100vh - 260px)}

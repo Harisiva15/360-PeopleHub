@@ -6,7 +6,6 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import type { AppRole } from '../../types/employee';
-import type { FenceUpdate } from '../../services';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
@@ -26,8 +25,6 @@ export const useAttendanceAll = (ids: string[]) =>
   useQuery((s) => s.attendance.list({ empIds: ids }), [ids.join(',')]);
 
 export const useSetRole = () => useMutation((s, id: string, role: AppRole) => s.employees.setRole(id, role));
-export const useUpdateFence = () =>
-  useMutation((s, siteId: string, patch: FenceUpdate) => s.config.updateFence(siteId, patch));
 export const useSetLeaveQuota = () =>
   useMutation((s, typeId: string, quota: number) => s.config.setLeaveQuota(typeId, quota));
 export const useAddHoliday = () =>

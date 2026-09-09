@@ -161,22 +161,20 @@ export interface AttendanceQuery {
 }
 
 export interface PunchAt {
-  lat: number | null;
-  lng: number | null;
-  /** Resolved site and whether the punch fell inside its fence. */
+  /**
+   * Work mode: an office site code, or WFH / CLIENT. A category the employee
+   * states, not a place the server measures — attendance stopped recording
+   * coordinates in 0016. WFH records a W day rather than P.
+   */
   site: string;
-  geoOk: boolean;
-  dist: number | null;
   src: string;
-  /** WFH punches record a W day rather than P. */
-  wfh: boolean;
   at: string;
 }
 
 export interface AttendanceService {
   list(q: AttendanceQuery): Promise<AttRecord[]>;
   forDay(empId: string, date: string): Promise<AttRecord | null>;
-  /** Days worth regularising: absent, missing a punch, or outside the fence. */
+  /** Days worth regularising: absent, or missing one of the two punches. */
   regularisable(empId: string, since: string): Promise<AttRecord[]>;
   punchIn(empId: string, date: string, at: PunchAt): Promise<AttRecord>;
   punchOut(empId: string, date: string, at: PunchAt): Promise<AttRecord>;
@@ -771,24 +769,18 @@ export interface JoinersService {
 
 /* ---------- configuration ---------- */
 
-export interface FenceUpdate {
-  lat: number;
-  lng: number;
-  radius: number;
-  shift: string;
-}
-
 /**
- * The settings writes. These are configuration changes with reach: moving a
- * fence repoints everyone at that site, and changing an entitlement reprices
- * every open balance — which is exactly why they belong on a server rather
- * than in a save handler.
+ * The settings writes. These are configuration changes with reach: changing an
+ * entitlement reprices every open balance, which is exactly why it belongs on
+ * a server rather than in a save handler.
+ *
+ * Sites are read-only. They used to be writable because they owned a geo-fence
+ * and a default shift; the fence is gone, and the shift is a regional tag on
+ * the employee record.
  */
 export interface ConfigService {
   sites(): Promise<Site[]>;
   holidays(): Promise<Holiday[]>;
-  /** Updates the fence and pushes the shift to everyone based there. */
-  updateFence(siteId: string, patch: FenceUpdate): Promise<Site>;
   /** Sets an entitlement and reprices open balances to match. */
   setLeaveQuota(typeId: string, quota: number): Promise<{ type: string; quota: number; repriced: number }>;
   addHoliday(date: string, name: string, optional: boolean): Promise<Holiday[]>;

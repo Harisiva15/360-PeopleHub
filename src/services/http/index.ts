@@ -61,18 +61,12 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       forDay: (empId, date) => api.get(`/attendance/${empId}/${date}`),
       regularisable: (empId, since) =>
         api.get(`/attendance/${empId}/regularisable${qs({ since })}`),
-      /*
-       * geoOk, dist and site are in PunchAt because the mock computed them in
-       * the browser. They are deliberately not sent: the server recomputes
-       * everything from the coordinates, because a browser can claim it was
-       * inside the fence from anywhere.
-       */
       punchIn: (empId, date, at) =>
         api.post(`/attendance/${empId}/${date}/punch-in`,
-          { lat: at.lat, lng: at.lng, src: at.src, wfh: at.wfh, at: at.at }),
+          { site: at.site, src: at.src, at: at.at }),
       punchOut: (empId, date, at) =>
         api.post(`/attendance/${empId}/${date}/punch-out`,
-          { lat: at.lat, lng: at.lng, src: at.src, wfh: at.wfh, at: at.at }),
+          { site: at.site, src: at.src, at: at.at }),
       raiseRegularisation: (empId, date, inT, outT, reason) =>
         api.post(`/attendance/${empId}/${date}/regularise`, { inT, outT, reason }),
       actOnRegularisation: (empId, date, decision) =>
@@ -89,7 +83,6 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
     config: {
       sites: () => api.get('/config/sites'),
       holidays: () => api.get('/config/holidays'),
-      updateFence: (siteId, patch) => api.put(`/config/sites/${siteId}/fence`, patch),
       setLeaveQuota: (typeId, quota) =>
         api.put(`/config/leave-types/${typeId}/quota`, { quota }),
       addHoliday: (date, name, optional) =>

@@ -17,16 +17,16 @@ export const ORG = {
 };
 
 export const SITES: Site[] = [
-  { id: 'CHN', name: 'Chennai HQ', city: 'Chennai', country: 'IN', addr: 'Prestige Palladium, OMR, Perungudi', lat: 12.9911, lng: 80.2503, radius: 250, ptax: 208, tz: 'IST', shift: '09:30-18:30' },
-  { id: 'BLR', name: 'Bengaluru Office', city: 'Bengaluru', country: 'IN', addr: 'Ecospace, Bellandur, ORR', lat: 12.9352, lng: 77.6245, radius: 220, ptax: 200, tz: 'IST', shift: '09:30-18:30' },
-  { id: 'HYD', name: 'Hyderabad Office', city: 'Hyderabad', country: 'IN', addr: 'Cyber Towers, HITEC City, Madhapur', lat: 17.4435, lng: 78.3772, radius: 200, ptax: 200, tz: 'IST', shift: '10:00-19:00' },
-  { id: 'NJ', name: 'New Jersey Office', city: 'East Brunswick', country: 'US', addr: '2 Tower Center Blvd, Suite 1101', lat: 40.4293, lng: -74.4074, radius: 250, ptax: 0, tz: 'EST', shift: '09:00-18:00' },
-  { id: 'DAL', name: 'Dallas Office', city: 'Dallas', country: 'US', addr: '5001 Spring Valley Rd, Suite 400E', lat: 32.9268, lng: -96.7702, radius: 250, ptax: 0, tz: 'CST', shift: '09:00-18:00' },
-  { id: 'TOR', name: 'Toronto Office', city: 'Toronto', country: 'CA', addr: '5140 Yonge Street, Suite 1600', lat: 43.7695, lng: -79.4128, radius: 220, ptax: 0, tz: 'EST', shift: '09:00-17:30' },
-  { id: 'DXB', name: 'Dubai Office', city: 'Dubai', country: 'AE', addr: 'Building 3, Dubai Internet City', lat: 25.0942, lng: 55.1616, radius: 250, ptax: 0, tz: 'GST', shift: '09:00-18:00' },
-  { id: 'LON', name: 'London Office', city: 'London', country: 'GB', addr: '30 Churchill Place, Canary Wharf', lat: 51.5045, lng: -0.0175, radius: 200, ptax: 0, tz: 'GMT', shift: '09:00-17:30' },
-  { id: 'WFH', name: 'Work From Home', city: '—', country: 'IN', addr: 'Registered home address', lat: null, lng: null, radius: 0, ptax: 208, tz: 'IST', shift: '09:30-18:30' },
-  { id: 'CLIENT', name: 'Client Site', city: '—', country: 'IN', addr: 'Customer premises (geo-logged)', lat: null, lng: null, radius: 0, ptax: 208, tz: 'IST', shift: 'Flexible' }
+  { id: 'CHN', name: 'Chennai HQ', city: 'Chennai', country: 'IN', addr: 'Prestige Palladium, OMR, Perungudi', remote: false, ptax: 208, tz: 'IST', shift: '09:30-18:30' },
+  { id: 'BLR', name: 'Bengaluru Office', city: 'Bengaluru', country: 'IN', addr: 'Ecospace, Bellandur, ORR', remote: false, ptax: 200, tz: 'IST', shift: '09:30-18:30' },
+  { id: 'HYD', name: 'Hyderabad Office', city: 'Hyderabad', country: 'IN', addr: 'Cyber Towers, HITEC City, Madhapur', remote: false, ptax: 200, tz: 'IST', shift: '10:00-19:00' },
+  { id: 'NJ', name: 'New Jersey Office', city: 'East Brunswick', country: 'US', addr: '2 Tower Center Blvd, Suite 1101', remote: false, ptax: 0, tz: 'EST', shift: '09:00-18:00' },
+  { id: 'DAL', name: 'Dallas Office', city: 'Dallas', country: 'US', addr: '5001 Spring Valley Rd, Suite 400E', remote: false, ptax: 0, tz: 'CST', shift: '09:00-18:00' },
+  { id: 'TOR', name: 'Toronto Office', city: 'Toronto', country: 'CA', addr: '5140 Yonge Street, Suite 1600', remote: false, ptax: 0, tz: 'EST', shift: '09:00-17:30' },
+  { id: 'DXB', name: 'Dubai Office', city: 'Dubai', country: 'AE', addr: 'Building 3, Dubai Internet City', remote: false, ptax: 0, tz: 'GST', shift: '09:00-18:00' },
+  { id: 'LON', name: 'London Office', city: 'London', country: 'GB', addr: '30 Churchill Place, Canary Wharf', remote: false, ptax: 0, tz: 'GMT', shift: '09:00-17:30' },
+  { id: 'WFH', name: 'Work From Home', city: '—', country: 'IN', addr: 'Registered home address', remote: true, ptax: 208, tz: 'IST', shift: '09:30-18:30' },
+  { id: 'CLIENT', name: 'Client Site', city: '—', country: 'IN', addr: 'Customer premises', remote: true, ptax: 208, tz: 'IST', shift: 'Flexible' }
 ];
 export const siteOf = (id: string): Site => SITES.find(s => s.id === id) || SITES[0];
 

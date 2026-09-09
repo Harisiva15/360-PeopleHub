@@ -24,7 +24,7 @@ import {
   cancelLeave, listLeave, rejectLeave,
 } from '../modules/leave/service.ts';
 import {
-  addHoliday, ConfigError, listHolidays, listSites, setLeaveQuota, updateFence,
+  addHoliday, ConfigError, listHolidays, listSites, setLeaveQuota,
 } from '../modules/config/service.ts';
 import {
   approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
@@ -195,12 +195,6 @@ const routes: Route[] = [
   },
   { method: 'GET', pattern: '/config/sites', handler: (c) => listSites(c) },
   { method: 'GET', pattern: '/config/holidays', handler: (c) => listHolidays(c) },
-  {
-    method: 'PUT',
-    pattern: '/config/sites/:code/fence',
-    handler: (c, _r, p, body) =>
-      updateFence(c, p.code!, body as Parameters<typeof updateFence>[2]),
-  },
   {
     method: 'PUT',
     pattern: '/config/leave-types/:code/quota',

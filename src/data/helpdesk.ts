@@ -60,7 +60,7 @@ export const TICKETS: Ticket[] = [];
 (function genTickets() {
   const subjects: Record<string, string[]> = {
     PAY: ['TDS deducted seems higher than my declaration', 'Payslip for June not visible', 'Reimbursement not credited with salary', 'PF not reflecting in EPFO passbook', 'Need salary revision letter'],
-    ATT: ['Punch not recorded on 7 August', 'Leave balance shows incorrect carry forward', 'Comp off not credited for weekend work', 'Geo-fence flagged my punch wrongly'],
+    ATT: ['Punch not recorded on 7 August', 'Leave balance shows incorrect carry forward', 'Comp off not credited for weekend work', 'Punch recorded under the wrong work mode'],
     IT: ['Laptop overheating and shutting down', 'VPN disconnects every 10 minutes', 'Need access to the staging database', 'Second monitor request', 'Email quota full'],
     DOC: ['Need an experience letter for a visa application', 'Address proof letter for bank account', 'Salary certificate for a home loan', 'Duplicate Form 16 for FY 2024-25'],
     POL: ['Clarification on the WFH policy for client projects', 'How does the sandwich leave rule work?', 'Notice period buyout options', 'Maternity leave extension policy'],

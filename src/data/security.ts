@@ -39,7 +39,7 @@ export const AUDIT: AuditEntry[] = [];
     ['Access', () => 'Privileged session started from a new device', 'high'],
     ['Employee', () => 'Bank account details updated for ' + ri(1, 4) + ' employee(s)', 'high'],
     ['Employee', () => ri(2, 6) + ' employees added via onboarding automation', 'low'],
-    ['Attendance', () => 'Geo-fence radius updated ' + ri(180, 220) + ' m → ' + ri(220, 300) + ' m', 'medium'],
+    ['Attendance', () => 'Shift grace period updated ' + ri(10, 20) + ' min → ' + ri(20, 30) + ' min', 'medium'],
     ['Attendance', () => 'Bulk regularisation approved (' + ri(8, 40) + ' records)', 'medium'],
     ['Hiring', () => 'Requisition approved with an off-band offer', 'medium'],
     ['Compliance', () => 'Form 24Q filed with the Income Tax Department', 'medium'],
@@ -115,7 +115,7 @@ export interface RetentionRow {
 export const RETENTION: RetentionRow[] = [
   { k: 'Employee master record', d: 'Name, contact, identifiers, job history', law: 'Contract · legitimate interest', keep: '7 years after exit', basis: 'Statutory record keeping' },
   { k: 'Payroll and tax records', d: 'Salary, deductions, tax declarations, Form 16 / W-2 / P60', law: 'Legal obligation', keep: '8 years (IN) · 4 years (US) · 6 years (UK)', basis: 'Income tax and labour law' },
-  { k: 'Attendance and location', d: 'Punch records, geo-coordinates at punch, geo-fence result', law: 'Legitimate interest', keep: '24 months', basis: 'Payroll accuracy and dispute resolution' },
+  { k: 'Attendance', d: 'Punch times, work mode, late marks. No location data is collected', law: 'Legitimate interest', keep: '24 months', basis: 'Payroll accuracy and dispute resolution' },
   { k: 'Background verification', d: 'Identity, education, employment and criminal checks', law: 'Consent · legal obligation', keep: '3 years after exit', basis: 'Client contractual requirement' },
   { k: 'Health and insurance', d: 'Insurance nominee, claims, medical certificates', law: 'Explicit consent', keep: '3 years after policy end', basis: 'Benefits administration' },
   { k: 'Candidate applications', d: 'CV, interview notes, assessment scores', law: 'Consent', keep: '12 months (unhired)', basis: 'Future opportunity, withdrawable' },

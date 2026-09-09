@@ -1,11 +1,16 @@
 /**
- * Tenant configuration — sites, geo-fences, holidays and leave entitlements.
+ * Tenant configuration — sites, holidays and leave entitlements.
  *
- * Small in method count and disproportionately important: two of these five
- * change data that already exists. Moving a leave quota reprices every open
- * balance, and moving a site's shift moves everyone rostered there. Both are
- * the kind of write that looks like a settings change and behaves like a bulk
- * update, so both happen in one transaction and report what they touched.
+ * Small in method count and disproportionately important: setting a leave
+ * entitlement reprices every balance already open against it. That is the kind
+ * of write that looks like a settings change and behaves like a bulk update,
+ * so it happens in one transaction and reports what it touched.
+ *
+ * There is no site write. A site used to own a geo-fence and a default shift
+ * that was pushed to everyone based there; 0016 removed the fence, and since
+ * 0015 the shift is a regional tag on the employee — pushing a site shift would
+ * now overwrite the US-shift people sitting in the Chennai office. So a site is
+ * a label here: a name, a city, an address, a timezone.
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
@@ -28,9 +33,8 @@ export interface Site {
   city: string;
   country: string;
   addr: string;
-  lat: number | null;
-  lng: number | null;
-  radius: number | null;
+  /** WFH and CLIENT are work modes rather than places, and have no address. */
+  remote: boolean;
   tz: string;
   shift: string;
 }
@@ -41,6 +45,9 @@ export interface Holiday {
   opt: boolean;
 }
 
+/** Codes that name a way of working rather than a building. */
+const REMOTE_MODES = new Set(['WFH', 'CLIENT']);
+
 const toSite = (r: Record<string, unknown>): Site => ({
   // The screens key sites by code; the uuid stays server-side.
   id: r.code as string,
@@ -48,9 +55,7 @@ const toSite = (r: Record<string, unknown>): Site => ({
   city: (r.city as string) ?? '',
   country: r.country as string,
   addr: (r.address as string) ?? '',
-  lat: r.latitude === null ? null : Number(r.latitude),
-  lng: r.longitude === null ? null : Number(r.longitude),
-  radius: r.fence_radius_m === null ? null : Number(r.fence_radius_m),
+  remote: REMOTE_MODES.has(r.code as string),
   tz: (r.timezone as string) ?? 'Asia/Kolkata',
   shift: (r.shift_code as string) ?? 'GEN',
 });
@@ -58,8 +63,8 @@ const toSite = (r: Record<string, unknown>): Site => ({
 export async function listSites(caller: Caller): Promise<Site[]> {
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
-      `SELECT s.code, s.name, s.city, s.country, s.address, s.latitude, s.longitude,
-              s.fence_radius_m, s.timezone, sh.code AS shift_code
+      `SELECT s.code, s.name, s.city, s.country, s.address, s.timezone,
+              sh.code AS shift_code
          FROM site s
          LEFT JOIN shift sh ON sh.id = s.default_shift_id
         WHERE s.active
@@ -73,53 +78,6 @@ export async function listHolidays(caller: Caller): Promise<Holiday[]> {
     const { rows } = await db.query(
       `SELECT observed_on, name, optional FROM holiday ORDER BY observed_on`);
     return rows.map((r) => ({ d: r.observed_on as string, n: r.name as string, opt: r.optional as boolean }));
-  });
-}
-
-export interface FenceUpdate {
-  lat: number;
-  lng: number;
-  radius: number;
-  shift: string;
-}
-
-/**
- * Move a site's geo-fence, and push its shift to everyone based there.
- *
- * A zero radius is refused: it would flag every punch at that site as outside
- * the fence, which reads as a system fault rather than a policy change.
- */
-export async function updateFence(
-  caller: Caller,
-  siteCode: string,
-  patch: FenceUpdate,
-): Promise<Site> {
-  if (caller.role !== 'admin') throw new ConfigError('only an admin may change a fence', 'forbidden');
-  if (!(patch.radius > 0)) throw new ConfigError('a fence radius must be greater than zero', 'invalid');
-
-  return withTenant(caller, async (db) => {
-    const shift = await db.query('SELECT id FROM shift WHERE code = $1', [patch.shift]);
-    if (shift.rowCount === 0) throw new ConfigError('no such shift pattern', 'invalid');
-
-    const updated = await db.query(
-      `UPDATE site
-          SET latitude = $1, longitude = $2, fence_radius_m = $3, default_shift_id = $4
-        WHERE code = $5
-        RETURNING id`,
-      [patch.lat, patch.lng, patch.radius, shift.rows[0].id, siteCode]);
-    if (updated.rowCount === 0) throw new ConfigError('no such site', 'not_found');
-
-    // Everyone based there inherits the site's shift. This is the part that
-    // makes a settings change a bulk update.
-    await db.query('UPDATE employee SET shift_id = $1 WHERE site_id = $2',
-      [shift.rows[0].id, updated.rows[0].id]);
-
-    const { rows } = await db.query(
-      `SELECT s.code, s.name, s.city, s.country, s.address, s.latitude, s.longitude,
-              s.fence_radius_m, s.timezone, sh.code AS shift_code
-         FROM site s LEFT JOIN shift sh ON sh.id = s.default_shift_id
-        WHERE s.code = $1`, [siteCode]);
-    return toSite(rows[0]!);
   });
 }
 

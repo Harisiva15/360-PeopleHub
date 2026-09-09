@@ -8,7 +8,7 @@
     "check:schema": "node scripts/check-schema.mjs",
     "typecheck": "tsc --noEmit",
     "migrate": "node scripts/migrate.mjs",
-    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "dev": "node --watch --env-file-if-exists=.env --experimental-strip-types src/index.ts",
     "check:schema:test": "node scripts/check-schema.test.mjs",
     "check": "npm run check:schema && npm run check:schema:test && npm run typecheck",
     "inspect": "node scripts/inspect.mjs",

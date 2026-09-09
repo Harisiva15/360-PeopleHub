@@ -6,11 +6,8 @@ export interface Site {
   city: string;
   country: CountryId;
   addr: string;
-  /** Null for WFH and client sites — no fixed geo-fence. */
-  lat: number | null;
-  lng: number | null;
-  /** Geo-fence radius in metres; 0 disables the fence. */
-  radius: number;
+  /** WFH and client sites are ways of working, not buildings. */
+  remote: boolean;
   /** Monthly professional tax for the site's state (India only). */
   ptax: number;
   tz: string;

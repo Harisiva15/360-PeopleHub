@@ -32,7 +32,7 @@ export function RepPayroll() {
     c: d.color,
     v: sum(everyone.filter((e) => e.dept === d.id), (e) => (grossOf.get(e.id) ?? 0) / 12),
   }));
-  const bySite: HBarRow[] = SITES.filter((s) => s.lat).map((s, i) => ({
+  const bySite: HBarRow[] = SITES.filter((s) => !s.remote).map((s, i) => ({
     k: s.name,
     c: PAL[i],
     v: sum(everyone.filter((e) => e.site === s.id), (e) => (grossOf.get(e.id) ?? 0) / 12),

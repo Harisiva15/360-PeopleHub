@@ -40,8 +40,8 @@ export const ANNOUNCE: Announcement[] = [
   },
   {
     id: 'AN4',
-    title: 'New geo-fence radius at Bengaluru office',
-    body: 'The Bengaluru geo-fence has been widened to 220 m to cover the new Block C entrance. Please re-punch through the mobile app if you get a fence warning.',
+    title: 'Location tracking removed from attendance',
+    body: 'Punching in and out no longer asks for your location, and no coordinates are stored. Choose your work mode — office, home or client site — and punch as usual.',
     by: 'Karthik Shetty', dept: 'All', on: ymd(addDays(TODAY, -12)), pin: false, tag: 'Attendance',
   },
   {

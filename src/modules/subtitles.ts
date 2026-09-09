@@ -19,7 +19,7 @@ import type { ModuleCtx } from './registry';
 
 export const SUBTITLES: Record<string, (ctx: ModuleCtx) => string> = {
   dashboard: (c) => 'Welcome back, ' + c.me.name.split(' ')[0] + ' · ' + new Date().toDateString(),
-  attendance: () => 'Punch in/out with location verification against site geo-fences',
+  attendance: () => 'Punch in/out, work mode, regularisation and the holiday calendar',
   shifts: () => `${SHIFTS.length} shift patterns · rotational rosters, overtime and comp off`,
   timesheet: () => 'Log project hours, submit weekly and track approvals',
   leave: () => 'Balances, requests and the company holiday calendar',
