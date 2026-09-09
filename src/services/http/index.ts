@@ -73,6 +73,27 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    timesheet: {
+      list: (q) => api.get(`/timesheets${qs({
+        empIds: q.empIds?.join(','), weekStart: q.weekStart, since: q.since, status: q.status,
+      })}`),
+      forWeek: (empId, weekStart) => api.get(`/timesheets/${empId}/${weekStart}`),
+      addRow: (id, proj, task) => api.post(`/timesheets/${id}/rows`, { proj, task }),
+      removeRow: (id, rowIndex) => api.del(`/timesheets/${id}/rows/${rowIndex}`),
+      setRow: (id, rowIndex, patch) => api.put(`/timesheets/${id}/rows/${rowIndex}`, patch),
+      setHours: (id, rowIndex, dayIndex, hours) =>
+        api.put(`/timesheets/${id}/rows/${rowIndex}/days/${dayIndex}`, { hours }),
+      submit: (id) => api.post(`/timesheets/${id}/submit`),
+      recall: (id) => api.post(`/timesheets/${id}/recall`),
+      /*
+       * approverId is not sent. The server takes the approver from the session
+       * token, for the same reason `visible()` ignores its caller argument:
+       * an approver the client can name is an approver the client can forge.
+       */
+      approve: (id) => api.post(`/timesheets/${id}/approve`),
+      reject: (id, _approverId, note) => api.post(`/timesheets/${id}/reject`, { note }),
+    },
+
     joiners: {
       request: (draft) => api.post('/joiners', draft),
       list: (status) => api.get(`/joiners${qs({ status })}`),

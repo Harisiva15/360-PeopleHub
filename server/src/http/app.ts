@@ -33,6 +33,10 @@ import {
   actOnRegularisation, AttendanceError, attendanceForDay, listAttendance,
   punchIn, punchOut, raiseRegularisation, regularisableDays,
 } from '../modules/attendance/service.ts';
+import {
+  addRow, approveTimesheet, listTimesheets, recallTimesheet, rejectTimesheet,
+  removeRow, setHours, setRow, submitTimesheet, TimesheetError, timesheetForWeek,
+} from '../modules/timesheet/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -167,6 +171,72 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       actOnRegularisation(c, p.empId!, p.date!,
         (body as { decision: 'Approved' | 'Rejected' }).decision),
+  },
+  {
+    method: 'GET',
+    pattern: '/timesheets',
+    handler: (c, req) => {
+      const p = new URL(req.url ?? '/', 'http://x').searchParams;
+      const ids = p.get('empIds');
+      return listTimesheets(c, {
+        ...(ids ? { empIds: ids.split(',').filter(Boolean) } : {}),
+        ...(p.get('weekStart') ? { weekStart: p.get('weekStart')! } : {}),
+        ...(p.get('since') ? { since: p.get('since')! } : {}),
+        ...(p.get('status') ? { status: p.get('status') as 'Draft' } : {}),
+      });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/timesheets/:empId/:weekStart',
+    handler: (c, _r, p) => timesheetForWeek(c, p.empId!, p.weekStart!),
+  },
+  {
+    method: 'POST',
+    pattern: '/timesheets/:id/rows',
+    handler: (c, _r, p, body) => {
+      const b = (body ?? {}) as { proj: string; task: string };
+      return addRow(c, p.id!, b.proj, b.task ?? '');
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: '/timesheets/:id/rows/:rowIndex',
+    handler: (c, _r, p) => removeRow(c, p.id!, Number(p.rowIndex)),
+  },
+  {
+    method: 'PUT',
+    pattern: '/timesheets/:id/rows/:rowIndex',
+    handler: (c, _r, p, body) =>
+      setRow(c, p.id!, Number(p.rowIndex), (body ?? {}) as { proj?: string; task?: string }),
+  },
+  {
+    method: 'PUT',
+    pattern: '/timesheets/:id/rows/:rowIndex/days/:dayIndex',
+    handler: (c, _r, p, body) =>
+      setHours(c, p.id!, Number(p.rowIndex), Number(p.dayIndex),
+        Number((body as { hours: number }).hours)),
+  },
+  {
+    method: 'POST',
+    pattern: '/timesheets/:id/submit',
+    handler: (c, _r, p) => submitTimesheet(c, p.id!),
+  },
+  {
+    method: 'POST',
+    pattern: '/timesheets/:id/recall',
+    handler: (c, _r, p) => recallTimesheet(c, p.id!),
+  },
+  {
+    method: 'POST',
+    pattern: '/timesheets/:id/approve',
+    handler: (c, _r, p) => approveTimesheet(c, p.id!),
+  },
+  {
+    method: 'POST',
+    pattern: '/timesheets/:id/reject',
+    handler: (c, _r, p, body) =>
+      rejectTimesheet(c, p.id!, (body as { note?: string } | undefined)?.note ?? ''),
   },
   {
     method: 'GET',
@@ -318,6 +388,13 @@ function statusFor(error: unknown): { status: number; message: string } {
     const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof TimesheetError) {
+    const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' || error.code === 'no_project' || error.code === 'no_row' ? 400
+          : 409;
     return { status, message: error.message };
   }
   if (error instanceof JoinerError) {

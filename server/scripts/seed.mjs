@@ -68,6 +68,16 @@ const SITES = [
   ['WFH', 'Work From Home', null, 'IN'],
   ['CLIENT', 'Client Site', null, 'IN'],
 ];
+const PROJECTS = [
+  ['P-ATLAS', 'Atlas Core Platform', false],
+  ['P-NBFC', 'Meridian NBFC Portal', true],
+  ['P-RETAIL', 'RetailOne Commerce', true],
+  ['P-HEALTH', 'CareLink Health Cloud', true],
+  ['P-LOGI', 'TransitIQ Logistics', true],
+  ['P-INT', 'Internal Tools & HRMS', false],
+  ['P-SUP', 'Managed Support Desk', true],
+  ['P-PRESALES', 'Pre-Sales & Solutioning', false],
+];
 const GRADES = [
   ['L1', 'L1 · Associate', 1, 450000, 750000],
   ['L2', 'L2 · Engineer', 2, 750000, 1300000],
@@ -156,6 +166,12 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, city, country]);
   }
+  for (const [code, name, billable] of PROJECTS) {
+    await q(`INSERT INTO project (tenant_id, code, name, billable)
+             VALUES ($1,$2,$3,$4)
+             ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
+      [tenant, code, name, billable]);
+  }
   for (const [code, label, rank, min, max] of GRADES) {
     await q(`INSERT INTO grade_band (tenant_id, code, label, rank, min_ctc, max_ctc)
              VALUES ($1,$2,$3,$4,$5,$6)
@@ -168,7 +184,7 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, quota, carry, encash]);
   }
-  created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, `
+  created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, `
     + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts`);
 
   /* ---- permissions: admin sees everything, the rest is narrowed later ---- */
