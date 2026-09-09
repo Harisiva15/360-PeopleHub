@@ -73,6 +73,17 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    assets: {
+      list: () => api.get('/assets'),
+      kpi: () => api.get('/assets/kpi'),
+      requests: () => api.get('/assets/requests'),
+      openRequests: () => api.get('/assets/requests/open'),
+      pendingRecovery: () => api.get('/assets/recovery'),
+      actOnRequest: (id, status) => api.put(`/assets/requests/${id}`, { status }),
+      allocate: (assetId, empId) => api.post(`/assets/${assetId}/allocate`, { empId }),
+      markReturned: (assetId) => api.post(`/assets/${assetId}/return`),
+    },
+
     noticeboard: {
       announcements: () => api.get('/announcements'),
       celebrations: (days) => api.get(`/celebrations${qs({ days: String(days) })}`),

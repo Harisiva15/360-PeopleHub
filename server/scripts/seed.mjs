@@ -78,6 +78,15 @@ const PROJECTS = [
   ['P-SUP', 'Managed Support Desk', true],
   ['P-PRESALES', 'Pre-Sales & Solutioning', false],
 ];
+// Useful life in months drives the straight-line book value in the register.
+const ASSET_CATEGORIES = [
+  ['LAPTOP', 'Laptops', 48],
+  ['DISPLAY', 'Monitors', 60],
+  ['MOBILE', 'Phones', 36],
+  ['PERIPH', 'Peripherals', 36],
+  ['SECURITY', 'Security keys', 60],
+  ['LICENCE', 'Software licences', 12],
+];
 const GRADES = [
   ['L1', 'L1 · Associate', 1, 450000, 750000],
   ['L2', 'L2 · Engineer', 2, 750000, 1300000],
@@ -172,6 +181,12 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, billable]);
   }
+  for (const [code, name, life] of ASSET_CATEGORIES) {
+    await q(`INSERT INTO asset_category (tenant_id, code, name, useful_life_months)
+             VALUES ($1,$2,$3,$4)
+             ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
+      [tenant, code, name, life]);
+  }
   for (const [code, label, rank, min, max] of GRADES) {
     await q(`INSERT INTO grade_band (tenant_id, code, label, rank, min_ctc, max_ctc)
              VALUES ($1,$2,$3,$4,$5,$6)
@@ -184,7 +199,7 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, quota, carry, encash]);
   }
-  created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, `
+  created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, `
     + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts`);
 
   /* ---- permissions: admin sees everything, the rest is narrowed later ---- */
