@@ -22,6 +22,7 @@ import {
 import { timesheetService } from './timesheet';
 import { whatsappService } from './whatsapp';
 import { approvalsService } from './approvals';
+import { joinersService } from './joiners';
 
 export const mockServices: Services = {
   employees: employeeService,
@@ -49,4 +50,5 @@ export const mockServices: Services = {
   config: configService,
   whatsapp: whatsappService,
   approvals: approvalsService,
+  joiners: joinersService,
 };

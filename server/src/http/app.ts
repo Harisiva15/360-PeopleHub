@@ -26,6 +26,9 @@ import {
 import {
   addHoliday, ConfigError, listHolidays, listSites, setLeaveQuota, updateFence,
 } from '../modules/config/service.ts';
+import {
+  approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
+} from '../modules/joiners/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -108,6 +111,31 @@ const routes: Route[] = [
       if (!profile) throw new NotFound('no such employee');
       return profile;
     },
+  },
+  {
+    method: 'GET',
+    pattern: '/joiners',
+    handler: (c, req) => {
+      const st = new URL(req.url ?? '/', 'http://x').searchParams.get('status');
+      return listJoiners(c, (st ?? undefined) as 'pending' | undefined);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/joiners',
+    handler: (c, _r, _p, body) => requestJoiner(c, body as Parameters<typeof requestJoiner>[1]),
+  },
+  {
+    method: 'POST',
+    pattern: '/joiners/:id/approve',
+    handler: (c, _r, p, body) =>
+      approveJoiner(c, p.id!, (body as { note?: string } | undefined)?.note),
+  },
+  {
+    method: 'POST',
+    pattern: '/joiners/:id/reject',
+    handler: (c, _r, p, body) =>
+      rejectJoiner(c, p.id!, (body as { note?: string } | undefined)?.note),
   },
   { method: 'GET', pattern: '/config/sites', handler: (c) => listSites(c) },
   { method: 'GET', pattern: '/config/holidays', handler: (c) => listHolidays(c) },
@@ -236,6 +264,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof TenantContextError) return { status: 401, message: 'no tenant context' };
   if (error instanceof NotFound) return { status: 404, message: error.message };
   if (error instanceof BadRequest) return { status: 400, message: error.message };
+  if (error instanceof JoinerError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
   if (error instanceof ConfigError) {
     const status = error.code === 'forbidden' ? 403 : error.code === 'not_found' ? 404 : 409;
     return { status, message: error.message };

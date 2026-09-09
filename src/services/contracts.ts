@@ -721,6 +721,54 @@ export interface ApprovalsService {
   navBadges(caller: Caller): Promise<Record<string, number>>;
 }
 
+/* ---------- new joiners ---------- */
+
+/** What a manager or admin fills in to add someone. Config values are codes. */
+export interface JoinerDraft {
+  fullName: string;
+  workEmail: string;
+  employeeCode?: string;
+  designation?: string;
+  dept?: string;
+  site?: string;
+  grade?: string;
+  joiningOn: string;
+  employmentType?: string;
+}
+
+export interface JoiningRequest {
+  id: string;
+  fullName: string;
+  workEmail: string;
+  employeeCode: string | null;
+  designation: string | null;
+  dept: string | null;
+  site: string | null;
+  grade: string | null;
+  joiningOn: string;
+  employmentType: string;
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+  requestedBy: string | null;
+  requestedByName: string | null;
+  requestedAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  employeeId: string | null;
+}
+
+export interface JoinersService {
+  /**
+   * Raise a joiner. Whether it is created outright or queued depends on the
+   * caller's role, decided server-side — the screen reflects the outcome, it
+   * does not choose it.
+   */
+  request(draft: JoinerDraft): Promise<JoiningRequest>;
+  /** Admins see every request; a manager sees the ones they raised. */
+  list(status?: JoiningRequest['status']): Promise<JoiningRequest[]>;
+  approve(id: string, note?: string): Promise<JoiningRequest>;
+  reject(id: string, note?: string): Promise<JoiningRequest>;
+}
+
 /* ---------- configuration ---------- */
 
 export interface FenceUpdate {
@@ -784,4 +832,5 @@ export interface Services {
   leave: LeaveService;
   whatsapp: WhatsAppService;
   approvals: ApprovalsService;
+  joiners: JoinersService;
 }

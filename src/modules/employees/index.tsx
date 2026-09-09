@@ -3,7 +3,12 @@ import { sortBy, sum } from '../../lib/collections';
 import { daysBetween, fmtD, TODAY, tenure, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { useAllEmployees, useExitedEmployees, usePeople, useVisiblePeople } from './data';
+import {
+  useAllEmployees, useApproveJoiner, useExitedEmployees, useJoiners, usePeople,
+  useRejectJoiner, useVisiblePeople,
+} from './data';
+import { AddJoinerForm, JoinerQueue } from './AddJoiner';
+import { useLayer } from '../../components/Layer';
 import { DEPTS, deptOf, GRADES, siteOf, SITES } from '../../data/org';
 import { Avatar, Badge, Card, EmptyState, PersonCell, Tile } from '../../components/ui';
 import { Chip, StatusBadge } from '../../components/common';
@@ -16,6 +21,33 @@ import type { Grade } from '../../types/country';
 function Employees() {
   const app = useApp();
   const show = useShowEmployee();
+  const layer = useLayer();
+
+  /* Adding people is a manager-and-above action; employees never see it. */
+  const canAddPeople = app.role === 'admin' || app.role === 'manager';
+  const { data: joiners = [], refetch: refetchJoiners } = useJoiners('pending');
+  const approveJoiner = useApproveJoiner();
+  const rejectJoiner = useRejectJoiner();
+
+  const decide = async (id: string, decision: 'approve' | 'reject') => {
+    try {
+      if (decision === 'approve') await approveJoiner.mutate(id);
+      else await rejectJoiner.mutate(id);
+      app.toast(decision === 'approve' ? 'Joiner approved — employee created' : 'Joiner rejected', 'ok');
+      refetchJoiners();
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not record that decision', 'err');
+    }
+  };
+
+  const addJoiner = () =>
+    layer.modal({
+      title: 'Add a new joiner',
+      sub: app.role === 'admin' ? 'Creates the employee record' : 'Sent to an admin for approval',
+      size: 'wide',
+      body: (close) => <AddJoinerForm close={close} onDone={refetchJoiners} />,
+      footer: null,
+    });
 
   const [q, setQ] = useState('');
   const [dept, setDept] = useState('');
@@ -84,7 +116,12 @@ function Employees() {
           <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')} title="List">☰</button>
         </div>
         <button className="btn" onClick={exportCsv}>⤓ Export</button>
+        {canAddPeople && (
+          <button className="btn primary" onClick={addJoiner}>＋ Add employee</button>
+        )}
       </div>
+
+      {canAddPeople && <JoinerQueue rows={joiners} onDecide={decide} />}
 
       <div className="grid g5">
         <Tile label="Employees" value={list.length} foot="Matching current filters" />

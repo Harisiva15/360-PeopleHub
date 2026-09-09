@@ -53,6 +53,13 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
        */
     },
 
+    joiners: {
+      request: (draft) => api.post('/joiners', draft),
+      list: (status) => api.get(`/joiners${qs({ status })}`),
+      approve: (id, note) => api.post(`/joiners/${id}/approve`, { note }),
+      reject: (id, note) => api.post(`/joiners/${id}/reject`, { note }),
+    },
+
     config: {
       sites: () => api.get('/config/sites'),
       holidays: () => api.get('/config/holidays'),

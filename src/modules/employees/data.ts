@@ -24,3 +24,11 @@ export function useExitedEmployees() {
 }
 
 export const useSetRole = () => useMutation((s, id: string, role: AppRole) => s.employees.setRole(id, role));
+
+/** New joiners. Managers raise them; admins decide. */
+export const useJoiners = (status?: 'pending') =>
+  useQuery((s) => s.joiners.list(status), [status ?? 'all']);
+export const useApproveJoiner = () =>
+  useMutation((s, id: string, note?: string) => s.joiners.approve(id, note));
+export const useRejectJoiner = () =>
+  useMutation((s, id: string, note?: string) => s.joiners.reject(id, note));
