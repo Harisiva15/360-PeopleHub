@@ -45,6 +45,10 @@ import {
   actOnRequest, allocate, AssetError, assetKpi, listAssets, listOpenRequests,
   listRequests, markReturned, pendingRecovery,
 } from '../modules/assets/service.ts';
+import { ProvisionError } from '../modules/people/provision.ts';
+import {
+  completeOnboarding, listOnboarding, OnboardingError, setTask,
+} from '../modules/onboarding/service.ts';
 import {
   HiringError, interviewsFor, listCandidates, listInterviews, listRequisitions,
   moveCandidate, openRequisition, recruiterTracker, submitCandidate,
@@ -183,6 +187,18 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       actOnRegularisation(c, p.empId!, p.date!,
         (body as { decision: 'Approved' | 'Rejected' }).decision),
+  },
+  { method: 'GET', pattern: '/onboarding', handler: (c) => listOnboarding(c) },
+  {
+    method: 'PUT',
+    pattern: '/onboarding/:id/tasks/:key',
+    handler: (c, _r, p, body) =>
+      setTask(c, p.id!, p.key!, Boolean((body as { done?: boolean } | undefined)?.done)),
+  },
+  {
+    method: 'POST',
+    pattern: '/onboarding/:id/complete',
+    handler: (c, _r, p) => completeOnboarding(c, p.id!),
   },
   { method: 'GET', pattern: '/requisitions', handler: (c) => listRequisitions(c) },
   {
@@ -481,6 +497,14 @@ function statusFor(error: unknown): { status: number; message: string } {
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };
+  }
+  if (error instanceof OnboardingError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof ProvisionError) {
+    return { status: error.code === 'duplicate' ? 409 : 400, message: error.message };
   }
   if (error instanceof HiringError) {
     const status = error.code === 'forbidden' ? 403

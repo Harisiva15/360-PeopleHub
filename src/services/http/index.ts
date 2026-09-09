@@ -73,6 +73,13 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    onboarding: {
+      list: () => api.get('/onboarding'),
+      setTask: (id, key, done) =>
+        api.put(`/onboarding/${id}/tasks/${encodeURIComponent(key)}`, { done }),
+      complete: (id) => api.post(`/onboarding/${id}/complete`),
+    },
+
     hiring: {
       requisitions: () => api.get('/requisitions'),
       candidates: () => api.get('/candidates'),

@@ -11,6 +11,7 @@
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
+import { provisionEmployee, ProvisionError } from '../people/provision.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
 export class JoinerError extends Error {
@@ -197,50 +198,19 @@ async function approveInTransaction(
     throw new JoinerError(`this request is already ${req.status}`, 'not_pending');
   }
 
-  const entity = await db.query('SELECT id, country FROM legal_entity WHERE is_default LIMIT 1');
-  if (!entity.rows[0]) throw new JoinerError('no default legal entity configured', 'invalid');
-
-  /*
-   * Everyone needs a shift, and the honest default is the one matching the
-   * employing entity's country rather than whatever sorts first.
-   */
-  const shift = await db.query(
-    `SELECT id FROM shift WHERE region = $1
-      UNION ALL SELECT id FROM shift WHERE code = 'IN' LIMIT 1`, [entity.rows[0].country]);
-  if (!shift.rows[0]) throw new JoinerError('no shift configured to assign', 'invalid');
-
-  // A code is generated when the request did not carry one. Sequential per
-  // tenant, so it does not collide with codes already in use.
-  const code = (req.employee_code as string | null) ?? (await db.query(
-    `SELECT 'VHM' || lpad((COALESCE(max(substring(code from '\\d+$')::int), 0) + 1)::text, 3, '0') AS next
-       FROM employee WHERE code ~ '^VHM\\d+$'`)).rows[0].next as string;
-
-  const emp = await db.query(
-    `INSERT INTO employee
-       (code, full_name, work_email, legal_entity_id, joined_on, department_id,
-        site_id, grade_id, shift_id, designation, manager_id, employment_type,
-        app_role, currency)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'employee',$13)
-     RETURNING id`,
-    [code, req.full_name, req.work_email, entity.rows[0].id, req.joining_on,
-      req.department_id, req.site_id, req.grade_id, shift.rows[0].id,
-      req.designation, req.manager_id, req.employment_type,
-      entity.rows[0].country === 'IN' ? 'INR' : 'USD']);
-
-  const employeeId = emp.rows[0].id as string;
-
-  // Opening leave balances, or their first application has nothing to debit.
-  await db.query(
-    `INSERT INTO leave_balance (employee_id, leave_type_id, year_start, quota)
-     SELECT $1, lt.id,
-            make_date(CASE WHEN EXTRACT(MONTH FROM CURRENT_DATE) >= t.fiscal_year_start_month
-                           THEN EXTRACT(YEAR FROM CURRENT_DATE)::int
-                           ELSE EXTRACT(YEAR FROM CURRENT_DATE)::int - 1 END,
-                      t.fiscal_year_start_month, 1),
-            lt.annual_quota
-       FROM leave_type lt, tenant t
-      WHERE lt.active AND t.id = current_tenant_id()
-      ON CONFLICT DO NOTHING`, [employeeId]);
+  // Shared with the onboarding flow, which has to produce an identical record.
+  const { id: employeeId, code } = await provisionEmployee(db, {
+    fullName: req.full_name as string,
+    workEmail: req.work_email as string,
+    joinedOn: req.joining_on as string,
+    departmentId: req.department_id as string | null,
+    siteId: req.site_id as string | null,
+    gradeId: req.grade_id as string | null,
+    managerId: req.manager_id as string | null,
+    designation: req.designation as string | null,
+    employmentType: req.employment_type as string | null,
+    code: req.employee_code as string | null,
+  });
 
   await db.query(
     `UPDATE joining_request
