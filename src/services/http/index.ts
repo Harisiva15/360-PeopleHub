@@ -121,6 +121,7 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
 
     assets: {
       list: () => api.get('/assets'),
+      addAsset: (draft) => api.post('/assets', draft),
       kpi: () => api.get('/assets/kpi'),
       requests: () => api.get('/assets/requests'),
       openRequests: () => api.get('/assets/requests/open'),

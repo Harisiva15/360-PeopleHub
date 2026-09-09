@@ -21,7 +21,7 @@ import { assetKPI, pendingRecovery } from '../../data/assets';
 import { AUDIT, AUDIT_CATS, CONTROLS, POSTURE, RETENTION } from '../../data/security';
 import { ONBOARD, ONB_TEMPLATE } from '../../data/onboarding';
 import type {
-  AssetRequest, AssetService, DocumentService, ExitDetail, ExitService, Onboarding,
+  Asset, AssetRequest, AssetService, DocumentService, ExitDetail, ExitService, Onboarding,
   OnboardingService, SecurityService,
 } from '../contracts';
 import { ok } from './util';
@@ -103,6 +103,28 @@ export const assetService: AssetService = {
   requests() { return ok(ASSET_REQS.slice()); },
   openRequests() { return ok(arOpen()); },
   pendingRecovery() { return ok(pendingRecovery()); },
+
+  addAsset(draft) {
+    if (!draft.type?.trim()) return Promise.reject(new Error('Say which item this is'));
+    const asset: Asset = {
+      id: 'AST-' + (ASSETS.length + 1),
+      empId: draft.empId ?? null,
+      type: draft.type.trim(),
+      serial: draft.serial ?? '',
+      issued: draft.empId ? ymd(TODAY) : null,
+      status: draft.empId ? 'Assigned' : 'In stock',
+      cat: draft.cat || 'PERIPH',
+      cost: draft.cost ?? 0,
+      vendor: draft.vendor ?? '',
+      tag: draft.tag || 'AT-' + String(ASSETS.length + 1).padStart(4, '0'),
+      purchased: draft.purchased ?? ymd(TODAY),
+      warrantyEnd: draft.warrantyEnd ?? '',
+      site: draft.empId ? (EMAP[draft.empId]?.site ?? '') : '',
+      condition: 'Good',
+    };
+    ASSETS.unshift(asset);
+    return ok(asset);
+  },
 
   requestAsset(draft) {
     if (!draft.type?.trim()) return Promise.reject(new Error('Say which item you need'));

@@ -34,7 +34,10 @@ const CREATES: Record<string, string> = {
   learning: 'enrol',
   helpdesk: 'raise',
   noticeboard: 'post',
-  assets: 'requestAsset',
+  // addAsset, not requestAsset: a request is a secondary record. Naming the
+  // request creator let this check pass while the register itself -- the thing
+  // the service is named after and mostly lists -- could not be filled at all.
+  assets: 'addAsset',
   onboarding: 'create',
   config: 'addHoliday',
   leave: 'apply',

@@ -709,8 +709,31 @@ export interface NewAssetRequest {
   cost?: number;
 }
 
+export interface NewAsset {
+  /** Category code: LAPTOP, DISPLAY, MOBILE, PERIPH, SECURITY, LICENCE. */
+  cat: string;
+  /** The model, e.g. 'MacBook Pro 14"' or 'Dell 24" Monitor'. */
+  type: string;
+  serial?: string;
+  /** Asset tag. Left blank, the next in the AT series is used. */
+  tag?: string;
+  cost?: number;
+  purchased?: string;
+  warrantyEnd?: string;
+  vendor?: string;
+  /** Issue it to someone as it is added. Blank leaves it in stock. */
+  empId?: string;
+}
+
 export interface AssetService {
   list(): Promise<Asset[]>;
+  /**
+   * Put an item into the register, optionally issued to someone straight away.
+   *
+   * Without this the register could only ever be read: allocate() moves an
+   * asset that already exists, and nothing created one.
+   */
+  addAsset(draft: NewAsset): Promise<Asset>;
   kpi(): Promise<AssetKPI>;
   requests(): Promise<AssetRequest[]>;
   openRequests(): Promise<AssetRequest[]>;

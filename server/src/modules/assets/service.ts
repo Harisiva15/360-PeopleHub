@@ -372,6 +372,92 @@ export async function markReturned(caller: Caller, assetId: string): Promise<Ass
   });
 }
 
+export interface NewAsset {
+  cat: string;
+  type: string;
+  serial?: string;
+  tag?: string;
+  cost?: number;
+  purchased?: string;
+  warrantyEnd?: string;
+  vendor?: string;
+  empId?: string;
+}
+
+/**
+ * Put an item into the register.
+ *
+ * Optionally issued as it is added, because that is how kit actually arrives:
+ * a laptop is bought *for* someone. When it is, the custody trail records the
+ * allocation in the same transaction, so an asset issued on day one has the
+ * same history as one issued a year later.
+ *
+ * The tag continues the AT series when none is given. A tag is what is
+ * physically stuck on the item, so a duplicate is a real-world problem rather
+ * than only a constraint violation; the unique index refuses it either way and
+ * this turns that into a sentence.
+ */
+export async function addAsset(caller: Caller, draft: NewAsset): Promise<Asset> {
+  if (caller.role === 'employee') {
+    throw new AssetError('only a manager or admin may add to the register', 'forbidden');
+  }
+  if (!draft.type?.trim()) throw new AssetError('say which item this is', 'invalid');
+
+  return withTenant(caller, async (db) => {
+    const cat = await db.query('SELECT id FROM asset_category WHERE code = $1', [draft.cat]);
+    if (!cat.rows[0]) throw new AssetError(`no such asset category: ${draft.cat}`, 'invalid');
+
+    let siteId = null;
+    if (draft.empId) {
+      const holder = await db.query(
+        'SELECT status, site_id FROM employee WHERE id = $1', [draft.empId]);
+      if (!holder.rows[0]) throw new AssetError('no such employee', 'invalid');
+      if (holder.rows[0].status === 'exited') {
+        throw new AssetError('that person has left', 'invalid');
+      }
+      siteId = holder.rows[0].site_id ?? null;
+    }
+
+    const tag = draft.tag?.trim() || (await db.query(
+      `SELECT 'AT-' || lpad((COALESCE(max(substring(tag from '[0-9]+$')::int), 0) + 1)::text, 4, '0')
+              AS next FROM asset WHERE tag ~ '^AT-[0-9]+$'`)).rows[0].next as string;
+
+    let id;
+    try {
+      const ins = await db.query(
+        `INSERT INTO asset
+           (tag, category_id, model, serial_number, status, employee_id, assigned_on,
+            site_id, purchase_cost, currency, purchased_on, warranty_ends_on,
+            vendor_name, condition)
+         SELECT $1, $2, $3, $4,
+                CASE WHEN $5::uuid IS NULL THEN 'in_stock' ELSE 'assigned' END,
+                $5::uuid,
+                CASE WHEN $5::uuid IS NULL THEN NULL ELSE CURRENT_DATE END,
+                $6, $7, t.base_currency, COALESCE($8::date, CURRENT_DATE), $9::date, $10, 'Good'
+           FROM tenant t WHERE t.id = current_tenant_id()
+         RETURNING id`,
+        [tag, cat.rows[0].id, draft.type.trim(), draft.serial ?? null,
+          draft.empId ?? null, siteId, draft.cost ?? null,
+          draft.purchased ?? null, draft.warrantyEnd ?? null, draft.vendor ?? null]);
+      id = ins.rows[0].id;
+    } catch (e) {
+      if ((e as { code?: string }).code === '23505') {
+        throw new AssetError(`asset tag ${tag} is already in use`, 'duplicate');
+      }
+      throw e;
+    }
+
+    if (draft.empId) {
+      await db.query(
+        `INSERT INTO asset_movement (asset_id, kind, to_employee_id, recorded_by, note)
+         VALUES ($1, 'allocated', $2, $3, 'Issued when added to the register')`,
+        [id, draft.empId, caller.employeeId]);
+    }
+
+    return reloadAsset(db, id);
+  });
+}
+
 export interface NewAssetRequest {
   cat: string;
   type: string;
