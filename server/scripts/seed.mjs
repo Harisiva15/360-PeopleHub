@@ -10,7 +10,7 @@
  * real org chart or it starts empty.
  *
  *   node scripts/seed.mjs                          # reference data + tenant + config
- *   node scripts/seed.mjs --admin you@example.com  # also creates an admin employee
+ *   node scripts/seed.mjs --admin you@example.com --code VHM001 --name "Your Name"
  *   node scripts/seed.mjs --link <auth-user-uuid>  # links a Supabase login to it
  */
 
@@ -32,6 +32,10 @@ const arg = (name) => {
 };
 const adminEmail = arg('--admin');
 const linkUserId = arg('--link');
+/* Employee codes are the tenant's own scheme — 360VHM uses VHM###. Hardcoding
+   one meant a re-run created a second person rather than finding the first. */
+const adminCode = arg('--code') ?? 'VHM001';
+const adminName = arg('--name') ?? null;
 
 /* Mirrors src/data/org.ts, so the database and the screens agree on what a
    department or a grade is called. */
@@ -193,10 +197,11 @@ try {
       `INSERT INTO employee (tenant_id, code, full_name, work_email, legal_entity_id,
                              joined_on, department_id, site_id, grade_id, designation,
                              app_role, currency)
-       VALUES ($1, 'EMP0001', $2, $3, $4, CURRENT_DATE, $5, $6, $7, 'Administrator', 'admin', 'INR')
-       ON CONFLICT (tenant_id, code) DO UPDATE SET work_email = EXCLUDED.work_email
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, $6, $7, $8, 'Administrator', 'admin', 'INR')
+       ON CONFLICT (tenant_id, code)
+       DO UPDATE SET work_email = EXCLUDED.work_email, full_name = EXCLUDED.full_name
        RETURNING id`,
-      [tenant, adminEmail.split('@')[0], adminEmail, entity, hr, chn, l6],
+      [tenant, adminCode, adminName ?? adminEmail.split('@')[0], adminEmail, entity, hr, chn, l6],
     )).rows[0].id;
 
     // Opening leave balances for the current leave year.
@@ -210,7 +215,7 @@ try {
        SELECT $1, $2, lt.id, $3, lt.annual_quota FROM leave_type lt
        ON CONFLICT (tenant_id, employee_id, leave_type_id, year_start) DO NOTHING`,
       [tenant, employeeId, yearStart]);
-    created.push(`admin employee ${adminEmail} (${employeeId}) with leave balances`);
+    created.push(`admin employee ${adminCode} ${adminName ?? ''} <${adminEmail}> with leave balances`);
   }
 
   /* ---- optional: link a Supabase login ---- */
