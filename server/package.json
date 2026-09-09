@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "migrate": "node scripts/migrate.mjs",
     "dev": "node --watch --env-file-if-exists=.env --experimental-strip-types src/index.ts",
+    "start": "node --experimental-strip-types src/index.ts",
     "check:schema:test": "node scripts/check-schema.test.mjs",
     "check": "npm run check:schema && npm run check:schema:test && npm run typecheck",
     "inspect": "node scripts/inspect.mjs",
@@ -26,5 +27,8 @@
     "@types/pg": "^8.11.10",
     "libpg-query": "^17.2.0",
     "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22.6.0"
   }
 }
