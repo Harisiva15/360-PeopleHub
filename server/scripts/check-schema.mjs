@@ -104,7 +104,25 @@ function applyAlterTable(stmt, tables) {
   if (!target) return;
   for (const c of stmt.cmds ?? []) {
     const cmd = c.AlterTableCmd;
-    if (cmd?.subtype !== 'AT_AddConstraint') continue;
+    if (!cmd) continue;
+
+    // A column added by ALTER is as real as one in CREATE TABLE. Without this
+    // the checker reports a foreign key on it as referencing a column that
+    // does not exist — a false alarm, and false alarms are how a checker
+    // stops being read.
+    if (cmd.subtype === 'AT_AddColumn') {
+      const col = cmd.def?.ColumnDef;
+      if (col?.colname) {
+        const type = names(col.typeName?.names).filter((n) => n !== 'pg_catalog').join('.');
+        const notNull = (col.constraints ?? []).some(
+          (x) => x.Constraint?.contype === 'CONSTR_NOTNULL' || x.Constraint?.contype === 'CONSTR_PRIMARY',
+        );
+        target.columns.set(col.colname, { type, notNull });
+      }
+      continue;
+    }
+
+    if (cmd.subtype !== 'AT_AddConstraint') continue;
     const con = cmd.def?.Constraint;
     if (!con) continue;
     if (con.contype === 'CONSTR_FOREIGN') {

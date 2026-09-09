@@ -192,16 +192,19 @@ try {
     const hr = (await q('SELECT id FROM department WHERE code = $1', ['HR'])).rows[0].id;
     const chn = (await q('SELECT id FROM site WHERE code = $1', ['CHN'])).rows[0].id;
     const l6 = (await q('SELECT id FROM grade_band WHERE code = $1', ['L6'])).rows[0].id;
+    // shift_id is NOT NULL since 0015: a person with no shift has no hours to
+    // be judged against, so attendance cannot say whether they were late.
+    const shift = (await q('SELECT id FROM shift WHERE code = $1', ['IN'])).rows[0].id;
 
     employeeId = (await q(
       `INSERT INTO employee (tenant_id, code, full_name, work_email, legal_entity_id,
-                             joined_on, department_id, site_id, grade_id, designation,
-                             app_role, currency)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, $6, $7, $8, 'Administrator', 'admin', 'INR')
+                             joined_on, department_id, site_id, grade_id, shift_id,
+                             designation, app_role, currency)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, $6, $7, $8, $9, 'Administrator', 'admin', 'INR')
        ON CONFLICT (tenant_id, code)
        DO UPDATE SET work_email = EXCLUDED.work_email, full_name = EXCLUDED.full_name
        RETURNING id`,
-      [tenant, adminCode, adminName ?? adminEmail.split('@')[0], adminEmail, entity, hr, chn, l6],
+      [tenant, adminCode, adminName ?? adminEmail.split('@')[0], adminEmail, entity, hr, chn, l6, shift],
     )).rows[0].id;
 
     // Opening leave balances for the current leave year.
