@@ -14,7 +14,8 @@
     "inspect": "node scripts/inspect.mjs",
     "verify:isolation": "node scripts/verify-isolation.mjs",
     "ci:bootstrap": "node scripts/ci-bootstrap.mjs",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "connect": "node scripts/connect.mjs"
   },
   "dependencies": {
     "jose": "^6.2.12",
