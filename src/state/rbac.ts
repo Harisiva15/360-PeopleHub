@@ -1,4 +1,5 @@
 import { ACTIVE, DEMO_EMP, DEMO_MGR, EMAP, HRHEAD, teamOf } from '../data/employees';
+import { apiConfigured } from '../services/http';
 import type { AppRole, Employee } from '../types/employee';
 
 /** Routes each role may reach. The nav and the router both gate on this. */
@@ -43,7 +44,34 @@ export const SCOPE: Record<AppRole, ScopeInfo> = {
   },
 };
 
-export const can = (role: AppRole, k: string): boolean => PERMS[role].includes(k);
+/**
+ * Modules backed end to end by the API.
+ *
+ * A configured build shows only these. The rest of the product still runs
+ * against the in-memory dataset, and a screen that renders invented helpdesk
+ * tickets or invented performance ratings against a real company's login is
+ * worse than a screen that is not there: people act on what they read.
+ *
+ * The demo build is unaffected and still shows everything — it is explicitly
+ * a demonstration, with a role switcher and no login.
+ *
+ * A module joins this list when its service is mapped in
+ * `src/services/http/index.ts`, not before.
+ */
+export const LIVE_MODULES = new Set([
+  'dashboard', 'attendance', 'timesheet', 'leave', 'employees', 'org',
+  'celebrations', 'announcements', 'payroll', 'hiring', 'onboarding',
+  'assets', 'settings',
+]);
+
+/**
+ * May this role reach this module?
+ *
+ * Two gates, not one: the role has to permit it, and — in a configured build —
+ * the module has to be backed by real data.
+ */
+export const can = (role: AppRole, k: string): boolean =>
+  PERMS[role].includes(k) && (!apiConfigured || LIVE_MODULES.has(k));
 
 export interface Account {
   role: AppRole;

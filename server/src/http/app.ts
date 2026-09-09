@@ -12,6 +12,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { callerFromToken, AuthError } from '../auth/session.ts';
 import { applyCors } from './cors.ts';
+import { ANON, AUTHED, hit, keyFor } from './rate-limit.ts';
 import type { Caller } from '../tenancy/context.ts';
 import { TenantContextError } from '../tenancy/context.ts';
 import { LeaveError } from '../modules/leave/service.ts';
@@ -650,13 +651,38 @@ export function createApp() {
         return;
       }
 
+      /*
+       * Rate limit before the route lookup and before token verification.
+       *
+       * Verifying a token costs a JWKS lookup, so limiting after it would mean
+       * a caller could still make this server do the expensive part as fast as
+       * it liked. The unauthenticated allowance is deliberately small: a
+       * caller with no usable token is either signing in or guessing.
+       */
+      const token = bearer(req);
+      const limit = token ? AUTHED : ANON;
+      const verdict = hit(
+        keyFor(token, req.socket.remoteAddress, req.headers['x-forwarded-for'] as string | undefined),
+        limit);
+
+      res.setHeader('x-ratelimit-limit', String(limit.max));
+      res.setHeader('x-ratelimit-remaining', String(verdict.remaining));
+
+      if (!verdict.allowed) {
+        res.setHeader('retry-after', String(verdict.resetSeconds));
+        send(res, 429, {
+          error: `too many requests — try again in ${verdict.resetSeconds}s`,
+        });
+        return;
+      }
+
       try {
         for (const route of routes) {
           if (route.method !== req.method) continue;
           const params = match(route.pattern, url.pathname);
           if (!params) continue;
 
-          const caller = await callerFromToken(bearer(req));
+          const caller = await callerFromToken(token);
           const body = req.method === 'GET' ? undefined : await readJsonBody(req);
           const result = await route.handler(caller, req, params, body);
           send(res, 200, result);

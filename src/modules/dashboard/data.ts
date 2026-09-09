@@ -7,6 +7,19 @@
  */
 
 import { useQuery } from '../../services/react';
+import { apiConfigured } from '../../services/http';
+import type { Services } from '../../services';
+
+/**
+ * A panel whose service is not mapped to the API yet.
+ *
+ * In a configured build it returns nothing instead of the in-memory dataset's
+ * invented rows. Empty is the true answer -- the system holds no helpdesk
+ * tickets or performance goals, because those modules are not implemented --
+ * and it is the only answer that cannot be acted on by mistake.
+ */
+const unbacked = <T,>(run: (s: Services) => Promise<T>, empty: T) =>
+  (apiConfigured ? () => Promise.resolve(empty) : run);
 
 import { useCaller } from '../../services/people';
 
@@ -27,7 +40,8 @@ export const useLeaveIn = (ids: string[]) => useQuery((s) => s.leave.list({ empI
 export const useMyBalances = (empId: string) => useQuery((s) => s.leave.balances(empId), [empId]);
 
 export const useTimesheetsIn = (ids: string[]) => useQuery((s) => s.timesheet.list({ empIds: ids }), [key(ids)]);
-export const useClaimsIn = (ids: string[]) => useQuery((s) => s.expenses.claims({ empIds: ids }), [key(ids)]);
+export const useClaimsIn = (ids: string[]) =>
+  useQuery(unbacked((s) => s.expenses.claims({ empIds: ids }), []), [key(ids)]);
 
 export const usePayRuns = () => useQuery((s) => s.payroll.runs(), []);
 export const useCurrentRun = () => useQuery((s) => s.payroll.currentRun(), []);
@@ -39,17 +53,19 @@ export const useCompliancePayments = () => useQuery((s) => s.payroll.complianceP
 export const useCandidates = () => useQuery((s) => s.hiring.candidates(), []);
 export const useRequisitions = () => useQuery((s) => s.hiring.requisitions(), []);
 
-export const useGoals = (ids: string[]) => useQuery((s) => s.performance.goals(ids), [key(ids)]);
+export const useGoals = (ids: string[]) =>
+  useQuery(unbacked((s) => s.performance.goals(ids), []), [key(ids)]);
 export const useCurrentCycle = () => useQuery((s) => s.performance.currentCycle(), []);
-export const useCourses = () => useQuery((s) => s.learning.courses(), []);
+export const useCourses = () => useQuery(unbacked((s) => s.learning.courses(), []), []);
 export const useEnrolments = (ids?: string[]) =>
-  useQuery((s) => s.learning.enrolments(ids), [ids ? key(ids) : 'all']);
-export const useTickets = (ids?: string[]) => useQuery((s) => s.helpdesk.tickets(ids), [ids ? key(ids) : 'all']);
-export const useSurveys = () => useQuery((s) => s.engagement.surveys(), []);
+  useQuery(unbacked((s) => s.learning.enrolments(ids), []), [ids ? key(ids) : 'all']);
+export const useTickets = (ids?: string[]) =>
+  useQuery(unbacked((s) => s.helpdesk.tickets(ids), []), [ids ? key(ids) : 'all']);
+export const useSurveys = () => useQuery(unbacked((s) => s.engagement.surveys(), []), []);
 
 export const useAnnouncements = () => useQuery((s) => s.noticeboard.announcements(), []);
 export const useCelebrations = (days: number) => useQuery((s) => s.noticeboard.celebrations(days), [days]);
-export const useExits = () => useQuery((s) => s.exits.list(), []);
+export const useExits = () => useQuery(unbacked((s) => s.exits.list(), []), []);
 
 /** The approval inbox, assembled and scoped by the service. */
 export const usePendingItems = () => {
