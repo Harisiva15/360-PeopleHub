@@ -3,164 +3,178 @@
  *
  * Two things this file exists to demonstrate.
  *
- * First, role scope is a SQL predicate here, never a filter applied after the
- * fact. RLS keeps other tenants out; it says nothing about which of *this*
- * tenant's employees a manager may see, so that is enforced below.
+ * First, role scope is a SQL predicate, never a filter applied after the rows
+ * arrive. RLS keeps other tenants out; it says nothing about which of *this*
+ * tenant's people a manager may see, so that is enforced in the query.
  *
- * Second, compensation is omitted from the query when the caller may not see
+ * Second, compensation is omitted from the SELECT when the caller may not see
  * it. Not fetched and hidden — not fetched. A field that never leaves the
  * database cannot leak through a log line, an error payload or a future
- * serialisation bug. That matters more once regulated identifiers return.
+ * serialisation bug.
  */
 
-import { withTenantReadOnly } from '../../tenancy/context.ts';
-import type { Caller, TenantClient } from '../../tenancy/context.ts';
+import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
+import type { Caller } from '../../tenancy/context.ts';
+import { EMPLOYEE_PROJECTION, scopeClause } from './queries.ts';
+import { toEmployee } from './mapper.ts';
+import type { Employee, EmployeeRow } from './mapper.ts';
 
-export interface EmployeeSummary {
-  id: string;
-  code: string;
-  name: string;
-  designation: string | null;
-  departmentId: string | null;
-  siteId: string | null;
-  managerId: string | null;
-  status: string;
-  /** Present only when the caller may see compensation. */
-  ctc?: string;
-  currency?: string;
-}
+/** Only an admin sees anyone's pay; anyone may see their own. */
+const maySeePay = (caller: Caller, subjectId?: string | null): boolean =>
+  caller.role === 'admin' || (!!subjectId && subjectId === caller.employeeId);
 
-/** Who the caller may see, as a predicate rather than a post-filter. */
-function scopePredicate(caller: Caller): { sql: string; params: unknown[] } {
-  switch (caller.role) {
-    case 'admin':
-      return { sql: 'TRUE', params: [] };
+/** A non-admin with no employee record has no scope at all. */
+const hasScope = (caller: Caller): boolean =>
+  caller.role === 'admin' || Boolean(caller.employeeId);
 
-    case 'manager':
-      // Themselves plus everyone beneath them, to any depth.
-      return {
-        sql: `e.id = $1 OR e.id IN (
-                WITH RECURSIVE reports AS (
-                  SELECT id FROM employee WHERE manager_id = $1
-                  UNION ALL
-                  SELECT child.id FROM employee child
-                    JOIN reports r ON child.manager_id = r.id
-                )
-                SELECT id FROM reports
-              )`,
-        params: [caller.employeeId],
-      };
-
-    case 'employee':
-      return { sql: 'e.id = $1', params: [caller.employeeId] };
-  }
-}
-
-/** May this caller see compensation? */
-const maySeeCompensation = (caller: Caller, subjectId: string | null): boolean =>
-  caller.role === 'admin' || (subjectId !== null && subjectId === caller.employeeId);
-
-export async function listVisibleEmployees(caller: Caller): Promise<EmployeeSummary[]> {
-  if (caller.role !== 'admin' && !caller.employeeId) {
-    // A non-admin login with no employee record has no scope at all. Returning
-    // everything here would be the bug.
-    return [];
-  }
-
-  const scope = scopePredicate(caller);
-  const showMoney = caller.role === 'admin';
-
-  return withTenantReadOnly(caller, async (db: TenantClient) => {
-    const { rows } = await db.query(
-      `SELECT e.id,
-              e.code,
-              e.full_name,
-              e.designation,
-              e.department_id,
-              e.site_id,
-              e.manager_id,
-              e.status
-              ${showMoney ? ', e.ctc, e.currency' : ''}
-         FROM employee e
-        WHERE e.status <> 'exited'
-          AND (${scope.sql})
-        ORDER BY e.full_name`,
-      scope.params,
+async function query(
+  caller: Caller,
+  where: string,
+  params: unknown[],
+  showPay: boolean,
+): Promise<Employee[]> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query<EmployeeRow>(
+      `${EMPLOYEE_PROJECTION} WHERE ${where} ORDER BY e.full_name`,
+      params,
     );
-
-    return rows.map((r): EmployeeSummary => ({
-      id: r.id,
-      code: r.code,
-      name: r.full_name,
-      designation: r.designation,
-      departmentId: r.department_id,
-      siteId: r.site_id,
-      managerId: r.manager_id,
-      status: r.status,
-      ...(showMoney ? { ctc: r.ctc, currency: r.currency } : {}),
-    }));
+    return rows.map((r) => toEmployee(r, showPay));
   });
 }
 
-export interface EmployeeProfile extends EmployeeSummary {
-  workEmail: string;
-  joinedOn: string;
-  managerName: string | null;
-  reports: EmployeeSummary[];
+/** Everyone the caller may see. */
+export async function listVisibleEmployees(caller: Caller): Promise<Employee[]> {
+  if (!hasScope(caller)) return [];
+  const scope = scopeClause(caller.role, caller.employeeId);
+  return query(caller, `e.status <> 'exited' AND (${scope.sql})`, scope.params,
+    caller.role === 'admin');
 }
 
+/** Everyone still employed, within the caller's scope. */
+export async function listActiveEmployees(caller: Caller): Promise<Employee[]> {
+  return listVisibleEmployees(caller);
+}
+
+/** Leavers — the directory can switch to them. Admin only; nobody else needs it. */
+export async function listExitedEmployees(caller: Caller): Promise<Employee[]> {
+  if (caller.role !== 'admin') return [];
+  return query(caller, `e.status = 'exited'`, [], true);
+}
+
+export async function getEmployee(caller: Caller, id: string): Promise<Employee | null> {
+  if (!hasScope(caller)) return null;
+  const scope = scopeClause(caller.role, caller.employeeId);
+  const rows = await query(
+    caller,
+    `e.id = $${scope.params.length + 1} AND (${scope.sql})`,
+    [...scope.params, id],
+    maySeePay(caller, id),
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Resolve a set of ids in one call.
+ *
+ * Screens hold rows that reference people by id and need names for them. This
+ * exists so a directory is one query rather than one per row — the difference
+ * between a page that loads and one that hammers the API.
+ */
+export async function getEmployeesByIds(caller: Caller, ids: string[]): Promise<Employee[]> {
+  if (!hasScope(caller) || ids.length === 0) return [];
+  const scope = scopeClause(caller.role, caller.employeeId);
+  return query(
+    caller,
+    `e.id = ANY($${scope.params.length + 1}::uuid[]) AND (${scope.sql})`,
+    [...scope.params, ids],
+    false,
+  );
+}
+
+/** Direct reports, or the whole sub-tree when `deep`. */
+export async function getTeam(
+  caller: Caller,
+  managerId: string,
+  deep = false,
+): Promise<Employee[]> {
+  if (!hasScope(caller)) return [];
+  const scope = scopeClause(caller.role, caller.employeeId);
+  const subtree = deep
+    ? `e.id IN (
+         WITH RECURSIVE t AS (
+           SELECT id FROM employee WHERE manager_id = $${scope.params.length + 1}
+           UNION ALL
+           SELECT c.id FROM employee c JOIN t ON c.manager_id = t.id
+         ) SELECT id FROM t
+       )`
+    : `e.manager_id = $${scope.params.length + 1}`;
+
+  return query(
+    caller,
+    `e.status <> 'exited' AND ${subtree} AND (${scope.sql})`,
+    [...scope.params, managerId],
+    caller.role === 'admin',
+  );
+}
+
+export interface EmployeeProfile {
+  employee: Employee;
+  managerName: string;
+  reports: Employee[];
+}
+
+/** The composite behind the profile drawer — one response, not fourteen calls. */
 export async function getEmployeeProfile(
   caller: Caller,
-  employeeId: string,
+  id: string,
 ): Promise<EmployeeProfile | null> {
-  const scope = scopePredicate(caller);
-  const showMoney = maySeeCompensation(caller, employeeId);
+  const employee = await getEmployee(caller, id);
+  if (!employee) return null;
 
-  return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query(
-      `SELECT e.id, e.code, e.full_name, e.designation, e.department_id, e.site_id,
-              e.manager_id, e.status, e.work_email, e.joined_on,
-              m.full_name AS manager_name
-              ${showMoney ? ', e.ctc, e.currency' : ''}
-         FROM employee e
-         LEFT JOIN employee m ON m.id = e.manager_id
-        WHERE e.id = $${scope.params.length + 1}
-          AND (${scope.sql})`,
-      [...scope.params, employeeId],
-    );
+  const [manager, reports] = await Promise.all([
+    employee.managerId ? getEmployee(caller, employee.managerId) : Promise.resolve(null),
+    getTeam(caller, id),
+  ]);
 
-    const row = rows[0];
-    if (!row) return null;
+  return { employee, managerName: manager?.name ?? '', reports };
+}
 
-    const reports = await db.query(
-      `SELECT id, code, full_name, designation, department_id, site_id, manager_id, status
-         FROM employee WHERE manager_id = $1 AND status <> 'exited' ORDER BY full_name`,
-      [employeeId],
-    );
+/**
+ * Change someone's role.
+ *
+ * Writes to `employee.app_role` and to the membership, because the membership
+ * is what authorises a request — updating only the employee row would change
+ * what the screen displays and nothing about what the person can actually do.
+ */
+export async function setEmployeeRole(
+  caller: Caller,
+  id: string,
+  role: Employee['role'],
+): Promise<Employee> {
+  if (caller.role !== 'admin') throw new Error('only an admin may change roles');
+  if (id === caller.employeeId) throw new Error('you cannot change your own role');
 
-    return {
-      id: row.id,
-      code: row.code,
-      name: row.full_name,
-      designation: row.designation,
-      departmentId: row.department_id,
-      siteId: row.site_id,
-      managerId: row.manager_id,
-      status: row.status,
-      workEmail: row.work_email,
-      joinedOn: row.joined_on,
-      managerName: row.manager_name,
-      ...(showMoney ? { ctc: row.ctc, currency: row.currency } : {}),
-      reports: reports.rows.map((r): EmployeeSummary => ({
-        id: r.id,
-        code: r.code,
-        name: r.full_name,
-        designation: r.designation,
-        departmentId: r.department_id,
-        siteId: r.site_id,
-        managerId: r.manager_id,
-        status: r.status,
-      })),
-    };
+  return withTenant(caller, async (db) => {
+    const updated = await db.query('UPDATE employee SET app_role = $1 WHERE id = $2', [role, id]);
+    if (updated.rowCount === 0) throw new Error('no such employee');
+
+    // tenant_membership sits outside the isolation policy, so it is filtered
+    // by tenant explicitly here.
+    await db.query(
+      `UPDATE tenant_membership SET role = $1
+        WHERE employee_id = $2 AND tenant_id = current_tenant_id()`,
+      [role, id]);
+
+    await db.query(
+      `INSERT INTO audit_log (category, action, severity, actor_employee_id, actor_label,
+                              subject_table, subject_id, detail)
+       SELECT 'access', 'role_changed', 'warning', $1, COALESCE(e.full_name, 'system'),
+              'employee', $2, jsonb_build_object('role', $3::text)
+         FROM employee e WHERE e.id = $1`,
+      [caller.employeeId, id, role]);
+
+    const after = await getEmployee(caller, id);
+    if (!after) throw new Error('no such employee');
+    return after;
   });
 }

@@ -12,8 +12,17 @@ import { useApp } from '../../state/AppContext';
 
 const letterType = (id: string) => LETTER_TYPES.find((t) => t.id === id);
 
-/** Third-person pronouns for the letter prose, from the record on file. */
-const pron = (e: Employee) => (e.gender === 'F' ? { subj: 'she', obj: 'her', poss: 'her' } : { subj: 'he', obj: 'him', poss: 'his' });
+/**
+ * Third-person pronouns for the letter prose, from the record on file.
+ *
+ * Anything not recorded as M or F gets they/them rather than a guess. This
+ * text is printed on an experience certificate — getting it wrong misgenders a
+ * real person on a document they will hand to their next employer.
+ */
+const pron = (e: Employee) =>
+  (e.gender === 'F' ? { subj: 'she', obj: 'her', poss: 'her' }
+    : e.gender === 'M' ? { subj: 'he', obj: 'him', poss: 'his' }
+      : { subj: 'they', obj: 'them', poss: 'their' });
 
 const P = ({ children }: { children: ReactNode }) => (
   <p style={{ fontSize: 13, lineHeight: 1.8 }}>{children}</p>

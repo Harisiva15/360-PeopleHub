@@ -10,7 +10,7 @@ export interface Employee {
   /** Payroll code, e.g. TT1042. */
   code: string;
   name: string;
-  gender: 'M' | 'F';
+  gender: 'M' | 'F' | 'X';
   dob: Ymd;
   doj: Ymd;
   /** Date of leaving — null while active. */

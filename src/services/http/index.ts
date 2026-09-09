@@ -14,8 +14,9 @@
  */
 
 import type { Services } from '../contracts';
-import { api } from './client';
-import type { Employee, EmployeeProfile, LeaveRequest } from '../contracts';
+import { api, qs } from './client';
+import type { Employee, LeaveRequest } from '../contracts';
+import type { AppRole } from '../../types/employee';
 
 export { apiConfigured, ApiError } from './client';
 
@@ -31,7 +32,25 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
     employees: {
       visible: () => api.get<Employee[]>('/employees'),
       active: () => api.get<Employee[]>('/employees/active'),
-      profile: (id: string) => api.get<EmployeeProfile | null>(`/employees/${id}/profile`),
+      exited: () => api.get<Employee[]>('/employees/exited'),
+      byId: (id: string) => api.get<Employee | null>(`/employees/${id}`),
+      byIds: (ids: string[]) =>
+        (ids.length ? api.get<Employee[]>(`/employees/by-ids${qs({ ids: ids.join(',') })}`)
+          : Promise.resolve([])),
+      team: (managerId: string, deep?: boolean) =>
+        api.get<Employee[]>(`/employees/${managerId}/team${qs({ deep: deep ? 'true' : undefined })}`),
+      setRole: (id: string, role: AppRole) =>
+        api.put<Employee>(`/employees/${id}/role`, { role }),
+
+      /*
+       * `profile` is deliberately NOT here.
+       *
+       * The contract's EmployeeProfile carries the salary structure, monthly
+       * split and tax status — payroll data this deployment does not hold yet.
+       * A partial response would typecheck and render blank fields, so the
+       * profile drawer stays on the mock until payroll exists. Claiming a
+       * method the server cannot honour is worse than not claiming it.
+       */
     },
 
     leave: {

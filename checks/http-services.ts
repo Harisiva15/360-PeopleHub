@@ -24,8 +24,11 @@ check('every service still present',
 check('a mapped method is replaced',
   merged.employees.visible !== mockServices.employees.visible);
 
+// `profile` is deliberately not mapped — its contract shape carries payroll
+// data the server does not hold yet — which makes it the right probe for
+// "the merge left everything else alone".
 check('an unmapped method on the same service is untouched',
-  merged.employees.byIds === mockServices.employees.byIds);
+  merged.employees.profile === mockServices.employees.profile);
 
 check('an untouched service is the same object',
   merged.payroll === mockServices.payroll);

@@ -15,7 +15,10 @@ import { applyCors } from './cors.ts';
 import type { Caller } from '../tenancy/context.ts';
 import { TenantContextError } from '../tenancy/context.ts';
 import { LeaveError } from '../modules/leave/service.ts';
-import { listVisibleEmployees, getEmployeeProfile } from '../modules/employees/service.ts';
+import {
+  getEmployee, getEmployeeProfile, getEmployeesByIds, getTeam,
+  listActiveEmployees, listExitedEmployees, listVisibleEmployees, setEmployeeRole,
+} from '../modules/employees/service.ts';
 import { applyForLeave, approveLeave, cancelLeave } from '../modules/leave/service.ts';
 
 type Handler = (
@@ -51,13 +54,42 @@ const routes: Route[] = [
   {
     method: 'GET',
     pattern: '/employees/active',
-    handler: (caller) => listVisibleEmployees(caller),
+    handler: (caller) => listActiveEmployees(caller),
+  },
+  {
+    method: 'GET',
+    pattern: '/employees/exited',
+    handler: (caller) => listExitedEmployees(caller),
+  },
+  {
+    // ?ids=a,b,c — a POST would be tidier for a long list, but this is a read
+    // and should stay cacheable and idempotent.
+    method: 'GET',
+    pattern: '/employees/by-ids',
+    handler: (caller, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('ids');
+      return getEmployeesByIds(caller, ids ? ids.split(',').filter(Boolean) : []);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/employees/:id/team',
+    handler: (caller, req, params) => {
+      const deep = new URL(req.url ?? '/', 'http://x').searchParams.get('deep') === 'true';
+      return getTeam(caller, params.id!, deep);
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: '/employees/:id/role',
+    handler: (caller, _req, params, body) =>
+      setEmployeeRole(caller, params.id!, (body as { role: 'admin' | 'manager' | 'employee' }).role),
   },
   {
     method: 'GET',
     pattern: '/employees/:id',
     handler: async (caller, _req, params) => {
-      const one = await getEmployeeProfile(caller, params.id!);
+      const one = await getEmployee(caller, params.id!);
       if (!one) throw new NotFound('no such employee');
       return one;
     },
