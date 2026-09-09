@@ -699,6 +699,16 @@ export interface AssetKPI {
   recovery: number;
 }
 
+export interface NewAssetRequest {
+  /** Category code: LAPTOP, DISPLAY, MOBILE, PERIPH, SECURITY, LICENCE. */
+  cat: string;
+  /** The model being asked for, e.g. 'MacBook Pro 14"'. */
+  type: string;
+  reason: string;
+  /** Indicative cost. Above the finance threshold this needs a second approval. */
+  cost?: number;
+}
+
 export interface AssetService {
   list(): Promise<Asset[]>;
   kpi(): Promise<AssetKPI>;
@@ -706,6 +716,8 @@ export interface AssetService {
   openRequests(): Promise<AssetRequest[]>;
   /** Kit a leaver still holds — the exit clearance checklist. */
   pendingRecovery(): Promise<Asset[]>;
+  /** Ask for kit. Anyone may raise one, for themselves. */
+  requestAsset(draft: NewAssetRequest): Promise<AssetRequest>;
   actOnRequest(id: string, status: string): Promise<AssetRequest>;
   /** Issue a specific asset to someone; refuses anything not in stock. */
   allocate(assetId: string, empId: string): Promise<Asset>;
@@ -713,8 +725,28 @@ export interface AssetService {
   markReturned(assetId: string): Promise<Asset>;
 }
 
+export interface NewJourney {
+  name: string;
+  dept: string;
+  designation: string;
+  site?: string;
+  /** Joining date. The checklist is templated around it. */
+  doj: string;
+  managerId?: string;
+  buddyId?: string;
+  ctc?: number;
+  /** Set when the joiner came through the ATS. */
+  candId?: string;
+}
+
 export interface OnboardingService {
   list(): Promise<Onboarding[]>;
+  /**
+   * Start a journey, with the standard joining checklist templated around the
+   * joining date. Needed because most hires do not come through the ATS, and
+   * before this the only way a journey could exist was a hired candidate.
+   */
+  create(draft: NewJourney): Promise<Onboarding>;
   /**
    * Tick or untick one checklist item. The journey's status follows from the
    * checklist rather than being set alongside it.

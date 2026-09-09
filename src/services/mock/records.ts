@@ -6,10 +6,10 @@
  * allocated from stock, an exit is settled once.
  */
 
-import { TODAY, ymd } from '../../lib/dates';
+import { addDays, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { sum } from '../../lib/collections';
 import { DOCS, DOC_TYPES, ASSETS } from '../../data/announcements';
-import { EMAP, empName, HRHEAD } from '../../data/employees';
+import { DEMO_EMP, EMAP, empName, HRHEAD } from '../../data/employees';
 import { salaryStructure, taxNewRegime } from '../../data/salary';
 import { ytdFor } from '../../data/letters';
 import { CUR_CYCLE, reviewOf } from '../../data/performance';
@@ -19,9 +19,10 @@ import { activeLoans } from '../../data/loans';
 import { ASSET_REQS, arOpen } from '../../data/assetWorkflow';
 import { assetKPI, pendingRecovery } from '../../data/assets';
 import { AUDIT, AUDIT_CATS, CONTROLS, POSTURE, RETENTION } from '../../data/security';
-import { ONBOARD } from '../../data/onboarding';
+import { ONBOARD, ONB_TEMPLATE } from '../../data/onboarding';
 import type {
-  AssetService, DocumentService, ExitDetail, ExitService, OnboardingService, SecurityService,
+  AssetRequest, AssetService, DocumentService, ExitDetail, ExitService, Onboarding,
+  OnboardingService, SecurityService,
 } from '../contracts';
 import { ok } from './util';
 
@@ -103,6 +104,33 @@ export const assetService: AssetService = {
   openRequests() { return ok(arOpen()); },
   pendingRecovery() { return ok(pendingRecovery()); },
 
+  requestAsset(draft) {
+    if (!draft.type?.trim()) return Promise.reject(new Error('Say which item you need'));
+    if (!draft.reason?.trim()) return Promise.reject(new Error('Give a reason for the request'));
+    const req: AssetRequest = {
+      id: 'AR-' + (ASSET_REQS.length + 1),
+      empId: DEMO_EMP.id,
+      type: draft.type.trim(),
+      cat: draft.cat || 'PERIPH',
+      cost: draft.cost ?? 0,
+      reason: draft.reason.trim(),
+      note: '',
+      raisedOn: ymd(TODAY),
+      status: 'Pending',
+      entitled: false,
+      /* Above the threshold, a manager's approval is not enough. */
+      needsFinance: (draft.cost ?? 0) > 25000,
+      managerId: EMAP[DEMO_EMP.id]?.managerId ?? null,
+      approvedBy: null,
+      approvedOn: null,
+      rejectReason: null,
+      fulfilledOn: null,
+      assetId: null,
+    };
+    ASSET_REQS.unshift(req);
+    return ok(req);
+  },
+
   actOnRequest(id, status) {
     const r = ASSET_REQS.find((x) => x.id === id);
     if (!r) return Promise.reject(new Error('No such asset request: ' + id));
@@ -153,6 +181,35 @@ export const securityService: SecurityService = {
 
 export const onboardingService: OnboardingService = {
   list() { return ok(ONBOARD.slice()); },
+
+  create(draft) {
+    if (!draft.name?.trim()) return Promise.reject(new Error('The joiner needs a name'));
+    if (!draft.doj) return Promise.reject(new Error('The joiner needs a joining date'));
+    const journey: Onboarding = {
+      id: 'ONB-' + (ONBOARD.length + 1),
+      candId: draft.candId ?? '',
+      name: draft.name.trim(),
+      reqId: '',
+      dept: draft.dept,
+      designation: draft.designation,
+      site: draft.site ?? 'CHN',
+      doj: draft.doj,
+      managerId: draft.managerId ?? '',
+      buddyId: draft.buddyId ?? '',
+      ctc: draft.ctc ?? 0,
+      status: draft.doj <= ymd(TODAY) ? 'In Progress' : 'Pre-boarding',
+      bgv: 'Not started',
+      /* The standard checklist, dated around the joining date. */
+      tasks: ONB_TEMPLATE.map((t) => ({
+        k: t.k, n: t.n, owner: t.owner, day: t.day,
+        due: ymd(addDays(parseYmd(draft.doj), t.day)),
+        done: false, doneOn: null,
+      })),
+      docs: [],
+    };
+    ONBOARD.unshift(journey);
+    return ok(journey);
+  },
 
   setTask(id, key, done) {
     const o = ONBOARD.find((x) => x.id === id);

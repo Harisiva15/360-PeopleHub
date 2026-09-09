@@ -101,6 +101,7 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
 
     onboarding: {
       list: () => api.get('/onboarding'),
+      create: (draft) => api.post('/onboarding', draft),
       setTask: (id, key, done) =>
         api.put(`/onboarding/${id}/tasks/${encodeURIComponent(key)}`, { done }),
       complete: (id) => api.post(`/onboarding/${id}/complete`),
@@ -124,6 +125,7 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       requests: () => api.get('/assets/requests'),
       openRequests: () => api.get('/assets/requests/open'),
       pendingRecovery: () => api.get('/assets/recovery'),
+      requestAsset: (draft) => api.post('/assets/requests', draft),
       actOnRequest: (id, status) => api.put(`/assets/requests/${id}`, { status }),
       allocate: (assetId, empId) => api.post(`/assets/${assetId}/allocate`, { empId }),
       markReturned: (assetId) => api.post(`/assets/${assetId}/return`),

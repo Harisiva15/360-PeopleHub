@@ -153,6 +153,84 @@ export async function listOnboarding(caller: Caller): Promise<Onboarding[]> {
   });
 }
 
+export interface NewJourney {
+  name: string;
+  dept: string;
+  designation: string;
+  site?: string;
+  doj: string;
+  managerId?: string;
+  buddyId?: string;
+  ctc?: number;
+  candId?: string;
+}
+
+/**
+ * The standard joining checklist, offset in days around the joining date.
+ *
+ * Templated here rather than left to the caller: a journey created without a
+ * checklist is a journey that can be completed instantly, and completing one
+ * creates an employee.
+ */
+const TEMPLATE: [string, string, string, number][] = [
+  ['offer_accept', 'Offer accepted', 'hr', -30],
+  ['docs', 'Document collection (ID, education, experience)', 'candidate', -14],
+  ['bgv', 'Background verification initiated', 'hr', -12],
+  ['itasset', 'IT asset allocation (laptop, accessories)', 'it', -3],
+  ['accounts', 'Email, VPN and tool accounts created', 'it', -2],
+  ['joining', 'Joining formalities & Form 11/2 signed', 'hr', 0],
+  ['induction', 'Company induction & policy walkthrough', 'hr', 0],
+  ['payroll', 'Payroll, PF/UAN and bank setup', 'finance', 1],
+  ['buddy', 'Buddy assigned & team introduction', 'manager', 1],
+  ['goals', 'Probation goals & 30-60-90 plan set', 'manager', 5],
+  ['training', 'Mandatory compliance training (POSH, InfoSec)', 'employee', 7],
+  ['confirm', 'Probation confirmation review', 'manager', 180],
+];
+
+/** Start a journey, with the standard checklist dated around the joining date. */
+export async function createJourney(
+  caller: Caller,
+  draft: NewJourney,
+): Promise<Onboarding> {
+  if (!mayOnboard(caller)) {
+    throw new OnboardingError('only a manager or admin may start onboarding', 'forbidden');
+  }
+  if (!draft.name?.trim()) throw new OnboardingError('the joiner needs a name', 'invalid');
+  if (!draft.doj) throw new OnboardingError('the joiner needs a joining date', 'invalid');
+
+  return withTenant(caller, async (db) => {
+    const dept = draft.dept
+      ? (await db.query('SELECT id FROM department WHERE code = $1', [draft.dept])).rows[0]?.id
+      : null;
+    const site = draft.site
+      ? (await db.query('SELECT id FROM site WHERE code = $1', [draft.site])).rows[0]?.id
+      : null;
+
+    const { rows } = await db.query(
+      `INSERT INTO onboarding_journey
+         (candidate_id, full_name, department_id, site_id, designation, joining_on,
+          manager_id, buddy_id, annual_ctc, currency, status)
+       SELECT $1, $2, $3, $4, $5, $6::date, $7, $8, $9, t.base_currency,
+              CASE WHEN $6::date <= CURRENT_DATE THEN 'in_progress' ELSE 'pre_boarding' END
+         FROM tenant t WHERE t.id = current_tenant_id()
+       RETURNING id`,
+      [draft.candId ?? null, draft.name.trim(), dept ?? null, site ?? null,
+        draft.designation ?? null, draft.doj, draft.managerId ?? null,
+        draft.buddyId ?? null, draft.ctc ?? null]);
+    const id = rows[0].id as string;
+
+    for (const [i, [key, title, owner, day]] of TEMPLATE.entries()) {
+      await db.query(
+        `INSERT INTO onboarding_task
+           (journey_id, task_key, title, owner, due_on, display_order)
+         VALUES ($1, $2, $3, $4, ($5::date + $6::int), $7)`,
+        [id, key, title, owner, draft.doj, day, i]);
+    }
+
+    return load(db, id);
+  });
+}
+
 /** Tick or untick one checklist item. */
 export async function setTask(
   caller: Caller,

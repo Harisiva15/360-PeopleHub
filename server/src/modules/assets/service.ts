@@ -372,6 +372,49 @@ export async function markReturned(caller: Caller, assetId: string): Promise<Ass
   });
 }
 
+export interface NewAssetRequest {
+  cat: string;
+  type: string;
+  reason: string;
+  cost?: number;
+}
+
+/** Above this, a manager's approval is not enough on its own. */
+const FINANCE_THRESHOLD = 25000;
+
+/**
+ * Ask for kit.
+ *
+ * Always for yourself. An asset request names a person and a cost, and letting
+ * one be raised on somebody else's behalf is how a request appears in a
+ * manager's queue that the employee never made.
+ */
+export async function requestAsset(
+  caller: Caller,
+  draft: NewAssetRequest,
+): Promise<AssetRequest> {
+  if (!draft.type?.trim()) throw new AssetError('say which item you need', 'invalid');
+  if (!draft.reason?.trim()) throw new AssetError('give a reason for the request', 'invalid');
+
+  return withTenant(caller, async (db) => {
+    const cat = await db.query(
+      'SELECT id FROM asset_category WHERE code = $1', [draft.cat]);
+    if (!cat.rows[0]) throw new AssetError(`no such asset category: ${draft.cat}`, 'invalid');
+
+    const cost = Number(draft.cost ?? 0);
+    const { rows } = await db.query(
+      `INSERT INTO asset_request
+         (employee_id, category_id, model, reason, estimated_cost, needs_finance)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
+      [caller.employeeId, cat.rows[0].id, draft.type.trim(), draft.reason.trim(),
+        cost || null, cost > FINANCE_THRESHOLD]);
+
+    const back = await db.query(`${REQUEST_PROJECTION} WHERE r.id = $1`, [rows[0].id]);
+    return toRequest(back.rows[0]!);
+  });
+}
+
 /**
  * Approve or reject a request.
  *

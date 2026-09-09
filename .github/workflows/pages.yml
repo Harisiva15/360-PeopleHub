@@ -36,6 +36,8 @@ jobs:
           npx tsc --noEmit -p tsconfig.app.json
           npx oxlint
           npm run check
+          npm run check:shape:contract
+          npm run check:payroll
           npm run check:routes
           npm run check:http
           # Proves the sign-in gate is closed. Needs a configured build, so it

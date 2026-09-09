@@ -43,7 +43,7 @@ import {
 } from '../modules/noticeboard/service.ts';
 import {
   actOnRequest, allocate, AssetError, assetKpi, listAssets, listOpenRequests,
-  listRequests, markReturned, pendingRecovery,
+  listRequests, markReturned, pendingRecovery, requestAsset,
 } from '../modules/assets/service.ts';
 import { ProvisionError } from '../modules/people/provision.ts';
 import {
@@ -52,7 +52,7 @@ import {
   salaryStructureOf, totals, totalsFor,
 } from '../modules/payroll/service.ts';
 import {
-  completeOnboarding, listOnboarding, OnboardingError, setTask,
+  completeOnboarding, createJourney, listOnboarding, OnboardingError, setTask,
 } from '../modules/onboarding/service.ts';
 import {
   HiringError, interviewsFor, listCandidates, listInterviews, listRequisitions,
@@ -240,6 +240,12 @@ const routes: Route[] = [
   },
   { method: 'GET', pattern: '/onboarding', handler: (c) => listOnboarding(c) },
   {
+    method: 'POST',
+    pattern: '/onboarding',
+    handler: (c, _r, _p, body) =>
+      createJourney(c, (body ?? {}) as Parameters<typeof createJourney>[1]),
+  },
+  {
     method: 'PUT',
     pattern: '/onboarding/:id/tasks/:key',
     handler: (c, _r, p, body) =>
@@ -284,6 +290,12 @@ const routes: Route[] = [
   { method: 'GET', pattern: '/assets/requests', handler: (c) => listRequests(c) },
   { method: 'GET', pattern: '/assets/requests/open', handler: (c) => listOpenRequests(c) },
   { method: 'GET', pattern: '/assets/recovery', handler: (c) => pendingRecovery(c) },
+  {
+    method: 'POST',
+    pattern: '/assets/requests',
+    handler: (c, _r, _p, body) =>
+      requestAsset(c, (body ?? {}) as Parameters<typeof requestAsset>[1]),
+  },
   {
     method: 'PUT',
     pattern: '/assets/requests/:id',
@@ -556,7 +568,8 @@ function statusFor(error: unknown): { status: number; message: string } {
   }
   if (error instanceof OnboardingError) {
     const status = error.code === 'forbidden' ? 403
-      : error.code === 'not_found' ? 404 : 409;
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };
   }
   if (error instanceof ProvisionError) {
