@@ -37,6 +37,7 @@ jobs:
           npx oxlint
           npm run check
           npm run check:routes
+          npm run check:http
           # Proves the sign-in gate is closed. Needs a configured build, so it
           # runs with placeholder credentials — nothing connects to Supabase,
           # because the render never gets that far.

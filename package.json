@@ -11,7 +11,8 @@
     "check": "vite-node checks/services.ts",
     "check:routes": "vite-node checks/routes.tsx",
     "check:gate": "vite-node checks/auth-gate.tsx",
-    "check:all": "npm run check && npm run check:routes && npm run check:gate"
+    "check:all": "npm run check && npm run check:routes && npm run check:gate && npm run check:http",
+    "check:http": "vite-node checks/http-services.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",
