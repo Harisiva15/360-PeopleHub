@@ -1,38 +1,32 @@
 import { useState } from 'react';
 import { sortBy, sum, uniq } from '../../lib/collections';
-import { daysBetween, fmtD, parseYmd, TODAY, ymd } from '../../lib/dates';
+import { fmtD, TODAY, ymd } from '../../lib/dates';
 import { inr, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { mbS } from '../../data/countries';
 
 import type { Asset } from '../../types/asset';
 import {
-  ASSET_CATS, ASSET_STATUS_BADGE, acatOf, assetAge, assetEol, bookValue, inWarranty, modelOf,
+  ASSET_CATS, ASSET_STATUS_BADGE, acatOf, assetEol, bookValue, inWarranty,
 } from '../../data/assets';
-import { ASSET_POLICY, ASSET_REQ_BADGE, entitledTo } from '../../data/assetWorkflow';
-import type { AssetRequest } from '../../services';
+import { entitledTo } from '../../data/assetWorkflow';
 
 
 
-import { deptOf, GRADES, siteOf } from '../../data/org';
+import { deptOf, siteOf } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
-import { BarChart, HBar, PAL } from '../../components/charts';
+import { HBar } from '../../components/charts';
+import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import {
-  useActOnRequest, useAllEmployees, useAllocateAsset, useAssetKpi, useAssetRequests, useAssets,
-  useExits, useMarkReturned, useOnboardingJourneys, useOpenAssetRequests, usePendingRecovery,
-  useVisiblePeople,
+  useAddAsset, useAllEmployees, useAllocateAsset, useAssetKpi, useAssets, useExits,
+  useMarkReturned, useOnboardingJourneys, usePendingRecovery, useVisiblePeople,
 } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
-import type { Grade } from '../../types/country';
 
 const AssetBadge = ({ s }: { s: string }) => (
   <Badge kind={(ASSET_STATUS_BADGE[s] || 'mute') as 'good' | 'info' | 'warn' | 'crit' | 'mute'}>{s}</Badge>
-);
-
-const ReqBadge = ({ s }: { s: string }) => (
-  <Badge kind={(ASSET_REQ_BADGE[s] || 'warn') as 'good' | 'info' | 'crit' | 'warn'}>{s}</Badge>
 );
 
 /* ---------------- My assets (employee) ---------------- */
@@ -86,7 +80,116 @@ function AsMine() {
 
 /* ---------------- Register ---------------- */
 
+/**
+ * Add an item to the register.
+ *
+ * The holder is optional and defaults to nobody, because kit is bought both
+ * ways: sometimes for a named person, sometimes into stock. Assigning here
+ * saves the second step and records the same custody row either way.
+ */
+function AddAssetForm({ close }: { close: () => void }) {
+  const app = useApp();
+  const addAsset = useAddAsset();
+  const { data: everyone = [] } = useAllEmployees();
+  const [d, setD] = useState({
+    cat: 'LAPTOP', type: '', serial: '', tag: '', cost: '',
+    purchased: ymd(TODAY), warrantyEnd: '', vendor: '', empId: '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof typeof d, v: string) => setD((p) => ({ ...p, [k]: v }));
+
+  const submit = async () => {
+    if (!d.type.trim()) return setError('Say which item this is');
+    setBusy(true);
+    setError(null);
+    try {
+      await addAsset.mutate({
+        cat: d.cat,
+        type: d.type.trim(),
+        ...(d.serial ? { serial: d.serial } : {}),
+        ...(d.tag ? { tag: d.tag } : {}),
+        ...(d.cost ? { cost: Number(d.cost) } : {}),
+        ...(d.purchased ? { purchased: d.purchased } : {}),
+        ...(d.warrantyEnd ? { warrantyEnd: d.warrantyEnd } : {}),
+        ...(d.vendor ? { vendor: d.vendor } : {}),
+        ...(d.empId ? { empId: d.empId } : {}),
+      });
+      app.toast(d.empId ? `${d.type} added and issued` : `${d.type} added to stock`, 'ok');
+      close();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add this item');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="grid g2" style={{ gap: '0 14px' }}>
+        <div className="field">
+          <label htmlFor="a-cat">Category</label>
+          <select id="a-cat" className="input" value={d.cat} onChange={(e) => set('cat', e.target.value)}>
+            {ASSET_CATS.map((c) => <option key={c.id} value={c.id}>{c.n}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="a-type">Item</label>
+          <input id="a-type" className="input" autoFocus placeholder='MacBook Pro 14"'
+            value={d.type} onChange={(e) => set('type', e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="a-serial">Serial number</label>
+          <input id="a-serial" className="input" value={d.serial} onChange={(e) => set('serial', e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="a-tag">Asset tag</label>
+          <input id="a-tag" className="input" placeholder="Leave blank to generate"
+            value={d.tag} onChange={(e) => set('tag', e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="a-cost">Cost</label>
+          <input id="a-cost" type="number" className="input" value={d.cost} onChange={(e) => set('cost', e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="a-vendor">Vendor</label>
+          <input id="a-vendor" className="input" value={d.vendor} onChange={(e) => set('vendor', e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="a-purch">Purchased on</label>
+          <input id="a-purch" type="date" className="input" value={d.purchased} onChange={(e) => set('purchased', e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="a-warr">Warranty ends</label>
+          <input id="a-warr" type="date" className="input" value={d.warrantyEnd} onChange={(e) => set('warrantyEnd', e.target.value)} />
+        </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="a-emp">Issue to</label>
+        <select id="a-emp" className="input" value={d.empId} onChange={(e) => set('empId', e.target.value)}>
+          <option value="">Nobody — add to stock</option>
+          {sortBy(everyone, (e) => e.name).map((e) => (
+            <option key={e.id} value={e.id}>{e.name} · {e.code}</option>
+          ))}
+        </select>
+        <div className="hint">Issuing here records the same custody entry as issuing it later.</div>
+      </div>
+
+      {error && <div className="login-msg err" role="alert">{error}</div>}
+
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 8 }}>
+        <button className="btn" onClick={close} disabled={busy}>Cancel</button>
+        <button className="btn primary" onClick={submit} disabled={busy}>
+          {busy ? 'Adding…' : 'Add to register'}
+        </button>
+      </div>
+    </>
+  );
+}
+
 function AsRegister() {
+  const layer = useLayer();
   const { data: ASSETS = [] } = useAssets();
   const { data: k } = useAssetKpi();
   const dir = useVisiblePeople();
@@ -124,6 +227,12 @@ function AsRegister() {
           {['Assigned', 'In stock', 'In repair', 'Retired'].map((s) => <option key={s}>{s}</option>)}
         </select>
         <div className="spacer" />
+        <button className="btn primary" onClick={() => layer.modal({
+          title: 'Add an asset',
+          sub: 'Laptops, monitors, phones and accessories',
+          body: (close) => <AddAssetForm close={close} />,
+          footer: null,
+        })}>＋ Add asset</button>
         <button className="btn" onClick={() =>
           downloadCSV('asset_register.csv',
             [['ID', 'Tag', 'Type', 'Category', 'Serial', 'Holder', 'Location', 'Purchased', 'Cost', 'Book value', 'Warranty end', 'Condition', 'Status']].concat(
@@ -188,88 +297,6 @@ function AsRegister() {
             }))} />
         </Card>
       </div>
-    </div>
-  );
-}
-
-/* ---------------- Requests ---------------- */
-
-function AsRequests() {
-  const { data: ASSET_REQS = [] } = useAssetRequests();
-  const { data: open = [] } = useOpenAssetRequests();
-  const dir = useVisiblePeople();
-  const actOnRequest = useActOnRequest();
-  const app = useApp();
-  const [fs, setFs] = useState('');
-  const scope = app.role === 'employee' ? ASSET_REQS.filter((r) => r.empId === app.meId) : ASSET_REQS;
-  const list = fs ? scope.filter((r) => r.status === fs) : scope;
-  const spendPending = sum(open, (r) => r.cost);
-
-  const act = async (r: AssetRequest, status: string, msg: string) => {
-    await actOnRequest.mutate(r.id, status);
-    app.toast(msg, 'ok');
-  };
-
-  return (
-    <div className="stack">
-      <div className="toolbar">
-        <select className="input" style={{ width: 'auto' }} value={fs} onChange={(e) => setFs(e.target.value)}>
-          <option value="">All statuses</option>
-          {uniq(ASSET_REQS.map((r) => r.status)).map((s) => <option key={s}>{s}</option>)}
-        </select>
-        <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12.5 }}>{inr(spendPending)} of requests awaiting approval</span>
-      </div>
-
-      <div className="grid g4">
-        <Tile label="Open requests" value={open.length} foot="Awaiting approval" />
-        <Tile label="Committed spend" value={inr(spendPending)} foot="If all open requests are approved" />
-        <Tile label="Outside entitlement" value={ASSET_REQS.filter((r) => !r.entitled).length} foot="Above grade allowance" />
-        <Tile label="Fulfilled" value={ASSET_REQS.filter((r) => r.status === 'Fulfilled').length} foot="Delivered to the requester" />
-      </div>
-
-      <Card title="Asset requests" sub={`${list.length} records`} flush>
-        <div className="tbl-wrap" style={{ maxHeight: 560, overflow: 'auto' }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Reference</th><th>Requester</th><th>Item</th><th className="num">Cost</th>
-                <th>Reason</th><th>Entitlement</th><th>Raised</th><th>Status</th>
-                {app.role !== 'employee' && <th className="right">Action</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((r) => (
-                <tr key={r.id}>
-                  <td className="mono">{r.id}</td>
-                  <td>{dir.byId(r.empId) && <PersonCell e={dir.byId(r.empId)!} />}</td>
-                  <td><b>{r.type}</b><div className="mt">{acatOf(r.cat).n}</div></td>
-                  <td className="num">{inr(r.cost)}</td>
-                  <td>{r.reason}</td>
-                  <td>
-                    {r.entitled ? <Badge kind="good">Within grade</Badge> : <Badge kind="warn">Above grade</Badge>}
-                    {r.needsFinance && <> <Badge kind="info">Finance</Badge></>}
-                  </td>
-                  <td className="nowrap">{fmtD(r.raisedOn)}</td>
-                  <td><ReqBadge s={r.status} /></td>
-                  {app.role !== 'employee' && (
-                    <td className="right nowrap">
-                      {r.status.startsWith('Pending') ? (
-                        <>
-                          <button className="btn sm primary" onClick={() => act(r, 'Approved', 'Request approved')}>Approve</button>{' '}
-                          <button className="btn sm" onClick={() => act(r, 'Rejected', 'Request rejected')}>Reject</button>
-                        </>
-                      ) : r.status === 'Approved' ? (
-                        <button className="btn sm" onClick={() => act(r, 'Fulfilled', 'Marked fulfilled')}>Fulfil</button>
-                      ) : <span className="muted">—</span>}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
     </div>
   );
 }
@@ -415,267 +442,37 @@ function AsAlloc() {
   );
 }
 
-/* ---------------- Stock & procurement ---------------- */
-
-function AsStock() {
-  const { data: ASSETS = [] } = useAssets();
-  const { data: active = [] } = useAllEmployees();
-  const app = useApp();
-  const stock = ASSETS.filter((a) => a.status === 'In stock');
-  const repair = ASSETS.filter((a) => a.status === 'In repair');
-
-  const byModel = uniq(stock.map((a) => a.type)).map((t) => ({
-    t, n: stock.filter((a) => a.type === t).length,
-    cat: modelOf(t).cat, cost: modelOf(t).cost, vendor: modelOf(t).vendor,
-  }));
-
-  /* reorder point: less than one month of joining demand left on the shelf */
-  const monthlyJoiners = Math.max(1, Math.round(active.filter((e) => daysBetween(e.doj, ymd(TODAY)) <= 365).length / 12));
-  const reorder = byModel.filter((m) => m.cat === 'LAPTOP' && m.n < monthlyJoiners);
-
-  const returnToStock = (a: Asset) => {
-    a.status = 'In stock';
-    a.condition = 'Good';
-    app.toast(a.type + ' repaired and returned to stock', 'ok');
-    app.bump();
-  };
-
-  return (
-    <div className="stack">
-      <div className="grid g4">
-        <Tile label="Units in stock" value={stock.length} foot="Ready to allocate" />
-        <Tile label="Stock value" value={mbS(sum(stock, bookValue))} foot="At written-down value" />
-        <Tile label="In repair" value={repair.length} foot={`${mbS(sum(repair, bookValue))} out of service`} />
-        <Tile label="Monthly demand" value={monthlyJoiners + ' laptops'} foot="Based on the last 12 months of joiners" />
-      </div>
-
-      {reorder.length > 0 && (
-        <Banner kind="warn" icon="⚠">
-          <b>Reorder recommended.</b> {reorder.map((m) => `${m.t} (${m.n} left)`).join(', ')} — below one month of joining
-          demand. Lead time from {uniq(reorder.map((m) => m.vendor)).join(' and ')} is typically 2–3 weeks.
-        </Banner>
-      )}
-
-      <div className="grid g2">
-        <Card title="Stock on hand" sub={`${byModel.length} models`} flush
-          actions={<button className="btn sm primary" onClick={() => app.toast('Purchase requisition drafted — routed to Finance for approval', 'ok')}>Raise purchase order</button>}>
-          <div className="tbl-wrap">
-            <table className="tbl">
-              <thead><tr><th>Model</th><th>Category</th><th>Vendor</th><th className="num">Units</th><th className="num">Unit cost</th><th className="num">Value</th></tr></thead>
-              <tbody>
-                {sortBy(byModel, (m) => -m.n).map((m) => (
-                  <tr key={m.t}>
-                    <td><b>{m.t}</b></td>
-                    <td className="nowrap">{acatOf(m.cat).n}</td>
-                    <td className="nowrap">{m.vendor}</td>
-                    <td className={'num' + (m.cat === 'LAPTOP' && m.n < monthlyJoiners ? ' strong' : '')}>{m.n}</td>
-                    <td className="num">{inr(m.cost)}</td>
-                    <td className="num">{inr(m.cost * m.n)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <Card title="Repair queue" sub={`${repair.length} units out of service`} flush>
-          {repair.length ? (
-            <div className="tbl-wrap" style={{ maxHeight: 380, overflow: 'auto' }}>
-              <table className="tbl">
-                <thead><tr><th>Asset</th><th>Tag</th><th>Age</th><th>Warranty</th><th className="right">Action</th></tr></thead>
-                <tbody>
-                  {repair.map((a) => (
-                    <tr key={a.id}>
-                      <td><b>{a.type}</b><div className="mt">{a.condition}</div></td>
-                      <td className="mono">{a.tag}</td>
-                      <td className="nowrap">{assetAge(a).toFixed(1)} yrs</td>
-                      <td>{inWarranty(a) ? <Badge kind="good">Covered</Badge> : <Badge kind="warn">Chargeable</Badge>}</td>
-                      <td className="right"><button className="btn sm" onClick={() => returnToStock(a)}>Return to stock</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <EmptyState msg="Nothing in the repair queue" icon="✓" />}
-        </Card>
-      </div>
-
-      <Card title="Spend by vendor" sub="Gross purchase value across the whole fleet">
-        <HBar fmt={(v) => mbS(v)}
-          rows={sortBy(
-            uniq(ASSETS.map((a) => a.vendor!)).map((v, i) => ({
-              k: v, c: PAL[i % 8], v: sum(ASSETS.filter((a) => a.vendor === v), (a) => a.cost!),
-            })),
-            (r) => -r.v,
-          )} />
-      </Card>
-    </div>
-  );
-}
-
-/* ---------------- Lifecycle & depreciation ---------------- */
-
-function AsLife() {
-  const dir = useVisiblePeople();
-  const { data: ASSETS = [] } = useAssets();
-  const live = ASSETS.filter((a) => a.status !== 'Retired');
-
-  const bands = [
-    { k: 'Under 1 year', c: 'var(--s6)', f: (a: Asset) => assetAge(a) < 1 },
-    { k: '1–2 years', c: 'var(--s3)', f: (a: Asset) => assetAge(a) >= 1 && assetAge(a) < 2 },
-    { k: '2–3 years', c: 'var(--s4)', f: (a: Asset) => assetAge(a) >= 2 && assetAge(a) < 3 },
-    { k: '3–4 years', c: 'var(--s2)', f: (a: Asset) => assetAge(a) >= 3 && assetAge(a) < 4 },
-    { k: 'Past refresh', c: 'var(--s8)', f: assetEol },
-  ].map((b) => ({ k: b.k, c: b.c, v: live.filter(b.f).length }));
-
-  /* five-year straight-line schedule on the live fleet, in ₹ lakh */
-  const years: { k: string; v: number }[] = [];
-  for (let i = 0; i < 5; i++) {
-    const yr = TODAY.getFullYear() + i;
-    const charge = sum(live, (a) => {
-      const life = acatOf(a.cat).life;
-      const start = parseYmd(a.purchased!).getFullYear();
-      return yr >= start && yr < start + life ? Math.round((a.cost! * 0.95) / life) : 0;
-    });
-    years.push({ k: String(yr), v: Math.round(charge / 100000) });
-  }
-
-  const refresh = sortBy(live.filter((a) => assetEol(a) && a.status === 'Assigned'), (a) => -assetAge(a));
-  const refreshCost = sum(refresh, (a) => modelOf(a.type).cost);
-
-  return (
-    <div className="stack">
-      <div className="grid g4">
-        <Tile label="Live fleet" value={live.length} foot="Excluding retired assets" />
-        <Tile label="Past refresh cycle" value={refresh.length} foot="Assigned and beyond useful life" />
-        <Tile label="Refresh cost" value={mbS(refreshCost)} foot="To replace everything past cycle" />
-        <Tile label="Average fleet age" value={(sum(live, assetAge) / Math.max(1, live.length)).toFixed(1) + ' yrs'}
-          foot="Standard cycle is 4 years for laptops" />
-      </div>
-
-      <div className="grid g2">
-        <Card title="Fleet ageing" sub="Time since purchase"><HBar rows={bands} /></Card>
-        <Card title="Depreciation schedule" sub="Annual charge on the live fleet, ₹ lakh">
-          <BarChart labels={years.map((y) => y.k)} height={200} fmt={(v) => '₹' + v + 'L'}
-            series={[{ name: 'Depreciation (₹L)', color: 'var(--s1)', data: years.map((y) => y.v) }]} />
-        </Card>
-      </div>
-
-      <Card title="Refresh plan" sub={`${refresh.length} assets past their useful life`} flush
-        actions={<button className="btn sm primary" onClick={() =>
-          downloadCSV('asset_refresh_plan.csv',
-            [['Asset', 'Tag', 'Serial', 'Holder', 'Purchased', 'Age (yrs)', 'Book value', 'Replacement cost']].concat(
-              refresh.map((a) => [a.type, a.tag || '', a.serial, a.empId ? dir.name(a.empId) : '',
-                a.purchased || '', assetAge(a).toFixed(1), String(bookValue(a)), String(modelOf(a.type).cost)]),
-            ))}>⤓ Export refresh plan</button>}>
-        {refresh.length ? (
-          <div className="tbl-wrap" style={{ maxHeight: 460, overflow: 'auto' }}>
-            <table className="tbl">
-              <thead>
-                <tr><th>Asset</th><th>Holder</th><th>Purchased</th><th className="num">Age</th><th className="num">Book value</th><th className="num">Replacement</th><th>Warranty</th></tr>
-              </thead>
-              <tbody>
-                {refresh.map((a) => (
-                  <tr key={a.id}>
-                    <td><b>{a.type}</b><div className="mt">{a.tag}</div></td>
-                    <td className="nowrap">{a.empId ? dir.name(a.empId) : '—'}</td>
-                    <td className="nowrap">{fmtD(a.purchased)}</td>
-                    <td className="num">{assetAge(a).toFixed(1)} yrs</td>
-                    <td className="num">{inr(bookValue(a))}</td>
-                    <td className="num">{inr(modelOf(a.type).cost)}</td>
-                    <td>{inWarranty(a) ? <Badge kind="good">Covered</Badge> : <Badge kind="warn">Expired</Badge>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <EmptyState msg="Nothing is past its refresh cycle" icon="✓" />}
-      </Card>
-    </div>
-  );
-}
-
-/* ---------------- Policy & entitlement ---------------- */
-
-function AsPolicy() {
-  const grades = Object.keys(GRADES) as Grade[];
-  return (
-    <div className="grid g-2-1">
-      <Card title="Entitlement by grade" sub="What each grade may hold as standard" flush>
-        <div className="tbl-wrap">
-          <table className="tbl">
-            <thead><tr><th>Grade</th><th>Standard kit</th><th className="num">Items</th></tr></thead>
-            <tbody>
-              {grades.map((g) => (
-                <tr key={g}>
-                  <td><b>{GRADES[g].label}</b></td>
-                  <td>{ASSET_POLICY.entitlement[g].join(' · ')}</td>
-                  <td className="num">{ASSET_POLICY.entitlement[g].length}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <Card title="Policy" sub="Approval, refresh and recovery">
-        <div className="stack" style={{ gap: 11, fontSize: 13 }}>
-          {([
-            ['Second approval', `Anything above ${inr(ASSET_POLICY.approvalOver)} also needs Finance sign-off.`],
-            ['Refresh cycles', Object.entries(ASSET_POLICY.refreshYears).map(([k, v]) => `${acatOf(k).n} ${v}y`).join(' · ')],
-            ['Damage or loss', ASSET_POLICY.damageRecovery],
-            ['Work-from-home setup', `One-time ${inr(ASSET_POLICY.wfhAllowance)} allowance for desk and chair.`],
-            ['Personal devices', ASSET_POLICY.byodAllowed ? 'BYOD permitted with MDM enrolment.' : 'BYOD is not permitted for company data.'],
-            ['Return', 'All kit returns to IT on or before the last working day; the balance is recovered at written-down value.'],
-          ] as [string, string][]).map(([k, v]) => (
-            <div key={k}>
-              <div style={{ fontWeight: 700, fontSize: 12.5 }}>{k}</div>
-              <div className="muted">{v}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 /* ---------------- entry ---------------- */
 
-type Tab = 'reg' | 'req' | 'alloc' | 'stock' | 'life' | 'pol';
+/*
+ * Two tabs, not six.
+ *
+ * The register used to sit alongside a request queue, a procurement view, a
+ * depreciation schedule and a grade-entitlement policy — a full ITAM product
+ * for a company that wants to know who has which laptop. What is left is the
+ * question actually being asked: what kit do we have, who holds it, and what
+ * state is it in. The book-value figures survive as tiles on the register,
+ * because finance still reconciles against them.
+ */
+type Tab = 'reg' | 'alloc';
 
 const TABS: { v: Tab; label: string }[] = [
-  { v: 'reg', label: 'Asset Register' }, { v: 'req', label: 'Requests' }, { v: 'alloc', label: 'Allocation' },
-  { v: 'stock', label: 'Stock & Procurement' }, { v: 'life', label: 'Lifecycle & Depreciation' },
-  { v: 'pol', label: 'Policy & Entitlement' },
-];
-
-const MINE_TABS: { v: 'kit' | 'req'; label: string }[] = [
-  { v: 'kit', label: 'My Assets' }, { v: 'req', label: 'My Requests' },
+  { v: 'reg', label: 'Asset Register' },
+  { v: 'alloc', label: 'Issue & Return' },
 ];
 
 function Assets() {
   const app = useApp();
   const [tab, setTab] = useState<Tab>('reg');
-  const [mineTab, setMineTab] = useState<'kit' | 'req'>('kit');
 
-  if (app.role === 'employee') {
-    return (
-      <>
-        <Tabs value={mineTab} options={MINE_TABS} onChange={setMineTab} />
-        {mineTab === 'kit' ? <AsMine /> : <AsRequests />}
-      </>
-    );
-  }
+  /* An employee sees the kit issued to them, and that is the whole screen. */
+  if (app.role === 'employee') return <AsMine />;
 
   return (
     <>
       <Tabs value={tab} options={TABS} onChange={setTab} />
       {tab === 'reg' && <AsRegister />}
-      {tab === 'req' && <AsRequests />}
       {tab === 'alloc' && <AsAlloc />}
-      {tab === 'stock' && <AsStock />}
-      {tab === 'life' && <AsLife />}
-      {tab === 'pol' && <AsPolicy />}
     </>
   );
 }
