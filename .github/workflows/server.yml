@@ -73,6 +73,15 @@ jobs:
       - name: Apply migrations
         run: npm run migrate
 
+      # Seeding is how a real database goes from empty to usable, so it is
+      # tested rather than assumed. Run twice: the second run proves it is
+      # idempotent, which is what makes it safe to re-run after adding a
+      # department without duplicating the other eight.
+      - name: Seed, twice
+        run: |
+          npm run seed -- --admin ci@example.test
+          npm run seed -- --admin ci@example.test
+
       # app_rw is created NOLOGIN by the migration; give it a password so the
       # isolation test can connect as a role that cannot bypass RLS.
       - name: Give app_rw a login
