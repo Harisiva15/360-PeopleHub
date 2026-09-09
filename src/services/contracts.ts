@@ -485,10 +485,33 @@ export interface BenefitsService {
 
 /* ---------- the noticeboard and exits ---------- */
 
+export interface NewAnnouncement {
+  title: string;
+  body: string;
+  tag: string;
+  pin: boolean;
+  /** A department code, or 'All' for everyone. */
+  dept: string;
+}
+
+/**
+ * The noticeboard.
+ *
+ * The writes return the whole board rather than the one post, because every
+ * caller re-renders the list anyway and a pin reorders it — returning one row
+ * would leave the screen to guess where it now belongs.
+ */
 export interface NoticeboardService {
+  /** Only posts the caller is an audience for, and only unexpired ones. */
   announcements(): Promise<Announcement[]>;
   /** Birthdays and work anniversaries falling in the next `days` days. */
   celebrations(days: number): Promise<Celebration[]>;
+  /** Post to the board. Managers and admins only. */
+  post(draft: NewAnnouncement): Promise<Announcement[]>;
+  /** Pinned posts sort to the top of the board. */
+  setPinned(id: string, pinned: boolean): Promise<Announcement[]>;
+  /** Take a post down. */
+  remove(id: string): Promise<Announcement[]>;
 }
 
 export interface ExitService {

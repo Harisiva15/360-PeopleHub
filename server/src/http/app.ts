@@ -37,6 +37,10 @@ import {
   addRow, approveTimesheet, listTimesheets, recallTimesheet, rejectTimesheet,
   removeRow, setHours, setRow, submitTimesheet, TimesheetError, timesheetForWeek,
 } from '../modules/timesheet/service.ts';
+import {
+  listAnnouncements, listCelebrations, NoticeboardError, postAnnouncement,
+  removeAnnouncement, setPinned,
+} from '../modules/noticeboard/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -171,6 +175,36 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       actOnRegularisation(c, p.empId!, p.date!,
         (body as { decision: 'Approved' | 'Rejected' }).decision),
+  },
+  {
+    method: 'GET',
+    pattern: '/announcements',
+    handler: (c) => listAnnouncements(c),
+  },
+  {
+    method: 'POST',
+    pattern: '/announcements',
+    handler: (c, _r, _p, body) =>
+      postAnnouncement(c, (body ?? {}) as Parameters<typeof postAnnouncement>[1]),
+  },
+  {
+    method: 'PUT',
+    pattern: '/announcements/:id/pinned',
+    handler: (c, _r, p, body) =>
+      setPinned(c, p.id!, Boolean((body as { pinned?: boolean } | undefined)?.pinned)),
+  },
+  {
+    method: 'DELETE',
+    pattern: '/announcements/:id',
+    handler: (c, _r, p) => removeAnnouncement(c, p.id!),
+  },
+  {
+    method: 'GET',
+    pattern: '/celebrations',
+    handler: (c, req) => {
+      const days = new URL(req.url ?? '/', 'http://x').searchParams.get('days');
+      return listCelebrations(c, days ? Number(days) : 30);
+    },
   },
   {
     method: 'GET',
@@ -386,6 +420,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof BadRequest) return { status: 400, message: error.message };
   if (error instanceof AttendanceError) {
     const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof NoticeboardError) {
+    const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };

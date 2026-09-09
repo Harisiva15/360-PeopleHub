@@ -10,6 +10,7 @@
 import { CHECKINS, CUR_CYCLE, GOALS, PRAISE, REVIEWS } from '../../data/performance';
 import { COURSES, ENROLL } from '../../data/learning';
 import { KB, TICKETS } from '../../data/helpdesk';
+import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
 import { uid } from '../../lib/rng';
 import { enpsOf, ENPS_HISTORY, SURVEYS } from '../../data/engagement';
@@ -186,7 +187,39 @@ export const benefitsService: BenefitsService = {
   },
 };
 
+const board = () => ok(sortBy(ANNOUNCE, (a) => (a.pin ? '0' : '1') + a.on, 'desc').slice());
+
 export const noticeboardService: NoticeboardService = {
-  announcements() { return ok(ANNOUNCE.slice()); },
+  announcements() { return board(); },
   celebrations(days) { return ok(celebrations(days)); },
+
+  post(draft) {
+    if (!draft.title.trim()) return Promise.reject(new Error('An announcement needs a title'));
+    if (!draft.body.trim()) return Promise.reject(new Error('An announcement needs a body'));
+    ANNOUNCE.unshift({
+      id: 'AN-' + (ANNOUNCE.length + 1),
+      title: draft.title.trim(),
+      body: draft.body.trim(),
+      by: 'You',
+      dept: draft.dept || 'All',
+      on: ymd(TODAY),
+      pin: draft.pin,
+      tag: draft.tag || 'General',
+    });
+    return board();
+  },
+
+  setPinned(id, pinned) {
+    const a = ANNOUNCE.find((x) => x.id === id);
+    if (!a) return Promise.reject(new Error('No such announcement: ' + id));
+    a.pin = pinned;
+    return board();
+  },
+
+  remove(id) {
+    const i = ANNOUNCE.findIndex((x) => x.id === id);
+    if (i < 0) return Promise.reject(new Error('No such announcement: ' + id));
+    ANNOUNCE.splice(i, 1);
+    return board();
+  },
 };

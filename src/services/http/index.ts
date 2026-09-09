@@ -73,6 +73,14 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    noticeboard: {
+      announcements: () => api.get('/announcements'),
+      celebrations: (days) => api.get(`/celebrations${qs({ days: String(days) })}`),
+      post: (draft) => api.post('/announcements', draft),
+      setPinned: (id, pinned) => api.put(`/announcements/${id}/pinned`, { pinned }),
+      remove: (id) => api.del(`/announcements/${id}`),
+    },
+
     timesheet: {
       list: (q) => api.get(`/timesheets${qs({
         empIds: q.empIds?.join(','), weekStart: q.weekStart, since: q.since, status: q.status,
