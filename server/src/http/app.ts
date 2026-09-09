@@ -20,6 +20,9 @@ import {
   listActiveEmployees, listExitedEmployees, listVisibleEmployees, setEmployeeRole,
 } from '../modules/employees/service.ts';
 import { applyForLeave, approveLeave, cancelLeave } from '../modules/leave/service.ts';
+import {
+  addHoliday, ConfigError, listHolidays, listSites, setLeaveQuota, updateFence,
+} from '../modules/config/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -103,6 +106,27 @@ const routes: Route[] = [
       return profile;
     },
   },
+  { method: 'GET', pattern: '/config/sites', handler: (c) => listSites(c) },
+  { method: 'GET', pattern: '/config/holidays', handler: (c) => listHolidays(c) },
+  {
+    method: 'PUT',
+    pattern: '/config/sites/:code/fence',
+    handler: (c, _r, p, body) =>
+      updateFence(c, p.code!, body as Parameters<typeof updateFence>[2]),
+  },
+  {
+    method: 'PUT',
+    pattern: '/config/leave-types/:code/quota',
+    handler: (c, _r, p, body) => setLeaveQuota(c, p.code!, (body as { quota: number }).quota),
+  },
+  {
+    method: 'POST',
+    pattern: '/config/holidays',
+    handler: (c, _r, _p, body) => {
+      const b = body as { date: string; name: string; optional?: boolean };
+      return addHoliday(c, b.date, b.name, Boolean(b.optional));
+    },
+  },
   {
     method: 'POST',
     pattern: '/leave',
@@ -175,6 +199,10 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof TenantContextError) return { status: 401, message: 'no tenant context' };
   if (error instanceof NotFound) return { status: 404, message: error.message };
   if (error instanceof BadRequest) return { status: 400, message: error.message };
+  if (error instanceof ConfigError) {
+    const status = error.code === 'forbidden' ? 403 : error.code === 'not_found' ? 404 : 409;
+    return { status, message: error.message };
+  }
   if (error instanceof LeaveError) {
     const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
       : error.code === 'not_found' ? 404

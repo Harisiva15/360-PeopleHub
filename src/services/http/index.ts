@@ -53,6 +53,16 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
        */
     },
 
+    config: {
+      sites: () => api.get('/config/sites'),
+      holidays: () => api.get('/config/holidays'),
+      updateFence: (siteId, patch) => api.put(`/config/sites/${siteId}/fence`, patch),
+      setLeaveQuota: (typeId, quota) =>
+        api.put(`/config/leave-types/${typeId}/quota`, { quota }),
+      addHoliday: (date, name, optional) =>
+        api.post('/config/holidays', { date, name, optional }),
+    },
+
     leave: {
       apply: (req) => api.post<LeaveRequest>('/leave', req),
       approve: (id: string) => api.post<LeaveRequest>(`/leave/${id}/approve`),
