@@ -6,13 +6,16 @@
  */
 
 import { TODAY, ymd } from '../../lib/dates';
-import { ACTIVE } from '../../data/employees';
+import { ACTIVE, empName } from '../../data/employees';
 import { LEAVE_BAL } from '../../data/leave';
 import { OVERTIME, ROSTER, SHIFTS } from '../../data/shifts';
 import { LOANS } from '../../data/loans';
 import { LETTER_REQS } from '../../data/letters';
 import { CANDS, INTERVIEWS, REQS, reqOf, STAGES } from '../../data/ats';
-import type { HiringService, InterviewRow, LetterService, LoanService, Overtime, ShiftService } from '../contracts';
+import type {
+  Candidate, HiringService, InterviewRow, LetterService, LoanService, Overtime,
+  RecruiterStat, Requisition, ShiftService,
+} from '../contracts';
 import { ok } from './util';
 
 export const shiftService: ShiftService = {
@@ -137,5 +140,83 @@ export const hiringService: HiringService = {
 
   requisitions() {
     return ok(REQS.slice());
+  },
+
+  openRequisition(draft) {
+    if (!draft.title.trim()) return Promise.reject(new Error('A requisition needs a title'));
+    if (!(draft.openings >= 1)) return Promise.reject(new Error('A requisition needs at least one opening'));
+    REQS.unshift({
+      id: 'REQ-' + (REQS.length + 1),
+      title: draft.title.trim(),
+      dept: draft.dept,
+      grade: (draft.grade ?? 'L2') as Requisition['grade'],
+      site: draft.site ?? 'CHN',
+      openings: draft.openings,
+      filled: 0,
+      priority: (draft.priority ?? 'Medium') as Requisition['priority'],
+      status: 'Open',
+      hiringManagerId: draft.hiringManagerId,
+      recruiterId: draft.recruiterId ?? draft.hiringManagerId,
+      openedOn: ymd(TODAY),
+      budgetMin: draft.budgetMin ?? 0,
+      budgetMax: draft.budgetMax ?? 0,
+      type: draft.type ?? 'permanent',
+      desc: draft.desc ?? '',
+      must: draft.must ?? [],
+      exp: draft.exp ?? '',
+    });
+    return ok(REQS.slice());
+  },
+
+  submitCandidate(draft) {
+    const req = REQS.find((r) => r.id === draft.reqId);
+    if (!req) return Promise.reject(new Error('No such requisition'));
+    if (req.status === 'Closed') return Promise.reject(new Error('That role is closed'));
+    if (CANDS.some((c) => c.reqId === draft.reqId && c.email === draft.email)) {
+      return Promise.reject(new Error('That candidate has already been submitted for this role'));
+    }
+    const cand: Candidate = {
+      id: 'CAND-' + (CANDS.length + 1),
+      name: draft.name.trim(),
+      reqId: draft.reqId,
+      stage: 'applied',
+      email: draft.email.trim(),
+      phone: draft.phone ?? '',
+      source: draft.source ?? '',
+      appliedOn: ymd(TODAY),
+      exp: draft.exp ?? '',
+      current: draft.current ?? '',
+      ctcCur: draft.ctcCur ?? 0,
+      ctcExp: draft.ctcExp ?? 0,
+      notice: draft.notice ?? '',
+      rating: 0,
+      skills: draft.skills ?? [],
+      loc: draft.loc ?? '',
+      resume: '',
+      notes: [],
+      offer: null,
+    };
+    CANDS.push(cand);
+    return ok(cand);
+  },
+
+  recruiterTracker() {
+    const byRecruiter = new Map<string, RecruiterStat>();
+    REQS.forEach((r) => {
+      const stat = byRecruiter.get(r.recruiterId) ?? {
+        recruiterId: r.recruiterId, name: empName(r.recruiterId),
+        openReqs: 0, openings: 0, submissions: 0, inPipeline: 0,
+        interviews: 0, offers: 0, hires: 0,
+      };
+      if (r.status === 'Open') { stat.openReqs += 1; stat.openings += r.openings; }
+      const cands = CANDS.filter((c) => c.reqId === r.id);
+      stat.submissions += cands.length;
+      stat.inPipeline += cands.filter((c) => c.stage !== 'hired' && c.stage !== 'rejected').length;
+      stat.offers += cands.filter((c) => c.stage === 'offer').length;
+      stat.hires += cands.filter((c) => c.stage === 'hired').length;
+      stat.interviews += INTERVIEWS.filter((i) => i.reqId === r.id).length;
+      byRecruiter.set(r.recruiterId, stat);
+    });
+    return ok([...byRecruiter.values()].sort((a, b) => b.hires - a.hires || b.submissions - a.submissions));
   },
 };

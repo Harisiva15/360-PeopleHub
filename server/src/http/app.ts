@@ -45,6 +45,10 @@ import {
   actOnRequest, allocate, AssetError, assetKpi, listAssets, listOpenRequests,
   listRequests, markReturned, pendingRecovery,
 } from '../modules/assets/service.ts';
+import {
+  HiringError, interviewsFor, listCandidates, listInterviews, listRequisitions,
+  moveCandidate, openRequisition, recruiterTracker, submitCandidate,
+} from '../modules/hiring/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -180,6 +184,35 @@ const routes: Route[] = [
       actOnRegularisation(c, p.empId!, p.date!,
         (body as { decision: 'Approved' | 'Rejected' }).decision),
   },
+  { method: 'GET', pattern: '/requisitions', handler: (c) => listRequisitions(c) },
+  {
+    method: 'POST',
+    pattern: '/requisitions',
+    handler: (c, _r, _p, body) =>
+      openRequisition(c, (body ?? {}) as Parameters<typeof openRequisition>[1]),
+  },
+  { method: 'GET', pattern: '/candidates', handler: (c) => listCandidates(c) },
+  {
+    method: 'POST',
+    pattern: '/candidates',
+    handler: (c, _r, _p, body) =>
+      submitCandidate(c, (body ?? {}) as Parameters<typeof submitCandidate>[1]),
+  },
+  {
+    method: 'PUT',
+    pattern: '/candidates/:id/stage',
+    handler: (c, _r, p, body) => moveCandidate(c, p.id!, (body as { stage: string }).stage),
+  },
+  { method: 'GET', pattern: '/interviews', handler: (c) => listInterviews(c) },
+  {
+    method: 'GET',
+    pattern: '/interviews/panel/:panelId',
+    handler: (c, req, p) => {
+      const st = new URL(req.url ?? '/', 'http://x').searchParams.get('status');
+      return interviewsFor(c, p.panelId!, st ?? undefined);
+    },
+  },
+  { method: 'GET', pattern: '/recruiters/tracker', handler: (c) => recruiterTracker(c) },
   { method: 'GET', pattern: '/assets', handler: (c) => listAssets(c) },
   { method: 'GET', pattern: '/assets/kpi', handler: (c) => assetKpi(c) },
   { method: 'GET', pattern: '/assets/requests', handler: (c) => listRequests(c) },
@@ -445,6 +478,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof BadRequest) return { status: 400, message: error.message };
   if (error instanceof AttendanceError) {
     const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof HiringError) {
+    const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };

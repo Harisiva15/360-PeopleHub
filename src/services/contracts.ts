@@ -400,15 +400,69 @@ export interface InterviewRow {
   requisitionTitle: string;
 }
 
+export interface NewRequisition {
+  title: string;
+  dept: string;
+  grade?: string;
+  site?: string;
+  openings: number;
+  priority?: string;
+  hiringManagerId: string;
+  recruiterId?: string;
+  budgetMin?: number;
+  budgetMax?: number;
+  type?: string;
+  desc?: string;
+  must?: string[];
+  exp?: string;
+}
+
+export interface NewSubmission {
+  reqId: string;
+  name: string;
+  email: string;
+  phone?: string;
+  source?: string;
+  exp?: string;
+  current?: string;
+  ctcCur?: number;
+  ctcExp?: number;
+  notice?: string;
+  skills?: string[];
+  loc?: string;
+}
+
+/** One recruiter's activity, for the tracker. */
+export interface RecruiterStat {
+  recruiterId: string;
+  name: string;
+  openReqs: number;
+  openings: number;
+  submissions: number;
+  inPipeline: number;
+  interviews: number;
+  offers: number;
+  hires: number;
+}
+
 export interface HiringService {
   /** The panel member's own upcoming interviews. */
   interviewsFor(panelId: string, status?: Interview['status']): Promise<InterviewRow[]>;
   /** The whole interview schedule — the hiring screens filter it themselves. */
   interviews(): Promise<Interview[]>;
-  /** Move a candidate to another pipeline stage. Refuses an unknown stage. */
+  /**
+   * Move a candidate to another pipeline stage. Refuses an unknown stage, and
+   * refuses a move that would fill more openings than the requisition has.
+   */
   moveCandidate(candId: string, stage: string): Promise<Candidate>;
   candidates(): Promise<Candidate[]>;
   requisitions(): Promise<Requisition[]>;
+  /** Open a new role. Returns the whole board, which the screens re-render. */
+  openRequisition(draft: NewRequisition): Promise<Requisition[]>;
+  /** Submit a candidate against a role. Refuses a duplicate and a closed role. */
+  submitCandidate(draft: NewSubmission): Promise<Candidate>;
+  /** Per-recruiter activity: requisitions, submissions, interviews, hires. */
+  recruiterTracker(): Promise<RecruiterStat[]>;
 }
 
 /* ---------- people operations ---------- */

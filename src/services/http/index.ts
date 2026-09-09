@@ -73,6 +73,18 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    hiring: {
+      requisitions: () => api.get('/requisitions'),
+      candidates: () => api.get('/candidates'),
+      interviews: () => api.get('/interviews'),
+      interviewsFor: (panelId, status) =>
+        api.get(`/interviews/panel/${panelId}${qs({ status })}`),
+      moveCandidate: (candId, stage) => api.put(`/candidates/${candId}/stage`, { stage }),
+      openRequisition: (draft) => api.post('/requisitions', draft),
+      submitCandidate: (draft) => api.post('/candidates', draft),
+      recruiterTracker: () => api.get('/recruiters/tracker'),
+    },
+
     assets: {
       list: () => api.get('/assets'),
       kpi: () => api.get('/assets/kpi'),
