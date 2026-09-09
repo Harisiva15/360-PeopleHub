@@ -92,11 +92,21 @@ const seedEmployee = async (tenantId, code, name) => {
      ON CONFLICT (tenant_id, code) DO UPDATE SET legal_name = EXCLUDED.legal_name
      RETURNING id`, [tenantId, name]);
   if (tenantId === tenantB) entityIdOfB = entity.rows[0].id;
+
+  // shift_id is NOT NULL since 0015 — a person with no shift has no hours to
+  // be measured against, so the fixture has to give them one too.
+  const shift = await owner.query(
+    `INSERT INTO shift (tenant_id, code, name, starts_at, ends_at, timezone, region)
+     VALUES ($1, 'IN', 'India Shift', '09:30', '18:30', 'Asia/Kolkata', 'IN')
+     ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name
+     RETURNING id`, [tenantId]);
   await owner.query(
-    `INSERT INTO employee (tenant_id, code, full_name, work_email, legal_entity_id, joined_on)
-     VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)
+    `INSERT INTO employee (tenant_id, code, full_name, work_email, legal_entity_id,
+                           shift_id, joined_on)
+     VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)
      ON CONFLICT (tenant_id, code) DO NOTHING`,
-    [tenantId, code, name, `${code.toLowerCase()}@${tenantId.slice(0, 8)}.test`, entity.rows[0].id]);
+    [tenantId, code, name, `${code.toLowerCase()}@${tenantId.slice(0, 8)}.test`,
+     entity.rows[0].id, shift.rows[0].id]);
 };
 
 // Each seeding runs in its own transaction so SET LOCAL applies to it.
@@ -174,8 +184,9 @@ await refuses(
 /* And the composite foreign key: a real id, belonging to the wrong tenant. */
 await refuses(
   "cannot reference another tenant's row by id", app,
-  `INSERT INTO employee (code, full_name, work_email, legal_entity_id, joined_on)
-   VALUES ('X998', 'Cross reference', 'x998@x.test', $1, CURRENT_DATE)`,
+  `INSERT INTO employee (code, full_name, work_email, legal_entity_id, shift_id, joined_on)
+   SELECT 'X998', 'Cross reference', 'x998@x.test', $1, s.id, CURRENT_DATE
+     FROM shift s LIMIT 1`,
   [entityIdOfB],
 );
 
@@ -227,8 +238,9 @@ await app.query('BEGIN');
 await app.query('SELECT set_config($1, $2, true)', ['app.tenant_id', tenantA]);
 {
   await app.query(
-    `INSERT INTO employee (code, full_name, work_email, legal_entity_id, joined_on)
-     SELECT 'A002', 'Defaulted', 'a002@a.test', le.id, CURRENT_DATE
+    `INSERT INTO employee (code, full_name, work_email, legal_entity_id, shift_id, joined_on)
+     SELECT 'A002', 'Defaulted', 'a002@a.test', le.id,
+            (SELECT id FROM shift LIMIT 1), CURRENT_DATE
        FROM legal_entity le LIMIT 1`);
   const { rows } = await app.query('SELECT tenant_id FROM employee WHERE code = $1', ['A002']);
   check('an insert that omits tenant_id gets the current tenant',
