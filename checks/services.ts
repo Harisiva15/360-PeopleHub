@@ -330,20 +330,38 @@ const check = (label: string, got: unknown, want: unknown) => {
     tax.newRegime.taxable, Math.max(0, tax.salary.grossA - 75000));
   check('the HRA exemption is capped by the rent claimed', tax.hraExemption <= tax.totals.hra, true);
 
-  await s.payroll.setRegime(DEMO_EMP.id, 'Old');
-  const switched = await s.payroll.taxSummary(DEMO_EMP.id);
-  check('the regime switch sticks', switched.declaration.regime, 'Old');
+  /*
+   * The declaration lifecycle needs a subject whose declaration is not already
+   * verified, and the dataset generates roughly a fifth of them verified.
+   *
+   * This block used to assume DEMO_EMP's was open. It passed for months and
+   * then failed on a day when the generator happened to hand that employee a
+   * verified one — a test that depends on the date it is run is a test that
+   * will eventually fail for a reason unrelated to the code. So the subject is
+   * chosen by the state the test needs, not by identity.
+   */
+  const declarations = await s.payroll.declarations();
+  const openSubject = Object.keys(declarations)
+    .find((id) => declarations[id]!.status !== 'Verified' && EMAP[id]);
 
-  await s.payroll.saveDeclaration(DEMO_EMP.id, { ...switched.declaration.items, '80C_elss': 50000 });
-  const saved = await s.payroll.taxSummary(DEMO_EMP.id);
-  check('saving submits the declaration', saved.declaration.status, 'Submitted');
-  await s.payroll.verifyDeclaration(DEMO_EMP.id);
-  let regimeLocked = false;
-  try { await s.payroll.setRegime(DEMO_EMP.id, 'New'); } catch { regimeLocked = true; }
-  check('the regime locks once Finance verifies', regimeLocked, true);
-  let verifyTwice = false;
-  try { await s.payroll.verifyDeclaration(DEMO_EMP.id); } catch { verifyTwice = true; }
-  check('a declaration is verified once', verifyTwice, true);
+  if (!openSubject) {
+    check('the fixture has an unverified declaration to exercise', false, true);
+  } else {
+    await s.payroll.setRegime(openSubject, 'Old');
+    const switched = await s.payroll.taxSummary(openSubject);
+    check('the regime switch sticks', switched.declaration.regime, 'Old');
+
+    await s.payroll.saveDeclaration(openSubject, { ...switched.declaration.items, '80C_elss': 50000 });
+    const saved = await s.payroll.taxSummary(openSubject);
+    check('saving submits the declaration', saved.declaration.status, 'Submitted');
+    await s.payroll.verifyDeclaration(openSubject);
+    let regimeLocked = false;
+    try { await s.payroll.setRegime(openSubject, 'New'); } catch { regimeLocked = true; }
+    check('the regime locks once Finance verifies', regimeLocked, true);
+    let verifyTwice = false;
+    try { await s.payroll.verifyDeclaration(openSubject); } catch { verifyTwice = true; }
+    check('a declaration is verified once', verifyTwice, true);
+  }
 
   /* ---- benefits: the pool and the per-component ceilings are the rule ---- */
   const fbp = await s.benefits.fbpPlan(DEMO_EMP.id);
