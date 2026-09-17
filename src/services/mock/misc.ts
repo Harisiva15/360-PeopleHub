@@ -13,10 +13,15 @@ import { LOANS } from '../../data/loans';
 import { LETTER_REQS } from '../../data/letters';
 import { CANDS, INTERVIEWS, REQS, reqOf, STAGES } from '../../data/ats';
 import type {
-  Candidate, HiringService, InterviewRow, LetterService, LoanService, Overtime,
-  RecruiterStat, Requisition, ShiftService,
+  Candidate, HiringService, Interview, InterviewRow, LetterService, LoanService,
+  Overtime, RecruiterStat, Requisition, ShiftService,
 } from '../contracts';
+import type { Offer } from '../../data/ats';
 import { ok } from './util';
+
+/** The clock part of an instant, as the schedule stores it. */
+const hhmmOf = (d: Date) =>
+  String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 
 export const shiftService: ShiftService = {
   overtime(empIds, status) {
@@ -197,6 +202,76 @@ export const hiringService: HiringService = {
       offer: null,
     };
     CANDS.push(cand);
+    return ok(cand);
+  },
+
+  scheduleInterview(draft) {
+    const cand = CANDS.find((c) => c.id === draft.candId);
+    if (!cand) return Promise.reject(new Error('That candidate is not on file'));
+    const at = new Date(draft.at);
+    if (Number.isNaN(at.getTime())) return Promise.reject(new Error('That is not a valid date and time'));
+    const clash = INTERVIEWS.some(
+      (i) => i.panelId === draft.panelId && i.status === 'Scheduled'
+        && i.date === ymd(at) && i.time === hhmmOf(at),
+    );
+    if (clash) return Promise.reject(new Error('That panel member is already booked then'));
+    const iv: Interview = {
+      id: 'IV-' + (INTERVIEWS.length + 1),
+      candId: draft.candId,
+      reqId: cand.reqId,
+      round: draft.round,
+      date: ymd(at),
+      time: hhmmOf(at),
+      panelId: draft.panelId,
+      mode: draft.mode ?? 'video',
+      status: 'Scheduled',
+      verdict: null,
+      feedback: '',
+    };
+    INTERVIEWS.push(iv);
+    return ok(iv);
+  },
+
+  submitFeedback(id, verdict, feedback) {
+    const iv = INTERVIEWS.find((x) => x.id === id);
+    if (!iv) return Promise.reject(new Error('No such interview'));
+    if (iv.status === 'Completed') return Promise.reject(new Error('That interview already has a verdict'));
+    iv.status = 'Completed';
+    iv.verdict = verdict;
+    iv.feedback = feedback;
+    return ok(iv);
+  },
+
+  makeOffer(draft) {
+    const cand = CANDS.find((c) => c.id === draft.candId);
+    if (!cand) return Promise.reject(new Error('That candidate is not on file'));
+    if (cand.offer) return Promise.reject(new Error('That candidate already has a live offer'));
+    if (!(draft.ctc > 0)) return Promise.reject(new Error('An offer needs a salary above zero'));
+    cand.offer = {
+      ctc: draft.ctc,
+      grade: (draft.grade ?? 'L2') as Offer['grade'],
+      status: 'Sent',
+      sentOn: ymd(TODAY),
+      doj: draft.doj,
+      site: 'CHN',
+    };
+    cand.stage = 'offer';
+    return ok(cand);
+  },
+
+  respondToOffer(candId, response) {
+    const cand = CANDS.find((c) => c.id === candId);
+    if (!cand?.offer) return Promise.reject(new Error('That candidate has no offer'));
+    if (cand.offer.status === 'Accepted') return Promise.reject(new Error('That offer is already accepted'));
+    if (response === 'accepted') {
+      cand.offer.status = 'Accepted';
+      cand.stage = 'hired';
+    } else if (response === 'negotiating') {
+      cand.offer.status = 'Negotiating';
+    } else {
+      cand.offer = null;
+      cand.stage = 'rejected';
+    }
     return ok(cand);
   },
 

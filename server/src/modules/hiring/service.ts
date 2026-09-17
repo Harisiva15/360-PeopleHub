@@ -23,7 +23,7 @@
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
-import type { Caller } from '../../tenancy/context.ts';
+import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
 export class HiringError extends Error {
   readonly code: string;
@@ -443,7 +443,22 @@ export async function moveCandidate(
     throw new HiringError(`that is not a pipeline stage: ${stage}`, 'invalid');
   }
 
-  return withTenant(caller, async (db) => {
+  return withTenant(caller, (db) => moveCandidateIn(db, candId, stage));
+}
+
+/**
+ * The stage move itself, inside a caller's transaction.
+ *
+ * Extracted so an accepted offer travels the same path as a manual move — the
+ * recount and the openings cap apply either way, rather than the offer route
+ * quietly skipping them.
+ */
+async function moveCandidateIn(
+  db: TenantClient,
+  candId: string,
+  stage: string,
+): Promise<Candidate> {
+  {
     const cand = await db.query(
       'SELECT requisition_id, stage FROM candidate WHERE id = $1 FOR UPDATE', [candId]);
     if (!cand.rows[0]) throw new HiringError('that candidate is not on file', 'not_found');
@@ -489,6 +504,215 @@ export async function moveCandidate(
 
     const { rows } = await db.query(`${CAND_PROJECTION} WHERE c.id = $1`, [candId]);
     return toCand(rows[0]!);
+  }
+}
+
+export interface NewInterview {
+  candId: string;
+  round: string;
+  panelId: string;
+  at: string;
+  mode?: string;
+}
+
+const MODES = new Set(['video', 'phone', 'onsite', 'take_home']);
+const VERDICTS = new Set(['strong_hire', 'hire', 'hold', 'no_hire']);
+
+/**
+ * Book a round.
+ *
+ * A double-booking is refused. An interviewer cannot be in two places at once,
+ * and the person who finds out otherwise is a candidate sitting in an empty
+ * call — so the clash is caught here rather than left for a calendar to notice.
+ * The window is the scheduled hour, which is what a round occupies in practice.
+ */
+export async function scheduleInterview(
+  caller: Caller,
+  draft: NewInterview,
+): Promise<Interview> {
+  if (!mayRecruit(caller)) {
+    throw new HiringError('only a manager or admin may schedule an interview', 'forbidden');
+  }
+  if (!draft.round?.trim()) throw new HiringError('name the round', 'invalid');
+  const when = new Date(draft.at);
+  if (Number.isNaN(when.getTime())) {
+    throw new HiringError('that is not a valid date and time', 'invalid');
+  }
+  const mode = draft.mode ?? 'video';
+  if (!MODES.has(mode)) throw new HiringError(`unknown interview mode: ${mode}`, 'invalid');
+
+  return withTenant(caller, async (db) => {
+    const cand = await db.query(
+      'SELECT requisition_id, stage FROM candidate WHERE id = $1', [draft.candId]);
+    if (!cand.rows[0]) throw new HiringError('that candidate is not on file', 'not_found');
+    if (['hired', 'rejected'].includes(cand.rows[0].stage as string)) {
+      throw new HiringError('that candidate is no longer in the pipeline', 'closed');
+    }
+
+    const panel = await db.query(
+      "SELECT id FROM employee WHERE id = $1 AND status <> 'exited'", [draft.panelId]);
+    if (!panel.rows[0]) throw new HiringError('no such panel member', 'invalid');
+
+    const clash = await db.query(
+      `SELECT 1 FROM interview
+        WHERE panel_member_id = $1 AND status = 'scheduled'
+          AND scheduled_at < $2::timestamptz + interval '1 hour'
+          AND scheduled_at + interval '1 hour' > $2::timestamptz`,
+      [draft.panelId, draft.at]);
+    if ((clash.rowCount ?? 0) > 0) {
+      throw new HiringError('that panel member is already booked then', 'clash');
+    }
+
+    const { rows } = await db.query(
+      `INSERT INTO interview
+         (candidate_id, requisition_id, round, panel_member_id, scheduled_at, mode)
+       VALUES ($1,$2,$3,$4,$5::timestamptz,$6)
+       RETURNING id`,
+      [draft.candId, cand.rows[0].requisition_id, draft.round.trim(),
+        draft.panelId, draft.at, mode]);
+
+    const back = await db.query(`${IV_PROJECTION} WHERE i.id = $1`, [rows[0].id]);
+    return toInterview(back.rows[0]!);
+  });
+}
+
+/**
+ * Record the outcome.
+ *
+ * Status and verdict move together, which the schema also insists on:
+ * `CHECK (verdict IS NULL OR status = 'completed')` makes a verdict on an
+ * interview that never happened unrepresentable. A completed round with no
+ * verdict stays representable on purpose — that is the state the dashboard
+ * chases.
+ */
+export async function submitFeedback(
+  caller: Caller,
+  id: string,
+  verdict: string,
+  feedback: string,
+): Promise<Interview> {
+  if (!VERDICTS.has(verdict)) throw new HiringError(`unknown verdict: ${verdict}`, 'invalid');
+
+  return withTenant(caller, async (db) => {
+    const { rows } = await db.query(
+      'SELECT panel_member_id, status FROM interview WHERE id = $1 FOR UPDATE', [id]);
+    if (!rows[0]) throw new HiringError('no such interview', 'not_found');
+
+    // The panel member writes their own feedback; an admin can record it for
+    // them, because somebody has to when a contractor leaves mid-loop.
+    if (rows[0].panel_member_id !== caller.employeeId && caller.role !== 'admin') {
+      throw new HiringError('only the panel member may submit this feedback', 'forbidden');
+    }
+    if (rows[0].status === 'completed') {
+      throw new HiringError('that interview already has a verdict', 'already_done');
+    }
+
+    await db.query(
+      `UPDATE interview
+          SET status = 'completed', verdict = $2, feedback = $3, submitted_at = now()
+        WHERE id = $1`, [id, verdict, feedback ?? '']);
+
+    const back = await db.query(`${IV_PROJECTION} WHERE i.id = $1`, [id]);
+    return toInterview(back.rows[0]!);
+  });
+}
+
+export interface NewOffer {
+  candId: string;
+  designation: string;
+  ctc: number;
+  grade?: string;
+  doj: string;
+}
+
+/**
+ * Make an offer.
+ *
+ * One live offer per candidate — the schema's unique index on candidate_id
+ * says so, and it is right: two open offers at different salaries is a
+ * negotiating position nobody chose to take.
+ */
+export async function makeOffer(caller: Caller, draft: NewOffer): Promise<Candidate> {
+  if (!mayRecruit(caller)) {
+    throw new HiringError('only a manager or admin may make an offer', 'forbidden');
+  }
+  const ctc = Number(draft.ctc);
+  if (!Number.isFinite(ctc) || ctc <= 0) {
+    throw new HiringError('an offer needs a salary above zero', 'invalid');
+  }
+  if (!draft.doj) throw new HiringError('an offer needs a joining date', 'invalid');
+  if (!draft.designation?.trim()) throw new HiringError('an offer needs a designation', 'invalid');
+
+  return withTenant(caller, async (db) => {
+    const cand = await db.query('SELECT stage FROM candidate WHERE id = $1', [draft.candId]);
+    if (!cand.rows[0]) throw new HiringError('that candidate is not on file', 'not_found');
+    if (cand.rows[0].stage === 'rejected') {
+      throw new HiringError('that candidate was rejected', 'closed');
+    }
+
+    const grade = draft.grade
+      ? (await db.query('SELECT id FROM grade_band WHERE code = $1', [draft.grade])).rows[0]?.id
+      : null;
+
+    try {
+      await db.query(
+        `INSERT INTO offer
+           (candidate_id, grade_id, designation, annual_ctc, currency, joining_on,
+            status, sent_on, approved_by)
+         SELECT $1, $2, $3, $4, t.base_currency, $5::date, 'sent', CURRENT_DATE, $6
+           FROM tenant t WHERE t.id = current_tenant_id()`,
+        [draft.candId, grade ?? null, draft.designation.trim(), ctc, draft.doj,
+          caller.employeeId]);
+    } catch (e) {
+      if ((e as { code?: string }).code === '23505') {
+        throw new HiringError('that candidate already has a live offer', 'duplicate');
+      }
+      throw e;
+    }
+
+    await db.query("UPDATE candidate SET stage = 'offer' WHERE id = $1", [draft.candId]);
+
+    const { rows } = await db.query(`${CAND_PROJECTION} WHERE c.id = $1`, [draft.candId]);
+    return toCand(rows[0]!);
+  });
+}
+
+/**
+ * Record the candidate's answer.
+ *
+ * Accepting moves them to hired, which recounts the requisition through the
+ * same path a manual stage move takes — so the openings cap applies to an
+ * accepted offer exactly as it does to anything else.
+ */
+export async function respondToOffer(
+  caller: Caller,
+  candId: string,
+  response: string,
+): Promise<Candidate> {
+  if (!mayRecruit(caller)) {
+    throw new HiringError('only a manager or admin may record a response', 'forbidden');
+  }
+  if (!['accepted', 'declined', 'negotiating'].includes(response)) {
+    throw new HiringError(`unknown response: ${response}`, 'invalid');
+  }
+
+  return withTenant(caller, async (db) => {
+    const { rows } = await db.query(
+      'SELECT id, status FROM offer WHERE candidate_id = $1 FOR UPDATE', [candId]);
+    if (!rows[0]) throw new HiringError('that candidate has no offer', 'not_found');
+    if (rows[0].status === 'accepted') {
+      throw new HiringError('that offer is already accepted', 'already_accepted');
+    }
+
+    await db.query(
+      'UPDATE offer SET status = $2, responded_on = CURRENT_DATE WHERE id = $1',
+      [rows[0].id, response]);
+
+    if (response === 'accepted') return moveCandidateIn(db, candId, 'hired');
+    if (response === 'declined') return moveCandidateIn(db, candId, 'rejected');
+
+    const back = await db.query(`${CAND_PROJECTION} WHERE c.id = $1`, [candId]);
+    return toCand(back.rows[0]!);
   });
 }
 

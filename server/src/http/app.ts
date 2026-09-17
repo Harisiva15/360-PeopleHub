@@ -64,7 +64,8 @@ import {
 } from '../modules/onboarding/service.ts';
 import {
   HiringError, interviewsFor, listCandidates, listInterviews, listRequisitions,
-  moveCandidate, openRequisition, recruiterTracker, submitCandidate,
+  makeOffer, moveCandidate, openRequisition, recruiterTracker, respondToOffer,
+  scheduleInterview, submitCandidate, submitFeedback,
 } from '../modules/hiring/service.ts';
 
 type Handler = (
@@ -368,6 +369,31 @@ const routes: Route[] = [
     handler: (c, _r, p, body) => moveCandidate(c, p.id!, (body as { stage: string }).stage),
   },
   { method: 'GET', pattern: '/interviews', handler: (c) => listInterviews(c) },
+  {
+    method: 'POST',
+    pattern: '/interviews',
+    handler: (c, _r, _p, body) =>
+      scheduleInterview(c, (body ?? {}) as Parameters<typeof scheduleInterview>[1]),
+  },
+  {
+    method: 'POST',
+    pattern: '/interviews/:id/feedback',
+    handler: (c, _r, p, body) => {
+      const b = (body ?? {}) as { verdict: string; feedback?: string };
+      return submitFeedback(c, p.id!, b.verdict, b.feedback ?? '');
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/offers',
+    handler: (c, _r, _p, body) => makeOffer(c, (body ?? {}) as Parameters<typeof makeOffer>[1]),
+  },
+  {
+    method: 'POST',
+    pattern: '/offers/:candId/respond',
+    handler: (c, _r, p, body) =>
+      respondToOffer(c, p.candId!, (body as { response: string }).response),
+  },
   {
     method: 'GET',
     pattern: '/interviews/panel/:panelId',

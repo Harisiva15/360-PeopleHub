@@ -463,6 +463,39 @@ export interface HiringService {
   submitCandidate(draft: NewSubmission): Promise<Candidate>;
   /** Per-recruiter activity: requisitions, submissions, interviews, hires. */
   recruiterTracker(): Promise<RecruiterStat[]>;
+
+  /** Book a round with a panel member. Refuses a clash on their calendar. */
+  scheduleInterview(draft: NewInterview): Promise<Interview>;
+  /**
+   * Record the outcome. A verdict without a completed interview is not
+   * representable, so this sets both.
+   */
+  submitFeedback(id: string, verdict: InterviewVerdict, feedback: string): Promise<Interview>;
+  /** Make an offer. One live offer per candidate. */
+  makeOffer(draft: NewOffer): Promise<Candidate>;
+  /** Record the candidate's answer; accepting moves them to hired. */
+  respondToOffer(candId: string, response: OfferResponse): Promise<Candidate>;
+}
+
+export type InterviewVerdict = 'strong_hire' | 'hire' | 'hold' | 'no_hire';
+export type OfferResponse = 'accepted' | 'declined' | 'negotiating';
+
+export interface NewInterview {
+  candId: string;
+  round: string;
+  panelId: string;
+  /** ISO instant. */
+  at: string;
+  mode?: string;
+}
+
+export interface NewOffer {
+  candId: string;
+  designation: string;
+  ctc: number;
+  grade?: string;
+  /** Joining date. */
+  doj: string;
 }
 
 /* ---------- people operations ---------- */
