@@ -126,17 +126,17 @@ function DashAdmin() {
       </>} />
 
       <div className="grid g5">
-        <Tile label="Headcount" value={act.length} trend="up"
+        <Tile tone="blue" icon="👥" label="Headcount" value={act.length} trend="up"
           foot={<>▲ {ht.data[7] - ht.data[4]} vs 3 months ago</>}
           spark={<Spark data={ht.data} color="var(--s1)" />} />
-        <Tile label="Present today"
+        <Tile tone="green" icon="📅" label="Present today"
           value={<>{present} <span style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 600 }}>/ {working}</span></>}
           foot={`${at.c.W} WFH · ${at.c.L} on leave · ${at.c.A} absent`} />
-        <Tile label={'Net payable · ' + monthLabel(CUR_RUN.mk)} value={lakh(run.net)}
+        <Tile tone="violet" icon="₹" label={'Net payable · ' + monthLabel(CUR_RUN.mk)} value={lakh(run.net)}
           foot={<><StatusBadge status={CUR_RUN.status} /> <span className="muted">{run.count} employees</span></>} />
-        <Tile label="Open positions" value={openings}
+        <Tile tone="amber" icon="🎯" label="Open positions" value={openings}
           foot={`${openReq.length} live requisitions · ${cands.filter((c) => c.stage === 'offer').length} in offer`} />
-        <Tile label="Attrition (12 mo)" value={attrition + '%'} foot={`${exitsYear.length} exits · industry avg 18%`} />
+        <Tile tone="rose" icon="📉" label="Attrition (12 mo)" value={attrition + '%'} foot={`${exitsYear.length} exits · industry avg 18%`} />
       </div>
 
       <div className="grid g-2-1">
@@ -344,13 +344,13 @@ function DashManager() {
       </div>
 
       <div className="grid g4">
-        <Tile label="Team size" value={team.length}
+        <Tile tone="blue" icon="👥" label="Team size" value={team.length}
           foot={`${team.filter((t) => t.managerId === me.id).length} direct · ${team.length - team.filter((t) => t.managerId === me.id).length} skip-level`} />
-        <Tile label="Present today" value={at.c.P + at.c.W} foot={`${at.c.W} WFH · ${at.c.L} leave · ${at.c.A} absent`} />
-        <Tile label="Hours logged (4 wks)" value={sum(last4, (w) => w.hours) + ' h'}
+        <Tile tone="green" icon="📅" label="Present today" value={at.c.P + at.c.W} foot={`${at.c.W} WFH · ${at.c.L} leave · ${at.c.A} absent`} />
+        <Tile tone="violet" icon="⏱" label="Hours logged (4 wks)" value={sum(last4, (w) => w.hours) + ' h'}
           foot={Math.round((sum(last4, (w) => w.billable) / Math.max(1, sum(last4, (w) => w.hours))) * 100) + '% billable'}
           spark={<Spark data={last4.map((w) => w.hours)} color="var(--s3)" />} />
-        <Tile label="Pending approvals" value={awaiting}
+        <Tile tone="amber" icon="✓" label="Pending approvals" value={awaiting}
           foot={`${pendLeave.length} leave · ${pendTS.length} timesheets · ${pendReg.length} regularisations`} />
       </div>
 
@@ -497,13 +497,13 @@ function DashEmployee() {
       </div>
 
       <div className="grid g4">
-        <Tile label="Leave available"
+        <Tile tone="green" icon="🌴" label="Leave available"
           value={<>{sum(bals, (b) => b.avail).toFixed(1)} <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600 }}>days</span></>}
           foot={bals.map((b) => `${b.type} ${b.avail}`).slice(0, 3).join(' · ')} />
-        <Tile label="This week" value={(myTS ? myTS.total : 0) + ' h'}
+        <Tile tone="blue" icon="⏱" label="This week" value={(myTS ? myTS.total : 0) + ' h'}
           foot={myTS ? <><StatusBadge status={myTS.status} /> <span className="muted">target 40 h</span></> : 'Not started'}
           spark={<Spark data={wk.map((w) => w.v)} color="var(--s1)" />} />
-        <Tile label={'Net pay' + (lastRun ? ' · ' + monthLabel(lastRun.mk) : '')} value={ps ? m(ps.net) : '—'}
+        <Tile tone="violet" icon="₹" label={'Net pay' + (lastRun ? ' · ' + monthLabel(lastRun.mk) : '')} value={ps ? m(ps.net) : '—'}
           foot={ps
             ? <span className="muted">Gross {m(ps.gross)} · {ctry.empTax.split(' ')[0]} {m(ps.statutory.tax)}</span>
             : <span className="muted">No payslip yet</span>} />

@@ -30,12 +30,15 @@ export function Greeting({ name, notes }: { name: string; notes?: ReactNode }) {
   const first = name.trim().split(/\s+/)[0] || name;
 
   return (
-    <div className="greet">
-      <div>
+    <div className="hero">
+      <div style={{ minWidth: 0 }}>
         <div className="hi">{part}, {first}</div>
-        <div className="sub">{DOW[TODAY.getDay()]}, {fmtD(TODAY)}</div>
+        <div className="sub">
+          Here&rsquo;s what&rsquo;s happening at {ORG.name} today · {DOW[TODAY.getDay()]}, {fmtD(TODAY)}
+        </div>
+        {notes && <div className="hero-notes">{notes}</div>}
       </div>
-      {notes && <div className="greet-notes">{notes}</div>}
+      <div className="quote">&ldquo;Great organisations are built by great people.&rdquo;</div>
     </div>
   );
 }

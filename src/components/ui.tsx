@@ -66,12 +66,17 @@ export function Card({
 
 /* ---------- Stat tile ---------- */
 
+/** The five tinted variants. Plain stays the default, so nothing changes by accident. */
+export type TileTone = 'blue' | 'green' | 'amber' | 'rose' | 'violet';
+
 export function Tile({
   label,
   value,
   foot,
   trend,
   spark,
+  tone,
+  icon,
 }: {
   label: ReactNode;
   value: ReactNode;
@@ -79,9 +84,16 @@ export function Tile({
   /** Colours the footer figure green when rising, red when falling. */
   trend?: 'up' | 'down';
   spark?: ReactNode;
+  /**
+   * Tints the card. A tone carries no meaning on its own — it groups a row of
+   * figures visually — so it never replaces a label or a status badge.
+   */
+  tone?: TileTone;
+  icon?: ReactNode;
 }) {
   return (
-    <div className="tile">
+    <div className={'tile' + (tone ? ' t-' + tone : '')}>
+      {icon && <div className="tile-ic" aria-hidden="true">{icon}</div>}
       <div className="lbl">{label}</div>
       <div className="val">{value}</div>
       {foot && <div className="foot">{trend ? <span className={trend}>{foot}</span> : foot}</div>}

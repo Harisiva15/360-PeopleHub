@@ -30,6 +30,30 @@
   --good-text:#006300;
   --good-wash:#e6f5e6; --warn-wash:#fdf3dd; --crit-wash:#fbe9e9; --info-wash:#eaf2fd;
 
+  /*
+   * The navigation rail is its own surface, not a lighter version of the page.
+   * A dark rail against a light page gives the layout a spine — the eye knows
+   * where the app is and where the work is without a border having to say so.
+   */
+  --rail:#182338;
+  --rail-2:#1f2c45;
+  --rail-ink:#c8d2e4;
+  --rail-ink-dim:#8494ad;
+  /* Not the brand blue: white on #2a78d6 is 4.42, and the nav label is 13.5px
+     so it needs 4.5. This is the nearest blue that carries white legibly. */
+  --rail-on:#2872cc;
+
+  /*
+   * Tinted stat cards. Each is a wash with matching ink, so the figure on it
+   * keeps its contrast — a pastel card with default-grey text is the usual way
+   * this pattern goes wrong.
+   */
+  --t-blue:#eef4fe;   --t-blue-ink:#1d5fb0;
+  --t-green:#e9f7f0;  --t-green-ink:#0e7a52;
+  --t-amber:#fdf4e3;  --t-amber-ink:#96660b;
+  --t-rose:#fdeeee;   --t-rose-ink:#b03434;
+  --t-violet:#f1eefc; --t-violet-ink:#5342a8;
+
   --grid:#e1e0d9; --axis:#c3c2b7;
   --ring:rgba(11,11,11,.08);
 
@@ -82,6 +106,18 @@ html[data-theme="dark"]{
   --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
   --good-text:#0ca30c;
   --good-wash:#122a12; --warn-wash:#332711; --crit-wash:#331616; --info-wash:#16283f;
+  --rail:#121a29;
+  --rail-2:#1b2537;
+  --rail-ink:#c8d2e4;
+  --rail-ink-dim:#7e8da5;
+  --rail-on:#3987e5;
+
+  --t-blue:#16283f;   --t-blue-ink:#9cc4f5;
+  --t-green:#102b21;  --t-green-ink:#6fd3aa;
+  --t-amber:#2e2410;  --t-amber-ink:#e6b855;
+  --t-rose:#2f1818;   --t-rose-ink:#f09a9a;
+  --t-violet:#211c3a; --t-violet-ink:#b3a6f0;
+
   --grid:#2c2c2a; --axis:#383835;
   --ring:rgba(255,255,255,.08);
   /* Shadows read as depth on a light plane and as absence on a dark one, so
@@ -121,37 +157,39 @@ a{color:var(--brand);text-decoration:none}
 /* ---------- App frame ---------- */
 #app{display:flex;min-height:100vh}
 .sidebar{
-  width:var(--nav-w);flex:0 0 var(--nav-w);background:var(--surface);
-  border-right:1px solid var(--line);display:flex;flex-direction:column;
-  position:sticky;top:0;height:100vh;z-index:40;
+  width:var(--nav-w);flex:0 0 var(--nav-w);background:var(--rail);
+  border-right:1px solid transparent;display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;z-index:40;color:var(--rail-ink);
 }
-.brand{padding:17px var(--sp-3) 15px;border-bottom:1px solid var(--line)}
+/* The logo is supplied light-on-dark, so the rail carries it unaltered. */
+.brand{padding:17px var(--sp-3) 15px;border-bottom:1px solid rgba(255,255,255,.07)}
 .brand img{display:block;width:100%;max-width:194px;height:auto}
-.brand .cap{display:block;font-size:10.5px;color:var(--ink-3);font-weight:650;letter-spacing:.05em;margin-top:7px;text-transform:uppercase}
+.brand .cap{display:block;font-size:10.5px;color:var(--rail-ink-dim);font-weight:600;letter-spacing:.05em;margin-top:7px;text-transform:uppercase}
 .nav{flex:1;overflow-y:auto;padding:10px 10px 20px}
 .nav-group{margin-top:12px}
 .nav-group{margin-top:var(--sp-3)}
 .nav-group>h6{
   margin:0 0 7px;padding:0 11px;font-size:10px;font-weight:600;letter-spacing:.11em;
-  text-transform:uppercase;color:var(--ink-3);
+  text-transform:uppercase;color:var(--rail-ink-dim);
 }
 .nav a{
-  display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:9px;
-  color:var(--ink-2);font-weight:500;font-size:13.5px;margin-bottom:1px;cursor:pointer;
+  display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:10px;
+  color:var(--rail-ink);font-weight:500;font-size:13.5px;margin-bottom:2px;cursor:pointer;
   border:1px solid transparent;
   transition:background .13s ease,color .13s ease;
 }
-.nav a:hover{background:var(--surface-3);color:var(--ink)}
+.nav a:hover{background:var(--rail-2);color:#fff}
 /*
- * The selected item is marked by a rule down its left edge rather than a
- * border all the way round. A boxed item in a list of unboxed ones reads as a
- * button that wandered in; a rule reads as "you are here".
+ * The selected item is a filled pill. On a dark rail a left rule disappears —
+ * there is not enough contrast between rail and rule for an edge to register —
+ * so the marker has to be the whole shape.
  */
 .nav a.on{
-  background:var(--brand-wash);color:var(--brand-ink);font-weight:650;
-  border-color:transparent;box-shadow:inset 2.5px 0 0 var(--brand);
+  background:var(--rail-on);color:#fff;font-weight:600;border-color:transparent;
+  box-shadow:0 2px 8px color-mix(in srgb,var(--rail-on) 45%,transparent);
 }
-.nav a .ic{width:18px;text-align:center;font-size:15px;opacity:.95}
+.nav a .ic{width:18px;text-align:center;font-size:15px;opacity:.85}
+.nav a.on .ic,.nav a:hover .ic{opacity:1}
 .nav a .pill{margin-left:auto;background:var(--crit);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px}
 .nav a.on .pill{background:var(--brand)}
 
@@ -343,6 +381,69 @@ textarea.input{min-height:80px;resize:vertical}
 .tile .up{color:var(--good-text);font-weight:650}
 .tile .down{color:var(--crit);font-weight:650}
 .tile .spark{position:absolute;right:10px;bottom:8px;opacity:.9}
+
+/*
+ * Tinted variants.
+ *
+ * The wash is the card and the ink is the figure on it; both move together so
+ * the number keeps its contrast. A pastel card with default-grey text is the
+ * usual way this pattern goes wrong — every one of these pairs is at least
+ * 4.5 against its own background.
+ *
+ * The border is a tint of the same hue rather than the neutral line, because a
+ * grey edge on a coloured card reads as a mistake.
+ */
+.tile.t-blue{background:var(--t-blue);border-color:color-mix(in srgb,var(--t-blue-ink) 16%,transparent)}
+.tile.t-green{background:var(--t-green);border-color:color-mix(in srgb,var(--t-green-ink) 16%,transparent)}
+.tile.t-amber{background:var(--t-amber);border-color:color-mix(in srgb,var(--t-amber-ink) 16%,transparent)}
+.tile.t-rose{background:var(--t-rose);border-color:color-mix(in srgb,var(--t-rose-ink) 16%,transparent)}
+.tile.t-violet{background:var(--t-violet);border-color:color-mix(in srgb,var(--t-violet-ink) 16%,transparent)}
+
+.tile.t-blue .val{color:var(--t-blue-ink)}
+.tile.t-green .val{color:var(--t-green-ink)}
+.tile.t-amber .val{color:var(--t-amber-ink)}
+.tile.t-rose .val{color:var(--t-rose-ink)}
+.tile.t-violet .val{color:var(--t-violet-ink)}
+
+/* The label and footer stay in ink, not the tone — three weights of the same
+   hue on one card is where a tinted card starts to look like a warning. */
+.tile.t-blue .lbl,.tile.t-green .lbl,.tile.t-amber .lbl,
+.tile.t-rose .lbl,.tile.t-violet .lbl{color:var(--ink-2);opacity:.8}
+
+/* The icon sits top-right, as a soft plate rather than a floating glyph. */
+.tile-ic{
+  position:absolute;top:14px;right:14px;width:38px;height:38px;border-radius:11px;
+  display:grid;place-items:center;font-size:18px;line-height:1;
+  background:color-mix(in srgb,var(--surface) 70%,transparent);
+}
+.tile.t-blue .tile-ic{background:color-mix(in srgb,var(--t-blue-ink) 12%,transparent)}
+.tile.t-green .tile-ic{background:color-mix(in srgb,var(--t-green-ink) 12%,transparent)}
+.tile.t-amber .tile-ic{background:color-mix(in srgb,var(--t-amber-ink) 12%,transparent)}
+.tile.t-rose .tile-ic{background:color-mix(in srgb,var(--t-rose-ink) 12%,transparent)}
+.tile.t-violet .tile-ic{background:color-mix(in srgb,var(--t-violet-ink) 12%,transparent)}
+/* With an icon in the corner, the label needs room not to run under it. */
+.tile-ic ~ .lbl{padding-right:46px}
+
+/* ---------- Dashboard hero ---------- */
+.hero{
+  position:relative;overflow:hidden;border-radius:var(--r-lg);
+  background:linear-gradient(115deg,var(--brand-wash) 0%,color-mix(in srgb,var(--t-violet) 70%,var(--brand-wash)) 100%);
+  border:1px solid color-mix(in srgb,var(--brand) 12%,transparent);
+  padding:26px var(--sp-4);
+  display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);flex-wrap:wrap;
+}
+.hero .hi{font-size:26px;font-weight:700;letter-spacing:-.7px;line-height:1.12;color:var(--brand-ink)}
+.hero .sub{font-size:13.5px;color:var(--ink-2);margin-top:6px}
+.hero .quote{
+  font-size:13.5px;font-style:italic;color:var(--ink-2);max-width:280px;text-align:right;
+  line-height:1.5;
+}
+.hero-notes{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+@media (max-width:860px){
+  .hero{padding:20px var(--sp-3)}
+  .hero .hi{font-size:21px}
+  .hero .quote{text-align:left;max-width:none}
+}
 
 /* ---------- Badges ---------- */
 .badge{
