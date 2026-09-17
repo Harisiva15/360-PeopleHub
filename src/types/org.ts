@@ -8,6 +8,11 @@ export interface Site {
   addr: string;
   /** WFH and client sites are ways of working, not buildings. */
   remote: boolean;
+  /** Fence centre. Null for a remote mode, or an office not yet fenced. */
+  lat: number | null;
+  lng: number | null;
+  /** Fence radius in metres; null means unfenced. */
+  radius: number | null;
   /** Monthly professional tax for the site's state (India only). */
   ptax: number;
   tz: string;

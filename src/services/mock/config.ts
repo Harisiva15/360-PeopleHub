@@ -17,6 +17,25 @@ export const configService: ConfigService = {
   sites() { return ok(SITES.slice()); },
   holidays() { return ok(HOLIDAYS.slice()); },
 
+  updateFence(siteId, patch) {
+    const site = SITES.find((s) => s.id === siteId);
+    if (!site) return Promise.reject(new Error('No such site: ' + siteId));
+    if (site.remote) return Promise.reject(new Error('A remote work mode cannot be fenced'));
+    if (!Number.isFinite(patch.lat) || !Number.isFinite(patch.lng)) {
+      return Promise.reject(new Error('A fence needs a latitude and a longitude'));
+    }
+    if (Math.abs(patch.lat) > 90 || Math.abs(patch.lng) > 180) {
+      return Promise.reject(new Error('That is not a point on the earth'));
+    }
+    if (patch.radius <= 0) {
+      return Promise.reject(new Error('The fence radius must be greater than zero'));
+    }
+    site.lat = patch.lat;
+    site.lng = patch.lng;
+    site.radius = patch.radius;
+    return ok(site);
+  },
+
   setLeaveQuota(typeId, quota) {
     if (quota < 0) return Promise.reject(new Error('A leave quota cannot be negative'));
     const t = ltOf(typeId);

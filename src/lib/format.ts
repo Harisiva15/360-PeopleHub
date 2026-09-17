@@ -26,6 +26,22 @@ export const initials = (n: string): string =>
 export const AVCOL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7', '#e34948', '#008300', '#1c5cab', '#d55181'];
 
 /** Stable avatar colour — same name always gets the same swatch. */
+/**
+ * Haversine distance in metres — backs the attendance geo-fence check.
+ *
+ * The browser's copy is for showing the employee where they stand before they
+ * punch. The server computes its own from the same coordinates and that one
+ * decides; these two agreeing is a convenience, not a guarantee.
+ */
+export function distM(a: number, b: number, c: number, d: number): number {
+  const R = 6371000;
+  const t = Math.PI / 180;
+  const dLat = (c - a) * t;
+  const dLon = (d - b) * t;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a * t) * Math.cos(c * t) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(x)));
+}
+
 export function avColor(s: string): string {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;

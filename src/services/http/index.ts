@@ -63,10 +63,10 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.get(`/attendance/${empId}/regularisable${qs({ since })}`),
       punchIn: (empId, date, at) =>
         api.post(`/attendance/${empId}/${date}/punch-in`,
-          { site: at.site, src: at.src, at: at.at }),
+          { site: at.site, lat: at.lat, lng: at.lng, src: at.src, at: at.at }),
       punchOut: (empId, date, at) =>
         api.post(`/attendance/${empId}/${date}/punch-out`,
-          { site: at.site, src: at.src, at: at.at }),
+          { site: at.site, lat: at.lat, lng: at.lng, src: at.src, at: at.at }),
       raiseRegularisation: (empId, date, inT, outT, reason) =>
         api.post(`/attendance/${empId}/${date}/regularise`, { inT, outT, reason }),
       actOnRegularisation: (empId, date, decision) =>

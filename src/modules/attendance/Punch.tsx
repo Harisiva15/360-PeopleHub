@@ -1,15 +1,19 @@
 /**
  * The punch card.
  *
- * This used to ask the browser for a GPS fix on every punch, measure it
- * against the site's fence, and send the verdict along. None of that is here
- * any more: a punch records when you started, when you stopped, and the work
- * mode you chose. `navigator.geolocation` is not called at all, so nobody sees
- * a permission prompt and there is no coordinate to store, leak or subpoena.
+ * A punch carries three things: the time, the work mode, and — since the
+ * fence came back — where the device says it is.
  *
- * The work mode survives because it is a different kind of fact. "I am working
- * from home today" is something the employee states, and it is what the WFH
- * figures have always been counted from — it was never the fence that knew.
+ * **The verdict is not sent.** The coordinates go to the server and it decides
+ * whether they fall inside the site's fence. This screen computes the same
+ * distance only to tell the employee where they stand *before* they punch; the
+ * two agreeing is a convenience, not a guarantee, and if they ever disagree the
+ * server is right.
+ *
+ * **A refused or unavailable fix is not a failure.** The punch goes through
+ * with no coordinates, and the server records `geoOk: null` — nothing to
+ * measure against. Blocking the punch would mean an employee whose phone
+ * cannot see the sky does not get paid.
  */
 
 import { useEffect, useState } from 'react';
@@ -19,6 +23,41 @@ import { KV } from '../../components/ui';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { useDay, usePeople, usePunchIn, usePunchOut } from './data';
+
+/** Where the device thinks it is, or null if it will not say. */
+interface Fix { lat: number; lng: number; acc: number }
+
+/**
+ * Ask the browser for a fix, giving up after a few seconds.
+ *
+ * Resolves to null rather than rejecting on refusal or timeout: not knowing
+ * where somebody is is a normal outcome here, not an error.
+ */
+function locate(): Promise<Fix | null> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    let settled = false;
+    const done = (v: Fix | null) => { if (!settled) { settled = true; resolve(v); } };
+    const timer = setTimeout(() => done(null), 6000);
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (p) => {
+          clearTimeout(timer);
+          done({
+            lat: +p.coords.latitude.toFixed(6),
+            lng: +p.coords.longitude.toFixed(6),
+            acc: Math.round(p.coords.accuracy),
+          });
+        },
+        () => { clearTimeout(timer); done(null); },
+        { enableHighAccuracy: true, timeout: 5500, maximumAge: 30000 },
+      );
+    } catch {
+      clearTimeout(timer);
+      done(null);
+    }
+  });
+}
 
 const nowHM = () => {
   const d = new Date();
@@ -64,7 +103,17 @@ export function PunchWidget({ empId }: { empId: string }) {
 
   const doPunch = async (kind: 'in' | 'out') => {
     const ds = ymd(TODAY);
-    const at = { site: activeMode, src: 'Web', at: nowHM() };
+    const site = siteOf(activeMode);
+    if (!site.remote) app.toast('Checking your location…');
+
+    const fix = site.remote ? null : await locate();
+    const at = {
+      site: activeMode,
+      lat: fix?.lat ?? null,
+      lng: fix?.lng ?? null,
+      src: 'Web',
+      at: nowHM(),
+    };
     const r = kind === 'in'
       ? await punchIn.mutate(empId, ds, at)
       : await punchOut.mutate(empId, ds, at);
@@ -80,6 +129,11 @@ export function PunchWidget({ empId }: { empId: string }) {
           ['Worked', r.mins ? hhmm(r.mins) + ' h' : '—'],
           ['Work mode', siteOf(r.site).name],
           ['Shift', self.byId(empId)?.shift ?? '—'],
+          ['Location', r.geoOk === null
+            ? (fix ? 'Recorded — this work mode is not fenced' : 'Not available')
+            : r.geoOk
+              ? `Inside the fence · ${r.dist} m from ${siteOf(r.site).name}`
+              : `Outside the fence · ${r.dist} m from ${siteOf(r.site).name}`],
           ...(r.late ? [['Marked late', 'Beyond the shift grace period'] as [string, string]] : []),
         ]} />
       ),
@@ -142,7 +196,13 @@ export function PunchWidget({ empId }: { empId: string }) {
         )}
       </div>
 
-      {rec?.late && (
+      {rec?.geoOk === false && (
+        <div style={{ marginTop: 11, background: 'rgba(255,255,255,.16)', padding: '8px 11px', borderRadius: 9, fontSize: 12.5 }}>
+          ⚠ Today&rsquo;s punch was {rec.dist} m from {siteOf(rec.site).name} — outside the fence,
+          flagged for your manager. You can raise a regularisation from the Regularisation tab.
+        </div>
+      )}
+      {rec?.late && rec?.geoOk !== false && (
         <div style={{ marginTop: 11, background: 'rgba(255,255,255,.16)', padding: '8px 11px', borderRadius: 9, fontSize: 12.5 }}>
           ⚠ Today&rsquo;s punch was after the shift grace period.
         </div>

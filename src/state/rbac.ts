@@ -2,24 +2,59 @@ import { ACTIVE, DEMO_EMP, DEMO_MGR, EMAP, HRHEAD, teamOf } from '../data/employ
 import { apiConfigured } from '../services/http';
 import type { AppRole, Employee } from '../types/employee';
 
-/** Routes each role may reach. The nav and the router both gate on this. */
+/**
+ * What each of the three roles may reach.
+ *
+ * The shape is deliberately a ladder: everything an employee can do, a manager
+ * can do, and everything a manager can do, an admin can do. A role that could
+ * reach something its senior could not would be a permission nobody can reason
+ * about during an incident.
+ *
+ * **Admin** — the whole product. Creates and modifies people, runs payroll,
+ * configures the tenant, reads every report.
+ *
+ * **Manager** — their own reporting tree. Raises a joining request for a new
+ * hire (an admin approves it), approves leave, timesheets and expenses, and
+ * reads the recruitment and people trackers. Deliberately without `settings`
+ * and `security`: tenant configuration and the audit log are not a team-level
+ * concern.
+ *
+ * **Employee** — self-service. Their dashboard, attendance, timesheet,
+ * payslip, the org chart and the kit issued to them.
+ *
+ * Two things sit in the employee list that were not asked for, because the
+ * modules above them do not work otherwise: `leave`, since a manager
+ * approving leave requires somebody to have raised it, and `announcements`,
+ * since an announcement nobody can read is not an announcement. Say the word
+ * and either comes out.
+ */
 export const PERMS: Record<AppRole, string[]> = {
-  admin: [
-    'dashboard', 'attendance', 'shifts', 'timesheet', 'leave', 'expenses', 'approvals', 'employees', 'org',
-    'celebrations', 'announcements', 'helpdesk', 'engagement', 'payroll', 'tax', 'benefits', 'hiring',
-    'onboarding', 'performance', 'learning', 'exit', 'reports', 'documents', 'settings', 'assets', 'security',
-    'whatsapp', 'clients', 'requirements', 'bench', 'placements', 'billing', 'vendors', 'exec',
-  ],
-  manager: [
-    'dashboard', 'attendance', 'shifts', 'timesheet', 'leave', 'expenses', 'approvals', 'employees', 'org',
-    'celebrations', 'announcements', 'helpdesk', 'engagement', 'payroll', 'tax', 'benefits', 'hiring',
-    'onboarding', 'performance', 'learning', 'exit', 'reports', 'documents', 'assets', 'whatsapp', 'clients',
-    'requirements', 'bench', 'placements', 'vendors',
-  ],
+  /* Self-service. The floor of the ladder. */
   employee: [
-    'dashboard', 'attendance', 'shifts', 'timesheet', 'leave', 'expenses', 'employees', 'org', 'celebrations',
-    'announcements', 'helpdesk', 'engagement', 'payroll', 'tax', 'benefits', 'performance', 'learning', 'exit',
-    'documents', 'assets', 'whatsapp',
+    'dashboard', 'attendance', 'timesheet', 'leave', 'payroll', 'org', 'employees',
+    'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
+    'expenses', 'learning', 'performance', 'tax',
+  ],
+
+  /* Everything above, plus the team. */
+  manager: [
+    'dashboard', 'attendance', 'timesheet', 'leave', 'payroll', 'org', 'employees',
+    'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
+    'expenses', 'learning', 'performance', 'tax',
+    // The team-level additions.
+    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'shifts',
+    'whatsapp', 'clients', 'requirements', 'bench', 'placements', 'vendors',
+  ],
+
+  /* Everything above, plus the tenant. */
+  admin: [
+    'dashboard', 'attendance', 'timesheet', 'leave', 'payroll', 'org', 'employees',
+    'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
+    'expenses', 'learning', 'performance', 'tax',
+    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'shifts',
+    'whatsapp', 'clients', 'requirements', 'bench', 'placements', 'vendors',
+    // The tenant-level additions.
+    'settings', 'security', 'billing', 'exec',
   ],
 };
 
@@ -32,15 +67,16 @@ export interface ScopeInfo {
 export const SCOPE: Record<AppRole, ScopeInfo> = {
   admin: {
     label: 'Organisation-wide',
-    desc: 'Full access to every employee record, payroll run and configuration.',
+    desc: 'Creates and modifies people, runs payroll, configures the tenant and reads every report.',
   },
   manager: {
     label: 'My team',
-    desc: 'Access limited to your reporting tree — approvals, attendance and hiring for your team.',
+    desc: 'Raises joining requests, approves leave, timesheets and expenses, and reads the trackers — '
+      + 'all within your reporting tree.',
   },
   employee: {
     label: 'Myself',
-    desc: 'Self-service access to your own attendance, timesheets, leave and payslips.',
+    desc: 'Your dashboard, attendance, timesheet, payslip, the org chart and your own kit.',
   },
 };
 

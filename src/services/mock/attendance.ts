@@ -2,6 +2,8 @@ import { TODAY, ymd } from '../../lib/dates';
 import { ATT, ATT_IDX, attOf } from '../../data/attendance';
 import type { AttRecord } from '../../data/attendance';
 import { EMAP } from '../../data/employees';
+import { siteOf } from '../../data/org';
+import { distM } from '../../lib/format';
 import type { AttendanceService, PunchAt } from '../contracts';
 import { ok } from './util';
 
@@ -26,6 +28,7 @@ function ensure(empId: string, date: string, status: AttRecord['status']): AttRe
     empId, date, status,
     inT: null, outT: null, mins: 0,
     site: e?.site ?? 'CHN',
+    lat: null, lng: null, dist: null, geoOk: null,
     src: 'Web', late: false, reg: null, notes: '',
   };
   ATT.push(row);
@@ -38,6 +41,23 @@ function applyMode(r: AttRecord, at: PunchAt): void {
   r.site = at.site;
   r.src = at.src;
   r.status = at.site === 'WFH' ? 'W' : 'P';
+  r.lat = at.lat;
+  r.lng = at.lng;
+
+  /*
+   * The mock measures the fence too, so the demo behaves like the product.
+   * A remote mode is never fenced — WFH and CLIENT are not places the company
+   * has a perimeter for — which is why geoOk stays null rather than true.
+   */
+  const site = siteOf(at.site);
+  if (site.remote || site.lat == null || !site.radius || at.lat == null || at.lng == null) {
+    r.dist = null;
+    r.geoOk = null;
+  } else {
+    r.dist = distM(site.lat, site.lng!, at.lat, at.lng);
+    r.geoOk = r.dist <= site.radius;
+    if (!r.geoOk) r.notes = 'Outside the geo-fence — flagged for review';
+  }
 }
 
 export const attendanceService: AttendanceService = {
@@ -61,7 +81,8 @@ export const attendanceService: AttendanceService = {
     const rows = Object.values(ATT_IDX[empId] || {}).filter(
       (r) =>
         r.date >= since &&
-        (r.status === 'A' || (!r.inT && (r.status === 'P' || r.status === 'W'))),
+        (r.status === 'A' || (!r.inT && (r.status === 'P' || r.status === 'W'))
+          || r.geoOk === false),
     );
     return ok(rows);
   },

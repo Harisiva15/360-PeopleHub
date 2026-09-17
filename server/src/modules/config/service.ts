@@ -6,11 +6,10 @@
  * of write that looks like a settings change and behaves like a bulk update,
  * so it happens in one transaction and reports what it touched.
  *
- * There is no site write. A site used to own a geo-fence and a default shift
- * that was pushed to everyone based there; 0016 removed the fence, and since
- * 0015 the shift is a regional tag on the employee — pushing a site shift would
- * now overwrite the US-shift people sitting in the Chennai office. So a site is
- * a label here: a name, a city, an address, a timezone.
+ * The one site write is the geo-fence, restored with 0018. It sets a centre
+ * and a radius and nothing else — the old version also pushed the site's shift
+ * to everyone based there, which since 0015 would overwrite the US-shift people
+ * sitting in the Chennai office. A fence move is a fence move.
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
@@ -35,6 +34,10 @@ export interface Site {
   addr: string;
   /** WFH and CLIENT are work modes rather than places, and have no address. */
   remote: boolean;
+  lat: number | null;
+  lng: number | null;
+  /** Fence radius in metres; null means the site is not fenced. */
+  radius: number | null;
   tz: string;
   shift: string;
 }
@@ -56,6 +59,9 @@ const toSite = (r: Record<string, unknown>): Site => ({
   country: r.country as string,
   addr: (r.address as string) ?? '',
   remote: REMOTE_MODES.has(r.code as string),
+  lat: r.latitude === null ? null : Number(r.latitude),
+  lng: r.longitude === null ? null : Number(r.longitude),
+  radius: r.fence_radius_m === null ? null : Number(r.fence_radius_m),
   tz: (r.timezone as string) ?? 'Asia/Kolkata',
   shift: (r.shift_code as string) ?? 'GEN',
 });
@@ -64,7 +70,7 @@ export async function listSites(caller: Caller): Promise<Site[]> {
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
       `SELECT s.code, s.name, s.city, s.country, s.address, s.timezone,
-              sh.code AS shift_code
+              s.latitude, s.longitude, s.fence_radius_m, sh.code AS shift_code
          FROM site s
          LEFT JOIN shift sh ON sh.id = s.default_shift_id
         WHERE s.active
@@ -78,6 +84,65 @@ export async function listHolidays(caller: Caller): Promise<Holiday[]> {
     const { rows } = await db.query(
       `SELECT observed_on, name, optional FROM holiday ORDER BY observed_on`);
     return rows.map((r) => ({ d: r.observed_on as string, n: r.name as string, opt: r.optional as boolean }));
+  });
+}
+
+export interface FenceUpdate {
+  lat: number;
+  lng: number;
+  radius: number;
+}
+
+/**
+ * Move a site's geo-fence.
+ *
+ * A zero radius is refused: it would flag every punch at that site as outside
+ * the fence, which reads as a system fault rather than a policy change. A
+ * remote work mode cannot be fenced at all — WFH and CLIENT are not places the
+ * company has a perimeter for.
+ */
+export async function updateFence(
+  caller: Caller,
+  siteCode: string,
+  patch: FenceUpdate,
+): Promise<Site> {
+  if (caller.role !== 'admin') {
+    throw new ConfigError('only an admin may change a fence', 'forbidden');
+  }
+  if (!Number.isFinite(patch.lat) || !Number.isFinite(patch.lng)) {
+    throw new ConfigError('a fence needs a latitude and a longitude', 'invalid');
+  }
+  if (Math.abs(patch.lat) > 90 || Math.abs(patch.lng) > 180) {
+    throw new ConfigError('that is not a point on the earth', 'invalid');
+  }
+  if (!(patch.radius > 0)) {
+    throw new ConfigError('a fence radius must be greater than zero', 'invalid');
+  }
+  if (REMOTE_MODES.has(siteCode)) {
+    throw new ConfigError('a remote work mode cannot be fenced', 'invalid');
+  }
+
+  return withTenant(caller, async (db) => {
+    const updated = await db.query(
+      `UPDATE site SET latitude = $1, longitude = $2, fence_radius_m = $3
+        WHERE code = $4 RETURNING id`,
+      [patch.lat, patch.lng, patch.radius, siteCode]);
+    if (updated.rowCount === 0) throw new ConfigError('no such site', 'not_found');
+
+    await db.query(
+      `INSERT INTO audit_log (category, action, actor_employee_id, actor_label,
+                              subject_table, detail)
+       SELECT 'config', 'fence_moved', $1, COALESCE(e.full_name, 'system'), 'site',
+              jsonb_build_object('site', $2::text, 'radius', $3::text)
+         FROM employee e WHERE e.id = $1`,
+      [caller.employeeId, siteCode, String(patch.radius)]);
+
+    const { rows } = await db.query(
+      `SELECT s.code, s.name, s.city, s.country, s.address, s.timezone,
+              s.latitude, s.longitude, s.fence_radius_m, sh.code AS shift_code
+         FROM site s LEFT JOIN shift sh ON sh.id = s.default_shift_id
+        WHERE s.code = $1`, [siteCode]);
+    return toSite(rows[0]!);
   });
 }
 

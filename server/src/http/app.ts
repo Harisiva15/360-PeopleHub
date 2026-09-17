@@ -25,7 +25,7 @@ import {
   cancelLeave, listLeave, rejectLeave,
 } from '../modules/leave/service.ts';
 import {
-  addHoliday, ConfigError, listHolidays, listSites, setLeaveQuota,
+  addHoliday, ConfigError, listHolidays, listSites, setLeaveQuota, updateFence,
 } from '../modules/config/service.ts';
 import {
   approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
@@ -637,6 +637,12 @@ const routes: Route[] = [
   { method: 'GET', pattern: '/config/holidays', handler: (c) => listHolidays(c) },
   {
     method: 'PUT',
+    pattern: '/config/sites/:code/fence',
+    handler: (c, _r, p, body) =>
+      updateFence(c, p.code!, body as Parameters<typeof updateFence>[2]),
+  },
+  {
+    method: 'PUT',
     pattern: '/config/leave-types/:code/quota',
     handler: (c, _r, p, body) => setLeaveQuota(c, p.code!, (body as { quota: number }).quota),
   },
@@ -826,7 +832,9 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof ConfigError) {
-    const status = error.code === 'forbidden' ? 403 : error.code === 'not_found' ? 404 : 409;
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };
   }
   if (error instanceof LeaveError) {

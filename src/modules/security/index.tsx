@@ -478,7 +478,8 @@ function PrivacyTab() {
 
       <Banner kind="info" icon="ℹ">
         Attendance geo-coordinates are the most sensitive routine collection in this system. They are captured only
-        times and the work mode chosen, retained for 24 months. No location data is collected at any point.
+        times, the work mode chosen, and the coordinates captured at punch — compared against the site's
+        geo-fence, retained for 24 months, and never used for continuous tracking between punches.
       </Banner>
     </div>
   );

@@ -161,12 +161,15 @@ export interface AttendanceQuery {
 }
 
 export interface PunchAt {
-  /**
-   * Work mode: an office site code, or WFH / CLIENT. A category the employee
-   * states, not a place the server measures — attendance stopped recording
-   * coordinates in 0016. WFH records a W day rather than P.
-   */
+  /** Work mode: an office site code, or WFH / CLIENT. WFH records a W day. */
   site: string;
+  /**
+   * Where the device says it is. The server recomputes the distance and the
+   * fence verdict from these — it does not accept either from the client,
+   * because a browser can claim it was inside the fence from anywhere.
+   */
+  lat: number | null;
+  lng: number | null;
   src: string;
   at: string;
 }
@@ -974,18 +977,23 @@ export interface JoinersService {
 
 /* ---------- configuration ---------- */
 
+export interface FenceUpdate {
+  lat: number;
+  lng: number;
+  /** Metres. Zero is refused — it would flag every punch at the site. */
+  radius: number;
+}
+
 /**
  * The settings writes. These are configuration changes with reach: changing an
  * entitlement reprices every open balance, which is exactly why it belongs on
  * a server rather than in a save handler.
- *
- * Sites are read-only. They used to be writable because they owned a geo-fence
- * and a default shift; the fence is gone, and the shift is a regional tag on
- * the employee record.
  */
 export interface ConfigService {
   sites(): Promise<Site[]>;
   holidays(): Promise<Holiday[]>;
+  /** Move a site's geo-fence. Does not touch anyone's shift. */
+  updateFence(siteId: string, patch: FenceUpdate): Promise<Site>;
   /** Sets an entitlement and reprices open balances to match. */
   setLeaveQuota(typeId: string, quota: number): Promise<{ type: string; quota: number; repriced: number }>;
   addHoliday(date: string, name: string, optional: boolean): Promise<Holiday[]>;

@@ -58,15 +58,16 @@ const DEPARTMENTS = [
   ['PROD', 'Product & Design'], ['SALES', 'Sales & Marketing'], ['SUP', 'Customer Support'],
   ['HR', 'Human Resources'], ['FIN', 'Finance & Admin'],
 ];
+// Fence centre and radius in metres. A remote work mode is never fenced.
 const SITES = [
-  ['CHN', 'Chennai HQ', 'Chennai', 'IN'],
-  ['BLR', 'Bengaluru Office', 'Bengaluru', 'IN'],
-  ['HYD', 'Hyderabad Office', 'Hyderabad', 'IN'],
-  ['NJ', 'New Jersey Office', 'Jersey City', 'US'],
-  ['LON', 'London Office', 'London', 'GB'],
-  ['DXB', 'Dubai Office', 'Dubai', 'AE'],
-  ['WFH', 'Work From Home', null, 'IN'],
-  ['CLIENT', 'Client Site', null, 'IN'],
+  ['CHN', 'Chennai HQ', 'Chennai', 'IN', 12.9911, 80.2503, 250],
+  ['BLR', 'Bengaluru Office', 'Bengaluru', 'IN', 12.9352, 77.6245, 220],
+  ['HYD', 'Hyderabad Office', 'Hyderabad', 'IN', 17.4435, 78.3772, 200],
+  ['NJ', 'New Jersey Office', 'Jersey City', 'US', 40.7178, -74.0431, 250],
+  ['LON', 'London Office', 'London', 'GB', 51.5045, -0.0175, 200],
+  ['DXB', 'Dubai Office', 'Dubai', 'AE', 25.0942, 55.1616, 250],
+  ['WFH', 'Work From Home', null, 'IN', null, null, null],
+  ['CLIENT', 'Client Site', null, 'IN', null, null, null],
 ];
 const PROJECTS = [
   ['P-ATLAS', 'Atlas Core Platform', false],
@@ -194,11 +195,16 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, start, end, night, code === 'FLEX']);
   }
-  for (const [code, name, city, country] of SITES) {
-    await q(`INSERT INTO site (tenant_id, code, name, city, country)
-             VALUES ($1,$2,$3,$4,$5)
-             ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
-      [tenant, code, name, city, country]);
+  for (const [code, name, city, country, lat, lng, radius] of SITES) {
+    await q(`INSERT INTO site (tenant_id, code, name, city, country,
+                               latitude, longitude, fence_radius_m)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+             ON CONFLICT (tenant_id, code) DO UPDATE SET
+               name = EXCLUDED.name,
+               latitude = EXCLUDED.latitude,
+               longitude = EXCLUDED.longitude,
+               fence_radius_m = EXCLUDED.fence_radius_m`,
+      [tenant, code, name, city, country, lat, lng, radius]);
   }
   for (const [code, name, billable] of PROJECTS) {
     await q(`INSERT INTO project (tenant_id, code, name, billable)

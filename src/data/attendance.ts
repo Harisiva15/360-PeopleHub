@@ -28,6 +28,12 @@ export interface AttRecord {
   mins: number;
   /** Work mode: an office site code, or WFH / CLIENT. */
   site: string;
+  lat: number | null;
+  lng: number | null;
+  /** Metres from the site centre; null when there was no fence to measure against. */
+  dist: number | null;
+  /** Null means nothing to measure against; false is a real exception. */
+  geoOk: boolean | null;
   src: string;
   late: boolean;
   /** A raised regularisation request, when the day was missed. */
@@ -61,6 +67,10 @@ const jitter = (base: number, m: number): number => base + (rnd() - 0.5) * m;
         outT: null,
         mins: 0,
         site: e.site,
+        lat: null,
+        lng: null,
+        dist: null,
+        geoOk: null,
         src: 'Web',
         late: false,
         reg: null,
