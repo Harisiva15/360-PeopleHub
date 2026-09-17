@@ -60,7 +60,7 @@ export const useCourses = () => useQuery(unbacked((s) => s.learning.courses(), [
 export const useEnrolments = (ids?: string[]) =>
   useQuery(unbacked((s) => s.learning.enrolments(ids), []), [ids ? key(ids) : 'all']);
 export const useTickets = (ids?: string[]) =>
-  useQuery(unbacked((s) => s.helpdesk.tickets(ids), []), [ids ? key(ids) : 'all']);
+  useQuery((s) => s.helpdesk.tickets(ids), [ids ? key(ids) : 'all']);
 export const useSurveys = () => useQuery(unbacked((s) => s.engagement.surveys(), []), []);
 
 export const useAnnouncements = () => useQuery((s) => s.noticeboard.announcements(), []);

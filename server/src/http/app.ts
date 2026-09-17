@@ -52,6 +52,9 @@ import {
   reimburseClaim, rejectClaim, requestAdvance, submitClaim,
 } from '../modules/expenses/service.ts';
 import {
+  comment, HelpdeskError, knowledgeBase, listTickets, raiseTicket, resolveTicket,
+} from '../modules/helpdesk/service.ts';
+import {
   activeLoans, bankBatches, compensation, compliancePayments, currentRun, dailyRates,
   inputsFor, listRuns, PayrollError, payslipFor, payslipHistory, processRun, register,
   salaryStructureOf, totals, totalsFor,
@@ -242,6 +245,36 @@ const routes: Route[] = [
     method: 'GET',
     pattern: '/payroll/payslips/:empId/:mk',
     handler: (c, _r, p) => payslipFor(c, p.empId!, p.mk!),
+  },
+  { method: 'GET', pattern: '/helpdesk/kb', handler: (c) => knowledgeBase(c) },
+  {
+    method: 'GET',
+    pattern: '/helpdesk/tickets',
+    handler: (c, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('empIds');
+      return listTickets(c, ids ? ids.split(',').filter(Boolean) : undefined);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/helpdesk/tickets',
+    handler: (c, _r, _p, body) => raiseTicket(c, (body ?? {}) as Parameters<typeof raiseTicket>[1]),
+  },
+  {
+    method: 'POST',
+    pattern: '/helpdesk/tickets/:id/comments',
+    handler: (c, _r, p, body) => {
+      const b = (body ?? {}) as { text: string; internal?: boolean };
+      return comment(c, p.id!, b.text, Boolean(b.internal));
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/helpdesk/tickets/:id/resolve',
+    handler: (c, _r, p, body) => {
+      const b = (body ?? {}) as { csat?: number };
+      return resolveTicket(c, p.id!, b.csat === undefined ? undefined : Number(b.csat));
+    },
   },
   {
     method: 'GET',
@@ -620,6 +653,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof BadRequest) return { status: 400, message: error.message };
   if (error instanceof AttendanceError) {
     const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof HelpdeskError) {
+    const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };

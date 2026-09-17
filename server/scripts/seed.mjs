@@ -100,6 +100,18 @@ const EXPENSE_CATEGORIES = [
   ['RELOC', 'Relocation', 75000],
   ['FUEL', 'Fuel & Mileage', 6000],
 ];
+// The SLA is copied onto each ticket at creation, so changing one here never
+// retroactively breaches or un-breaches a ticket already raised.
+const TICKET_CATEGORIES = [
+  ['PAY', 'Payroll & Salary', 24, 'FIN'],
+  ['ATT', 'Attendance & Leave', 24, 'HR'],
+  ['IT', 'IT & Systems', 8, 'ENG'],
+  ['DOC', 'Documents & Letters', 48, 'HR'],
+  ['POL', 'Policy Clarification', 48, 'HR'],
+  ['FAC', 'Facilities & Workplace', 24, 'FIN'],
+  ['BEN', 'Insurance & Benefits', 48, 'HR'],
+  ['ONB', 'Onboarding Support', 12, 'HR'],
+];
 const GRADES = [
   ['L1', 'L1 · Associate', 1, 450000, 750000],
   ['L2', 'L2 · Engineer', 2, 750000, 1300000],
@@ -206,6 +218,12 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, cap]);
   }
+  for (const [code, name, sla, team] of TICKET_CATEGORIES) {
+    await q(`INSERT INTO ticket_category (tenant_id, code, name, sla_hours, owning_department_id)
+             VALUES ($1,$2,$3,$4,(SELECT id FROM department WHERE tenant_id=$1 AND code=$5))
+             ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
+      [tenant, code, name, sla, team]);
+  }
   for (const [code, label, rank, min, max] of GRADES) {
     await q(`INSERT INTO grade_band (tenant_id, code, label, rank, min_ctc, max_ctc)
              VALUES ($1,$2,$3,$4,$5,$6)
@@ -218,7 +236,7 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, quota, carry, encash]);
   }
-  created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, ${EXPENSE_CATEGORIES.length} expense categories, `
+  created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, ${EXPENSE_CATEGORIES.length} expense categories, ${TICKET_CATEGORIES.length} ticket categories, `
     + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts`);
 
   /* ---- permissions: admin sees everything, the rest is narrowed later ---- */

@@ -73,6 +73,16 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    helpdesk: {
+      tickets: (empIds) =>
+        api.get(`/helpdesk/tickets${qs({ empIds: empIds?.join(',') })}`),
+      knowledgeBase: () => api.get('/helpdesk/kb'),
+      raise: (t) => api.post('/helpdesk/tickets', t),
+      /* `by` is ignored: the author is the session, not a name in the body. */
+      comment: (id, _by, text) => api.post(`/helpdesk/tickets/${id}/comments`, { text }),
+      resolve: (id, csat) => api.post(`/helpdesk/tickets/${id}/resolve`, { csat }),
+    },
+
     expenses: {
       claims: (q) => api.get(`/expenses/claims${qs({
         empIds: q.empIds?.join(','), status: q.status,
