@@ -4,7 +4,7 @@ import { inr, lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { ORG } from '../../data/org';
 import { comp } from '../../data/salary';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, StatusBadge } from '../../components/common';
 import { BarChart, Donut, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -154,13 +154,13 @@ function TaxMe() {
         Old Regime tax: {inr(oldR.total)} · New Regime tax: {inr(newR.total)} · Declaration status: {d.status}
       </Banner>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Gross annual salary" value={lakh(s.grossA)} foot="Excludes employer PF & gratuity" />
         <Tile label="Total exemptions claimed" value={lakh(t.total + hx)}
           foot={`HRA ${lakh(hx)} + deductions ${lakh(t.total)}`} />
         <Tile label="Estimated annual tax" value={inr(annual)} foot={`${d.regime} Regime incl. 4% cess`} />
         <Tile label="Monthly TDS" value={inr(annual / 12)} foot="Deducted from your salary" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Form 12BB — investment declaration" sub={`${ORG.fy} · ${ORG.ay}`}
@@ -287,12 +287,12 @@ function TaxAll() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Declarations submitted" value={`${submitted} / ${list.length}`} foot={pct(submitted, list.length) + '% completion'} />
         <Tile label="Proofs verified" value={list.filter((r) => r.declaration.status === 'Verified').length} foot="Finance team verification" />
         <Tile label="On New Regime" value={onNew} foot={pct(onNew, list.length) + '% of employees'} />
         <Tile label="Total 80C claimed" value={lakh(sum(list, (r) => r.totals.c80))} foot="Across all employees" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Employee declarations" sub={`${list.length} employees`} flush

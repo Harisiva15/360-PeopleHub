@@ -7,7 +7,7 @@ import { addDays, fmtD, TODAY } from '../../lib/dates';
 import { deptOf } from '../../data/org';
 import type { Employee } from '../../types/employee';
 import type { AppRole } from '../../types/employee';
-import { Badge, Banner, Card, KV, PersonCell, Table, TableWrap, Tile } from '../../components/ui';
+import { Badge, Banner, Card, KV, PersonCell, Table, TableWrap, Tile, StatRow } from '../../components/ui';
 import { Divide } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
@@ -302,7 +302,7 @@ export function UsersTab() {
         <span className="muted" style={{ fontSize: 12.5 }}>{list.length} user accounts</span>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="HR Administrators" value={adminCount(people)} foot="Full system access" />
         <Tile label="Managers" value={managerCount(people)} foot="With at least one direct report" />
         <Tile
@@ -311,7 +311,7 @@ export function UsersTab() {
           foot="Self-service only"
         />
         <Tile label="Total accounts" value={people.length} foot="Single sign-on enabled" />
-      </div>
+      </StatRow>
 
       <Card title="User accounts" sub={`${list.length} active`} flush>
         <div style={{ maxHeight: 600, overflow: 'auto' }}>

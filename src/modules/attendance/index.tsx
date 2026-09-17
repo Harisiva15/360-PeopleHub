@@ -5,7 +5,7 @@ import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import type { AttRecord, Employee } from '../../services';
 import { DEPTS, deptOf, HOLIDAYS, siteOf, SITES } from '../../data/org';
-import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { ListRow, StatusBadge } from '../../components/common';
 import { BarChart, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -123,7 +123,7 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
         <button className="btn" onClick={exportCsv}>⤓ Export</button>
       </div>
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Present days" value={present} foot={`${work.length} working days in month`} />
         <Tile label="Total hours" value={hrs.toFixed(1) + ' h'} foot={`Avg ${avg.toFixed(1)} h / day`} />
         <Tile label="WFH days" value={recs.filter((r) => r.status === 'W').length} foot="Policy: up to 8 / month" />
@@ -132,7 +132,7 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
           foot={`${unapproved} unapproved (LOP)`} />
         <Tile label="Late marks" value={late} trend={late > 3 ? 'down' : undefined}
           foot={late > 3 ? 'Above threshold (3)' : 'Within policy'} />
-      </div>
+      </StatRow>
 
       <div className="grid g-1-2">
         <Card title="Calendar" sub={monthLabelLong(mk)}>
@@ -196,14 +196,14 @@ function AttLive() {
 
   return (
     <div className="stack">
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="In office" value={c.P} foot={pct(c.P, Math.max(1, recs.length - c.H - c.O)) + '% of expected'} />
         <Tile label="Work from home" value={c.W} foot="Declared work mode" />
         <Tile label="On leave" value={c.L} foot="Approved leave today" />
         <Tile label="Absent" value={c.A} foot={`${pendingRegs} regularisation pending`} />
         <Tile label="Late marks" value={lateOnes.length} trend={lateOnes.length ? 'down' : undefined}
           foot={lateOnes.length ? 'Past the shift grace period' : 'Everyone on time'} />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Live attendance board" sub={fmtD(TODAY) + ' · ' + SCOPE[app.role].label} flush
@@ -350,7 +350,7 @@ function AttLog() {
         <button className="btn" onClick={exportCsv}>⤓ Export muster roll</button>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Attendance rate" value={pct(present.length, Math.max(1, work.length)) + '%'}
           foot={`${present.length} of ${work.length} person-days`} />
         <Tile label="Total hours" value={Math.round(sum(recs, (r) => r.mins) / 60).toLocaleString('en-IN') + ' h'}
@@ -358,7 +358,7 @@ function AttLog() {
         <Tile label="WFH share" value={pct(recs.filter((r) => r.status === 'W').length, Math.max(1, present.length)) + '%'}
           foot={`${recs.filter((r) => r.status === 'W').length} WFH days logged`} />
         <Tile label="Late marks" value={recs.filter((r) => r.late).length} foot="Past the shift grace period" />
-      </div>
+      </StatRow>
 
       <Card title="Daily attendance" sub={`${fmtD(from)} – ${fmtD(to)}`}>
         <BarChart labels={trend.map((t) => t.l)} height={210} stacked

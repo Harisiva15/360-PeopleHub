@@ -9,7 +9,7 @@ import type { Placement } from '../../services';
 import {
   useClients, useInvoices, useKpi, usePlacements, useRateCards, useSows, useVisiblePeople,
 } from './data';
-import { Badge, Banner, Card, EmptyState, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, Tabs, Tile, StatRow } from '../../components/ui';
 import { StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, PAL } from '../../components/charts';
 import { registerModule } from '../registry';
@@ -51,7 +51,7 @@ function ClList() {
             ))}>⤓ Export</button>
       </div>
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Active clients" value={act.length} foot={`${CLIENTS.filter((c) => c.status === 'Prospect').length} in pipeline`} />
         <Tile label="Monthly revenue" value={mbS(k.revenueMonthly)} foot="Run rate from active placements" />
         <Tile label="Gross margin" value={k.grossMargin + '%'} foot="Blended across all placements" />
@@ -59,7 +59,7 @@ function ClList() {
         <Tile label="MSAs expiring"
           value={CLIENTS.filter((c) => daysBetween(ymd(TODAY), c.msaExpiry) < 180 && c.msaExpiry > ymd(TODAY)).length}
           foot="Within 180 days" />
-      </div>
+      </StatRow>
 
       <Card title="Client portfolio" sub={`${CLIENTS.length} accounts`} flush>
         <div className="tbl-wrap">
@@ -135,7 +135,7 @@ function ClSow() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Active SOWs" value={activeSows.length} foot={`${SOWS.length} total contracts`} />
         <Tile label="Contract value"
           value={mbS(sumBase(SOWS.filter((s) => s.status !== 'Expired').map((s) => ({ ccy: s.ccy, v: s.value })), (x) => x.v))}
@@ -144,7 +144,7 @@ function ClSow() {
         <Tile label="Avg burn"
           value={Math.round(sum(activeSows, (s) => pct(s.burned, s.value)) / Math.max(1, activeSows.length)) + '%'}
           foot="Value consumed against contract" />
-      </div>
+      </StatRow>
 
       <Card title="Statements of work" sub={`${SOWS.length} contracts`} flush
         actions={<button className="btn sm" onClick={() =>
@@ -301,12 +301,12 @@ function ClRev() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Monthly revenue" value={mbS(k.revenueMonthly)} foot={`From ${k.placements} active placements`} />
         <Tile label="Monthly delivery cost" value={mbS(k.costMonthly)} foot="Consultant pay and vendor cost" />
         <Tile label="Gross margin" value={k.grossMargin + '%'} foot="Target 28%" />
         <Tile label="Revenue per consultant" value={mbS(k.revenueMonthly / Math.max(1, k.placements))} foot="Monthly average" />
-      </div>
+      </StatRow>
 
       <Card title="Invoiced revenue" sub="Last 6 months · ₹ base">
         <BarChart labels={months.map((m) => m.l)} height={220} padLeft={58}

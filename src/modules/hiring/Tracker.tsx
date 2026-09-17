@@ -24,7 +24,7 @@ import { pct } from '../../lib/format';
 import { STAGES } from '../../data/ats';
 import { deptOf, siteOf } from '../../data/org';
 import { downloadCSV } from '../../lib/csv';
-import { Badge, Banner, Card, EmptyState, Seg, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, Seg, Tile, StatRow } from '../../components/ui';
 import { StatusBadge } from '../../components/common';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
@@ -110,7 +110,7 @@ export function TrackerView() {
         <button className="btn" onClick={exportCsv}>⤓ Export</button>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Open job orders" value={open.length}
           foot={`${sum(open, (r) => r.openings - r.filled)} positions to fill`} tone="blue" />
         <Tile label="Submissions" value={sum(list, (r) => r.submissions)}
@@ -120,7 +120,7 @@ export function TrackerView() {
         <Tile label="Submissions per hire" value={avgPerHire === null ? '—' : avgPerHire}
           foot={withHires.length ? `Across ${withHires.length} filled roles` : 'No hires yet'}
           tone="amber" />
-      </div>
+      </StatRow>
 
       {stuck.length > 0 && (
         <Banner kind="warn" icon="🐢"

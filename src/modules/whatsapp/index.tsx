@@ -9,7 +9,7 @@ import {
   WA_ACCOUNT, WA_CAT_BADGE, WA_RULES, WA_STATUS_BADGE, waRender, waTpl,
 } from '../../data/whatsapp';
 import type { WaTemplate } from '../../services';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { BarChart, HBar, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import {
@@ -185,7 +185,7 @@ function WaTemplates() {
 
   return (
     <div className="stack">
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Business number" value={WA_ACCOUNT.number}
           foot={WA_ACCOUNT.verified ? `Verified · quality ${WA_ACCOUNT.quality.toLowerCase()}` : 'Not verified'} />
         <Tile label="Templates live" value={`${k.active} of ${WA_TEMPLATES.length}`}
@@ -193,7 +193,7 @@ function WaTemplates() {
         <Tile label="Opted in" value={k.optInRate + '%'} foot={`${k.optIn} of ${k.workforce} employees`} />
         <Tile label="Delivery rate" value={k.deliveryRate + '%'} foot={`${k.readRate}% read · last 30 days`} />
         <Tile label="Conversation cost" value={mb(Math.round(k.cost))} foot={`${k.sent} messages in 30 days`} />
-      </div>
+      </StatRow>
 
       <Banner kind="info" icon="💬">
         Templates must be approved by Meta before they can be used, and the category decides the rules.{' '}
@@ -365,13 +365,13 @@ function WaLog() {
             ))}>⤓ Export</button>
       </div>
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Messages sent" value={k.sent} foot="Rolling 30 days" />
         <Tile label="Delivered" value={k.deliveryRate + '%'} foot={`${k.delivered} reached the handset`} />
         <Tile label="Read" value={k.readRate + '%'} foot={`${k.read} opened`} />
         <Tile label="Failed" value={k.failed} foot="Escalated to email" />
         <Tile label="Replies received" value={k.replies} foot="Inbound responses to handle" />
-      </div>
+      </StatRow>
 
       <Card title="Daily volume" sub="Last 14 days">
         <BarChart labels={days.map((d) => d.k)} height={170}
@@ -425,13 +425,13 @@ function WaConsentTab() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Opted in" value={`${k.optIn} of ${list.length}`} foot={`${k.optInRate}% reachable on WhatsApp`} />
         <Tile label="Not opted in" value={noOpt.length} foot="Fall back to in-app and email" />
         <Tile label="Number unverified" value={unverified.length} foot="Opted in but never confirmed" />
         <Tile label="Celebration opt-in" value={rows.filter((r) => r.consent.marketing).length}
           foot="Separate consent, as Marketing category" />
-      </div>
+      </StatRow>
 
       <Banner kind="info" icon="🔒">
         Consent is recorded per category and is withdrawable — by the employee in self-service, or by replying STOP.

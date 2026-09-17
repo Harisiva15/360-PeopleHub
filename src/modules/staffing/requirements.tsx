@@ -8,7 +8,7 @@ import { SUB_STAGES, clientOf, conOf, reqOf2, subStage, vendorOf } from '../../d
 import {
   useClients, useKpi, useMoveSubmission, useRequirements, useSubmissions, useVisiblePeople,
 } from './data';
-import { Avatar, Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, Dot } from '../../components/common';
 import { HBar, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -44,7 +44,7 @@ function RqOpen() {
             ))}>⤓ Export</button>
       </div>
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Open requirements" value={list.length} foot={`${k.openPositions} positions to fill`} />
         <Tile label="Fill rate" value={k.fillRate + '%'} foot="Positions filled against received" />
         <Tile label="Submission → interview" value={k.sub2int + '%'} foot="Industry benchmark 22%" />
@@ -52,7 +52,7 @@ function RqOpen() {
         <Tile label="Ageing beyond 30 days"
           value={list.filter((r) => daysBetween(r.receivedOn, ymd(TODAY)) > 30).length}
           foot="Escalate to the account owner" />
-      </div>
+      </StatRow>
 
       <Card title="Open requirements" sub={`${list.length} live roles`} flush>
         <div className="tbl-wrap">
@@ -172,13 +172,13 @@ function RqPipe() {
         })}
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Live submissions" value={subs.length} foot={`${SUBMISSIONS.filter((s) => s.stage === 'rejected').length} rejected`} />
         <Tile label="At client interview" value={subs.filter((s) => s.stage === 'interview').length} foot="Awaiting client feedback" />
         <Tile label="Selected, not started" value={subs.filter((s) => s.stage === 'selected').length} foot="Onboarding in progress" />
         <Tile label="Avg submitted margin" value={(sum(subs, (s) => s.margin) / Math.max(1, subs.length)).toFixed(1) + '%'}
           foot="Across live submissions" />
-      </div>
+      </StatRow>
     </div>
   );
 }
@@ -308,13 +308,13 @@ function RqAna() {
 
   return (
     <div className="stack">
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Submissions" value={k.submissions} foot="All time" />
         <Tile label="Fill rate" value={k.fillRate + '%'} foot="Target 65%" />
         <Tile label="Sub → interview" value={k.sub2int + '%'} foot="Quality of submissions" />
         <Tile label="Interview → place" value={k.int2place + '%'} foot="Closing effectiveness" />
         <Tile label="Avg time to submit" value="2.1 days" foot="Requirement received to first submission" />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Staffing funnel" sub="Requirement to placement"><HBar rows={funnel} /></Card>

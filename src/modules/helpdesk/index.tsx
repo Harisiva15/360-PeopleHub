@@ -7,7 +7,7 @@ import { downloadCSV } from '../../lib/csv';
 import { TICKET_CATS, tCat } from '../../data/helpdesk';
 import type { Ticket } from '../../services';
 import { deptOf } from '../../data/org';
-import { Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, ListRow } from '../../components/common';
 import { BarChart, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -258,14 +258,14 @@ function HdMy() {
         <span className="muted" style={{ fontSize: 12.5 }}>Average first response: 4 h · resolution within SLA 87%</span>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="My tickets" value={mine.length} foot="All time" />
         <Tile label="Open" value={mine.filter((t) => ['Open', 'In Progress'].includes(t.status)).length} foot="Being worked on" />
         <Tile label="Resolved" value={mine.filter((t) => ['Resolved', 'Closed'].includes(t.status)).length} foot="Closed successfully" />
         <Tile label="Avg resolution"
           value={Math.round(sum(resolved, (t) => t.resolutionHrs!) / Math.max(1, resolved.length)) + ' h'}
           foot="For your tickets" />
-      </div>
+      </StatRow>
 
       <Card title="My tickets" sub={`${mine.length} records`} flush>
         <TicketTable list={mine} dir={dir} onOpen={show} />
@@ -307,13 +307,13 @@ function HdQueue() {
 
   return (
     <div className="stack">
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Open tickets" value={open.length} foot={`${all.filter((t) => t.status === 'Open').length} unassigned work`} />
         <Tile label="SLA breached" value={all.filter((t) => t.breached && ['Open', 'In Progress'].includes(t.status)).length} foot="Needs escalation" />
         <Tile label="Resolved this month" value={all.filter((t) => t.resolvedOn && monthKey(t.resolvedOn) === monthKey(TODAY)).length} foot="Closed by the team" />
         <Tile label="Avg resolution" value={Math.round(sum(resolved, (t) => t.resolutionHrs!) / Math.max(1, resolved.length)) + ' h'} foot="Across all categories" />
         <Tile label="CSAT" value={(sum(rated, (t) => t.csat!) / Math.max(1, rated.length)).toFixed(1) + ' / 5'} foot={`${rated.length} rated tickets`} />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Ticket queue" sub={`${list.length} tickets`} flush
@@ -380,12 +380,12 @@ function HdSla() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="SLA compliance" value={pct(withRes.filter((t) => !t.breached).length, Math.max(1, withRes.length)) + '%'} foot="Target 90%" />
         <Tile label="Total tickets" value={all.length} foot="Last 45 days" />
         <Tile label="Reopen rate" value="5%" foot="Tickets reopened after resolution" />
         <Tile label="Self-service deflection" value="23%" foot="Answered by the knowledge base" />
-      </div>
+      </StatRow>
 
       <Card title="Raised vs resolved" sub="Last 6 months">
         <BarChart labels={months.map((m) => m.l)} height={220}

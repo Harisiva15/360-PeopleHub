@@ -7,7 +7,7 @@ import { countryOf, money } from '../../data/countries';
 import { clientOf, conOf, reqOf2, subStage, vendorOf } from '../../data/staffing';
 import type { Vendor } from '../../services';
 import { useConsultants, usePlacements, useSubmissions, useVendors } from './data';
-import { Badge, Banner, Card, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, Tabs, Tile, StatRow } from '../../components/ui';
 import { HBar } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
@@ -47,14 +47,14 @@ function VnList() {
             ))}>⤓ Export</button>
       </div>
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Active vendors" value={act.length} foot={`${VENDORS.length} onboarded in total`} />
         <Tile label="Vendor consultants" value={CONSULTANTS.filter((c) => c.external).length} foot="Currently supplied to us" />
         <Tile label="Vendor placements" value={PLACEMENTS.filter((p) => p.vendorId).length}
           foot={pct(PLACEMENTS.filter((p) => p.vendorId).length, Math.max(1, PLACEMENTS.length)) + '% of all placements'} />
         <Tile label="Average score" value={Math.round(sum(VENDORS, (v) => v.score ?? 0) / Math.max(1, VENDORS.length))} foot="Out of 100" />
         <Tile label="Compliance issues" value={VENDORS.filter((v) => !isCompliant(v)).length} foot="Missing or expired documents" />
-      </div>
+      </StatRow>
 
       <Card title="Vendor register" sub={`${VENDORS.length} partners`} flush>
         <div className="tbl-wrap">
@@ -220,12 +220,12 @@ function VnSub() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Vendor submissions" value={subs.length} foot={pct(subs.length, Math.max(1, SUBMISSIONS.length)) + '% of all submissions'} />
         <Tile label="Vendor placements" value={subs.filter((s) => s.stage === 'placed').length} foot="Converted to billing" />
         <Tile label="Avg vendor margin" value={(sum(subs, (s) => s.margin) / Math.max(1, subs.length)).toFixed(1) + '%'} foot="After vendor markup" />
         <Tile label="Duplicate submissions blocked" value={6} foot="Same consultant from two vendors" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Vendor submissions" sub={`${subs.length} records`} flush>

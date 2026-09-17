@@ -7,7 +7,7 @@ import { downloadCSV } from '../../lib/csv';
 import { courseOf } from '../../data/learning';
 import type { Course, Enrollment } from '../../services';
 import { DEPTS, deptOf } from '../../data/org';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, Divide, ListRow } from '../../components/common';
 import { HBar } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -107,13 +107,13 @@ function LnMy() {
         </Banner>
       )}
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Courses completed" value={done.length} foot={`Out of ${mine.length} enrolled`} />
         <Tile label="Learning hours" value={hrs.toFixed(1) + ' h'} foot="This financial year" />
         <Tile label="Compliance" value={pct(mand.filter((x) => x.status === 'Completed').length, Math.max(1, mand.length)) + '%'}
           foot={`${mand.filter((x) => x.status === 'Completed').length} of ${mand.length} mandatory done`} />
         <Tile label="Learning wallet" value={inr(40000)} foot="Annual entitlement" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="My courses" sub={`${mine.length} enrolled`} flush>
@@ -279,13 +279,13 @@ function LnComp() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Overall compliance" value={Math.round(sum(rows, (r) => r.pct) / Math.max(1, rows.length)) + '%'}
           foot={`Across ${mand.length} mandatory courses`} />
         <Tile label="Fully compliant" value={`${rows.filter((r) => r.pct === 100).length} / ${rows.length}`} foot="All mandatory training done" />
         <Tile label="Not started" value={rows.filter((r) => r.pct === 0).length} foot="Zero mandatory courses completed" />
         <Tile label="Deadline" value="30 Sep 2026" foot={`${daysBetween(ymd(TODAY), COMPLIANCE_DEADLINE)} days remaining`} />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Employees below 100%" sub={`${laggards.length} people`} flush
@@ -366,12 +366,12 @@ function LnTeam() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Learning hours" value={Math.round(sum(rows, (r) => r.hrs)) + ' h'} foot="Completed by the team" />
         <Tile label="Avg per person" value={(sum(rows, (r) => r.hrs) / Math.max(1, rows.length)).toFixed(1) + ' h'} foot="Target 24 h per year" />
         <Tile label="Courses completed" value={sum(rows, (r) => r.done)} foot={`Across ${rows.length} people`} />
         <Tile label="Active learners" value={rows.filter((r) => r.enrolled > 3).length} foot="More than 3 enrolments" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Team learning" sub={`${rows.length} people`} flush

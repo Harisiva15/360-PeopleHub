@@ -5,7 +5,7 @@ import { LETTER_TYPES } from '../../data/letters';
 import { LOAN_TYPES } from '../../data/loans';
 import { ltOf } from '../../data/org';
 import type { AttRecord, Claim, LeaveRequest, Overtime, Timesheet } from '../../services';
-import { Avatar, Badge, Card, EmptyState, PersonCell, Tile } from '../../components/ui';
+import { Avatar, Badge, Card, EmptyState, PersonCell, Tile, StatRow } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { useApp } from '../../state/AppContext';
 import {
@@ -125,12 +125,12 @@ function Approvals() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Total pending" value={pendingTotal ?? 0} foot="Across all approval types" />
         <Tile label="Leave" value={lv.length} foot={`${sum(lv, (l) => l.days)} days requested`} />
         <Tile label="Timesheets" value={ts.length} foot={`${sum(ts, (t) => t.total)} hours to verify`} />
         <Tile label="Regularisations" value={rg.length} foot="Attendance corrections" />
-      </div>
+      </StatRow>
 
       {lv.length > 0 && (
         <Card title="Leave requests" sub={`${lv.length} pending`} flush

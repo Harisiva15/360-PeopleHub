@@ -13,7 +13,7 @@ import { sortBy, sum } from '../../lib/collections';
 import { addDays, fmtD, TODAY, ymd } from '../../lib/dates';
 import { PROJECTS, projOf } from '../../data/org';
 import type { WorkItem } from '../../services';
-import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile, StatRow } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
@@ -395,7 +395,7 @@ function ActionTracker() {
         than a project, which is why they sit outside the board.
       </Banner>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile tone="blue" icon="📋" label="Open" value={open.length} foot="Still to close out" />
         <Tile tone="rose" icon="⚠" label="Overdue" value={overdue.length}
           foot={overdue.length ? 'Past the agreed date' : 'Nothing late'} />
@@ -403,7 +403,7 @@ function ActionTracker() {
           open.filter((a) => a.due && a.due >= ymd(TODAY) && a.due <= ymd(addDays(TODAY, 7))).length
         } foot="Next seven days" />
         <Tile tone="green" icon="✓" label="Closed" value={closed.length} foot="Done" />
-      </div>
+      </StatRow>
 
       <Card title="Open actions" sub={`${open.length} outstanding`} flush
         actions={<button className="btn sm primary" onClick={() => layer.modal({

@@ -14,7 +14,7 @@ import { entitledTo } from '../../data/assetWorkflow';
 
 
 import { deptOf, siteOf } from '../../data/org';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { HBar } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
@@ -38,12 +38,12 @@ function AsMine() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Assets issued to me" value={mine.length} foot={`Across ${uniq(mine.map((a) => a.cat)).length} categories`} />
         <Tile label="Book value held" value={mbS(sum(mine, bookValue))} foot={`Written down from ${mbS(sum(mine, (a) => a.cost!))}`} />
         <Tile label="Out of warranty" value={mine.filter((a) => !inWarranty(a)).length} foot="Raise a helpdesk ticket for issues" />
         <Tile label="Due for refresh" value={mine.filter(assetEol).length} foot="Past the standard refresh cycle" />
-      </div>
+      </StatRow>
 
       <Card title="My assets" sub="You are accountable for these until they are returned to IT" flush>
         {mine.length ? (
@@ -242,13 +242,13 @@ function AsRegister() {
             ))}>⤓ Export</button>
       </div>
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Assets tracked" value={k.total} foot={`${k.assigned} assigned · ${k.stock} in stock`} />
         <Tile label="Gross book cost" value={mbS(k.gross)} foot="Capitalised value at purchase" />
         <Tile label="Net book value" value={mbS(k.net)} foot={`${mbS(k.dep)} depreciated to date`} />
         <Tile label="Out of warranty" value={k.outOfWarranty} foot="Assigned and unsupported" />
         <Tile label="Pending recovery" value={k.recovery} foot="Held by employees who are leaving" />
-      </div>
+      </StatRow>
 
       <Card title="Asset register" sub={`${list.length} of ${ASSETS.length} assets`} flush>
         <div className="tbl-wrap" style={{ maxHeight: 600, overflow: 'auto' }}>
@@ -359,13 +359,13 @@ function AsAlloc() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Employees equipped" value={`${active.length - noLaptop.length} of ${active.length}`}
           foot={pct(active.length - noLaptop.length, active.length) + '% have a company laptop'} />
         <Tile label="Awaiting allocation" value={noLaptop.length} foot="No laptop on the register" />
         <Tile label="Pending recovery" value={rec.length} foot="Held by leavers" />
         <Tile label="Value at risk" value={mbS(sum(rec, bookValue))} foot="Recoverable through F&F" />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Awaiting allocation" sub={`${noLaptop.length} employees without a laptop`} flush

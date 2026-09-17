@@ -12,7 +12,7 @@ import {
   useProcessRun, usePayrollTotalsFor, usePayslipHistory, useRegister, useStructure,
   useTeamTimesheets, useVisiblePeople,
 } from './data';
-import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { ListRow, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, LineChart, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -63,13 +63,13 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
         {cur.count} employees · gross {inr(cur.gross)} · deductions {inr(cur.ded)} · <b>net payable {inr(cur.net)}</b>
       </Banner>
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Net payable" value={lakh(cur.net)} foot={`${monthLabel(CUR_RUN.mk)} · ${cur.count} employees`} />
         <Tile label="Gross earnings" value={lakh(cur.gross)} foot="Before statutory deductions" />
         <Tile label="PF (EE + ER)" value={lakh(cur.pf)} foot="Due to EPFO by 15th" />
         <Tile label="TDS" value={lakh(cur.tds)} foot="Due to IT dept by 7th" />
         <Tile label="LOP days" value={cur.lop} foot="Unapproved absences this month" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Payroll cost trend" sub="Last 8 months · gross vs net">
@@ -285,13 +285,13 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
         </Banner>
       )}
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Employees with inputs" value={withInput.length} foot={`Out of ${list.length} on payroll`} />
         <Tile label="Bonus & incentive" value={inr(tot('bonus') + tot('incentive'))} foot="One-time payments" />
         <Tile label="Arrears" value={inr(tot('arrears'))} foot="Retrospective revisions" />
         <Tile label="Overtime & other" value={inr(tot('other'))} foot="Approved extra hours" />
         <Tile label="Reimbursements" value={inr(tot('reimb'))} foot="Non-taxable, paid with salary" />
-      </div>
+      </StatRow>
 
       <Card title={'Payroll inputs — ' + monthLabelLong(mk)} sub="Anything on top of the standard salary structure" flush>
         <div className="tbl-wrap" style={{ maxHeight: 560, overflow: 'auto' }}>
@@ -402,12 +402,12 @@ function PyBank() {
           : `Payroll is still in draft. Process the run to generate the NEFT advice file for ${curTotals.count} beneficiaries.`}
       </Banner>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Disbursed (8 cycles)" value={lakh(totalPaid)} foot={`${batches.filter((b) => b.status === 'Paid').length} successful batches`} />
         <Tile label="Beneficiaries" value={curTotals.count} foot="Active bank mandates" />
         <Tile label="Failed credits" value={0} foot="Returned by the bank" />
         <Tile label="Avg credit time" value="Same day" foot="NEFT before 4 PM cut-off" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Disbursal history" sub={`${batches.length} batches`} flush>
@@ -471,14 +471,14 @@ function PyComply() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Paid this year" value={inr(sum(rows.filter((c) => c.status === 'Paid'), (c) => c.amount))}
           foot={`${rows.filter((c) => c.status === 'Paid').length} challans filed`} />
         <Tile label="Overdue" value={overdue.length} trend={overdue.length ? 'down' : undefined}
           foot={overdue.length ? inr(sum(overdue, (c) => c.amount)) + ' outstanding' : 'All up to date'} />
         <Tile label="Scheduled" value={scheduled.length} foot="Upcoming remittances" />
         <Tile label="Authorities" value={uniq(rows.map((c) => c.authority)).length} foot="Portals filed against" />
-      </div>
+      </StatRow>
 
       <Card title="Statutory remittances" sub={`${rows.length} entries across ${runs.length} cycles`} flush
         actions={<button className="btn sm" onClick={() =>
@@ -544,12 +544,12 @@ function PyStatutory({ mk, setMk }: { mk: string; setMk: (s: string) => void }) 
         <div className="spacer" />
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="EPF total" value={inr(t.pf)} foot={`ECR due 15 ${MON[+mk.split('-')[1] % 12]}`} />
         <Tile label="ESI total" value={inr(t.esi)} foot={`${esiEligible.length} employees under ₹21,000 gross`} />
         <Tile label="Professional tax" value={inr(t.pt)} foot="State-wise, remitted monthly" />
         <Tile label="TDS (24Q)" value={inr(t.tds)} foot="Quarterly return + Form 16 at year end" />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Provident Fund — EPFO" sub={'Establishment ' + ORG.cin.slice(0, 12)} flush>
@@ -657,7 +657,7 @@ function PyStructures() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Total annual cost" value={mbS(sumBase(everyone, (e) => e.ctc))}
           foot={`${everyone.length} employees across ${uniq(everyone.map((e) => e.country)).length} countries`} />
         <Tile label="Median package (₹ base)" value={mbS(medianBase)} foot="Normalised for comparison" />
@@ -666,7 +666,7 @@ function PyStructures() {
         <Tile label="Avg employer burden"
           value={mbS(sumBase(everyone, (e) => sum(salaryOf.get(e.id)!.salary.benefits, (b) => b.a)) / Math.max(1, everyone.length))}
           foot="Statutory + benefits, per employee" />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="CTC cost by department" sub="Annual">
@@ -805,7 +805,7 @@ function PyMe() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Monthly net (latest)" value={m(e, slips.length ? slips[slips.length - 1].p.net : 0)}
           foot={slips.length ? monthLabelLong(slips[slips.length - 1].r.mk) : '—'} />
         <Tile label="YTD gross" value={mS(e, sum(ytd, (s) => s.p.gross))} foot={`${ytd.length} months this financial year`} />
@@ -813,7 +813,7 @@ function PyMe() {
           value={m(e, sum(ytd, (s) => sum(s.p.ded.filter((d) => TAX_RE.test(d.k)), (d) => d.a)))}
           foot={ct.empTax} />
         <Tile label={ct.wage} value={mS(e, e.ctc)} foot={`${GRADES[e.grade].label} · ${ct.flag} ${e.ccy}`} />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="My payslips" sub={`${slips.length} available`} flush>
@@ -896,12 +896,12 @@ function PyTeamCost() {
         for budget planning.
       </Banner>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Team annual CTC" value={lakh(total)} foot={`${team.length} employees`} />
         <Tile label="Average CTC" value={lakh(total / Math.max(1, team.length))} foot="Per employee" />
         <Tile label="Monthly run rate" value={lakh(total / 12)} foot={monthLabelLong(mk)} />
         <Tile label="Billable coverage" value={billableCoverage + '%'} foot="Last 4 weeks" />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Cost by grade" sub="Annual CTC">

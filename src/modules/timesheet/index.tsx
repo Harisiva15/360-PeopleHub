@@ -5,7 +5,7 @@ import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { deptOf, PROJECTS, projOf, TASK_TYPES } from '../../data/org';
 import type { Timesheet } from '../../services';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, Dot, ListRow, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, LineChart, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -244,13 +244,13 @@ function TsMy({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
         </div>
       </Card>
 
-      <div className="grid g3">
+      <StatRow cols={3}>
         <Tile label="Hours this week" value={total + ' h'} trend={total >= 40 ? 'up' : undefined}
           foot={total >= 40 ? '✓ Target met (40 h)' : `${40 - total} h below target`} />
         <Tile label="Billable" value={billable + ' h'} foot={pct(billable, Math.max(1, total)) + '% of logged time'} />
         <Tile label="Approver" value={approver.name(sheet.approverId)}
           foot={sheet.submittedOn ? 'Submitted ' + fmtD(sheet.submittedOn) : 'Not yet submitted'} />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Split by project" sub="This week">
@@ -357,13 +357,13 @@ function TsTeam({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
         </button>
       </WeekNav>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Submitted" value={`${rows.filter((r) => r.t.status !== 'Draft' && r.t.status !== 'Missing').length} / ${ids.length}`}
           foot={`${missing.length} not started`} />
         <Tile label="Total hours" value={totalH + ' h'} foot={`Expected ${ids.length * 40} h`} />
         <Tile label="Billable" value={billH + ' h'} foot={pct(billH, Math.max(1, totalH)) + '% billable'} />
         <Tile label="Awaiting approval" value={rows.filter((r) => r.t.status === 'Submitted').length} foot="Review in the approvals tab" />
-      </div>
+      </StatRow>
 
       <Card title="Team timesheets" sub={`${fmtD(ws)} week`} flush>
         <div className="tbl-wrap">
@@ -537,12 +537,12 @@ function TsUtil() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Hours logged (8 wks)" value={sum(totals).toLocaleString('en-IN') + ' h'} foot={`Across ${dir.ids.length} employees`} />
         <Tile label="Billable ratio" value={pct(sum(billable), Math.max(1, sum(totals))) + '%'} foot="Target 75%" />
         <Tile label="Avg per person / week" value={(sum(totals) / Math.max(1, dir.ids.length) / 8).toFixed(1) + ' h'} foot="Standard week 40 h" />
         <Tile label="Active projects" value={series.length} foot={`${PROJECTS.filter((p) => p.billable).length} billable in catalogue`} />
-      </div>
+      </StatRow>
 
       <Card title="Effort by project" sub="Hours per week · last 8 weeks">
         <BarChart labels={weeks.map((w) => fmtDS(w))} height={250} stacked series={series} fmt={(v) => v + ' h'} />

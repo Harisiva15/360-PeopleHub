@@ -6,7 +6,7 @@ import { inr, pct } from '../../lib/format';
 
 import type { Onboarding } from '../../services';
 import { deptOf, siteOf } from '../../data/org';
-import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, ListRow, StatusBadge } from '../../components/common';
 import { HBar, PAL, Ring } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -131,12 +131,12 @@ function JourneysView() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Active journeys" value={list.filter((x) => x.status !== 'Completed').length} foot={`${list.length} total this quarter`} />
         <Tile label="Joining this month" value={list.filter((x) => x.doj.slice(0, 7) === monthKey(TODAY)).length} foot="Confirmed start dates" />
         <Tile label="BGV pending" value={list.filter((x) => x.bgv !== 'Clear').length} foot="Background verification open" />
         <Tile label="Avg completion" value={Math.round(sum(list, progressOf) / Math.max(1, list.length)) + '%'} foot="Checklist tasks done" />
-      </div>
+      </StatRow>
 
       <div className="grid g-1-2">
         <Card title="Onboarding journeys" sub={`${list.length} people`} flush>

@@ -7,7 +7,7 @@ import { countryOf, mb, mbS, money, toBase } from '../../data/countries';
 import { benchCost, benchDays, clientOf, conOf, vendorOf } from '../../data/staffing';
 import type { Consultant, Placement } from '../../services';
 import { useBench, useConsultants, useKpi, usePlacements } from './data';
-import { Avatar, Badge, Card, EmptyState, Tabs, Tile } from '../../components/ui';
+import { Avatar, Badge, Card, EmptyState, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, Divide } from '../../components/common';
 import { BarChart, HBar, Legend, LineChart, PAL } from '../../components/charts';
 import { registerModule } from '../registry';
@@ -43,13 +43,13 @@ function BnBench() {
 
   return (
     <div className="stack">
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="On bench" value={list.length} foot={pct(list.length, Math.max(1, CONSULTANTS.length)) + '% of the consultant pool'} />
         <Tile label="Monthly bench cost" value={mbS(k.benchCostMonthly)} foot="Unrecovered delivery cost" />
         <Tile label="Average bench age" value={k.avgBenchDays + ' days'} foot="Target under 30 days" />
         <Tile label="Over 60 days" value={list.filter((c) => benchDays(c) >= 60).length} foot="Escalate for redeployment or exit" />
         <Tile label="Utilisation" value={k.utilisation + '%'} foot="Placed against total pool" />
-      </div>
+      </StatRow>
 
       <Card title="Bench register" sub={`${list.length} consultants available`} flush
         actions={
@@ -137,12 +137,12 @@ function BnAll() {
         </span>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Total consultants" value={CONSULTANTS.length} foot="Internal and vendor supplied" />
         <Tile label="Placed" value={CONSULTANTS.filter((c) => c.status === 'Placed').length} foot="Billing to a client" />
         <Tile label="On bench" value={CONSULTANTS.filter((c) => c.status === 'Bench').length} foot="Available for deployment" />
         <Tile label="Internal projects" value={CONSULTANTS.filter((c) => c.status === 'Internal').length} foot="Non-billable assignment" />
-      </div>
+      </StatRow>
 
       <Card title="Consultant register" sub={`${list.length} records`} flush>
         <div className="tbl-wrap" style={{ maxHeight: 600, overflow: 'auto' }}>
@@ -216,12 +216,12 @@ function BnForecast() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Bench cost this month" value={mbS(k.benchCostMonthly)} foot={`${list.length} consultants unassigned`} />
         <Tile label="Cost to date" value={mbS(sum(list, (c) => toBase(benchCost(c), c.ccy)))} foot="Cumulative for the current bench" />
         <Tile label="Break-even days" value="30 days" foot="Average recovery time once placed" />
         <Tile label="6-month projection" value={mbS(sum(cost))} foot="If placement rate holds" />
-      </div>
+      </StatRow>
 
       <Card title="Bench projection" sub="Next 6 months · headcount and cost">
         <LineChart labels={months.map((m) => m.l)} height={220} area
@@ -328,7 +328,7 @@ function Placements() {
 
   return (
     <div className="stack">
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Active placements" value={k.placements} foot={`${PLACEMENTS.filter((p) => p.status === 'Starting').length} starting soon`} />
         <Tile label="Monthly revenue" value={mbS(k.revenueMonthly)} foot="Billed through placements" />
         <Tile label="Gross margin" value={k.grossMargin + '%'} foot="Blended, target 28%" />
@@ -336,7 +336,7 @@ function Placements() {
           value={PLACEMENTS.filter((p) => ['Active', 'Ending Soon'].includes(p.status) && daysBetween(ymd(TODAY), p.end) <= 60).length}
           foot="Extension conversations due" />
         <Tile label="Below margin floor" value={PLACEMENTS.filter((p) => p.margin < 20).length} foot="Requires delivery-head approval" />
-      </div>
+      </StatRow>
 
       <Card title="Placements" sub={`${list.length} records`} flush
         actions={<button className="btn sm" onClick={() =>

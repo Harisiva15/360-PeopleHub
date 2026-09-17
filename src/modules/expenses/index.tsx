@@ -6,7 +6,7 @@ import { downloadCSV } from '../../lib/csv';
 import { EXP_CATS, expCat } from '../../data/expenses';
 import type { Advance, Claim, ExpItem } from '../../services';
 import { DEPTS, PROJECTS, projOf } from '../../data/org';
-import { Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, Divide } from '../../components/common';
 import { BarChart, HBar } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -294,12 +294,12 @@ function ExMy() {
         </span>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Reimbursed" value={inr(sum(settled, (c) => c.total))} foot={`${settled.length} claims settled`} />
         <Tile label="Awaiting payment" value={inr(sum(pend, (c) => c.total))} foot={`${pend.length} in progress`} />
         <Tile label="Claims raised" value={mine.length} foot="All time" />
         <Tile label="Avg processing" value="4 days" foot="Submission to reimbursement" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="My claims" sub={`${mine.length} total`} flush
@@ -328,14 +328,14 @@ function ExAppr() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Awaiting approval" value={pend.length} foot={inr(sum(pend, (c) => c.total)) + ' total value'} />
         <Tile label="Above policy limit" value={overLimit.length} foot="Need an explicit override" />
         <Tile label="Approved this month"
           value={teamClaims.filter((c) => c.actedOn && monthKey(c.actedOn) === monthKey(TODAY)).length}
           foot="Moving to payroll" />
         <Tile label="Avg claim value" value={inr(sum(pend, (c) => c.total) / Math.max(1, pend.length))} foot="Pending queue" />
-      </div>
+      </StatRow>
 
       <Card title="Claims awaiting your approval" sub={`${pend.length} claims`} flush
         actions={pend.length ? (
@@ -486,14 +486,14 @@ function ExAna() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Total claimed" value={lakh(sum(items, (i) => i.amount))} foot={`${list.length} claims`} />
         <Tile label="Reimbursed" value={lakh(sum(list.filter((c) => c.status === 'Reimbursed'), (c) => c.total))} foot="Settled through payroll" />
         <Tile label="Policy breaches" value={items.filter((i) => i.overLimit).length} foot="Line items above limit" />
         <Tile label="Avg per employee"
           value={inr(sum(items, (i) => i.amount) / Math.max(1, uniq(list.map((c) => c.empId)).length))}
           foot="Among claimants" />
-      </div>
+      </StatRow>
 
       <Card title="Expense trend" sub="Claim value submitted per month">
         <BarChart labels={months.map((m) => m.l)} height={210} padLeft={56}

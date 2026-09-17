@@ -17,7 +17,7 @@ import { tCat } from '../../data/helpdesk';
 
 
 
-import { Badge, Card, EmptyState, KV, Tile } from '../../components/ui';
+import { Badge, Card, EmptyState, KV, Tile, StatRow } from '../../components/ui';
 import { Avatar, PersonCell } from '../../components/ui';
 import { Chip, Dot, Divide, ListRow, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, LineChart, PAL, Ring, Spark } from '../../components/charts';
@@ -125,7 +125,7 @@ function DashAdmin() {
         {pend > 0 && <Badge kind="warn">{pend} awaiting you</Badge>}
       </>} />
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile tone="blue" icon="👥" label="Headcount" value={act.length} trend="up"
           foot={<>▲ {ht.data[7] - ht.data[4]} vs 3 months ago</>}
           spark={<Spark data={ht.data} color="var(--s1)" />} />
@@ -137,7 +137,7 @@ function DashAdmin() {
         <Tile tone="amber" icon="🎯" label="Open positions" value={openings}
           foot={`${openReq.length} live requisitions · ${cands.filter((c) => c.stage === 'offer').length} in offer`} />
         <Tile tone="rose" icon="📉" label="Attrition (12 mo)" value={attrition + '%'} foot={`${exitsYear.length} exits · industry avg 18%`} />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Attendance rate" sub="Present + WFH as % of working days · last 6 months"
@@ -196,7 +196,7 @@ function DashAdmin() {
         </Card>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Goal achievement"
           value={Math.round(sum(goals, (g) => g.progress * g.weight) / Math.max(1, sum(goals, (g) => g.weight))) + '%'}
           foot={`${goals.filter((g) => ['At Risk', 'Behind'].includes(g.status)).length} goals at risk · ${(cycle?.name ?? '').split(' Appraisal')[0]}`} />
@@ -206,7 +206,7 @@ function DashAdmin() {
         <Tile label="Expenses pending"
           value={inr(sum(claims.filter((c) => ['Submitted', 'Approved'].includes(c.status)), (c) => c.total))}
           foot={`${claims.filter((c) => c.status === 'Submitted').length} claims awaiting approval`} />
-      </div>
+      </StatRow>
 
       <div className="grid g3">
         <Card title="Compliance training" sub="Mandatory courses" actions={<GoLink to="learning">Tracker</GoLink>}>
@@ -343,7 +343,7 @@ function DashManager() {
         </Card>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile tone="blue" icon="👥" label="Team size" value={team.length}
           foot={`${team.filter((t) => t.managerId === me.id).length} direct · ${team.length - team.filter((t) => t.managerId === me.id).length} skip-level`} />
         <Tile tone="green" icon="📅" label="Present today" value={at.c.P + at.c.W} foot={`${at.c.W} WFH · ${at.c.L} leave · ${at.c.A} absent`} />
@@ -352,7 +352,7 @@ function DashManager() {
           spark={<Spark data={last4.map((w) => w.hours)} color="var(--s3)" />} />
         <Tile tone="amber" icon="✓" label="Pending approvals" value={awaiting}
           foot={`${pendLeave.length} leave · ${pendTS.length} timesheets · ${pendReg.length} regularisations`} />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Team attendance — today" sub={fmtD(TODAY)} actions={<GoLink to="attendance">Full log</GoLink>} flush>
@@ -496,7 +496,7 @@ function DashEmployee() {
         </Card>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile tone="green" icon="🌴" label="Leave available"
           value={<>{sum(bals, (b) => b.avail).toFixed(1)} <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600 }}>days</span></>}
           foot={bals.map((b) => `${b.type} ${b.avail}`).slice(0, 3).join(' · ')} />
@@ -516,7 +516,7 @@ function DashEmployee() {
           <Tile label="Tax withholding" value={ctry.empTax.split(' ')[0]}
             foot={<span className="muted">{ctry.flag} {ctry.name} · {ctry.fy}</span>} />
         )}
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="My attendance calendar" sub={monthLabelLong(mk)} actions={<GoLink to="attendance">Details</GoLink>}>
@@ -540,14 +540,14 @@ function DashEmployee() {
         </Card>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Goal achievement" value={achv + '%'} foot={`${g.length} goals this cycle`} />
         <Tile label="Open tickets" value={tk.length} foot={tk.length ? tCat(tk[0].cat).n : 'Nothing pending'} />
         <Tile label="Expense pending" value={inr(sum(cl, (c) => c.total))} foot={`${cl.length} claims in progress`} />
         <Tile label="Compliance training" value={`${done} / ${mand.length}`}
           trend={done === mand.length ? 'up' : undefined}
           foot={done === mand.length ? '✓ All done' : 'Due 30 September'} />
-      </div>
+      </StatRow>
 
       <div className="grid g3">
         <Card title="My hours" sub="Last 8 weeks">

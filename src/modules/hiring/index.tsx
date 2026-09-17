@@ -7,7 +7,7 @@ import { reqOf, SOURCES, STAGES } from '../../data/ats';
 import type { Candidate, Interview, Requisition } from '../../services';
 
 import { DEPTS, deptOf, GRADES, siteOf } from '../../data/org';
-import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, Divide, Dot, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -281,14 +281,14 @@ function HrPipeline() {
         })}
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Active candidates" value={cands.length} foot="In pipeline right now" />
         <Tile label="In offer stage" value={cands.filter((c) => c.stage === 'offer').length} foot="Awaiting acceptance" />
         <Tile label="Interviews this week"
           value={INTERVIEWS.filter((i) => i.status === 'Scheduled' && i.date <= ymd(addDays(TODAY, 7))).length}
           foot="Scheduled across panels" />
         <Tile label="Avg time to hire" value="34 days" foot="From application to offer accepted" />
-      </div>
+      </StatRow>
     </div>
   );
 }
@@ -343,7 +343,7 @@ function HrReqs() {
         <button className="btn" onClick={exportCsv}>⤓ Export</button>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Open requisitions" value={open.length} foot={`${sum(open, (r) => r.openings - r.filled)} positions to fill`} />
         <Tile label="Positions filled" value={sum(list, (r) => r.filled)} foot="This hiring cycle" />
         <Tile label="Critical priority" value={list.filter((r) => r.priority === 'Critical' && r.status === 'Open').length}
@@ -351,7 +351,7 @@ function HrReqs() {
         <Tile label="Avg age of requisition"
           value={Math.round(sum(open, (r) => daysBetween(r.openedOn, ymd(TODAY))) / Math.max(1, open.length)) + ' days'}
           foot="Since opened" />
-      </div>
+      </StatRow>
 
       <Card title="Requisitions" sub={`${list.length} total`} flush>
         <div className="tbl-wrap">
@@ -513,14 +513,14 @@ function HrIvs() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Scheduled" value={upcoming.length} foot="Upcoming interviews" />
         <Tile label="This week" value={upcoming.filter((i) => i.date <= ymd(addDays(TODAY, 7))).length} foot="Next 7 days" />
         <Tile label="Completed" value={done.filter((i) => i.status === 'Completed').length} foot="With feedback recorded" />
         <Tile label="Selection rate"
           value={pct(withVerdict.filter((i) => i.verdict!.includes('Hire') && !i.verdict!.includes('No')).length, Math.max(1, withVerdict.length)) + '%'}
           foot="Hire / strong-hire verdicts" />
-      </div>
+      </StatRow>
 
       <Card title="Upcoming interviews" sub={`${upcoming.length} scheduled`} flush>
         {upcoming.length ? (
@@ -568,13 +568,13 @@ function HrOffers() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Awaiting release" value={drafts} foot="Drafted, not yet sent" />
         <Tile label="Accepted" value={list.filter((c) => c.offer!.status === 'Accepted').length}
           foot={pct(list.filter((c) => c.offer!.status === 'Accepted').length, Math.max(1, list.length)) + '% acceptance rate'} />
         <Tile label="In negotiation" value={list.filter((c) => c.offer!.status === 'Negotiating').length} foot="Compensation discussions" />
         <Tile label="Avg offered CTC" value={lakh(sum(list, (c) => c.offer!.ctc) / Math.max(1, list.length))} foot="Across all levels" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Offers" sub={`${list.length} records`} flush
@@ -659,13 +659,13 @@ function HrFunnel() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Total applicants" value={cands.length} foot={`Across ${reqScope(app.role, app.meId, REQS).length} requisitions`} />
         <Tile label="Offer conversion" value={pct(cands.filter((c) => c.offer).length, Math.max(1, cands.length)) + '%'} foot="Applicant → offer" />
         <Tile label="Hired" value={cands.filter((c) => c.stage === 'hired').length} foot="Joined or joining" />
         <Tile label="Rejection rate" value={pct(cands.filter((c) => c.stage === 'rejected').length, Math.max(1, cands.length)) + '%'}
           foot="Screened out at any stage" />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Hiring funnel" sub="Candidates reaching each stage"><HBar rows={cum} /></Card>

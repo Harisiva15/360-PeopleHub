@@ -5,7 +5,7 @@ import { lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { BANKABLE, HOLIDAY_MAP, LEAVE_TYPES, ltOf, ORG } from '../../data/org';
 import type { LeaveRequest } from '../../services';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, Dot, ListRow, StatusBadge } from '../../components/common';
 import { Donut, HBar, Legend } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -182,20 +182,22 @@ function LvMe() {
         <span className="muted" style={{ fontSize: 12.5 }}>Approver: {approver.name(me.managerId)}</span>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         {bals.filter((b) => b.quota + b.carry > 0).slice(0, 4).map((b) => (
-          <div className="tile" key={b.type}>
-            <div className="lbl">{ltOf(b.type).name}</div>
-            <div className="val">
-              {b.avail} <span style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 600 }}>/ {b.quota + b.carry}</span>
-            </div>
-            <div className="foot">{b.used} used{b.carry ? ` · ${b.carry} carried forward` : ''}</div>
+          <Tile key={b.type} label={ltOf(b.type).name}
+            value={<>
+              {b.avail}
+              <span style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 600 }}>
+                {' / ' + (b.quota + b.carry)}
+              </span>
+            </>}
+            foot={`${b.used} used${b.carry ? ` · ${b.carry} carried forward` : ''}`}>
             <div className="bar" style={{ marginTop: 8 }}>
               <i style={{ width: pct(b.used, b.quota + b.carry) + '%', background: ltOf(b.type).color }} />
             </div>
-          </div>
+          </Tile>
         ))}
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="My leave requests" sub={`${mine.length} total`} flush
@@ -401,14 +403,14 @@ function LvTeam() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Leave days taken" value={sum(approved, (l) => l.days)} foot={`Across ${ids.length} employees`} />
         <Tile label="Pending requests" value={rows.filter((l) => l.status === 'Pending').length}
           foot="Awaiting manager action" />
         <Tile label="Avg leave / employee" value={(sum(approved, (l) => l.days) / Math.max(1, ids.length)).toFixed(1) + ' d'}
           foot="Company average" />
         <Tile label="EL encashment liability" value={lakh(liability)} foot="Unused earned leave at current CTC" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="All leave records" sub={`${list.length} requests`} flush

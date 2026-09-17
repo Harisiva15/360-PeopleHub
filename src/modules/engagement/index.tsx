@@ -6,7 +6,7 @@ import { pct } from '../../lib/format';
 
 import type { Survey } from '../../services';
 import { DEPTS, ORG } from '../../data/org';
-import { Badge, Banner, Card, EmptyState, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, ListRow } from '../../components/common';
 import { Donut, HBar, Legend, LineChart, Ring } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -165,13 +165,13 @@ function EnResults() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="eNPS" value={(score > 0 ? '+' : '') + score} trend="up" foot="▲ 9 vs last quarter · benchmark +30" />
         <Tile label="Engagement score" value={(sum(questions, (q) => q.score) / Math.max(1, questions.length)).toFixed(2) + ' / 5'}
           foot={`${pulse.responded} of ${pulse.sent} responded`} />
         <Tile label="Response rate" value={pct(pulse.responded, pulse.sent) + '%'} foot="Target 75%" />
         <Tile label="Lowest driver" value={lowest.toFixed(1)} foot="Career growth clarity — needs action" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Engagement drivers" sub={`Average score out of 5 · ${pulse.name}`}>

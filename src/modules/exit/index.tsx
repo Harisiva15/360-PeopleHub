@@ -9,7 +9,7 @@ import type { ExitRecord } from '../../services';
 
 
 import { DEPTS, deptOf } from '../../data/org';
-import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, Divide, ListRow, StatusBadge } from '../../components/common';
 import { HBar, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -75,7 +75,7 @@ function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
 
   return (
     <div className="stack">
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="In notice period" value={list.filter((x) => x.status === 'Notice Period').length} foot="Serving notice right now" />
         <Tile label="In clearance" value={list.filter((x) => x.status === 'In Clearance').length} foot="Handover and clearance open" />
         <Tile label="Settled" value={list.filter((x) => x.status === 'Settled').length} foot="F&F paid, exit closed" />
@@ -83,7 +83,7 @@ function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
           value={Math.round(sum(list, (x) => x.noticeDays - x.buyout) / Math.max(1, list.length)) + ' days'}
           foot="Against 60-day standard" />
         <Tile label="Regretted exits" value={list.filter((x) => REGRETTED.includes(x.reason)).length} foot="Would have retained" />
-      </div>
+      </StatRow>
 
       {list.length ? (
         <Card title="Exits in progress" sub={`${list.length} employees`} flush
@@ -335,7 +335,7 @@ function XtInterviews() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Interviews completed" value={done.length} foot={`Out of ${EXITS.length} exits`} />
         <Tile label="Would rejoin" value={pct(done.filter((x) => x.interview.wouldRejoin).length, Math.max(1, done.length)) + '%'}
           foot="Boomerang potential" />
@@ -343,7 +343,7 @@ function XtInterviews() {
           value={(sum(done, (x) => x.interview.npsToCompany!) / Math.max(1, done.length)).toFixed(1) + ' / 10'}
           foot="Would recommend as a workplace" />
         <Tile label="Lowest driver" value={lowest?.k || '—'} foot="Most common reason for leaving" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Exit interview feedback" sub={`${done.length} responses`} flush>
@@ -419,14 +419,14 @@ function XtAna() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="12-month attrition" value={rate + '%'} foot="Industry benchmark 18%" />
         <Tile label="Regretted attrition" value={Math.round(rate * 0.6 * 10) / 10 + '%'} foot="High performers who left" />
         <Tile label="Early attrition" value={past.filter((e) => daysBetween(e.doj, e.dol!) < 365).length} foot="Left within the first year" />
         <Tile label="Avg tenure at exit"
           value={(sum(past, (e) => daysBetween(e.doj, e.dol!) / 365) / Math.max(1, past.length)).toFixed(1) + ' yrs'}
           foot="Across all exits" />
-      </div>
+      </StatRow>
 
       <div className="grid g3">
         <Card title="Exits by tenure" sub="When people leave"><HBar rows={byTenure} /></Card>
@@ -501,12 +501,12 @@ function XtMe() {
         {daysBetween(ymd(TODAY), x.lwd)} days of notice remaining · {done} of {x.clearance.length} clearance items complete
       </Banner>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Last working day" value={fmtD(x.lwd)} foot={`${x.noticeDays}-day notice period`} />
         <Tile label="Leave encashment" value={inr(f.encash)} foot={`${f.elDays} earned leave days`} />
         <Tile label="Gratuity" value={inr(f.gratuity)} foot={f.gratuity ? `${f.yrs} years of service` : 'Not eligible'} />
         <Tile label="Estimated F&F" value={inr(f.net)} foot="Paid within 45 days of LWD" />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Your clearance" sub={`${done} of ${x.clearance.length} complete`} flush>

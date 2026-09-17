@@ -10,7 +10,7 @@ import {
 import { AddJoinerForm, JoinerQueue } from './AddJoiner';
 import { useLayer } from '../../components/Layer';
 import { DEPTS, deptOf, GRADES, siteOf, SITES } from '../../data/org';
-import { Avatar, Badge, Card, EmptyState, PersonCell, Tile } from '../../components/ui';
+import { Avatar, Badge, Card, EmptyState, PersonCell, Tile, StatRow } from '../../components/ui';
 import { Chip, StatusBadge } from '../../components/common';
 import { useShowEmployee } from './Profile';
 import { registerModule } from '../registry';
@@ -123,7 +123,7 @@ function Employees() {
 
       {canAddPeople && <JoinerQueue rows={joiners} onDecide={decide} />}
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Employees" value={list.length} foot="Matching current filters" />
         <Tile label="Average tenure"
           value={(sum(list, (e) => daysBetween(e.doj, ymd(TODAY))) / Math.max(1, list.length) / 365).toFixed(1) + ' yrs'}
@@ -132,7 +132,7 @@ function Employees() {
           foot={`${list.filter((e) => e.gender === 'F').length} women · ${list.filter((e) => e.gender === 'M').length} men`} />
         <Tile label="On probation" value={list.filter((e) => e.probation).length} foot="Joined in the last 6 months" />
         <Tile label="Contractors" value={list.filter((e) => e.empType === 'Contract').length} foot="Non-payroll engagements" />
-      </div>
+      </StatRow>
 
       {view === 'grid' ? (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(232px,1fr))' }}>

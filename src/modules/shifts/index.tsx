@@ -6,7 +6,7 @@ import { downloadCSV } from '../../lib/csv';
 import { DEPTS, deptOf } from '../../data/org';
 import { SHIFTS, shiftOf } from '../../data/shifts';
 import type { Overtime } from '../../services';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Dot, StatusBadge } from '../../components/common';
 import { BarChart, Legend } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -185,7 +185,7 @@ function ShMy() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Current shift" value={shiftOf(todayShift === 'OFF' ? 'GEN' : todayShift || 'GEN').n}
           foot={todayShift === 'OFF'
             ? 'Today is a week off'
@@ -194,7 +194,7 @@ function ShMy() {
           foot={nights ? `Allowance ${inr(nights * NIGHT_ALLOWANCE)} for this window` : 'None rostered'} />
         <Tile label="Week offs" value={offs} foot="In the next 4 weeks" />
         <Tile label="Comp off balance" value={(compOff?.avail ?? 0) + ' days'} foot="Earned from extra working days" />
-      </div>
+      </StatRow>
 
       <Card title="My roster" sub={`4-week view · ${fmtD(ymd(days[0]))} – ${fmtD(ymd(days[27]))}`}
         actions={<button className="btn sm" onClick={() => app.toast('Swap request sent to your shift lead', 'ok')}>⇄ Request a swap</button>}>
@@ -344,14 +344,14 @@ function ShOt() {
         overtime pay at 1.5× the hourly rate. Comp off must be used within 60 days.
       </Banner>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="My overtime" value={sum(mine.filter((o) => o.status === 'Approved'), (o) => o.hours) + ' h'} foot="Approved, last 45 days" />
         <Tile label="Comp off balance" value={(compOff?.avail ?? 0) + ' days'} foot="Use within 60 days" />
         <Tile label="Team pending" value={pend.length} foot="Awaiting your approval" />
         <Tile label="Overtime cost"
           value={inr(sum(team.filter((o) => o.status === 'Approved' && o.compensation === 'Overtime Pay'), (o) => o.hours * OT_HOURLY))}
           foot="Payable this cycle" />
-      </div>
+      </StatRow>
 
       <Card title="My overtime" sub={`${mine.length} entries`} flush
         actions={

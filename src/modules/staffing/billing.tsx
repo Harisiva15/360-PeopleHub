@@ -6,7 +6,7 @@ import { downloadCSV } from '../../lib/csv';
 import { mbS, money, toBase } from '../../data/countries';
 import { clientOf, invAgeing } from '../../data/staffing';
 import { useClients, useInvoices, useKpi, usePayRuns, usePlacements, useVisiblePeople } from './data';
-import { Badge, Banner, Card, EmptyState, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, Tabs, Tile, StatRow } from '../../components/ui';
 import { HBar } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
@@ -48,13 +48,13 @@ function BlInv() {
             ))}>⤓ Export</button>
       </div>
 
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Invoiced (6 months)" value={mbS(sum(INVOICES, (i) => toBase(i.total, i.ccy)))} foot={`${INVOICES.length} invoices`} />
         <Tile label="Outstanding" value={mbS(k.ar)} foot={`${INVOICES.filter((i) => OPEN(i.status)).length} raised and unpaid`} />
         <Tile label="Overdue" value={mbS(k.arOverdue)} foot={`${INVOICES.filter((i) => i.status === 'Overdue').length} past due date`} />
         <Tile label="Disputed" value={INVOICES.filter((i) => i.status === 'Disputed').length} foot="Blocking collection" />
         <Tile label="DSO" value={k.dso + ' days'} foot="Target 45 days" />
-      </div>
+      </StatRow>
 
       <Card title="Invoices" sub={`${list.length} records`} flush>
         <div className="tbl-wrap" style={{ maxHeight: 600, overflow: 'auto' }}>
@@ -134,14 +134,14 @@ function BlAr() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Total receivable" value={mbS(total)} foot={`${open.length} open invoices`} />
         <Tile label="Overdue" value={mbS(overdue)} foot={pct(overdue, Math.max(1, total)) + '% of AR'} />
         <Tile label="Beyond 60 days" value={mbS(sum(rows.slice(3), (r) => r.v))} foot="Escalate to the account owner" />
         <Tile label="Collection efficiency"
           value={pct(INVOICES.filter((i) => i.status === 'Paid').length, Math.max(1, INVOICES.length)) + '%'}
           foot="Invoices settled" />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="AR ageing" sub="₹ base"><HBar rows={rows} fmt={(v) => mbS(v)} /></Card>

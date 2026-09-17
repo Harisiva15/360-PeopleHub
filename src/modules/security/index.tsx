@@ -15,7 +15,7 @@ import type { CountryId } from '../../types/country';
 import type { Severity } from '../../services';
 import { HBar, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
-import { Badge, Banner, Card, EmptyState, Table, TableWrap, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, Table, TableWrap, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip } from '../../components/common';
 import { PERMS } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
@@ -62,13 +62,13 @@ function PostureTab() {
 
   return (
     <div className="stack">
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile label="Security score" value={`${score}/100`} foot={`${band} · weighted across identity, device and controls`} />
         <Tile label="MFA enrolled" value={pct(mfa, n) + '%'} foot={`${n - mfa} accounts without a second factor`} />
         <Tile label="Managed devices" value={pct(mgd, n) + '%'} foot={`${n - mgd} outside device management`} />
         <Tile label="Disk encrypted" value={pct(enc, n) + '%'} foot={`${n - enc} unencrypted endpoints`} />
         <Tile label="Patch compliance" value={pct(pat, n) + '%'} foot={`${n - pat} behind the baseline`} />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Control framework" sub={`${met} of ${CONTROLS.length} controls fully met`} flush>
@@ -221,12 +221,12 @@ function AccessTab({ goToAudit }: { goToAudit: () => void }) {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Findings open" value={findings.length} foot={`Across ${cats.length} categories`} />
         <Tile label="Critical" value={findings.filter((x) => x.sev === 'crit').length} foot="Identity and leaver access" />
         <Tile label="Accounts in scope" value={everyone.length} foot="Active employees with a login" />
         <Tile label="Last review" value={cadence.last} foot={`Quarterly cadence · next due in ${cadence.next} days`} />
-      </div>
+      </StatRow>
 
       <Card
         title="Access review findings"
@@ -329,12 +329,12 @@ function AuditTab() {
         <button className="btn" onClick={exportCSV}>⤓ Export</button>
       </div>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Events logged" value={AUDIT.length} foot="Last 45 days" />
         <Tile label="High severity" value={AUDIT.filter((a) => a.sev === 'high').length} foot="Payroll, access and data exports" />
         <Tile label="Distinct actors" value={uniq(AUDIT.map((a) => a.byId)).length} foot="Users performing privileged actions" />
         <Tile label="Source countries" value={uniq(AUDIT.map((a) => a.country)).length} foot="Sign-ins across entities" />
-      </div>
+      </StatRow>
 
       <Card title="Audit trail" sub={`${list.length} of ${AUDIT.length} events`} flush>
         <div style={{ maxHeight: 600, overflow: 'auto' }}>
@@ -408,12 +408,12 @@ function PrivacyTab() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Data categories" value={RETENTION.length} foot="Mapped to a lawful basis" />
         <Tile label="Entities in scope" value={entities.length} foot="DPDP Act, GDPR, UK GDPR, PIPEDA, UAE PDPL" />
         <Tile label="Open subject requests" value={sum(dsr, (d) => d.n)} foot="All inside the 30-day statutory window" />
         <Tile label="Sub-processors" value={9} foot="Reviewed before engagement" />
-      </div>
+      </StatRow>
 
       <Card
         title="Data inventory and retention"

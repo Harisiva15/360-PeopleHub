@@ -8,7 +8,7 @@ import { deptOf } from '../../data/org';
 import { LETTER_TYPES } from '../../data/letters';
 import { HBar, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
-import { Badge, Banner, Card, EmptyState, PersonCell, Table, TableWrap, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, PersonCell, Table, TableWrap, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, ListRow } from '../../components/common';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
@@ -173,12 +173,12 @@ function QueueTab() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Pending requests" value={pend.length} foot="Awaiting HR issue" />
         <Tile label="Issued this month" value={thisMonth} foot="Letters generated" />
         <Tile label="Avg turnaround" value="1.8 days" foot="Against a 2-day SLA" />
         <Tile label="Self-service share" value="68%" foot="Letters generated without HR" />
-      </div>
+      </StatRow>
 
       <Card title="Letter requests" sub={`${LETTER_REQS.length} total`} flush>
         <TableWrap>
@@ -232,12 +232,12 @@ function RepoTab() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Documents on file" value={DOCS.length.toLocaleString('en-IN')} foot={`Across ${everyone.length} employees`} />
         <Tile label="Verified" value={pct(verified, Math.max(1, DOCS.length)) + '%'} foot={`${DOCS.length - verified} pending verification`} />
         <Tile label="Incomplete files" value={missing.length} foot="Missing 3 or more documents" />
         <Tile label="Retention policy" value="7 years" foot="After the last working day" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card

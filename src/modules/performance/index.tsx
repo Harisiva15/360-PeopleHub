@@ -7,7 +7,7 @@ import { downloadCSV } from '../../lib/csv';
 import { ORG } from '../../data/org';
 import { CYCLES, NINEBOX, RATINGS, ratingOf, REVIEW_PHASES, VALUES } from '../../data/performance';
 import type { Goal, Review } from '../../services';
-import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, Dot, ListRow, StatusBadge } from '../../components/common';
 import { Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -109,13 +109,13 @@ function PfGoals() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Goal achievement" value={Math.round(achv) + '%'} foot={`Weighted across ${goals.length} goals`} />
         <Tile label="On track" value={`${goals.filter((g) => ['On Track', 'Achieved'].includes(g.status)).length} / ${goals.length}`}
           foot={`${goals.filter((g) => g.status === 'At Risk' || g.status === 'Behind').length} need attention`} />
         <Tile label="Cycle" value={cycle.name.split(' Appraisal')[0]} foot={`${fmtD(cycle.from)} – ${fmtD(cycle.to)}`} />
         <Tile label="Review status" value={rv ? rv.status : '—'} foot={'Manager: ' + dir.name(me.managerId || '')} />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <div>
@@ -193,14 +193,14 @@ function PfTeam({ openReview }: { openReview: (id: string) => void }) {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="People in scope" value={rows.length} foot="With goals in this cycle" />
         <Tile label="Avg goal achievement" value={Math.round(sum(rows, (r) => r.achv) / Math.max(1, rows.length)) + '%'} foot="Weighted" />
         <Tile label="Goals at risk" value={sum(rows, (r) => r.risk)} foot="Behind or at risk" />
         <Tile label="Reviews pending"
           value={rows.filter((r) => r.rv && r.rv.status !== 'Completed' && r.rv.status !== 'Calibrated').length}
           foot="Self or manager stage" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Team goal progress" sub={`${rows.length} people`} flush
@@ -289,14 +289,14 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
         </div>
       )}
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Goal achievement" value={rv.goalAchievement + '%'} foot={`${goals.length} goals, weighted`} />
         <Tile label="Self rating" value={rv.self.rating ? rv.self.rating + ' / 5' : 'Pending'}
           foot={rv.self.rating ? ratingOf(rv.self.rating).label : 'Awaiting submission'} />
         <Tile label="Manager rating" value={rv.manager.rating ? rv.manager.rating + ' / 5' : 'Pending'}
           foot={rv.manager.rating ? ratingOf(rv.manager.rating).label : 'Awaiting ' + dir.name(e.managerId || '')} />
         <Tile label="Peer average" value={peerAvg ? peerAvg.toFixed(1) + ' / 5' : '—'} foot={`${rv.peers.length} peer responses`} />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <div className="stack">
@@ -438,13 +438,13 @@ function PfCalib() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Rated employees" value={rows.length} foot="Manager rating submitted" />
         <Tile label="Average rating" value={(sum(rows, (r) => r.rv.manager.rating!) / Math.max(1, rows.length)).toFixed(2)}
           foot="Target 3.10 – 3.40" />
         <Tile label="Increment pool" value={cycle.hikePool + '%'} foot="Approved by the board" />
         <Tile label="Committed spend" value={lakh(budget)} foot="Annualised increment cost" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="9-box grid" sub="Performance (manager rating) × potential">

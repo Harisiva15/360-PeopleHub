@@ -7,7 +7,7 @@ import { ORG } from '../../data/org';
 
 
 
-import { Badge, Card, EmptyState, Table, Tile } from '../../components/ui';
+import { Badge, Card, EmptyState, Table, Tile, StatRow } from '../../components/ui';
 import { Donut, HBar, LineChart, PAL, Spark } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -197,7 +197,7 @@ function ExecView() {
 
   return (
     <div className="stack">
-      <div className="grid g5">
+      <StatRow cols={5}>
         <Tile
           label="Monthly revenue"
           value={mbS(rev)}
@@ -217,7 +217,7 @@ function ExecView() {
           spark={<Spark data={hcSeries} color="var(--s3)" />}
         />
         <Tile label="Cash at risk" value={mbS(k.arOverdue)} foot={`Overdue of ${mbS(k.ar)} receivable`} />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Revenue trend" sub="Billed value per month, ₹ base, in lakh">

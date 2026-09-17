@@ -11,7 +11,7 @@
 import { useState } from 'react';
 import type { DocRequest, Onboarding } from '../../services';
 import { daysBetween, fmtD, TODAY, ymd } from '../../lib/dates';
-import { Avatar, Badge, Card, EmptyState, Tile } from '../../components/ui';
+import { Avatar, Badge, Card, EmptyState, Tile, StatRow } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { DocumentCollection } from '../documents/collection';
 import { useDocRequests } from '../documents/data';
@@ -76,7 +76,7 @@ export function CollectionView() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Joiners in intake" value={open.length} foot="Onboarding not yet complete" tone="blue" />
         <Tile label="Documents outstanding" value={all.filter(outstanding).length}
           foot="Requested, not received" tone="amber" />
@@ -84,7 +84,7 @@ export function CollectionView() {
           foot="Received but unchecked" tone="violet" />
         <Tile label="Joiners fully cleared" value={rows.filter((r) => r.docs.length && !r.missing).length}
           foot="No mandatory document missing" tone="green" />
-      </div>
+      </StatRow>
 
       <div className="grid g-1-2">
         <Card title="Who is holding us up" sub={`${rows.length} joiners`} flush>

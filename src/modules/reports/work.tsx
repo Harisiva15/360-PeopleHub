@@ -9,7 +9,7 @@ import type { Timesheet } from '../../services';
 import { tCat, TICKET_CATS } from '../../data/helpdesk';
 import { HBar, Legend, LineChart, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
-import { Card, PersonCell, Table, TableWrap, Tile } from '../../components/ui';
+import { Card, PersonCell, Table, TableWrap, Tile, StatRow } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
 import { hiringScope, reqScope } from '../hiring';
@@ -88,7 +88,7 @@ export function RepHiring() {
         onExport={exportCSV}
       />
       <div className="stack">
-        <div className="grid g4">
+        <StatRow cols={4}>
           <Tile
             label="Positions open"
             value={sum(openReqs, (r) => r.openings - r.filled)}
@@ -109,7 +109,7 @@ export function RepHiring() {
             value={pct(offered.filter((c) => c.offer!.status === 'Accepted').length, Math.max(1, offered.length)) + '%'}
             foot="Accepted / rolled out"
           />
-        </div>
+        </StatRow>
 
         <div className="grid g2">
           <Card title="Funnel" sub="Candidates at or beyond each stage">
@@ -190,7 +190,7 @@ export function RepUtil() {
     <>
       <RepHead title="Timesheet Utilisation" sub={`Last 12 weeks · ${ids.length} employees`} onExport={exportCSV} />
       <div className="stack">
-        <div className="grid g4">
+        <StatRow cols={4}>
           <Tile label="Hours logged" value={sum(totals).toLocaleString('en-IN') + ' h'} foot="Across 12 weeks" />
           <Tile
             label="Billable hours"
@@ -207,7 +207,7 @@ export function RepUtil() {
             value={pct(submitted, Math.max(1, mine.length)) + '%'}
             foot="Submitted on time"
           />
-        </div>
+        </StatRow>
 
         <Card title="Billable vs total hours" sub="Weekly, last 12 weeks">
           <LineChart labels={weeks.map((w) => fmtDS(w))} height={240} area fmt={(v) => v + ' h'} series={series} />
@@ -306,7 +306,7 @@ export function RepTalent() {
         onExport={exportCSV}
       />
       <div className="stack">
-        <div className="grid g4">
+        <StatRow cols={4}>
           <Tile label="Goal achievement" value={goalPct + '%'} foot={`${g.length} goals, weighted`} />
           <Tile
             label="Reviews complete"
@@ -319,7 +319,7 @@ export function RepTalent() {
             foot="Target band 3.10 – 3.40"
           />
           <Tile label="Increment commitment" value={lakh(hikeCost)} foot={`Annualised, pool ${cycle?.hikePool ?? 0}%`} />
-        </div>
+        </StatRow>
 
         <div className="grid g2">
           <Card title="Rating distribution" sub="Against the target curve">
@@ -444,7 +444,7 @@ export function RepService() {
     <>
       <RepHead title="Helpdesk & Engagement" sub="Employee service quality and sentiment" onExport={exportCSV} />
       <div className="stack">
-        <div className="grid g5">
+        <StatRow cols={5}>
           <Tile label="Tickets raised" value={t.length} foot="Last 45 days" />
           <Tile
             label="SLA compliance"
@@ -462,7 +462,7 @@ export function RepService() {
             foot={`${pulse ? pct(pulse.responded, pulse.sent) : 0}% response rate`}
           />
           <Tile label="Training compliance" value={compliance + '%'} foot={`${mand.length} mandatory courses`} />
-        </div>
+        </StatRow>
 
         <div className="grid g2">
           <Card title="Average resolution time" sub="Hours, by category">

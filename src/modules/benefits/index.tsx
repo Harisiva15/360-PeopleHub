@@ -7,7 +7,7 @@ import { FBP_COMPONENTS, INSURANCE, PERKS } from '../../data/benefits';
 import { LOAN_TYPES } from '../../data/loans';
 import type { Loan } from '../../services';
 import { GRADES, ORG } from '../../data/org';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, ListRow } from '../../components/common';
 import { Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -48,15 +48,14 @@ function BnMine() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      {/* Was hand-written .tile markup, so it sat outside the design system
+          and stayed grey while every other row was tinted. */}
+      <StatRow cols={4}>
         {INSURANCE.map((p) => (
-          <div className="tile" key={p.id}>
-            <div className="lbl">{p.ic} {p.n}</div>
-            <div className="val">{lakh(p.sum[e.grade])}</div>
-            <div className="foot">{p.insurer}</div>
-          </div>
+          <Tile key={p.id} icon={p.ic} label={p.n}
+            value={lakh(p.sum[e.grade])} foot={p.insurer} />
         ))}
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Insurance cover" sub={'Premium fully paid by ' + ORG.name} flush
@@ -152,12 +151,12 @@ function BnFbp() {
         Declared: <b>{inr(used)}</b> · estimated tax saved <b>{inr(taxSaved)}</b> per year.
       </Banner>
 
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="FBP pool" value={inr(f.pool)} foot="45% of your Special Allowance" />
         <Tile label="Allocated" value={inr(used)} foot={pct(used, Math.max(1, f.pool)) + '% of pool'} />
         <Tile label="Unallocated" value={inr(Math.max(0, left))} foot="Paid as taxable Special Allowance" />
         <Tile label="Estimated tax saved" value={inr(taxSaved)} foot="At your marginal rate" />
-      </div>
+      </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Declare your components"
@@ -303,12 +302,12 @@ function BnLoans() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Eligible amount" value={inr(eligible)} foot="Up to 3× monthly CTC" />
         <Tile label="Active loans" value={active.length} foot="EMI recovered from payroll" />
         <Tile label="Outstanding" value={inr(sum(active, (l) => l.outstanding))} foot="Across your loans" />
         <Tile label="Monthly EMI" value={inr(sum(active, (l) => l.emi))} foot="Deducted from salary" />
-      </div>
+      </StatRow>
 
       <Card title="My loans & advances" sub={`${mine.length} records`} flush
         actions={<button className="btn sm primary" onClick={() => app.toast('Loan application form is not wired in this build')}>＋ Apply for a loan</button>}>
@@ -360,12 +359,12 @@ function BnAdmin() {
 
   return (
     <div className="stack">
-      <div className="grid g4">
+      <StatRow cols={4}>
         <Tile label="Employees covered" value={active.length} foot="Group medical, GPA and GTL" />
         <Tile label="Total medical cover" value={lakh(totalCover)} foot="Aggregate sum insured" />
         <Tile label="Annual premium" value={lakh(active.length * 14500)} foot="Employer funded" />
         <Tile label="FBP declared" value={`${declared.length} / ${active.length}`} foot={pct(declared.length, active.length) + '% completion'} />
-      </div>
+      </StatRow>
 
       <div className="grid g2">
         <Card title="Policy configuration" sub="Sum insured by grade" flush>

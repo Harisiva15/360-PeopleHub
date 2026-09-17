@@ -6,7 +6,7 @@ import type { AttRecord } from '../../services';
 import { DEPTS, deptOf, GRADES, LEAVE_TYPES, ORG, SITES, siteOf } from '../../data/org';
 import { BarChart, Donut, HBar, Legend, LineChart, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
-import { Card, PersonCell, Table, TableWrap, Tile } from '../../components/ui';
+import { Card, PersonCell, Table, TableWrap, Tile, StatRow } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 import { headcountTrend } from '../dashboard/shared';
 import { useShowEmployee } from '../employees/Profile';
@@ -119,7 +119,7 @@ export function RepAttendance() {
     <>
       <RepHead title="Attendance Summary" sub={`Last 6 months · ${ids.length} employees in scope`} onExport={exportCSV} />
       <div className="stack">
-        <div className="grid g4">
+        <StatRow cols={4}>
           <Tile
             label="Overall attendance"
             value={pct(sum(data, (d) => d.p + d.w), Math.max(1, sum(data, (d) => d.tot))) + '%'}
@@ -132,7 +132,7 @@ export function RepAttendance() {
           />
           <Tile label="Late marks" value={sum(data, (d) => d.late)} foot="Beyond 20-minute grace" />
           <Tile label="Absent days" value={sum(data, (d) => d.a)} foot="Unapproved, before regularisation" />
-        </div>
+        </StatRow>
 
         <Card title="Monthly attendance mix" sub="Person-days by status">
           <BarChart labels={data.map((d) => d.label)} height={240} stacked series={mix} />
@@ -238,13 +238,13 @@ export function RepHeadcount() {
     <>
       <RepHead title="Headcount & Diversity" sub={`${act.length} active employees · ${app.scope.label}`} onExport={exportCSV} />
       <div className="stack">
-        <div className="grid g5">
+        <StatRow cols={5}>
           <Tile label="Total headcount" value={act.length} foot={`+${trend.data[11] - trend.data[8]} in last quarter`} />
           <Tile label="Women in workforce" value={pct(gender[0].v, act.length) + '%'} foot={`${gender[0].v} of ${act.length}`} />
           <Tile label="Women in leadership" value={pct(womenLeader, Math.max(1, leaders)) + '%'} foot={`${womenLeader} of ${leaders} L4+ roles`} />
           <Tile label="Median tenure" value={medianTenure.toFixed(1) + ' yrs'} foot="Across all employees" />
           <Tile label="Manager ratio" value={'1 : ' + Math.round(act.length / Math.max(1, managers))} foot={`${managers} people managers`} />
-        </div>
+        </StatRow>
 
         <Card title="Headcount trend" sub="Last 12 months">
           <LineChart labels={trend.labels} height={220} area series={[{ name: 'Headcount', color: 'var(--s1)', data: trend.data }]} />
@@ -326,7 +326,7 @@ export function RepAttrition() {
     <>
       <RepHead title="Attrition & Retention" sub={`${exits.length} exits recorded · rolling 12-month rate ${rate}%`} onExport={exportCSV} />
       <div className="stack">
-        <div className="grid g4">
+        <StatRow cols={4}>
           <Tile label="Attrition rate" value={rate + '%'} foot="Rolling 12 months · industry avg 18%" />
           <Tile label="Exits (12 months)" value={ex12.length} foot="Voluntary and involuntary" />
           <Tile
@@ -335,7 +335,7 @@ export function RepAttrition() {
             foot="Across all exits"
           />
           <Tile label="Retention rate" value={(100 - rate).toFixed(1) + '%'} foot="Employees retained year on year" />
-        </div>
+        </StatRow>
 
         <Card title="Joiners vs exits" sub="Last 12 months">
           <BarChart labels={months.map((m) => m.l)} height={230} series={flow} />
@@ -454,7 +454,7 @@ export function RepLeave() {
     <>
       <RepHead title="Leave Liability & Utilisation" sub={`${emps.length} employees · ${ORG.fy}`} onExport={exportCSV} />
       <div className="stack">
-        <div className="grid g4">
+        <StatRow cols={4}>
           <Tile label="Encashment liability" value={lakh(totalLiab)} foot="Unused earned leave at Basic + HRA" />
           <Tile
             label="Leave days taken"
@@ -463,7 +463,7 @@ export function RepLeave() {
           />
           <Tile label="Avg utilisation" value={Math.round(sum(util, (u) => u.v) / Math.max(1, util.length)) + '%'} foot="Of entitlement consumed" />
           <Tile label="Employees at risk" value={liabilityRows.filter((r) => r.avail > 20).length} foot="More than 20 EL days accrued" />
-        </div>
+        </StatRow>
 
         <div className="grid g2">
           <Card title="Days taken by leave type" sub="Approved leave">

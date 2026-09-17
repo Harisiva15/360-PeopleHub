@@ -6,7 +6,7 @@ import { DEPTS, deptOf, ORG, SITES } from '../../data/org';
 import { EXP_CATS } from '../../data/expenses';
 import { BarChart, HBar, Legend, LineChart, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
-import { Badge, Card, PersonCell, Table, TableWrap, Tile } from '../../components/ui';
+import { Badge, Card, PersonCell, Table, TableWrap, Tile, StatRow } from '../../components/ui';
 import { useShowEmployee } from '../employees/Profile';
 import {
   useActiveLoans, useAllEmployees, useClaimsIn, useCompensation, useFbpTotals, usePayRuns,
@@ -60,12 +60,12 @@ export function RepPayroll() {
         onExport={exportCSV}
       />
       <div className="stack">
-        <div className="grid g4">
+        <StatRow cols={4}>
           <Tile label="Monthly gross" value={lakh(last.t.gross)} foot={monthLabelLong(last.r.mk)} />
           <Tile label="Annual run rate" value={lakh(last.t.gross * 12)} foot="Projected at current headcount" />
           <Tile label="Statutory cost" value={lakh(last.t.pf + last.t.esi + last.t.pt)} foot="PF + ESI + PT" />
           <Tile label="Avg cost per employee" value={inr(last.t.gross / Math.max(1, last.t.count))} foot="Monthly gross" />
-        </div>
+        </StatRow>
 
         <Card title="Payroll cost trend" sub="Gross, deductions and net">
           <LineChart
@@ -179,12 +179,12 @@ export function RepCompliance() {
         onExport={exportCSV}
       />
       <div className="stack">
-        <div className="grid g4">
+        <StatRow cols={4}>
           <Tile label="EPF (last cycle)" value={inr(last.t.pf)} foot={monthLabelLong(last.r.mk)} />
           <Tile label="ESI (last cycle)" value={inr(last.t.esi)} foot={`${esiCovered} covered employees`} />
           <Tile label="TDS (last cycle)" value={inr(last.t.tds)} foot="Deposited under section 192" />
           <Tile label="Professional tax" value={inr(last.t.pt)} foot="Across 3 states" />
-        </div>
+        </StatRow>
 
         <Card title="Statutory remittance trend" sub={`Last ${runs.length} cycles`}>
           <BarChart
@@ -277,7 +277,7 @@ export function RepSpend() {
     <>
       <RepHead title="Expense & Employee Cost" sub="Total cost of employment beyond payroll" onExport={exportCSV} />
       <div className="stack">
-        <div className="grid g5">
+        <StatRow cols={5}>
           <Tile label="Total CTC" value={lakh(sum(emps, (e) => e.ctc))} foot={`${emps.length} employees`} />
           <Tile label="Expense claims" value={lakh(claimTotal)} foot={`${claims.length} claims all time`} />
           <Tile label="Insurance premium" value={lakh(emps.length * INSURANCE_PER_HEAD)} foot="GMC, GPA and GTL" />
@@ -291,7 +291,7 @@ export function RepSpend() {
             value={lakh(sum(rows, (r) => r.total) / Math.max(1, rows.length))}
             foot="Fully loaded, annual"
           />
-        </div>
+        </StatRow>
 
         <div className="grid g2">
           <Card title="Expense by category" sub="All claims">
