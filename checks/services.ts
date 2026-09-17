@@ -258,7 +258,8 @@ const check = (label: string, got: unknown, want: unknown) => {
       check('an exit cannot settle with clearance outstanding', early, true);
     }
 
-    for (let i = 0; i < openExit.clearance.length; i++) await s.exits.setClearance(openExit.id, i, true);
+    /* By department, not index — the contract stopped taking a position. */
+    for (const line of openExit.clearance) await s.exits.setClearance(openExit.id, line.k, true);
     const settled = await s.exits.settle(openExit.id);
     check('settling closes the exit once clearance is done', settled.status, 'Settled');
     let twice = false;

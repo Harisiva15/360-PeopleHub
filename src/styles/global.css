@@ -342,6 +342,19 @@ table.tbl td.num,table.tbl th.num{text-align:right;font-variant-numeric:tabular-
 .tipbox b{color:#fff}
 html[data-theme="dark"] .tipbox{background:#3a3a37;color:#fff}
 
+/* ---------- Dashboard greeting ---------- */
+.greet{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  padding-bottom:13px;border-bottom:1px solid var(--line);
+}
+.greet .hi{font-size:22px;font-weight:750;letter-spacing:-.5px;line-height:1.15}
+.greet .sub{font-size:12.5px;color:var(--ink-3);margin-top:4px}
+.greet-notes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+@media (max-width:720px){
+  .greet{align-items:flex-start;flex-direction:column;gap:10px}
+  .greet .hi{font-size:19px}
+}
+
 /* ---------- Kanban ---------- */
 .kb{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}
 .kb-col{flex:0 0 262px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;max-height:calc(100vh - 260px)}

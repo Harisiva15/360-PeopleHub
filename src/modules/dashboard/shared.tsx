@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { sum } from '../../lib/collections';
 import { addDays, DOW, fmtD, fmtDS, fmtTime, hhmm, isWeekend, MON, monthKey, parseYmd, TODAY, ymd } from '../../lib/dates';
@@ -9,6 +10,35 @@ import { Avatar, Badge, EmptyState } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { Legend } from '../../components/charts';
 import { usePendingItems } from './data';
+
+/**
+ * The greeting band at the top of every dashboard.
+ *
+ * Deliberately plain. The punch card already owns the brand gradient on this
+ * page, and a second coloured block competing with it reads as decoration
+ * rather than hierarchy — so this is type and a rule, nothing more.
+ *
+ * The salutation follows the reader's own clock rather than the tenant's
+ * timezone: someone on the US shift opening this at 22:00 in Chennai is
+ * starting their morning, and "Good evening" would be wrong for them twice
+ * over.
+ */
+export function Greeting({ name, notes }: { name: string; notes?: ReactNode }) {
+  const hour = new Date().getHours();
+  const part = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  /* A single-word display name is common enough that the split has to survive it. */
+  const first = name.trim().split(/\s+/)[0] || name;
+
+  return (
+    <div className="greet">
+      <div>
+        <div className="hi">{part}, {first}</div>
+        <div className="sub">{DOW[TODAY.getDay()]}, {fmtD(TODAY)}</div>
+      </div>
+      {notes && <div className="greet-notes">{notes}</div>}
+    </div>
+  );
+}
 
 /** Today's attendance split, over records the caller has already fetched. */
 export function attendanceToday(recs: AttRecord[]) {

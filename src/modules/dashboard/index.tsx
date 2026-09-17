@@ -26,7 +26,7 @@ import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { useApp } from '../../state/AppContext';
 import {
-  ApprovalSummary, attendanceToday, attendanceTrend, CelebRows, GoLink,
+  ApprovalSummary, attendanceToday, attendanceTrend, CelebRows, GoLink, Greeting,
   headcountTrend, joinersExits, MonthCalendar,
 } from './shared';
 import {
@@ -51,6 +51,7 @@ const asDirectory = (list: { id: string; name: string }[]): Directory => ({
 /* ---------------- admin ---------------- */
 
 function DashAdmin() {
+  const app = useApp();
   const today = ymd(TODAY);
   const { data: pendingTotal = 0 } = usePendingCount();
   const { data: act = [] } = useAllEmployees();
@@ -118,6 +119,12 @@ function DashAdmin() {
 
   return (
     <div className="stack">
+      <Greeting name={app.me.name} notes={<>
+        <Chip>{act.length} on the roster</Chip>
+        <Chip>{present} of {working} in today</Chip>
+        {pend > 0 && <Badge kind="warn">{pend} awaiting you</Badge>}
+      </>} />
+
       <div className="grid g5">
         <Tile label="Headcount" value={act.length} trend="up"
           foot={<>▲ {ht.data[7] - ht.data[4]} vs 3 months ago</>}
@@ -322,6 +329,12 @@ function DashManager() {
 
   return (
     <div className="stack">
+      <Greeting name={me.name} notes={<>
+        <Chip>{team.length} in your team</Chip>
+        <Chip>{at.c.P + at.c.W} in today</Chip>
+        {awaiting > 0 && <Badge kind="warn">{awaiting} awaiting you</Badge>}
+      </>} />
+
       <div className="grid g-2-1">
         <div><PunchWidget empId={me.id} /></div>
         <Card title="Awaiting you" sub={`${awaiting} items`}
@@ -459,6 +472,13 @@ function DashEmployee() {
 
   return (
     <div className="stack">
+      <Greeting name={me.name} notes={<>
+        <Chip>{present} of {work.length} days present</Chip>
+        {tk.length > 0 && <Chip>{tk.length} open ticket{tk.length > 1 ? 's' : ''}</Chip>}
+        {!recs.some((r) => r.date === ymd(TODAY) && r.inT)
+          && <Badge kind="info">Not punched in yet</Badge>}
+      </>} />
+
       <div className="grid g-2-1">
         <div><PunchWidget empId={me.id} /></div>
         <Card title="This month" sub={monthLabelLong(mk)}>
