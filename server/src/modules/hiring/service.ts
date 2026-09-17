@@ -64,6 +64,7 @@ export interface Requisition {
   hiringManagerId: string;
   recruiterId: string;
   openedOn: string;
+  closedOn: string | null;
   budgetMin: number;
   budgetMax: number;
   type: string;
@@ -120,10 +121,52 @@ export interface RecruiterStat {
   hires: number;
 }
 
+/**
+ * Activity against one job order.
+ *
+ * Every count is derived from the pipeline at read time, never stored. A
+ * submission counter that is incremented on submit drifts the first time a
+ * candidate is withdrawn, and nothing notices — the requisition just claims
+ * activity it does not have. The same reasoning that makes `filled` derived
+ * applies to all of these.
+ */
+export interface ReqActivity {
+  reqId: string;
+  title: string;
+  dept: string;
+  site: string;
+  status: string;
+  priority: string;
+  openings: number;
+  filled: number;
+  openedOn: string;
+  /** Days the requisition has been open; counts to closure once closed. */
+  ageDays: number;
+  hiringManagerId: string;
+  recruiterId: string;
+  /** Candidates ever submitted against this job order. */
+  submissions: number;
+  /** Still in play — neither hired nor rejected. */
+  active: number;
+  rejected: number;
+  /** Head count per pipeline stage, keyed by stage id. */
+  byStage: Record<string, number>;
+  interviews: number;
+  interviewsDone: number;
+  offers: number;
+  hires: number;
+  /**
+   * The most recent thing that happened: a submission, an interview or an
+   * offer. A job order with openings and no activity for weeks is the one
+   * finding worth surfacing, and it cannot be seen from counts alone.
+   */
+  lastActivity: string | null;
+}
+
 const REQ_PROJECTION = `
   SELECT r.id, r.title, r.openings, r.filled, r.priority, r.status,
          r.hiring_manager_id, r.recruiter_id, r.opened_on, r.budget_min, r.budget_max,
-         r.employment_type, r.description, r.must_have_skills, r.experience,
+         r.employment_type, r.description, r.must_have_skills, r.experience, r.closed_on,
          d.code AS dept_code, COALESCE(g.code, '') AS grade_code, COALESCE(s.code, '') AS site_code
     FROM requisition r
     JOIN department d ON d.id = r.department_id
@@ -143,6 +186,7 @@ const toReq = (r: Record<string, unknown>): Requisition => ({
   hiringManagerId: r.hiring_manager_id as string,
   recruiterId: (r.recruiter_id as string) ?? '',
   openedOn: r.opened_on as string,
+  closedOn: (r.closed_on as string | null) ?? null,
   budgetMin: r.budget_min === null ? 0 : Number(r.budget_min),
   budgetMax: r.budget_max === null ? 0 : Number(r.budget_max),
   type: (r.employment_type as string) ?? 'permanent',
@@ -856,6 +900,102 @@ export async function respondToOffer(
 
     const back = await db.query(`${CAND_PROJECTION} WHERE c.id = $1`, [candId]);
     return toCand(back.rows[0]!);
+  });
+}
+
+/**
+ * Per-job-order activity — submissions against each requisition.
+ *
+ * One pass, aggregating in LATERAL subqueries rather than joining candidates
+ * and interviews into the same row set. Joining both would multiply every
+ * candidate by their interviews, and `count(DISTINCT ...)` would paper over it
+ * for the counts while quietly breaking any sum — the kind of arithmetic that
+ * is wrong by a factor nobody can name.
+ *
+ * Closed requisitions are included. "How long did that role take to fill, and
+ * how many people did we see" is the question a tracker is kept for, and it can
+ * only be answered after the role closes.
+ */
+export async function requisitionTracker(caller: Caller): Promise<ReqActivity[]> {
+  if (!mayRecruit(caller)) {
+    throw new HiringError('only a manager or admin may see the tracker', 'forbidden');
+  }
+
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `SELECT r.id, r.title, r.status, r.priority, r.openings, r.filled, r.opened_on,
+              r.hiring_manager_id, r.recruiter_id,
+              d.code AS dept_code, COALESCE(s.code, '') AS site_code,
+              /*
+               * Age runs to closure once closed, and to today while open. An
+               * age that keeps climbing after a role is filled makes every
+               * time-to-fill average meaningless.
+               */
+              (COALESCE(r.closed_on, CURRENT_DATE) - r.opened_on)::int AS age_days,
+              COALESCE(c.submissions, 0)::int AS submissions,
+              COALESCE(c.active, 0)::int AS active,
+              COALESCE(c.rejected, 0)::int AS rejected,
+              COALESCE(c.offers, 0)::int AS offers,
+              COALESCE(c.hires, 0)::int AS hires,
+              COALESCE(st.by_stage, '{}'::jsonb) AS by_stage,
+              COALESCE(iv.total, 0)::int AS interviews,
+              COALESCE(iv.done, 0)::int AS interviews_done,
+              GREATEST(c.last_applied, iv.last_held, o.last_sent) AS last_activity
+         FROM requisition r
+         JOIN department d ON d.id = r.department_id
+         LEFT JOIN site s ON s.id = r.site_id
+         LEFT JOIN LATERAL (
+           SELECT count(*) AS submissions,
+                  count(*) FILTER (WHERE stage NOT IN ('hired', 'rejected')) AS active,
+                  count(*) FILTER (WHERE stage = 'rejected') AS rejected,
+                  count(*) FILTER (WHERE stage = 'offer') AS offers,
+                  count(*) FILTER (WHERE stage = 'hired') AS hires,
+                  max(applied_on) AS last_applied
+             FROM candidate WHERE requisition_id = r.id
+         ) c ON true
+         LEFT JOIN LATERAL (
+           SELECT jsonb_object_agg(stage, n) AS by_stage
+             FROM (SELECT stage, count(*)::int AS n
+                     FROM candidate WHERE requisition_id = r.id
+                    GROUP BY stage) g
+         ) st ON true
+         LEFT JOIN LATERAL (
+           SELECT count(*) AS total,
+                  count(*) FILTER (WHERE status = 'completed') AS done,
+                  max(scheduled_at)::date AS last_held
+             FROM interview WHERE requisition_id = r.id
+         ) iv ON true
+         LEFT JOIN LATERAL (
+           SELECT max(o2.sent_on) AS last_sent
+             FROM offer o2
+             JOIN candidate c2 ON c2.id = o2.candidate_id
+            WHERE c2.requisition_id = r.id
+         ) o ON true
+        ORDER BY (r.status = 'open') DESC, r.opened_on DESC`);
+
+    return rows.map((r) => ({
+      reqId: r.id as string,
+      title: r.title as string,
+      dept: r.dept_code as string,
+      site: r.site_code as string,
+      status: TO_REQ_STATUS[r.status as string] ?? 'Open',
+      priority: TO_PRIORITY[r.priority as string] ?? 'Medium',
+      openings: Number(r.openings),
+      filled: Number(r.filled),
+      openedOn: r.opened_on as string,
+      ageDays: Number(r.age_days),
+      hiringManagerId: r.hiring_manager_id as string,
+      recruiterId: (r.recruiter_id as string) ?? '',
+      submissions: Number(r.submissions),
+      active: Number(r.active),
+      rejected: Number(r.rejected),
+      byStage: r.by_stage as Record<string, number>,
+      interviews: Number(r.interviews),
+      interviewsDone: Number(r.interviews_done),
+      offers: Number(r.offers),
+      hires: Number(r.hires),
+      lastActivity: (r.last_activity as string | null) ?? null,
+    }));
   });
 }
 

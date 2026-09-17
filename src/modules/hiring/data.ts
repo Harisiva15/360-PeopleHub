@@ -19,3 +19,11 @@ export const useOfferLetter = (candId: string) =>
   useQuery((s) => s.hiring.offerLetter(candId), [candId]);
 export const useReleaseOffer = () =>
   useMutation((s, candId: string) => s.hiring.releaseOffer(candId));
+
+/* ---------- the recruitment activity tracker ---------- */
+
+/** Per-job-order activity: submissions, who is still active, and where. */
+export const useRequisitionTracker = () =>
+  useQuery((s) => s.hiring.requisitionTracker(), []);
+export const useRecruiterTracker = () =>
+  useQuery((s) => s.hiring.recruiterTracker(), []);

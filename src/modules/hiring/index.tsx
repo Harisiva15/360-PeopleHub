@@ -15,6 +15,7 @@ import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
 import { useCandidates, useInterviews, useMoveCandidate, useRequisitions, useVisiblePeople } from './data';
 import { OfferLetter } from './OfferLetter';
+import { TrackerView } from './Tracker';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { AppRole } from '../../types/employee';
@@ -700,11 +701,12 @@ function HrFunnel() {
 
 /* ---------------- entry ---------------- */
 
-type Tab = 'pipe' | 'reqs' | 'cands' | 'ivs' | 'offers' | 'fun';
+type Tab = 'pipe' | 'reqs' | 'cands' | 'ivs' | 'offers' | 'track' | 'fun';
 
 const TABS: { v: Tab; label: string }[] = [
   { v: 'pipe', label: 'Pipeline' }, { v: 'reqs', label: 'Requisitions' }, { v: 'cands', label: 'Candidates' },
-  { v: 'ivs', label: 'Interviews' }, { v: 'offers', label: 'Offers' }, { v: 'fun', label: 'Analytics' },
+  { v: 'ivs', label: 'Interviews' }, { v: 'offers', label: 'Offers' },
+  { v: 'track', label: 'Activity tracker' }, { v: 'fun', label: 'Analytics' },
 ];
 
 function Hiring() {
@@ -717,6 +719,7 @@ function Hiring() {
       {tab === 'cands' && <HrCands />}
       {tab === 'ivs' && <HrIvs />}
       {tab === 'offers' && <HrOffers />}
+      {tab === 'track' && <TrackerView />}
       {tab === 'fun' && <HrFunnel />}
     </>
   );

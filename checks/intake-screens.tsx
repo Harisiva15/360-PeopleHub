@@ -31,8 +31,9 @@ import { LayerProvider } from '../src/components/Layer';
 import { CollectionView, rankIntake } from '../src/modules/onboarding/Collection';
 import { DocumentCollection } from '../src/modules/documents/collection';
 import { OfferLetter } from '../src/modules/hiring/OfferLetter';
+import { perHire, stalled, TrackerView } from '../src/modules/hiring/Tracker';
 import { getServices } from '../src/services';
-import type { DocRequest, Onboarding } from '../src/services';
+import type { DocRequest, Onboarding, ReqActivity } from '../src/services';
 import type { AppRole } from '../src/types/employee';
 import type { ReactElement } from 'react';
 
@@ -167,6 +168,57 @@ const tie = rankIntake(
   TODAY,
 );
 check('among equals the soonest joiner comes first', tie.map((r) => r.j.id), ['near', 'far']);
+
+/* ---------- the recruitment activity tracker ---------- */
+
+const activity = (over: Partial<ReqActivity> = {}): ReqActivity => ({
+  reqId: 'JR-1', title: 'Role', dept: 'ENG', site: 'CHN', status: 'Open', priority: 'High',
+  openings: 2, filled: 0, openedOn: '2026-08-01', ageDays: 47,
+  hiringManagerId: '', recruiterId: '', submissions: 0, active: 0, rejected: 0,
+  byStage: {}, interviews: 0, interviewsDone: 0, offers: 0, hires: 0, lastActivity: null,
+  ...over,
+});
+
+const NOW = '2026-09-17';
+
+check('a role with recent activity is not stalled',
+  stalled(activity({ lastActivity: '2026-09-10' }), NOW), false);
+check('a role quiet for three weeks is stalled',
+  stalled(activity({ lastActivity: '2026-08-20' }), NOW), true);
+/*
+ * A role that has never had a submission is measured from the day it opened,
+ * not treated as having no age. Opened yesterday with nobody on it is normal;
+ * opened two months ago with nobody on it is the finding.
+ */
+check('a brand new role with no activity is not yet stalled',
+  stalled(activity({ openedOn: '2026-09-15', lastActivity: null }), NOW), false);
+check('an old role that never had a submission is stalled',
+  stalled(activity({ openedOn: '2026-07-01', lastActivity: null }), NOW), true);
+check('a filled role is never stalled, however quiet',
+  stalled(activity({ openings: 2, filled: 2, lastActivity: '2026-01-01' }), NOW), false);
+check('a closed role is never stalled',
+  stalled(activity({ status: 'Closed', lastActivity: '2026-01-01' }), NOW), false);
+
+check('submissions per hire is reported when there are hires',
+  perHire(activity({ submissions: 12, hires: 2 })), 6);
+check('it keeps one decimal rather than rounding to nothing',
+  perHire(activity({ submissions: 10, hires: 3 })), 3.3);
+/* Not zero, not Infinity: there is no ratio yet, and the screen shows a dash. */
+check('and is absent, not zero, before the first hire',
+  perHire(activity({ submissions: 12, hires: 0 })), null);
+
+const live = await s.hiring.requisitionTracker();
+check('the tracker returns a row per job order', live.length > 0, true);
+check('every row carries a stage map',
+  live.every((r) => r.byStage && typeof r.byStage === 'object'), true);
+check('active never exceeds submissions',
+  live.every((r) => r.active <= r.submissions), true);
+check('hires never exceed openings',
+  live.every((r) => r.hires <= r.openings), true);
+check('the tracker screen mounts',
+  render(<TrackerView />).includes('Activity by job order'), true);
+check('and shows the recruiter table too',
+  render(<TrackerView />).includes('Activity by recruiter'), true);
 
 console.log(failed
   ? `\n${failed} check(s) FAILED`

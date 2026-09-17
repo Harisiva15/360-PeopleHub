@@ -5,7 +5,7 @@
  * of its own; splitting them into three files would be filing, not design.
  */
 
-import { TODAY, ymd } from '../../lib/dates';
+import { daysBetween, TODAY, ymd } from '../../lib/dates';
 import { ACTIVE, empName } from '../../data/employees';
 import { LEAVE_BAL } from '../../data/leave';
 import { OVERTIME, ROSTER, SHIFTS } from '../../data/shifts';
@@ -14,7 +14,7 @@ import { LETTER_REQS } from '../../data/letters';
 import { CANDS, INTERVIEWS, REQS, reqOf, STAGES } from '../../data/ats';
 import type {
   Candidate, HiringService, Interview, InterviewRow, LetterService, LoanService,
-  Overtime, RecruiterStat, Requisition, ShiftService,
+  Overtime, RecruiterStat, ReqActivity, Requisition, ShiftService,
 } from '../contracts';
 import type { Offer } from '../../data/ats';
 import { ok } from './util';
@@ -199,6 +199,7 @@ export const hiringService: HiringService = {
       hiringManagerId: draft.hiringManagerId,
       recruiterId: draft.recruiterId ?? draft.hiringManagerId,
       openedOn: ymd(TODAY),
+      closedOn: null,
       budgetMin: draft.budgetMin ?? 0,
       budgetMax: draft.budgetMax ?? 0,
       type: draft.type ?? 'permanent',
@@ -350,5 +351,51 @@ export const hiringService: HiringService = {
       byRecruiter.set(r.recruiterId, stat);
     });
     return ok([...byRecruiter.values()].sort((a, b) => b.hires - a.hires || b.submissions - a.submissions));
+  },
+
+  requisitionTracker() {
+    const rows: ReqActivity[] = REQS.map((r) => {
+      const cands = CANDS.filter((c) => c.reqId === r.id);
+      const ivs = INTERVIEWS.filter((i) => i.reqId === r.id);
+
+      const byStage: Record<string, number> = {};
+      cands.forEach((c) => { byStage[c.stage] = (byStage[c.stage] ?? 0) + 1; });
+
+      /* The latest thing that happened, whatever kind of thing it was. */
+      const dates = [
+        ...cands.map((c) => c.appliedOn),
+        ...ivs.map((i) => i.date),
+        ...cands.map((c) => c.offer?.sentOn).filter((d): d is string => !!d),
+      ].filter(Boolean).sort();
+
+      return {
+        reqId: r.id,
+        title: r.title,
+        dept: r.dept,
+        site: r.site,
+        status: r.status,
+        priority: r.priority,
+        openings: r.openings,
+        filled: r.filled,
+        openedOn: r.openedOn,
+        /* Age runs to closure once closed, not onward to today. */
+        ageDays: daysBetween(r.openedOn, r.closedOn ?? ymd(TODAY)),
+        hiringManagerId: r.hiringManagerId,
+        recruiterId: r.recruiterId,
+        submissions: cands.length,
+        active: cands.filter((c) => c.stage !== 'hired' && c.stage !== 'rejected').length,
+        rejected: cands.filter((c) => c.stage === 'rejected').length,
+        byStage,
+        interviews: ivs.length,
+        interviewsDone: ivs.filter((i) => i.status === 'Completed').length,
+        offers: cands.filter((c) => c.stage === 'offer').length,
+        hires: cands.filter((c) => c.stage === 'hired').length,
+        lastActivity: dates.length ? dates[dates.length - 1]! : null,
+      };
+    });
+    /* Open roles first — a tracker is read to find what still needs work. */
+    return ok(rows.sort((a, b) =>
+      Number(b.status === 'Open') - Number(a.status === 'Open')
+      || b.openedOn.localeCompare(a.openedOn)));
   },
 };

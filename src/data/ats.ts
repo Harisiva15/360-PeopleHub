@@ -41,6 +41,8 @@ export interface Requisition {
   hiringManagerId: string;
   recruiterId: string;
   openedOn: string;
+  /** Set once the role closes; null while it is still being worked. */
+  closedOn: string | null;
   budgetMin: number;
   budgetMax: number;
   type: string;
@@ -70,6 +72,8 @@ export const REQS: Requisition[] = [];
   plan.forEach((p, i) => {
     const mgrs = MANAGERS.filter((m) => m.dept === p.dept);
     const hm = mgrs.length ? mgrs[i % mgrs.length] : HEADS[p.dept];
+    const status = i === 11 ? 'On Hold' : i === 8 ? 'Closed' : 'Open';
+    const opened = addDays(TODAY, -ri(12, 150));
     REQS.push({
       id: 'JR-' + (2601 + i),
       title: p.title,
@@ -79,10 +83,12 @@ export const REQS: Requisition[] = [];
       openings: p.open,
       filled: 0,
       priority: p.pri as Requisition['priority'],
-      status: i === 11 ? 'On Hold' : i === 8 ? 'Closed' : 'Open',
+      status,
       hiringManagerId: hm.id,
       recruiterId: EMP.filter((e) => e.dept === 'HR' && e.status === 'Active')[i % 4].id,
-      openedOn: ymd(addDays(TODAY, -ri(12, 150))),
+      openedOn: ymd(opened),
+      /* A closed role stopped ageing when it closed, part-way to today. */
+      closedOn: status === 'Closed' ? ymd(addDays(opened, ri(20, 60))) : null,
       budgetMin: GRADES[p.grade as Grade].min,
       budgetMax: GRADES[p.grade as Grade].max,
       type: 'Full-time',
@@ -193,6 +199,26 @@ export const CANDS: Candidate[] = [];
     }
   });
 
+  /*
+   * `filled` is recounted from the pipeline, and a requisition cannot be
+   * over-filled — the server's schema says `CHECK (filled <= openings)`, so a
+   * fixture that hires three people into two openings would show the demo a
+   * state the real system cannot reach. Anyone drawn as hired past the cap goes
+   * back to the offer stage rather than being dropped: they were offered, and
+   * the count has to keep agreeing with the stages it was counted from.
+   *
+   * This runs before offers are written, so an offer's status is derived from
+   * the stage the candidate actually ends up at. Demoting someone afterwards
+   * would leave them sitting at 'offer' holding an accepted one.
+   */
+  CANDS.forEach((c) => {
+    if (c.stage !== 'hired') return;
+    const r = reqOf(c.reqId);
+    if (!r) return;
+    if (r.filled >= r.openings) { c.stage = 'offer'; return; }
+    r.filled += 1;
+  });
+
   CANDS.filter((c) => c.stage === 'offer' || c.stage === 'hired').forEach((c) => {
     const r = reqOf(c.reqId)!;
     c.offer = {
@@ -203,13 +229,6 @@ export const CANDS: Candidate[] = [];
       doj: ymd(addDays(TODAY, ri(-20, 55))),
       site: r.site,
     };
-  });
-
-  CANDS.forEach((c) => {
-    if (c.stage === 'hired') {
-      const r = reqOf(c.reqId);
-      if (r) r.filled++;
-    }
   });
 })();
 

@@ -193,6 +193,7 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       openRequisition: (draft) => api.post('/requisitions', draft),
       submitCandidate: (draft) => api.post('/candidates', draft),
       recruiterTracker: () => api.get('/recruiters/tracker'),
+      requisitionTracker: () => api.get('/requisitions/tracker'),
       scheduleInterview: (draft) => api.post('/interviews', draft),
       submitFeedback: (id, verdict, feedback) =>
         api.post(`/interviews/${id}/feedback`, { verdict, feedback }),

@@ -78,7 +78,8 @@ import {
 import {
   HiringError, interviewsFor, listCandidates, listInterviews, listRequisitions,
   makeOffer, moveCandidate, offerLetter, openRequisition, recruiterTracker,
-  releaseOffer, respondToOffer, scheduleInterview, submitCandidate, submitFeedback,
+  releaseOffer, requisitionTracker, respondToOffer, scheduleInterview, submitCandidate,
+  submitFeedback,
 } from '../modules/hiring/service.ts';
 import {
   collectionSummary, DocumentError, listRequests as listDocRequests, requestDocument,
@@ -624,6 +625,7 @@ const routes: Route[] = [
     },
   },
   { method: 'GET', pattern: '/recruiters/tracker', handler: (c) => recruiterTracker(c) },
+  { method: 'GET', pattern: '/requisitions/tracker', handler: (c) => requisitionTracker(c) },
   { method: 'GET', pattern: '/assets', handler: (c) => listAssets(c) },
   {
     method: 'POST',

@@ -448,6 +448,47 @@ export interface RecruiterStat {
   hires: number;
 }
 
+/**
+ * Activity against one job order, for the recruitment tracker.
+ *
+ * Every count is derived from the pipeline when read, never stored. A
+ * submission counter that is incremented on submit drifts the first time a
+ * candidate is withdrawn and nothing notices — the requisition goes on claiming
+ * activity it does not have.
+ */
+export interface ReqActivity {
+  reqId: string;
+  title: string;
+  dept: string;
+  site: string;
+  status: string;
+  priority: string;
+  openings: number;
+  filled: number;
+  openedOn: string;
+  /** Days open; counts to closure once closed, not onward to today. */
+  ageDays: number;
+  hiringManagerId: string;
+  recruiterId: string;
+  /** Candidates ever submitted against this job order. */
+  submissions: number;
+  /** Still in play — neither hired nor rejected. */
+  active: number;
+  rejected: number;
+  /** Head count per pipeline stage, keyed by stage id. Absent stages are zero. */
+  byStage: Record<string, number>;
+  interviews: number;
+  interviewsDone: number;
+  offers: number;
+  hires: number;
+  /**
+   * The latest submission, interview or offer. An open job order with no
+   * activity for weeks is the finding worth surfacing, and counts alone cannot
+   * show it.
+   */
+  lastActivity: string | null;
+}
+
 export interface HiringService {
   /** The panel member's own upcoming interviews. */
   interviewsFor(panelId: string, status?: Interview['status']): Promise<InterviewRow[]>;
@@ -466,6 +507,8 @@ export interface HiringService {
   submitCandidate(draft: NewSubmission): Promise<Candidate>;
   /** Per-recruiter activity: requisitions, submissions, interviews, hires. */
   recruiterTracker(): Promise<RecruiterStat[]>;
+  /** Per-job-order activity: submissions, who is still active, and where. */
+  requisitionTracker(): Promise<ReqActivity[]>;
 
   /** Book a round with a panel member. Refuses a clash on their calendar. */
   scheduleInterview(draft: NewInterview): Promise<Interview>;
