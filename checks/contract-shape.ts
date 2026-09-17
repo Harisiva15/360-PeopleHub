@@ -42,6 +42,7 @@ const CREATES: Record<string, string> = {
   config: 'addHoliday',
   leave: 'apply',
   joiners: 'request',
+  planner: 'createItem',
   letters: 'issue',
 };
 

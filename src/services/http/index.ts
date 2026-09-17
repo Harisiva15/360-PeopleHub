@@ -73,6 +73,22 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    planner: {
+      items: (q) => api.get(`/planner/items${qs({
+        projectId: q.projectId, iterationId: q.iterationId, assigneeId: q.assigneeId,
+        kind: q.kind, openOnly: q.openOnly ? 'true' : undefined,
+      })}`),
+      mine: (empId) => api.get(`/planner/mine${qs({ empId })}`),
+      board: (projectId) => api.get(`/planner/board${qs({ projectId })}`),
+      iterations: () => api.get('/planner/iterations'),
+      createItem: (draft) => api.post('/planner/items', draft),
+      createIteration: (draft) => api.post('/planner/iterations', draft),
+      moveItem: (id, status, afterId) =>
+        api.put(`/planner/items/${id}/move`, { status, afterId }),
+      updateItem: (id, patch) => api.put(`/planner/items/${id}`, patch),
+      comment: (id, text) => api.post(`/planner/items/${id}/comments`, { text }),
+    },
+
     exits: {
       list: () => api.get('/exits'),
       detail: (exitId) => api.get(`/exits/${exitId}`),

@@ -43,6 +43,7 @@ const LOADERS: Record<string, () => Promise<unknown>> = {
   performance: () => import('./performance'),
   learning: () => import('./learning'),
   hiring: () => import('./hiring'),
+  planner: () => import('./planner'),
   onboarding: () => import('./onboarding'),
   exit: () => import('./exit'),
 

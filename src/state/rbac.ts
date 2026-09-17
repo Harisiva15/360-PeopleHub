@@ -33,14 +33,14 @@ export const PERMS: Record<AppRole, string[]> = {
   employee: [
     'dashboard', 'attendance', 'timesheet', 'leave', 'payroll', 'org', 'employees',
     'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
-    'expenses', 'learning', 'performance', 'tax',
+    'expenses', 'learning', 'performance', 'tax', 'planner',
   ],
 
   /* Everything above, plus the team. */
   manager: [
     'dashboard', 'attendance', 'timesheet', 'leave', 'payroll', 'org', 'employees',
     'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
-    'expenses', 'learning', 'performance', 'tax',
+    'expenses', 'learning', 'performance', 'tax', 'planner',
     // The team-level additions.
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'shifts',
     'whatsapp', 'clients', 'requirements', 'bench', 'placements', 'vendors',
@@ -50,7 +50,7 @@ export const PERMS: Record<AppRole, string[]> = {
   admin: [
     'dashboard', 'attendance', 'timesheet', 'leave', 'payroll', 'org', 'employees',
     'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
-    'expenses', 'learning', 'performance', 'tax',
+    'expenses', 'learning', 'performance', 'tax', 'planner',
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'shifts',
     'whatsapp', 'clients', 'requirements', 'bench', 'placements', 'vendors',
     // The tenant-level additions.
@@ -97,7 +97,7 @@ export const SCOPE: Record<AppRole, ScopeInfo> = {
 export const LIVE_MODULES = new Set([
   'dashboard', 'attendance', 'timesheet', 'leave', 'employees', 'org',
   'celebrations', 'announcements', 'payroll', 'hiring', 'onboarding',
-  'assets', 'expenses', 'helpdesk', 'performance', 'exit', 'settings',
+  'assets', 'expenses', 'helpdesk', 'performance', 'exit', 'planner', 'settings',
 ]);
 
 /**

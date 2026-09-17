@@ -1031,6 +1031,104 @@ export interface SecurityService {
   retention(): Promise<RetentionRow[]>;
 }
 
+/* ---------- the planner ---------- */
+
+export interface WorkItem {
+  id: string;
+  /** PLAN-14, so people can say it out loud. */
+  ref: string;
+  projectId: string | null;
+  project: string | null;
+  iterationId: string | null;
+  iteration: string | null;
+  parentId: string | null;
+  /** epic · story · task · bug · action */
+  kind: string;
+  title: string;
+  desc: string;
+  /** backlog · todo · in_progress · review · blocked · done · cancelled */
+  status: string;
+  priority: string;
+  assigneeId: string | null;
+  reporterId: string | null;
+  /** Where an action item came from — a meeting, a review, an audit. */
+  source: string;
+  due: string | null;
+  estimate: number | null;
+  /** Position within the board column. */
+  order: number;
+  closedOn: string | null;
+  comments: { by: string; on: string; text: string }[];
+}
+
+export interface Iteration {
+  id: string;
+  name: string;
+  goal: string;
+  from: string;
+  to: string;
+  status: string;
+}
+
+export interface WorkItemQuery {
+  projectId?: string;
+  iterationId?: string;
+  assigneeId?: string;
+  kind?: string;
+  openOnly?: boolean;
+}
+
+export interface NewWorkItem {
+  title: string;
+  kind?: string;
+  /** Null for an action item that belongs to no project. */
+  projectId?: string | null;
+  iterationId?: string | null;
+  parentId?: string | null;
+  desc?: string;
+  priority?: string;
+  assigneeId?: string | null;
+  source?: string;
+  due?: string | null;
+  estimate?: number | null;
+  status?: string;
+}
+
+export interface WorkItemPatch {
+  title?: string;
+  desc?: string;
+  priority?: string;
+  assigneeId?: string | null;
+  due?: string | null;
+  estimate?: number | null;
+  iterationId?: string | null;
+  projectId?: string | null;
+  source?: string;
+}
+
+export interface BoardStats {
+  status: string;
+  count: number;
+  estimate: number;
+}
+
+export interface PlannerService {
+  items(q: WorkItemQuery): Promise<WorkItem[]>;
+  /** What is on one person's plate, soonest first. */
+  mine(empId?: string): Promise<WorkItem[]>;
+  board(projectId?: string): Promise<BoardStats[]>;
+  iterations(): Promise<Iteration[]>;
+  createItem(draft: NewWorkItem): Promise<WorkItem>;
+  createIteration(draft: { name: string; goal?: string; from: string; to: string }): Promise<Iteration[]>;
+  /**
+   * Move a card. `afterId` names the card it should sit behind, so the caller
+   * says where it was dropped rather than computing an index.
+   */
+  moveItem(id: string, status: string, afterId?: string | null): Promise<WorkItem>;
+  updateItem(id: string, patch: WorkItemPatch): Promise<WorkItem>;
+  comment(id: string, text: string): Promise<WorkItem>;
+}
+
 /* ---------- the registry ---------- */
 
 export interface Services {
@@ -1060,4 +1158,5 @@ export interface Services {
   whatsapp: WhatsAppService;
   approvals: ApprovalsService;
   joiners: JoinersService;
+  planner: PlannerService;
 }

@@ -48,6 +48,7 @@ export const NAV: NavGroup[] = [
   {
     group: 'Talent',
     items: [
+      { k: 'planner', ic: '◱', n: 'Project Planner' },
       { k: 'performance', ic: '◈', n: 'Performance' },
       { k: 'learning', ic: '◉', n: 'Learning' },
       { k: 'hiring', ic: '◎', n: 'Hiring (ATS)' },
