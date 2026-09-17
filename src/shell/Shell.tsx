@@ -10,6 +10,7 @@ import { ACCOUNTS } from '../state/rbac';
 import { useApp } from '../state/AppContext';
 import { useAuth } from '../auth/AuthContext';
 import { Avatar } from '../components/ui';
+import { WorldClocks } from './WorldClocks';
 import type { ReactNode } from 'react';
 
 const isMobile = () => window.matchMedia('(max-width: 860px)').matches;
@@ -110,6 +111,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <div className="sub">{SUBTITLES[route]?.(ctx)}</div>
           </div>
           <div className="spacer" />
+          <WorldClocks />
           {/*
             * The role switcher exists only when there is no sign-in. It is the
             * honest signal that a build is a demo — and it must never appear

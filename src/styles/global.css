@@ -424,6 +424,31 @@ textarea.input{min-height:80px;resize:vertical}
 /* With an icon in the corner, the label needs room not to run under it. */
 .tile-ic ~ .lbl{padding-right:46px}
 
+/* ---------- Office clocks ---------- */
+.clocks{display:flex;align-items:stretch;gap:2px}
+.clock-cell{
+  padding:3px 11px;border-radius:9px;min-width:74px;text-align:center;
+  border:1px solid transparent;
+}
+/* An office inside working hours is lifted; the rest simply recede. Colour is
+   not the only carrier — the awake one is also the brighter ink. */
+.clock-cell.awake{background:var(--surface-3);border-color:var(--line)}
+.cl-city{
+  font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);white-space:nowrap;
+}
+.clock-cell.awake .cl-city{color:var(--ink-2)}
+.cl-day{color:var(--brand);font-weight:700}
+.cl-time{
+  font-size:14px;font-weight:650;letter-spacing:-.2px;line-height:1.2;margin-top:1px;
+  font-variant-numeric:tabular-nums;color:var(--ink-3);
+}
+.clock-cell.awake .cl-time{color:var(--ink)}
+
+/* The header has a lot competing for it. Below a laptop the clocks are the
+   first thing to go — they are useful, not load-bearing. */
+@media (max-width:1180px){.clocks{display:none}}
+
 /* ---------- Dashboard hero ---------- */
 .hero{
   position:relative;overflow:hidden;border-radius:var(--r-lg);
