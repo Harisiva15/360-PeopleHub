@@ -87,6 +87,19 @@ const ASSET_CATEGORIES = [
   ['SECURITY', 'Security keys', 60],
   ['LICENCE', 'Software licences', 12],
 ];
+// Per-claim ceilings. An item above one is flagged, never blocked.
+const EXPENSE_CATEGORIES = [
+  ['AIR', 'Air Travel', 25000],
+  ['HOTEL', 'Hotel / Stay', 6000],
+  ['LOCAL', 'Local Travel / Cab', 2500],
+  ['MEAL', 'Meals (per day)', 800],
+  ['CLIENT', 'Client Entertainment', 10000],
+  ['NET', 'Broadband / Internet', 1500],
+  ['MOB', 'Mobile Bill', 1000],
+  ['LEARN', 'Learning & Certification', 40000],
+  ['RELOC', 'Relocation', 75000],
+  ['FUEL', 'Fuel & Mileage', 6000],
+];
 const GRADES = [
   ['L1', 'L1 · Associate', 1, 450000, 750000],
   ['L2', 'L2 · Engineer', 2, 750000, 1300000],
@@ -187,6 +200,12 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, life]);
   }
+  for (const [code, name, cap] of EXPENSE_CATEGORIES) {
+    await q(`INSERT INTO expense_category (tenant_id, code, name, limit_amount)
+             VALUES ($1,$2,$3,$4)
+             ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
+      [tenant, code, name, cap]);
+  }
   for (const [code, label, rank, min, max] of GRADES) {
     await q(`INSERT INTO grade_band (tenant_id, code, label, rank, min_ctc, max_ctc)
              VALUES ($1,$2,$3,$4,$5,$6)
@@ -199,7 +218,7 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name, quota, carry, encash]);
   }
-  created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, `
+  created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, ${EXPENSE_CATEGORIES.length} expense categories, `
     + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts`);
 
   /* ---- permissions: admin sees everything, the rest is narrowed later ---- */

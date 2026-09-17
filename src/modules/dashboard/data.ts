@@ -41,7 +41,7 @@ export const useMyBalances = (empId: string) => useQuery((s) => s.leave.balances
 
 export const useTimesheetsIn = (ids: string[]) => useQuery((s) => s.timesheet.list({ empIds: ids }), [key(ids)]);
 export const useClaimsIn = (ids: string[]) =>
-  useQuery(unbacked((s) => s.expenses.claims({ empIds: ids }), []), [key(ids)]);
+  useQuery((s) => s.expenses.claims({ empIds: ids }), [key(ids)]);
 
 export const usePayRuns = () => useQuery((s) => s.payroll.runs(), []);
 export const useCurrentRun = () => useQuery((s) => s.payroll.currentRun(), []);

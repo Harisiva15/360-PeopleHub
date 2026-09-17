@@ -48,6 +48,10 @@ import {
 } from '../modules/assets/service.ts';
 import { ProvisionError } from '../modules/people/provision.ts';
 import {
+  approveAdvance, approveClaim, ExpenseError, listAdvances, listClaims,
+  reimburseClaim, rejectClaim, requestAdvance, submitClaim,
+} from '../modules/expenses/service.ts';
+import {
   activeLoans, bankBatches, compensation, compliancePayments, currentRun, dailyRates,
   inputsFor, listRuns, PayrollError, payslipFor, payslipHistory, processRun, register,
   salaryStructureOf, totals, totalsFor,
@@ -238,6 +242,60 @@ const routes: Route[] = [
     method: 'GET',
     pattern: '/payroll/payslips/:empId/:mk',
     handler: (c, _r, p) => payslipFor(c, p.empId!, p.mk!),
+  },
+  {
+    method: 'GET',
+    pattern: '/expenses/claims',
+    handler: (c, req) => {
+      const p = new URL(req.url ?? '/', 'http://x').searchParams;
+      const ids = p.get('empIds');
+      return listClaims(c, {
+        ...(ids ? { empIds: ids.split(',').filter(Boolean) } : {}),
+        ...(p.get('status') ? { status: p.get('status')! } : {}),
+      });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/expenses/claims',
+    handler: (c, _r, _p, body) => submitClaim(c, (body ?? {}) as Parameters<typeof submitClaim>[1]),
+  },
+  {
+    method: 'POST',
+    pattern: '/expenses/claims/:id/approve',
+    handler: (c, _r, p) => approveClaim(c, p.id!),
+  },
+  {
+    method: 'POST',
+    pattern: '/expenses/claims/:id/reject',
+    handler: (c, _r, p, body) =>
+      rejectClaim(c, p.id!, (body as { note?: string } | undefined)?.note ?? ''),
+  },
+  {
+    method: 'POST',
+    pattern: '/expenses/claims/:id/reimburse',
+    handler: (c, _r, p) => reimburseClaim(c, p.id!),
+  },
+  {
+    method: 'GET',
+    pattern: '/expenses/advances',
+    handler: (c, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('empIds');
+      return listAdvances(c, ids ? ids.split(',').filter(Boolean) : undefined);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/expenses/advances',
+    handler: (c, _r, _p, body) => {
+      const b = (body ?? {}) as { empId?: string; amount: number; reason: string };
+      return requestAdvance(c, b.empId ?? '', Number(b.amount), b.reason);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/expenses/advances/:id/approve',
+    handler: (c, _r, p) => approveAdvance(c, p.id!),
   },
   { method: 'GET', pattern: '/onboarding', handler: (c) => listOnboarding(c) },
   {
@@ -561,6 +619,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof NotFound) return { status: 404, message: error.message };
   if (error instanceof BadRequest) return { status: 400, message: error.message };
   if (error instanceof AttendanceError) {
+    const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof ExpenseError) {
     const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;

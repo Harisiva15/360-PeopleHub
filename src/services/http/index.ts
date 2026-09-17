@@ -73,6 +73,23 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    expenses: {
+      claims: (q) => api.get(`/expenses/claims${qs({
+        empIds: q.empIds?.join(','), status: q.status,
+      })}`),
+      submitClaim: (c) => api.post('/expenses/claims', c),
+      /* approverId is ignored: the server takes the approver from the session. */
+      approveClaim: (id) => api.post(`/expenses/claims/${id}/approve`),
+      rejectClaim: (id, _approverId, note) =>
+        api.post(`/expenses/claims/${id}/reject`, { note }),
+      reimburseClaim: (id) => api.post(`/expenses/claims/${id}/reimburse`),
+      advances: (empIds) =>
+        api.get(`/expenses/advances${qs({ empIds: empIds?.join(',') })}`),
+      requestAdvance: (empId, amount, reason) =>
+        api.post('/expenses/advances', { empId, amount, reason }),
+      approveAdvance: (id) => api.post(`/expenses/advances/${id}/approve`),
+    },
+
     payroll: {
       runs: () => api.get('/payroll/runs'),
       currentRun: () => api.get('/payroll/runs/current'),
