@@ -73,6 +73,16 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    exits: {
+      list: () => api.get('/exits'),
+      detail: (exitId) => api.get(`/exits/${exitId}`),
+      raise: (draft) => api.post('/exits', draft),
+      setClearance: (exitId, department, done) =>
+        api.put(`/exits/${exitId}/clearance/${encodeURIComponent(department)}`, { done }),
+      settle: (exitId) => api.post(`/exits/${exitId}/settle`),
+      recordInterview: (exitId, answers) => api.post(`/exits/${exitId}/interview`, answers),
+    },
+
     performance: {
       goals: (empIds) =>
         api.get(`/performance/goals${qs({ empIds: empIds?.join(',') })}`),

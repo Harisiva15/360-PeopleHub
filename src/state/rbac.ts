@@ -97,7 +97,7 @@ export const SCOPE: Record<AppRole, ScopeInfo> = {
 export const LIVE_MODULES = new Set([
   'dashboard', 'attendance', 'timesheet', 'leave', 'employees', 'org',
   'celebrations', 'announcements', 'payroll', 'hiring', 'onboarding',
-  'assets', 'expenses', 'helpdesk', 'performance', 'settings',
+  'assets', 'expenses', 'helpdesk', 'performance', 'exit', 'settings',
 ]);
 
 /**

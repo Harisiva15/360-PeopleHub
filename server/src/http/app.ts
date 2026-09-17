@@ -48,6 +48,10 @@ import {
 } from '../modules/assets/service.ts';
 import { ProvisionError } from '../modules/people/provision.ts';
 import {
+  ExitError, exitDetail, listExits, raiseExit, recordExitInterview, setClearance,
+  settleExit,
+} from '../modules/exits/service.ts';
+import {
   approveAdvance, approveClaim, ExpenseError, listAdvances, listClaims,
   reimburseClaim, rejectClaim, requestAdvance, submitClaim,
 } from '../modules/expenses/service.ts';
@@ -251,6 +255,26 @@ const routes: Route[] = [
     method: 'GET',
     pattern: '/payroll/payslips/:empId/:mk',
     handler: (c, _r, p) => payslipFor(c, p.empId!, p.mk!),
+  },
+  { method: 'GET', pattern: '/exits', handler: (c) => listExits(c) },
+  {
+    method: 'POST',
+    pattern: '/exits',
+    handler: (c, _r, _p, body) => raiseExit(c, (body ?? {}) as Parameters<typeof raiseExit>[1]),
+  },
+  { method: 'GET', pattern: '/exits/:id', handler: (c, _r, p) => exitDetail(c, p.id!) },
+  {
+    method: 'PUT',
+    pattern: '/exits/:id/clearance/:department',
+    handler: (c, _r, p, body) =>
+      setClearance(c, p.id!, p.department!, Boolean((body as { done?: boolean } | undefined)?.done)),
+  },
+  { method: 'POST', pattern: '/exits/:id/settle', handler: (c, _r, p) => settleExit(c, p.id!) },
+  {
+    method: 'POST',
+    pattern: '/exits/:id/interview',
+    handler: (c, _r, p, body) =>
+      recordExitInterview(c, p.id!, (body ?? {}) as Parameters<typeof recordExitInterview>[2]),
   },
   { method: 'GET', pattern: '/performance/cycle', handler: (c) => currentCycle(c) },
   { method: 'GET', pattern: '/performance/praise', handler: (c) => listPraise(c) },
@@ -762,6 +786,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof BadRequest) return { status: 400, message: error.message };
   if (error instanceof AttendanceError) {
     const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof ExitError) {
+    const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };

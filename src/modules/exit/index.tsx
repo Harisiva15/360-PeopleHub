@@ -175,8 +175,10 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
   const f = detail.settlement;
   const done = x.clearance.filter((c) => c.done).length;
 
-  const toggleClearance = (i: number, checked: boolean) => {
-    void setClearance.mutate(x.id, i, checked);
+  /* Addressed by department, not by position: a checklist that renumbers when
+     a line is added would tick the wrong box. */
+  const toggleClearance = (department: string, checked: boolean) => {
+    void setClearance.mutate(x.id, department, checked);
   };
 
   return (
@@ -289,11 +291,11 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
 
           <div className="grid g2">
             <Card title="Clearance" sub={`${done} of ${x.clearance.length} complete`} flush>
-              {x.clearance.map((c, i) => (
+              {x.clearance.map((c) => (
                 <ListRow key={c.k}>
                   <input type="checkbox" checked={c.done} disabled={app.role === 'employee'}
                     style={{ width: 17, height: 17, cursor: 'pointer' }}
-                    onChange={(ev) => toggleClearance(i, ev.target.checked)} />
+                    onChange={(ev) => toggleClearance(c.k, ev.target.checked)} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 650, fontSize: 12.5, ...(c.done ? { opacity: 0.6, textDecoration: 'line-through' } : {}) }}>
                       {c.k}

@@ -64,7 +64,7 @@ export const useSurveys = () => useQuery(unbacked((s) => s.engagement.surveys(),
 
 export const useAnnouncements = () => useQuery((s) => s.noticeboard.announcements(), []);
 export const useCelebrations = (days: number) => useQuery((s) => s.noticeboard.celebrations(days), [days]);
-export const useExits = () => useQuery(unbacked((s) => s.exits.list(), []), []);
+export const useExits = () => useQuery((s) => s.exits.list(), []);
 
 /** The approval inbox, assembled and scoped by the service. */
 export const usePendingItems = () => {

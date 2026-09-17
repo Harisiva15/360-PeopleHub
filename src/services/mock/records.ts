@@ -21,7 +21,7 @@ import { assetKPI, pendingRecovery } from '../../data/assets';
 import { AUDIT, AUDIT_CATS, CONTROLS, POSTURE, RETENTION } from '../../data/security';
 import { ONBOARD, ONB_TEMPLATE } from '../../data/onboarding';
 import type {
-  Asset, AssetRequest, AssetService, DocumentService, ExitDetail, ExitService, Onboarding,
+  Asset, AssetRequest, AssetService, ExitRecord, DocumentService, ExitDetail, ExitService, Onboarding,
   OnboardingService, SecurityService,
 } from '../contracts';
 import { ok } from './util';
@@ -76,12 +76,53 @@ export const exitService: ExitService = {
     return ok(out);
   },
 
-  setClearance(exitId, index, done) {
+  raise(draft) {
+    if (!draft.lwd) return Promise.reject(new Error('An exit needs a last working day'));
+    if (EXITS.some((x) => x.empId === draft.empId && x.status !== 'Settled')) {
+      return Promise.reject(new Error('That person already has an exit in progress'));
+    }
+    const row: ExitRecord = {
+      id: 'EX-' + (EXITS.length + 1),
+      empId: draft.empId,
+      type: draft.type ?? 'resignation',
+      resignedOn: draft.resignedOn ?? ymd(TODAY),
+      noticeDays: draft.noticeDays ?? 30,
+      lwd: draft.lwd,
+      reason: draft.reason ?? '',
+      destination: draft.destination ?? '',
+      status: 'Notice Period',
+      buyout: draft.buyout ?? 0,
+      clearance: ['IT', 'Finance', 'HR', 'Manager', 'Admin'].map((d) => ({
+        k: d, d: d + ' clearance', done: false, on: null, owner: d,
+      })),
+      interview: { done: false },
+    };
+    EXITS.unshift(row);
+    return ok(row);
+  },
+
+  recordInterview(exitId, answers) {
     const x = EXITS.find((e) => e.id === exitId);
     if (!x) return Promise.reject(new Error('No such exit: ' + exitId));
-    const line = x.clearance[index];
-    if (!line) return Promise.reject(new Error('No clearance line ' + index));
+    if (answers.rating !== undefined && (answers.rating < 1 || answers.rating > 5)) {
+      return Promise.reject(new Error('A rating is 1 to 5'));
+    }
+    x.interview = {
+      done: true,
+      ...(answers.wouldRejoin === undefined ? {} : { wouldRejoin: answers.wouldRejoin }),
+      ...(answers.comments ? { comments: answers.comments } : {}),
+    };
+    return ok(x);
+  },
+
+  setClearance(exitId, department, done) {
+    const x = EXITS.find((e) => e.id === exitId);
+    if (!x) return Promise.reject(new Error('No such exit: ' + exitId));
+    const line = x.clearance.find((c) => c.k === department);
+    if (!line) return Promise.reject(new Error('No ' + department + ' clearance on this exit'));
     line.done = done;
+    line.on = done ? ymd(TODAY) : null;
+    if (done && x.status === 'Notice Period') x.status = 'In Clearance';
     return ok(x);
   },
 

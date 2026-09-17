@@ -644,14 +644,36 @@ export interface NoticeboardService {
   remove(id: string): Promise<Announcement[]>;
 }
 
+export interface NewExit {
+  empId: string;
+  type?: string;
+  resignedOn?: string;
+  noticeDays?: number;
+  /** Last working day. */
+  lwd: string;
+  reason?: string;
+  destination?: string;
+  /** Notice days bought out, recovered in the settlement. */
+  buyout?: number;
+}
+
+export interface ExitInterviewAnswers {
+  wouldRejoin?: boolean;
+  rating?: number;
+  comments?: string;
+}
+
 export interface ExitService {
   list(): Promise<ExitRecord[]>;
   /** One exit with its settlement computed. */
   detail(exitId: string): Promise<ExitDetail | null>;
-  /** Tick or untick one clearance line. */
-  setClearance(exitId: string, index: number, done: boolean): Promise<ExitRecord>;
+  /** Record a resignation, with its clearance checklist. */
+  raise(draft: NewExit): Promise<ExitRecord>;
+  /** Tick or untick one clearance line, by department. */
+  setClearance(exitId: string, department: string, done: boolean): Promise<ExitRecord>;
   /** Close an exit once clearance is complete and the settlement is paid. */
   settle(exitId: string): Promise<ExitRecord>;
+  recordInterview(exitId: string, answers: ExitInterviewAnswers): Promise<ExitRecord>;
 }
 
 /* ---------- the staffing book ---------- */
