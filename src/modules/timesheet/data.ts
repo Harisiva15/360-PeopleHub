@@ -44,3 +44,6 @@ export const useRecallSheet = () => useMutation((s, id: string) => s.timesheet.r
 export const useApproveSheet = () => useMutation((s, id: string, approverId: string) => s.timesheet.approve(id, approverId));
 export const useRejectSheet = () =>
   useMutation((s, id: string, approverId: string, note: string) => s.timesheet.reject(id, approverId, note));
+export const useSetEntryNote = () =>
+  useMutation((s, id: string, ri: number, di: number, note: string) =>
+    s.timesheet.setEntryNote(id, ri, di, note));

@@ -244,6 +244,11 @@ export interface TimesheetService {
   setRow(id: string, rowIndex: number, patch: { proj?: string; task?: string }): Promise<Timesheet>;
   /** Sets one cell and returns the sheet with its total already recomputed. */
   setHours(id: string, rowIndex: number, dayIndex: number, hours: number): Promise<Timesheet>;
+  /**
+   * Say what one day's hours were for. Refused when that day has no hours —
+   * a note with nothing to annotate would create an empty line on the week.
+   */
+  setEntryNote(id: string, rowIndex: number, dayIndex: number, note: string): Promise<Timesheet>;
   submit(id: string): Promise<Timesheet>;
   recall(id: string): Promise<Timesheet>;
   approve(id: string, approverId: string): Promise<Timesheet>;

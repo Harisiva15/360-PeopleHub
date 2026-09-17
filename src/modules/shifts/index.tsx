@@ -1,21 +1,20 @@
 import { useState } from 'react';
 import { sortBy, sum } from '../../lib/collections';
-import { addDays, DOW, dowOf, fmtD, fmtDS, isWeekend, mondayOf, TODAY, ymd } from '../../lib/dates';
+import { addDays, DOW, dowOf, fmtD, TODAY, ymd } from '../../lib/dates';
 import { inr } from '../../lib/format';
-import { downloadCSV } from '../../lib/csv';
-import { DEPTS, deptOf } from '../../data/org';
 import { SHIFTS, shiftOf } from '../../data/shifts';
 import type { Overtime } from '../../services';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Dot, StatusBadge } from '../../components/common';
-import { BarChart, Legend } from '../../components/charts';
+import { Legend } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import {
   useApproveOvertime, useLeaveBalance, useOvertime, useRaiseOvertime, useRoster,
-  useSetShift, useTodayCoverage, useVisiblePeople,
+  useTodayCoverage, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
+import { RosterView } from './Roster';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -26,145 +25,6 @@ const NIGHT_ALLOWANCE = 350;
 /** Indicative hourly rate used to price approved overtime. */
 const OT_HOURLY = 450;
 
-/* ---------------- Team roster ---------------- */
-
-/** The picker owns the write, so one roster change is one mutation. */
-function ShiftPicker(
-  { id, ds, current, close }: { id: string; ds: string; current: string; close: () => void },
-) {
-  const app = useApp();
-  const setShift = useSetShift();
-  const [v, setV] = useState(current);
-  return (
-    <>
-      <div className="field">
-        <label>Shift</label>
-        <select className="input" value={v} onChange={(e) => setV(e.target.value)}>
-          {SHIFTS.map((sh) => <option key={sh.id} value={sh.id}>{sh.n} ({sh.start} – {sh.end})</option>)}
-          <option value="OFF">Week off</option>
-        </select>
-      </div>
-      <Banner kind="info" icon="📧">The employee is notified of any roster change and must acknowledge it.</Banner>
-      <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
-        <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" onClick={async () => {
-          try {
-            await setShift.mutate(id, ds, v);
-            close();
-            app.toast('Roster updated and employee notified', 'ok');
-          } catch (e) {
-            app.toast(e instanceof Error ? e.message : 'Could not change the shift', 'err');
-          }
-        }}>Save</button>
-      </div>
-    </>
-  );
-}
-
-function ShRoster() {
-  const app = useApp();
-  const layer = useLayer();
-  const dir = useVisiblePeople();
-  const [dept, setDept] = useState('SUP');
-
-  const start = mondayOf(TODAY);
-  const days: Date[] = [];
-  for (let i = 0; i < 14; i++) days.push(addDays(start, i));
-
-  const people = dir.list.filter((e) => e.dept === dept);
-  const { data: roster = {} } = useRoster(dir.ids);
-  const coverage = days.map((d) => ROSTERED.map((sh) => people.filter((p) => roster[p.id]?.[ymd(d)] === sh.id).length));
-
-  const editCell = (id: string, ds: string) => {
-    if (app.role === 'employee') return;
-    layer.modal({
-      title: 'Change shift',
-      sub: dir.name(id) + ' · ' + fmtD(ds),
-      size: 'narrow',
-      body: (close) => <ShiftPicker id={id} ds={ds} current={roster[id]?.[ds] || 'GEN'} close={close} />,
-      footer: null,
-    });
-  };
-
-  const exportCsv = () => {
-    const ds = days.map((d) => ymd(d));
-    downloadCSV(`roster_${dept}.csv`,
-      [['Emp Code', 'Name', ...ds]].concat(
-        people.map((e) => [e.code, e.name, ...ds.map((d) => roster[e.id]?.[d] || '')]),
-      ));
-  };
-
-  return (
-    <div className="stack">
-      <div className="toolbar">
-        <select className="input" style={{ width: 'auto' }} value={dept} onChange={(e) => setDept(e.target.value)}>
-          {DEPTS.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-        <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12.5 }}>
-          {people.length} people · {fmtD(ymd(days[0]))} – {fmtD(ymd(days[13]))}
-        </span>
-        <button className="btn" onClick={exportCsv}>⤓ Export</button>
-        {app.role === 'admin' && (
-          <button className="btn primary" onClick={() => app.toast('Roster auto-assigned for the next 2 weeks respecting all rules', 'ok')}>
-            ⚡ Auto-assign
-          </button>
-        )}
-      </div>
-
-      <Card title="Roster" sub={`${deptOf(dept).name} · click a cell to change the shift`} flush>
-        <div className="tbl-wrap" style={{ maxHeight: 560, overflow: 'auto' }}>
-          <table className="tbl" style={{ fontSize: 11.5 }}>
-            <thead>
-              <tr>
-                <th style={{ minWidth: 180, position: 'sticky', left: 0, background: 'var(--surface-2)', zIndex: 2 }}>Employee</th>
-                {days.map((d, i) => (
-                  <th key={i} style={{ textAlign: 'center', minWidth: 58, ...(isWeekend(d) ? { background: 'var(--surface-3)' } : {}) }}>
-                    {DOW[d.getDay()]}<br /><span style={{ opacity: 0.7 }}>{d.getDate()}</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {people.map((e) => (
-                <tr key={e.id}>
-                  <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }}>
-                    <PersonCell e={e} sub={false} />
-                  </td>
-                  {days.map((d, i) => {
-                    const ds = ymd(d);
-                    const s = roster[e.id]?.[ds] || 'GEN';
-                    if (s === 'OFF') {
-                      return (
-                        <td key={i} style={{ textAlign: 'center', background: 'var(--surface-3)', color: 'var(--ink-3)' }}
-                          data-tip={`${e.name} · week off · ${fmtD(ds)}`}>OFF</td>
-                      );
-                    }
-                    const sh = shiftOf(s);
-                    return (
-                      <td key={i} className="clickable" onClick={() => editCell(e.id, ds)}
-                        style={{ textAlign: 'center', background: `color-mix(in srgb, ${sh.c} 16%, transparent)`, fontWeight: 650 }}
-                        data-tip={`${e.name} · ${sh.n} ${sh.start}–${sh.end} · ${fmtD(ds)}`}>{s}</td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ padding: '12px 16px' }}>
-          <Legend items={ROSTERED.map((s) => ({ k: `${s.n} (${s.start}–${s.end})`, c: s.c })).concat([{ k: 'Week off', c: 'var(--line-2)' }])} />
-        </div>
-      </Card>
-
-      <Card title="Shift coverage" sub="Headcount per shift per day">
-        <BarChart labels={days.map((d) => fmtDS(ymd(d)))} height={210} stacked
-          series={ROSTERED.map((s, i) => ({ name: s.n, color: s.c, data: coverage.map((c) => c[i]) }))} />
-        <Legend items={ROSTERED.map((s) => ({ k: s.n, c: s.c }))} />
-      </Card>
-    </div>
-  );
-}
 
 /* ---------------- My roster ---------------- */
 
@@ -450,7 +310,7 @@ function Shifts() {
   return (
     <>
       <Tabs value={active} options={tabs} onChange={setTab} />
-      {active === 'roster' && <ShRoster />}
+      {active === 'roster' && <RosterView />}
       {active === 'my' && <ShMy />}
       {active === 'ot' && <ShOt />}
       {active === 'def' && <ShDef />}

@@ -13,7 +13,6 @@
 
 import { DEPTS } from '../data/org';
 import { ORG } from '../data/org';
-import { SHIFTS } from '../data/shifts';
 import { SCOPE } from '../state/rbac';
 import type { ModuleCtx } from './registry';
 
@@ -21,8 +20,8 @@ export const SUBTITLES: Record<string, (ctx: ModuleCtx) => string> = {
   dashboard: (c) => 'Welcome back, ' + c.me.name.split(' ')[0] + ' · ' + new Date().toDateString(),
   planner: () => 'Boards, iterations and the action items that come out of meetings',
   attendance: () => 'Punch in/out with location verification against site geo-fences',
-  shifts: () => `${SHIFTS.length} shift patterns · rotational rosters, overtime and comp off`,
-  timesheet: () => 'Log project hours, submit weekly and track approvals',
+  shifts: () => 'Plan and manage employee schedules, shifts and availability',
+  timesheet: () => 'Track and manage your work hours, projects and tasks',
   leave: () => 'Balances, requests and the company holiday calendar',
   expenses: () => 'Claims, travel advances and policy limits · reimbursed with payroll',
   approvals: () => 'Everything waiting on your action',

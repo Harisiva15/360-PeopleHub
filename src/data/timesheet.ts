@@ -16,6 +16,8 @@ export interface TSRow {
   task: string;
   /** Hours Monday through Sunday. */
   h: number[];
+  /** What those hours were, day by day. Same length and order as `h`. */
+  notes: string[];
 }
 
 export interface Timesheet {
@@ -50,6 +52,7 @@ export const TS: Timesheet[] = [];
         proj: p,
         task: pick(TASK_TYPES),
         h: [0, 0, 0, 0, 0, 0, 0],
+        notes: ['', '', '', '', '', '', ''],
       }));
 
       /* spread each day's capacity across the week's projects, from attendance */

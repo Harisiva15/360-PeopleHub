@@ -356,26 +356,39 @@ textarea.input{min-height:80px;resize:vertical}
 }
 
 /* ---------- Stat tiles ---------- */
+/*
+ * A white card with a tinted icon plate, per the reference design.
+ *
+ * The earlier version tinted the whole card. Read as a row that gives five
+ * saturated blocks equal weight and leaves the figures competing with their
+ * own backgrounds; the reference puts the colour in a small plate and lets the
+ * number sit on white, which is why the numbers are what you see first.
+ * The tone now colours the plate, not the card.
+ */
 .tile{
   background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
-  padding:16px 17px 15px;box-shadow:var(--shadow-sm);position:relative;overflow:hidden;
+  padding:15px 16px;box-shadow:var(--shadow-sm);position:relative;
+  display:flex;align-items:flex-start;gap:13px;
   transition:box-shadow .16s ease,border-color .16s ease;
 }
 .tile:hover{box-shadow:var(--shadow-md);border-color:var(--line-2)}
-.tile .lbl{
-  font-size:11px;font-weight:600;color:var(--ink-3);
-  text-transform:uppercase;letter-spacing:.08em;
-}
+/* min-width:0 or a long label refuses to wrap and pushes the plate out. */
+.tile-t{min-width:0;flex:1}
+
 /*
- * 700 rather than 750, with tighter tracking. Very heavy weights read as
- * shouting at large sizes; the size is already doing the emphasis, and the
- * tracking is what makes a big number look drawn rather than stretched.
+ * The figure leads and the label follows it, which is the way round the
+ * reference has it: the number is what the row is for, and a label above it
+ * makes every card start with the same grey line.
  */
 .tile .val{
-  font-size:27px;font-weight:700;letter-spacing:-1px;margin-top:7px;line-height:1.08;
+  font-size:25px;font-weight:700;letter-spacing:-.6px;line-height:1.1;
+}
+.tile .lbl{
+  font-size:11.5px;font-weight:600;color:var(--ink-3);margin-top:3px;
+  text-transform:uppercase;letter-spacing:.07em;
 }
 .tile .foot{
-  font-size:11.5px;color:var(--ink-3);margin-top:7px;
+  font-size:11.5px;color:var(--ink-3);margin-top:6px;
   display:flex;align-items:center;gap:5px;
 }
 .tile .up{color:var(--good-text);font-weight:650}
@@ -383,46 +396,22 @@ textarea.input{min-height:80px;resize:vertical}
 .tile .spark{position:absolute;right:10px;bottom:8px;opacity:.9}
 
 /*
- * Tinted variants.
- *
- * The wash is the card and the ink is the figure on it; both move together so
- * the number keeps its contrast. A pastel card with default-grey text is the
- * usual way this pattern goes wrong — every one of these pairs is at least
- * 4.5 against its own background.
- *
- * The border is a tint of the same hue rather than the neutral line, because a
- * grey edge on a coloured card reads as a mistake.
+ * The icon plate. A rounded square of the tone at low opacity, with the glyph
+ * in the tone's full-strength ink — the pairing the reference uses on every
+ * page. Untinted tiles get a neutral plate rather than none, so a row that
+ * mixes them does not look half-finished.
  */
-.tile.t-blue{background:var(--t-blue);border-color:color-mix(in srgb,var(--t-blue-ink) 16%,transparent)}
-.tile.t-green{background:var(--t-green);border-color:color-mix(in srgb,var(--t-green-ink) 16%,transparent)}
-.tile.t-amber{background:var(--t-amber);border-color:color-mix(in srgb,var(--t-amber-ink) 16%,transparent)}
-.tile.t-rose{background:var(--t-rose);border-color:color-mix(in srgb,var(--t-rose-ink) 16%,transparent)}
-.tile.t-violet{background:var(--t-violet);border-color:color-mix(in srgb,var(--t-violet-ink) 16%,transparent)}
-
-.tile.t-blue .val{color:var(--t-blue-ink)}
-.tile.t-green .val{color:var(--t-green-ink)}
-.tile.t-amber .val{color:var(--t-amber-ink)}
-.tile.t-rose .val{color:var(--t-rose-ink)}
-.tile.t-violet .val{color:var(--t-violet-ink)}
-
-/* The label and footer stay in ink, not the tone — three weights of the same
-   hue on one card is where a tinted card starts to look like a warning. */
-.tile.t-blue .lbl,.tile.t-green .lbl,.tile.t-amber .lbl,
-.tile.t-rose .lbl,.tile.t-violet .lbl{color:var(--ink-2);opacity:.8}
-
-/* The icon sits top-right, as a soft plate rather than a floating glyph. */
 .tile-ic{
-  position:absolute;top:14px;right:14px;width:38px;height:38px;border-radius:11px;
-  display:grid;place-items:center;font-size:18px;line-height:1;
-  background:color-mix(in srgb,var(--surface) 70%,transparent);
+  flex:0 0 auto;width:42px;height:42px;border-radius:12px;
+  display:grid;place-items:center;font-size:19px;line-height:1;
+  background:var(--surface-2);color:var(--ink-2);
 }
-.tile.t-blue .tile-ic{background:color-mix(in srgb,var(--t-blue-ink) 12%,transparent)}
-.tile.t-green .tile-ic{background:color-mix(in srgb,var(--t-green-ink) 12%,transparent)}
-.tile.t-amber .tile-ic{background:color-mix(in srgb,var(--t-amber-ink) 12%,transparent)}
-.tile.t-rose .tile-ic{background:color-mix(in srgb,var(--t-rose-ink) 12%,transparent)}
-.tile.t-violet .tile-ic{background:color-mix(in srgb,var(--t-violet-ink) 12%,transparent)}
-/* With an icon in the corner, the label needs room not to run under it. */
-.tile-ic ~ .lbl{padding-right:46px}
+.tile.t-blue .tile-ic{background:var(--t-blue);color:var(--t-blue-ink)}
+.tile.t-green .tile-ic{background:var(--t-green);color:var(--t-green-ink)}
+.tile.t-amber .tile-ic{background:var(--t-amber);color:var(--t-amber-ink)}
+.tile.t-rose .tile-ic{background:var(--t-rose);color:var(--t-rose-ink)}
+.tile.t-violet .tile-ic{background:var(--t-violet);color:var(--t-violet-ink)}
+
 
 /* ---------- Office clocks ---------- */
 .clocks{display:flex;align-items:stretch;gap:2px}
@@ -845,3 +834,23 @@ kbd{font-family:var(--font)}
 @media (max-width:860px){
   .login-card{padding:26px 20px;border-radius:14px}
 }
+
+/* ---------- Roster grid ---------- */
+/*
+ * A cell is a coloured left edge plus the shift's name — never colour alone,
+ * so the rota still says who is on nights when it is printed in grey or read
+ * by somebody colour-blind. The edge is the shift's own colour; the plate
+ * behind it stays neutral, because seven saturated columns is a rota nobody
+ * can scan.
+ */
+.tbl.roster td{vertical-align:top}
+.tbl.roster th{white-space:nowrap}
+.rost-cell{min-width:118px}
+.rost{
+  display:block;width:100%;font-size:11.5px;font-weight:600;
+  padding:5px 8px;border-radius:7px;border:1px solid var(--line);
+  border-left:3px solid var(--line-2);background:var(--surface-2);color:var(--ink-1);
+}
+select.rost{cursor:pointer;appearance:none}
+select.rost:hover{border-color:var(--line-2);box-shadow:var(--shadow-sm)}
+.rost.off{color:var(--ink-3);background:transparent;border-left-color:var(--line-2)}

@@ -2,7 +2,7 @@
 export const TITLES: Record<string, string> = {
   dashboard: 'Dashboard',
   attendance: 'Attendance & Geo Tracking',
-  shifts: 'Shifts & Roster',
+  shifts: 'Roster',
   timesheet: 'Timesheet',
   leave: 'Leave Management',
   expenses: 'Expenses & Reimbursements',

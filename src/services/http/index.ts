@@ -246,6 +246,8 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       setRow: (id, rowIndex, patch) => api.put(`/timesheets/${id}/rows/${rowIndex}`, patch),
       setHours: (id, rowIndex, dayIndex, hours) =>
         api.put(`/timesheets/${id}/rows/${rowIndex}/days/${dayIndex}`, { hours }),
+      setEntryNote: (id, rowIndex, dayIndex, note) =>
+        api.put(`/timesheets/${id}/rows/${rowIndex}/days/${dayIndex}/note`, { note }),
       submit: (id) => api.post(`/timesheets/${id}/submit`),
       recall: (id) => api.post(`/timesheets/${id}/recall`),
       /*

@@ -105,10 +105,12 @@ export function Tile({
   return (
     <div className={'tile' + (tone ? ' t-' + tone : '')}>
       {icon && <div className="tile-ic" aria-hidden="true">{icon}</div>}
-      <div className="lbl">{label}</div>
-      <div className="val">{value}</div>
-      {foot && <div className="foot">{trend ? <span className={trend}>{foot}</span> : foot}</div>}
-      {children}
+      <div className="tile-t">
+        <div className="val">{value}</div>
+        <div className="lbl">{label}</div>
+        {foot && <div className="foot">{trend ? <span className={trend}>{foot}</span> : foot}</div>}
+        {children}
+      </div>
       {spark && <div className="spark">{spark}</div>}
     </div>
   );

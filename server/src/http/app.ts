@@ -36,7 +36,7 @@ import {
 } from '../modules/attendance/service.ts';
 import {
   addRow, approveTimesheet, listTimesheets, recallTimesheet, rejectTimesheet,
-  removeRow, setHours, setRow, submitTimesheet, TimesheetError, timesheetForWeek,
+  removeRow, setEntryNote, setHours, setRow, submitTimesheet, TimesheetError, timesheetForWeek,
 } from '../modules/timesheet/service.ts';
 import {
   listAnnouncements, listCelebrations, NoticeboardError, postAnnouncement,
@@ -732,6 +732,13 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       setHours(c, p.id!, Number(p.rowIndex), Number(p.dayIndex),
         Number((body as { hours: number }).hours)),
+  },
+  {
+    method: 'PUT',
+    pattern: '/timesheets/:id/rows/:rowIndex/days/:dayIndex/note',
+    handler: (c, _r, p, body) =>
+      setEntryNote(c, p.id!, Number(p.rowIndex), Number(p.dayIndex),
+        String((body as { note?: string }).note ?? '')),
   },
   {
     method: 'POST',

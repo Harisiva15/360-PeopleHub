@@ -50,7 +50,7 @@ export const timesheetService: TimesheetService = {
   addRow(id, proj, task) {
     const t = find(id);
     if (!t) return missing(id);
-    t.rows.push({ proj, task, h: [0, 0, 0, 0, 0, 0, 0] });
+    t.rows.push({ proj, task, h: [0, 0, 0, 0, 0, 0, 0], notes: ['', '', '', '', '', '', ''] });
     return ok(recalc(t));
   },
 
@@ -77,7 +77,23 @@ export const timesheetService: TimesheetService = {
     const row = t.rows[rowIndex];
     if (!row) return Promise.reject(new Error('No row ' + rowIndex + ' on ' + id));
     row.h[dayIndex] = hours;
+    /* The note explained hours that are no longer claimed. */
+    if (!hours) row.notes[dayIndex] = '';
     return ok(recalc(t));
+  },
+
+  setEntryNote(id, rowIndex, dayIndex, note) {
+    const t = find(id);
+    if (!t) return missing(id);
+    const row = t.rows[rowIndex];
+    if (!row) return Promise.reject(new Error('No row ' + rowIndex + ' on ' + id));
+    /* Nothing to annotate: a note on a day with no hours would show as an
+       empty line on the week. */
+    if (!row.h[dayIndex]) {
+      return Promise.reject(new Error('Log the hours before writing a note about them'));
+    }
+    row.notes[dayIndex] = note.trim();
+    return ok(t);
   },
 
   submit(id) {

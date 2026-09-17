@@ -43,6 +43,8 @@ export interface TSRow {
   task: string;
   /** Hours Monday through Sunday. */
   h: number[];
+  /** What those hours were, day by day. Same length and order as `h`. */
+  notes: string[];
 }
 
 export interface Timesheet {
@@ -96,6 +98,23 @@ const PROJECTION = `
                             AND x.task = e.task
                             AND x.work_date = t.week_start + g.offset_days
                        ) d ON true
+                   ),
+                   /*
+                    * Parallel to 'h': notes[i] explains the hours in h[i].
+                    * Built the same way, over the same series, so the two
+                    * arrays cannot fall out of step with each other.
+                    */
+                   'notes', (
+                     SELECT jsonb_agg(COALESCE(d.note, '') ORDER BY d.offset_days)
+                       FROM generate_series(0, ${DAYS - 1}) AS g(offset_days)
+                       LEFT JOIN LATERAL (
+                         SELECT x.note, g.offset_days
+                           FROM timesheet_entry x
+                          WHERE x.timesheet_id = t.id
+                            AND x.project_id = e.project_id
+                            AND x.task = e.task
+                            AND x.work_date = t.week_start + g.offset_days
+                       ) d ON true
                    )
                  ) AS r
             FROM (
@@ -117,6 +136,7 @@ const toSheet = (r: Record<string, unknown>): Timesheet => ({
     // A row written before a day existed can come back short; the editor
     // indexes h[0..6] unconditionally.
     h: Array.from({ length: DAYS }, (_, i) => Number(row.h?.[i] ?? 0)),
+    notes: Array.from({ length: DAYS }, (_, i) => String(row.notes?.[i] ?? '')),
   })),
   total: Number(r.total_hours ?? 0),
   status: TO_STATUS[r.status as string] ?? 'Draft',
@@ -382,10 +402,63 @@ export async function setHours(
        SELECT $1, $2, $3, t.week_start + $4::int, $5, p.billable
          FROM timesheet t, project p WHERE t.id = $1 AND p.id = $2
        ON CONFLICT (tenant_id, timesheet_id, project_id, task, work_date)
-         DO UPDATE SET hours = EXCLUDED.hours`,
+         DO UPDATE SET hours = EXCLUDED.hours,
+           -- The note explained hours that are no longer claimed. Keeping it
+           -- would leave a comment on an empty day, to reappear months later
+           -- if anyone logged hours there again.
+           note = CASE WHEN EXCLUDED.hours = 0 THEN '' ELSE timesheet_entry.note END`,
       [id, row.project_id, row.task, dayIndex, hours]);
 
     await retotal(db, id);
+    return load(db, id);
+  });
+}
+
+/**
+ * Say what one day's hours were for.
+ *
+ * Goes through the same `forEdit` guard as the hours themselves: a note is part
+ * of what was claimed, so it cannot be rewritten after a manager has approved
+ * the sheet any more than the hours can.
+ *
+ * Writing a note against a day with no hours would create an entry of zero
+ * hours carrying a comment, which the total would ignore and the week view
+ * would show as an empty line. There is nothing to annotate, so it is refused.
+ */
+export async function setEntryNote(
+  caller: Caller,
+  id: string,
+  rowIndex: number,
+  dayIndex: number,
+  note: string,
+): Promise<Timesheet> {
+  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex >= DAYS) {
+    throw new TimesheetError('a week has seven days', 'invalid');
+  }
+  if (note.length > 500) {
+    throw new TimesheetError('a note is at most 500 characters', 'invalid');
+  }
+
+  return withTenant(caller, async (db) => {
+    await forEdit(db, caller, id);
+    const row = await rowAt(db, id, rowIndex);
+
+    const { rowCount } = await db.query(
+      `UPDATE timesheet_entry e SET note = $5
+         FROM timesheet t
+        WHERE t.id = $1 AND e.timesheet_id = t.id
+          AND e.project_id = $2 AND e.task = $3
+          AND e.work_date = t.week_start + $4::int
+          -- Not merely "a row exists": addRow creates the week as seven
+          -- zero-hour days, so every day has a row from the start. What has
+          -- to be true is that hours were actually claimed.
+          AND e.hours > 0`,
+      [id, row.project_id, row.task, dayIndex, note.trim()]);
+
+    if (!rowCount) {
+      throw new TimesheetError('log the hours before writing a note about them', 'no_hours');
+    }
+
     return load(db, id);
   });
 }
