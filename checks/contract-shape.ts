@@ -44,6 +44,11 @@ const CREATES: Record<string, string> = {
   joiners: 'request',
   planner: 'createItem',
   letters: 'issue',
+  // requestDocument, not an upload: what this service owns is the asking, which
+  // has an answer from the day the offer goes out and long before any file
+  // exists. Attaching the file still needs object storage this deployment does
+  // not have.
+  documents: 'requestDocument',
 };
 
 /**
@@ -61,7 +66,6 @@ const ALLOWED: Record<string, string> = {
   benefits: 'plan components are configuration; employees declare against them',
   exits: 'an exit is raised by the employee lifecycle, not typed in',
   staffing: 'the staffing book is out of scope for this release',
-  documents: 'uploads need object storage, which this deployment does not have',
   security: 'the audit log is written by the modules being audited, never directly',
   whatsapp: 'messages are sent by the modules that have something to say',
   approvals: 'a view over other modules queues, owning no records of its own',

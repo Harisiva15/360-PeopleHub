@@ -34,11 +34,6 @@ export const ONB_TEMPLATE = [
   { k: 'confirm', n: 'Probation confirmation review', owner: 'Manager', day: 180 },
 ];
 
-export interface OnbDoc {
-  n: string;
-  ok: boolean;
-}
-
 export interface Onboarding {
   id: string;
   candId: string;
@@ -54,7 +49,6 @@ export interface Onboarding {
   status: 'Pre-boarding' | 'In Progress' | 'Completed';
   bgv: string;
   tasks: OnbTask[];
-  docs: OnbDoc[];
 }
 
 export const ONBOARD: Onboarding[] = [];
@@ -87,14 +81,6 @@ export const ONBOARD: Onboarding[] = [];
       status: started ? (tasks.every((t) => t.done) ? 'Completed' : 'In Progress') : 'Pre-boarding',
       bgv: pick(['Clear', 'Clear', 'In Progress', 'Insufficiency']),
       tasks,
-      docs: [
-        { n: 'PAN Card', ok: chance(0.9) },
-        { n: 'Aadhaar', ok: chance(0.9) },
-        { n: 'Degree Certificate', ok: chance(0.8) },
-        { n: 'Relieving Letter', ok: chance(0.7) },
-        { n: 'Last 3 Payslips', ok: chance(0.75) },
-        { n: 'Cancelled Cheque', ok: chance(0.85) },
-      ],
     });
   });
 })();

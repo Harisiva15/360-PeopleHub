@@ -6,12 +6,14 @@ import { inr, pct } from '../../lib/format';
 
 import type { Onboarding } from '../../services';
 import { deptOf, siteOf } from '../../data/org';
-import { Avatar, Badge, Banner, Card, EmptyState, KV, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile } from '../../components/ui';
 import { Divide, ListRow, StatusBadge } from '../../components/common';
 import { HBar, PAL, Ring } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
 import { useCompleteJourney, useJourneys, useSetTask, useVisiblePeople } from './data';
+import { DocumentCollection } from '../documents/collection';
+import { CollectionView } from './Collection';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -90,21 +92,7 @@ function OnbDetail({ o }: { o: Onboarding }) {
       </Card>
 
       <div className="grid g2">
-        <Card title="Document collection" sub={`${o.docs.filter((d) => d.ok).length} of ${o.docs.length} received`} flush>
-          {o.docs.map((d, i) => (
-            <ListRow key={d.n}>
-              <span>📄</span>
-              <div style={{ flex: 1 }}>{d.n}</div>
-              {d.ok ? <Badge kind="good">Received</Badge> : (
-                <button className="btn sm" onClick={() => {
-                  o.docs[i].ok = true;
-                  app.toast('Document marked as received', 'ok');
-                  app.bump();
-                }}>Mark received</button>
-              )}
-            </ListRow>
-          ))}
-        </Card>
+        <DocumentCollection scope={{ journeyId: o.id }} />
 
         <Card title="Tasks by owner" sub="Responsibility split">
           <HBar rows={byOwner} />
@@ -119,6 +107,19 @@ function OnbDetail({ o }: { o: Onboarding }) {
 }
 
 function OnboardingView() {
+  const [tab, setTab] = useState<'journeys' | 'documents'>('journeys');
+  return (
+    <div className="stack">
+      <Tabs value={tab} onChange={setTab} options={[
+        { v: 'journeys', label: 'Journeys' },
+        { v: 'documents', label: 'Document collection' },
+      ]} />
+      {tab === 'journeys' ? <JourneysView /> : <CollectionView />}
+    </div>
+  );
+}
+
+function JourneysView() {
   const { data: ONBOARD = [] } = useJourneys();
   const app = useApp();
   const list = app.role === 'admin'

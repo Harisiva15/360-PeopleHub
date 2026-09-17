@@ -197,8 +197,21 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       submitFeedback: (id, verdict, feedback) =>
         api.post(`/interviews/${id}/feedback`, { verdict, feedback }),
       makeOffer: (draft) => api.post('/offers', draft),
+      offerLetter: (candId) =>
+        api.get<{ body: string }>(`/offers/${candId}/letter`).then((r) => r.body),
+      releaseOffer: (candId) => api.post(`/offers/${candId}/release`, {}),
       respondToOffer: (candId, response) =>
         api.post(`/offers/${candId}/respond`, { response }),
+    },
+
+    documents: {
+      requests: (q = {}) => api.get(`/documents/requests${qs(q)}`),
+      collectionSummary: (q = {}) => api.get(`/documents/summary${qs(q)}`),
+      requestChecklist: (journeyId, due) =>
+        api.post(`/documents/journeys/${journeyId}/checklist`, { due }),
+      requestDocument: (draft) => api.post('/documents/requests', draft),
+      setRequestStatus: (id, status, note) =>
+        api.put(`/documents/requests/${id}`, { status, note }),
     },
 
     assets: {

@@ -14,6 +14,7 @@ import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
 import { useCandidates, useInterviews, useMoveCandidate, useRequisitions, useVisiblePeople } from './data';
+import { OfferLetter } from './OfferLetter';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { AppRole } from '../../types/employee';
@@ -160,18 +161,29 @@ function useShowCandidate() {
 
   function StageFooter({ c, close }: { c: Candidate; close: () => void }) {
     const [stage, setStage] = useState(c.stage);
+    const move = useMoveCandidate();
+    /*
+     * Goes through the service, like the pipeline board does. Assigning to
+     * c.stage here only repainted this drawer: the move never reached the
+     * server, and the refusal that matters — hiring past a requisition's
+     * openings — could not happen at all.
+     */
+    const update = async () => {
+      try {
+        await move.mutate(c.id, stage);
+        close();
+        app.toast(`${c.name} moved to ${STAGES.find((s) => s.id === stage)!.name}`, 'ok');
+      } catch (e) {
+        app.toast(e instanceof Error ? e.message : 'Could not move the candidate', 'err');
+      }
+    };
     return (
       <>
         <button className="btn" onClick={close}>Close</button>
         <select className="input" style={{ width: 'auto' }} value={stage} onChange={(e) => setStage(e.target.value)}>
           {STAGES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <button className="btn primary" onClick={() => {
-          c.stage = stage;
-          close();
-          app.toast(`${c.name} moved to ${STAGES.find((s) => s.id === stage)!.name}`, 'ok');
-          app.bump();
-        }}>Update</button>
+        <button className="btn primary" onClick={update}>Update</button>
       </>
     );
   }
@@ -538,15 +550,25 @@ function HrOffers() {
   const { data: CANDS = [] } = useCandidates();
   const app = useApp();
   const show = useShowCandidate();
+  const layer = useLayer();
   const list = hiringScope(app.role, app.meId, CANDS).filter((c) => c.offer);
-  const byStatus = ['Sent', 'Negotiating', 'Accepted'].map((s, i) => ({
+  /* Draft leads: an offer waiting to be read back is the thing to act on. */
+  const byStatus = ['Draft', 'Sent', 'Negotiating', 'Accepted'].map((s, i) => ({
     k: s, c: PAL[i], v: list.filter((c) => c.offer!.status === s).length,
   }));
+  const drafts = list.filter((c) => c.offer!.status === 'Draft').length;
+
+  const openLetter = (c: Candidate) => layer.modal({
+    title: 'Offer letter — ' + c.name,
+    sub: reqOf(c.reqId)?.title ?? '',
+    size: 'wide',
+    body: (close) => <OfferLetter c={c} onDone={close} />,
+  });
 
   return (
     <div className="stack">
       <div className="grid g4">
-        <Tile label="Offers rolled out" value={list.length} foot="This hiring cycle" />
+        <Tile label="Awaiting release" value={drafts} foot="Drafted, not yet sent" />
         <Tile label="Accepted" value={list.filter((c) => c.offer!.status === 'Accepted').length}
           foot={pct(list.filter((c) => c.offer!.status === 'Accepted').length, Math.max(1, list.length)) + '% acceptance rate'} />
         <Tile label="In negotiation" value={list.filter((c) => c.offer!.status === 'Negotiating').length} foot="Compensation discussions" />
@@ -559,7 +581,7 @@ function HrOffers() {
             downloadCSV('offers.csv',
               [['Candidate', 'Role', 'Grade', 'Offered CTC', 'Expected', 'Date of joining', 'Sent on', 'Status']].concat(
                 list.map((c) => [c.name, reqOf(c.reqId)?.title || '', c.offer!.grade,
-                  String(c.offer!.ctc), String(c.ctcExp), c.offer!.doj, c.offer!.sentOn, c.offer!.status]),
+                  String(c.offer!.ctc), String(c.ctcExp), c.offer!.doj, c.offer!.sentOn ?? '—', c.offer!.status]),
               ))}>⤓ Export</button>}>
           <div className="tbl-wrap">
             <table className="tbl">
@@ -570,7 +592,7 @@ function HrOffers() {
                 </tr>
               </thead>
               <tbody>
-                {sortBy(list, (c) => c.offer!.sentOn, 'desc').map((c) => (
+                {sortBy(list, (c) => c.offer!.sentOn ?? '', 'desc').map((c) => (
                   <tr key={c.id} className="clickable" onClick={() => show(c.id)}>
                     <td><CandCell c={c} sub={c.current} /></td>
                     <td className="nowrap">{reqOf(c.reqId)?.title || '—'}</td>
@@ -581,7 +603,9 @@ function HrOffers() {
                     <td className="nowrap">{fmtD(c.offer!.sentOn)}</td>
                     <td><StatusBadge status={c.offer!.status} /></td>
                     <td className="right">
-                      <button className="btn sm" onClick={(e) => { e.stopPropagation(); app.toast('Offer letter generated', 'ok'); }}>Letter</button>
+                      <button className="btn sm" onClick={(e) => { e.stopPropagation(); openLetter(c); }}>
+                        {c.offer!.status === 'Draft' ? 'Review & release' : 'Letter'}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -654,7 +678,7 @@ function HrFunnel() {
           <BarChart labels={months.map((m) => m.l)} height={200}
             series={[
               { name: 'Applications', color: 'var(--s1)', data: months.map((m) => cands.filter((c) => c.appliedOn.slice(0, 7) === m.k).length) },
-              { name: 'Hires', color: 'var(--s3)', data: months.map((m) => cands.filter((c) => c.stage === 'hired' && c.offer && c.offer.sentOn.slice(0, 7) === m.k).length) },
+              { name: 'Hires', color: 'var(--s3)', data: months.map((m) => cands.filter((c) => c.stage === 'hired' && c.offer?.sentOn?.slice(0, 7) === m.k).length) },
             ]} />
           <Legend items={[{ k: 'Applications', c: 'var(--s1)' }, { k: 'Hires', c: 'var(--s3)' }]} />
         </Card>

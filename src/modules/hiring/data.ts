@@ -13,3 +13,9 @@ export const useMyInterviews = (panelId: string) =>
 export const useInterviews = () => useQuery((s) => s.hiring.interviews(), []);
 export const useMoveCandidate = () =>
   useMutation((s, candId: string, stage: string) => s.hiring.moveCandidate(candId, stage));
+
+/** The letter for one offer: rendered while a draft, frozen once released. */
+export const useOfferLetter = (candId: string) =>
+  useQuery((s) => s.hiring.offerLetter(candId), [candId]);
+export const useReleaseOffer = () =>
+  useMutation((s, candId: string) => s.hiring.releaseOffer(candId));

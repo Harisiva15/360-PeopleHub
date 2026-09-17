@@ -77,9 +77,13 @@ import {
 } from '../modules/onboarding/service.ts';
 import {
   HiringError, interviewsFor, listCandidates, listInterviews, listRequisitions,
-  makeOffer, moveCandidate, openRequisition, recruiterTracker, respondToOffer,
-  scheduleInterview, submitCandidate, submitFeedback,
+  makeOffer, moveCandidate, offerLetter, openRequisition, recruiterTracker,
+  releaseOffer, respondToOffer, scheduleInterview, submitCandidate, submitFeedback,
 } from '../modules/hiring/service.ts';
+import {
+  collectionSummary, DocumentError, listRequests as listDocRequests, requestDocument,
+  requestJoinerDocuments, setRequestStatus,
+} from '../modules/documents/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -554,6 +558,58 @@ const routes: Route[] = [
     handler: (c, _r, _p, body) => makeOffer(c, (body ?? {}) as Parameters<typeof makeOffer>[1]),
   },
   {
+    method: 'GET',
+    pattern: '/offers/:candId/letter',
+    handler: async (c, _r, p) => ({ body: await offerLetter(c, p.candId!) }),
+  },
+  {
+    method: 'POST',
+    pattern: '/offers/:candId/release',
+    handler: (c, _r, p) => releaseOffer(c, p.candId!),
+  },
+  {
+    method: 'GET',
+    pattern: '/documents/requests',
+    handler: (c, req) => {
+      const p = new URL(req.url ?? '/', 'http://x').searchParams;
+      return listDocRequests(c, {
+        ...(p.get('journeyId') ? { journeyId: p.get('journeyId')! } : {}),
+        ...(p.get('empId') ? { empId: p.get('empId')! } : {}),
+      });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/documents/summary',
+    handler: (c, req) => {
+      const p = new URL(req.url ?? '/', 'http://x').searchParams;
+      return collectionSummary(c, {
+        ...(p.get('journeyId') ? { journeyId: p.get('journeyId')! } : {}),
+        ...(p.get('empId') ? { empId: p.get('empId')! } : {}),
+      });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/documents/requests',
+    handler: (c, _r, _p, body) =>
+      requestDocument(c, (body ?? {}) as Parameters<typeof requestDocument>[1]),
+  },
+  {
+    method: 'POST',
+    pattern: '/documents/journeys/:journeyId/checklist',
+    handler: (c, _r, p, body) =>
+      requestJoinerDocuments(c, p.journeyId!, (body as { due?: string } | undefined)?.due),
+  },
+  {
+    method: 'PUT',
+    pattern: '/documents/requests/:id',
+    handler: (c, _r, p, body) => {
+      const b = (body ?? {}) as { status: string; note?: string };
+      return setRequestStatus(c, p.id!, b.status, b.note);
+    },
+  },
+  {
     method: 'POST',
     pattern: '/offers/:candId/respond',
     handler: (c, _r, p, body) =>
@@ -899,6 +955,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   }
   if (error instanceof ProvisionError) {
     return { status: error.code === 'duplicate' ? 409 : 400, message: error.message };
+  }
+  if (error instanceof DocumentError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
   }
   if (error instanceof HiringError) {
     const status = error.code === 'forbidden' ? 403

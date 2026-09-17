@@ -20,6 +20,7 @@ import { ASSET_REQS, arOpen } from '../../data/assetWorkflow';
 import { assetKPI, pendingRecovery } from '../../data/assets';
 import { AUDIT, AUDIT_CATS, CONTROLS, POSTURE, RETENTION } from '../../data/security';
 import { ONBOARD, ONB_TEMPLATE } from '../../data/onboarding';
+import { blankRequest, DOC_REQS, JOINER_DOCUMENTS, requestsFor } from '../../data/docRequests';
 import type {
   Asset, AssetRequest, AssetService, ExitRecord, DocumentService, ExitDetail, ExitService, Onboarding,
   OnboardingService, SecurityService,
@@ -53,7 +54,73 @@ export const documentService: DocumentService = {
   documentTypes() {
     return ok(DOC_TYPES.slice());
   },
+
+  requests(q = {}) {
+    return ok(requestsFor(q));
+  },
+
+  collectionSummary(q = {}) {
+    const rows = requestsFor(q);
+    return ok({
+      total: rows.length,
+      outstanding: rows.filter((r) => r.status === 'pending').length,
+      received: rows.filter((r) => r.status === 'received').length,
+      verified: rows.filter((r) => r.status === 'verified').length,
+      /* A rejected document is still missing — it is why it is worth showing. */
+      mandatoryOutstanding: rows.filter(
+        (r) => r.mandatory && (r.status === 'pending' || r.status === 'rejected')).length,
+    });
+  },
+
+  requestChecklist(journeyId, due) {
+    const j = ONBOARD.find((o) => o.id === journeyId);
+    if (!j) return Promise.reject(new Error('No such onboarding journey: ' + journeyId));
+    const by = due ?? ymd(addDays(parseYmd(j.doj), -7));
+    /* Idempotent: adds what the template has gained, disturbs nothing else. */
+    JOINER_DOCUMENTS.forEach(([kind, label, mandatory]) => {
+      if (!DOC_REQS.some((r) => r.journeyId === journeyId && r.kind === kind)) {
+        DOC_REQS.push(blankRequest({ journeyId }, kind, label, mandatory, by));
+      }
+    });
+    return ok(requestsFor({ journeyId }));
+  },
+
+  requestDocument(draft) {
+    if (!draft.label.trim()) return Promise.reject(new Error('Say which document'));
+    if (!draft.kind.trim()) return Promise.reject(new Error('A document needs a kind'));
+    if (!draft.journeyId === !draft.empId) {
+      return Promise.reject(new Error('A request belongs to a joiner or an employee, not both'));
+    }
+    const scope = draft.journeyId ? { journeyId: draft.journeyId } : { empId: draft.empId };
+    if (requestsFor(scope).some((r) => r.kind === draft.kind.trim())) {
+      return Promise.reject(new Error('That document has already been requested'));
+    }
+    DOC_REQS.push(blankRequest(
+      scope, draft.kind.trim(), draft.label.trim(), draft.mandatory ?? true, draft.due ?? null));
+    return ok(requestsFor(scope));
+  },
+
+  setRequestStatus(id, status, note) {
+    const r = DOC_REQS.find((x) => x.id === id);
+    if (!r) return Promise.reject(new Error('No such document request: ' + id));
+    if (!DOC_STATUSES.includes(status)) {
+      return Promise.reject(new Error('Unknown status: ' + status));
+    }
+    if (status === 'rejected' && !note?.trim()) {
+      return Promise.reject(new Error('Say why it was rejected'));
+    }
+    r.status = status;
+    /* Anything past pending says when it arrived; only verified names a checker. */
+    r.receivedOn = status === 'pending' || status === 'waived'
+      ? null : r.receivedOn ?? ymd(TODAY);
+    r.verifiedBy = status === 'verified' ? DEMO_EMP.id : null;
+    r.verifiedOn = status === 'verified' ? ymd(TODAY) : null;
+    if (note !== undefined) r.note = note;
+    return ok(r);
+  },
 };
+
+const DOC_STATUSES = ['pending', 'received', 'verified', 'rejected', 'waived'];
 
 export const exitService: ExitService = {
   list() {
@@ -268,7 +335,6 @@ export const onboardingService: OnboardingService = {
         due: ymd(addDays(parseYmd(draft.doj), t.day)),
         done: false, doneOn: null,
       })),
-      docs: [],
     };
     ONBOARD.unshift(journey);
     return ok(journey);

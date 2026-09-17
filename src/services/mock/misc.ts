@@ -115,6 +115,42 @@ export const letterService: LetterService = {
   },
 };
 
+/**
+ * Letters frozen at the moment of release, keyed by candidate.
+ *
+ * Kept beside the offer rather than on it because the stored letter is not part
+ * of the offer's shape — it is a record of what the offer said when it went
+ * out, which is a different question from what the offer says now.
+ */
+const LETTERS = new Map<string, string>();
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** Read straight off 'YYYY-MM-DD'; see the note in the server's renderLetter. */
+const inWords = (d: string) => {
+  const [y, m, day] = d.slice(0, 10).split('-');
+  return `${Number(day)} ${MONTHS[Number(m) - 1]} ${y}`;
+};
+
+function renderOffer(name: string, o: Offer): string {
+  const money = new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+  }).format(o.ctc);
+  return [
+    `Dear ${name},`, '',
+    'We are delighted to offer you a position at 360VHM Technology.', '',
+    `Your annual cost to company will be ${money}, and we would like you to join `
+    + `us on ${inWords(o.doj)}. A detailed breakdown of your compensation `
+    + 'accompanies this letter.', '',
+    'This offer is subject to satisfactory reference and background checks and to '
+    + 'the documents requested separately being provided before your joining date.', '',
+    'We would be grateful for your acceptance by return. We are looking forward to '
+    + 'working with you.', '',
+    'Yours sincerely,', '360VHM Technology',
+  ].join('\n');
+}
+
 export const hiringService: HiringService = {
   interviewsFor(panelId, status) {
     const rows: InterviewRow[] = INTERVIEWS.filter(
@@ -250,8 +286,8 @@ export const hiringService: HiringService = {
     cand.offer = {
       ctc: draft.ctc,
       grade: (draft.grade ?? 'L2') as Offer['grade'],
-      status: 'Sent',
-      sentOn: ymd(TODAY),
+      status: 'Draft',
+      sentOn: null,
       doj: draft.doj,
       site: 'CHN',
     };
@@ -259,10 +295,31 @@ export const hiringService: HiringService = {
     return ok(cand);
   },
 
+  offerLetter(candId) {
+    const cand = CANDS.find((c) => c.id === candId);
+    if (!cand?.offer) return Promise.reject(new Error('That candidate has no offer'));
+    /* A released letter reads back as it was sent, never re-rendered. */
+    return ok(LETTERS.get(candId) ?? renderOffer(cand.name, cand.offer));
+  },
+
+  releaseOffer(candId) {
+    const cand = CANDS.find((c) => c.id === candId);
+    if (!cand?.offer) return Promise.reject(new Error('That candidate has no offer'));
+    if (cand.offer.status !== 'Draft') {
+      return Promise.reject(new Error('That offer is already ' + cand.offer.status.toLowerCase()));
+    }
+    /* Frozen here, so a later change of salary cannot rewrite what was promised. */
+    LETTERS.set(candId, renderOffer(cand.name, cand.offer));
+    cand.offer.status = 'Sent';
+    cand.offer.sentOn = ymd(TODAY);
+    return ok(cand);
+  },
+
   respondToOffer(candId, response) {
     const cand = CANDS.find((c) => c.id === candId);
     if (!cand?.offer) return Promise.reject(new Error('That candidate has no offer'));
     if (cand.offer.status === 'Accepted') return Promise.reject(new Error('That offer is already accepted'));
+    if (cand.offer.status === 'Draft') return Promise.reject(new Error('That offer has not been released yet'));
     if (response === 'accepted') {
       cand.offer.status = 'Accepted';
       cand.stage = 'hired';

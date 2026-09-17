@@ -474,8 +474,19 @@ export interface HiringService {
    * representable, so this sets both.
    */
   submitFeedback(id: string, verdict: InterviewVerdict, feedback: string): Promise<Interview>;
-  /** Make an offer. One live offer per candidate. */
+  /**
+   * Draft an offer. One live offer per candidate, and it starts as a draft —
+   * making an offer and sending it are two decisions.
+   */
   makeOffer(draft: NewOffer): Promise<Candidate>;
+  /**
+   * The offer letter. Rendered from the offer while it is a draft, and read
+   * back verbatim once released — a letter that re-renders from a salary that
+   * has since moved would quietly rewrite what the company promised.
+   */
+  offerLetter(candId: string): Promise<string>;
+  /** Send the offer, freezing the letter onto it. Refuses one already sent. */
+  releaseOffer(candId: string): Promise<Candidate>;
   /** Record the candidate's answer; accepting moves them to hired. */
   respondToOffer(candId: string, response: OfferResponse): Promise<Candidate>;
 }
@@ -758,12 +769,78 @@ export interface LetterContext {
   annualTax: INTax;
 }
 
+/**
+ * A document that has been asked for — which is not the same thing as a file.
+ *
+ * "We asked for a degree certificate and it has not arrived" has an answer from
+ * the day the offer goes out, long before any PDF exists. `hasFile` says whether
+ * one has since been attached; today it is always false, because this
+ * deployment has no object storage yet.
+ */
+export interface DocRequest {
+  id: string;
+  /** Set while the person is still a joiner; null once they are an employee. */
+  journeyId: string | null;
+  /** Set once onboarding completes. Exactly one of these two is set. */
+  empId: string | null;
+  kind: string;
+  label: string;
+  mandatory: boolean;
+  /** pending | received | verified | rejected | waived */
+  status: string;
+  due: string | null;
+  receivedOn: string | null;
+  /** Who checked it. A verified request always names one. */
+  verifiedBy: string | null;
+  verifiedOn: string | null;
+  note: string;
+  hasFile: boolean;
+}
+
+/** What is still missing, which is the only number anybody asks for. */
+export interface DocSummary {
+  total: number;
+  outstanding: number;
+  received: number;
+  verified: number;
+  /** Mandatory documents still pending or rejected — the blocking count. */
+  mandatoryOutstanding: number;
+}
+
+export interface NewDocRequest {
+  /** One of these, never both: a request belongs to a joiner or an employee. */
+  journeyId?: string;
+  empId?: string;
+  kind: string;
+  label: string;
+  mandatory?: boolean;
+  due?: string;
+}
+
 export interface DocumentService {
   /** Employment documents on file, for one person or everyone. */
   documents(empIds?: string[]): Promise<EmpDoc[]>;
   documentTypes(): Promise<string[]>;
   /** The facts a generated letter asserts about one person. */
   letterContext(empId: string): Promise<LetterContext>;
+
+  /** Outstanding and collected documents for a joiner or an employee. */
+  requests(q?: { journeyId?: string; empId?: string }): Promise<DocRequest[]>;
+  /** Counts for the same scope, without the caller re-tallying the list. */
+  collectionSummary(q?: { journeyId?: string; empId?: string }): Promise<DocSummary>;
+  /**
+   * Open the standard joiner checklist. Idempotent — re-running picks up
+   * anything the template has gained without disturbing what has been
+   * collected.
+   */
+  requestChecklist(journeyId: string, due?: string): Promise<DocRequest[]>;
+  /** Ask for something the template does not cover. Refuses a duplicate. */
+  requestDocument(draft: NewDocRequest): Promise<DocRequest[]>;
+  /**
+   * Move a request along. Rejecting requires a reason, and verifying records
+   * who checked it — the server stamps both, never the screen.
+   */
+  setRequestStatus(id: string, status: string, note?: string): Promise<DocRequest>;
 }
 
 /* ---------- exits ---------- */

@@ -20,6 +20,7 @@
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { provisionEmployee } from '../people/provision.ts';
+import { openJoinerChecklist, transferToEmployee } from '../documents/service.ts';
 
 export class OnboardingError extends Error {
   readonly code: string;
@@ -67,7 +68,6 @@ export interface Onboarding {
   status: string;
   bgv: string;
   tasks: OnbTask[];
-  docs: { n: string; ok: boolean }[];
 }
 
 const PROJECTION = `
@@ -112,7 +112,6 @@ const toJourney = (r: Record<string, unknown>): Onboarding => ({
     done: Boolean(t.done),
     doneOn: (t.doneOn as string | null) ?? null,
   })),
-  docs: [],
 });
 
 async function load(db: TenantClient, id: string): Promise<Onboarding> {
@@ -227,6 +226,14 @@ export async function createJourney(
         [id, key, title, owner, draft.doj, day, i]);
     }
 
+    /*
+     * The document checklist opens with the journey, in this same transaction.
+     * A joiner created without one is a joiner nobody chases, and the chasing
+     * has to start well before the joining date to be any use — so if the
+     * checklist cannot be opened, the journey should not exist either.
+     */
+    await openJoinerChecklist(db, id, draft.doj);
+
     return load(db, id);
   });
 }
@@ -318,6 +325,9 @@ export async function completeOnboarding(caller: Caller, id: string): Promise<On
       `UPDATE onboarding_journey
           SET status = 'completed', employee_id = $2, completed_on = CURRENT_DATE
         WHERE id = $1`, [id, employeeId]);
+
+    /* The documents follow the person, or their file looks empty on day one. */
+    await transferToEmployee(db, id, employeeId);
 
     await db.query(
       `INSERT INTO audit_log (category, action, severity, actor_employee_id, actor_label,

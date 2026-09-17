@@ -626,11 +626,16 @@ export interface NewOffer {
 }
 
 /**
- * Make an offer.
+ * Draft an offer.
  *
- * One live offer per candidate — the schema's unique index on candidate_id
- * says so, and it is right: two open offers at different salaries is a
- * negotiating position nobody chose to take.
+ * It is created as a draft, not sent. Making an offer and releasing it to a
+ * candidate are two decisions — the second usually needs somebody else's
+ * approval, and collapsing them means a mistyped salary is in the candidate's
+ * inbox before anyone has read it back.
+ *
+ * One live offer per candidate: the schema's unique index on candidate_id says
+ * so, and it is right. Two open offers at different salaries is a negotiating
+ * position nobody chose to take.
  */
 export async function makeOffer(caller: Caller, draft: NewOffer): Promise<Candidate> {
   if (!mayRecruit(caller)) {
@@ -659,7 +664,7 @@ export async function makeOffer(caller: Caller, draft: NewOffer): Promise<Candid
         `INSERT INTO offer
            (candidate_id, grade_id, designation, annual_ctc, currency, joining_on,
             status, sent_on, approved_by)
-         SELECT $1, $2, $3, $4, t.base_currency, $5::date, 'sent', CURRENT_DATE, $6
+         SELECT $1, $2, $3, $4, t.base_currency, $5::date, 'draft', NULL, $6
            FROM tenant t WHERE t.id = current_tenant_id()`,
         [draft.candId, grade ?? null, draft.designation.trim(), ctc, draft.doj,
           caller.employeeId]);
@@ -674,6 +679,141 @@ export async function makeOffer(caller: Caller, draft: NewOffer): Promise<Candid
 
     const { rows } = await db.query(`${CAND_PROJECTION} WHERE c.id = $1`, [draft.candId]);
     return toCand(rows[0]!);
+  });
+}
+
+/**
+ * The offer letter, rendered from the offer itself.
+ *
+ * Built from the stored row rather than assembled in a screen, so the letter
+ * and the record cannot disagree — and stored on release, because "what
+ * exactly did we promise" needs an answer after the salary has been
+ * renegotiated twice.
+ */
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+/**
+ * A joining date in words, read straight off the 'YYYY-MM-DD' the pool hands
+ * back (see db/pool.ts).
+ *
+ * Deliberately not `new Date(s).toLocaleDateString()`: that parses a bare date
+ * as UTC midnight and prints it in the server's zone, so anywhere west of
+ * Greenwich the letter names the day before the one in the contract. An offer
+ * letter is the last place to be a day out, and hosting the API in another
+ * region must not change what it says.
+ */
+function inWords(ymd: string): string {
+  const [y, m, d] = ymd.slice(0, 10).split('-');
+  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+}
+
+function renderLetter(o: {
+  name: string; designation: string; ctc: number; currency: string;
+  joining: string; company: string;
+}): string {
+  const money = new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: o.currency, maximumFractionDigits: 0,
+  }).format(o.ctc);
+
+  return [
+    `Dear ${o.name},`,
+    '',
+    `We are delighted to offer you the position of ${o.designation} at ${o.company}.`,
+    '',
+    `Your annual cost to company will be ${money}, and we would like you to join `
+    + `us on ${o.joining}. A detailed breakdown of your compensation accompanies `
+    + 'this letter.',
+    '',
+    'This offer is subject to satisfactory reference and background checks and to '
+    + 'the documents requested separately being provided before your joining date.',
+    '',
+    'We would be grateful for your acceptance by return. We are looking forward to '
+    + 'working with you.',
+    '',
+    'Yours sincerely,',
+    `${o.company}`,
+  ].join('\n');
+}
+
+export async function offerLetter(caller: Caller, candId: string): Promise<string> {
+  if (!mayRecruit(caller)) {
+    throw new HiringError('only a manager or admin may read an offer letter', 'forbidden');
+  }
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `SELECT o.letter_body, o.designation, o.annual_ctc, o.currency, o.joining_on,
+              c.full_name, t.display_name AS company
+         FROM offer o
+         JOIN candidate c ON c.id = o.candidate_id
+         JOIN tenant t ON t.id = current_tenant_id()
+        WHERE o.candidate_id = $1`, [candId]);
+    if (!rows[0]) throw new HiringError('that candidate has no offer', 'not_found');
+
+    /* A released letter is read back as it was sent, never re-rendered. */
+    if (rows[0].letter_body) return rows[0].letter_body as string;
+
+    return renderLetter({
+      name: rows[0].full_name as string,
+      designation: rows[0].designation as string,
+      ctc: Number(rows[0].annual_ctc),
+      currency: rows[0].currency as string,
+      joining: inWords(rows[0].joining_on as string),
+      company: rows[0].company as string,
+    });
+  });
+}
+
+/**
+ * Release the offer to the candidate.
+ *
+ * The letter is frozen onto the row at this moment. Re-rendering it later from
+ * a salary that has since moved would quietly rewrite what the company
+ * promised, which is the one thing an offer letter exists to pin down.
+ */
+export async function releaseOffer(caller: Caller, candId: string): Promise<Candidate> {
+  if (!mayRecruit(caller)) {
+    throw new HiringError('only a manager or admin may release an offer', 'forbidden');
+  }
+
+  return withTenant(caller, async (db) => {
+    const { rows } = await db.query(
+      `SELECT o.id, o.status, o.designation, o.annual_ctc, o.currency, o.joining_on,
+              c.full_name, t.display_name AS company
+         FROM offer o
+         JOIN candidate c ON c.id = o.candidate_id
+         JOIN tenant t ON t.id = current_tenant_id()
+        WHERE o.candidate_id = $1 FOR UPDATE OF o`, [candId]);
+    if (!rows[0]) throw new HiringError('that candidate has no offer', 'not_found');
+    if (rows[0].status !== 'draft') {
+      throw new HiringError(`that offer is already ${rows[0].status}`, 'not_draft');
+    }
+
+    const body = renderLetter({
+      name: rows[0].full_name as string,
+      designation: rows[0].designation as string,
+      ctc: Number(rows[0].annual_ctc),
+      currency: rows[0].currency as string,
+      joining: inWords(rows[0].joining_on as string),
+      company: rows[0].company as string,
+    });
+
+    await db.query(
+      `UPDATE offer
+          SET status = 'sent', sent_on = CURRENT_DATE,
+              letter_body = $2, released_by = $3, released_on = CURRENT_DATE
+        WHERE id = $1`, [rows[0].id, body, caller.employeeId]);
+
+    await db.query(
+      `INSERT INTO audit_log (category, action, severity, actor_employee_id, actor_label,
+                              subject_table, subject_id, detail)
+       SELECT 'hiring', 'offer_released', 'notice', $1, COALESCE(e.full_name, 'system'),
+              'offer', $2, jsonb_build_object('candidate', $3::text)
+         FROM employee e WHERE e.id = $1`,
+      [caller.employeeId, rows[0].id, rows[0].full_name]);
+
+    const back = await db.query(`${CAND_PROJECTION} WHERE c.id = $1`, [candId]);
+    return toCand(back.rows[0]!);
   });
 }
 
@@ -702,6 +842,9 @@ export async function respondToOffer(
     if (!rows[0]) throw new HiringError('that candidate has no offer', 'not_found');
     if (rows[0].status === 'accepted') {
       throw new HiringError('that offer is already accepted', 'already_accepted');
+    }
+    if (rows[0].status === 'draft') {
+      throw new HiringError('that offer has not been released yet', 'not_released');
     }
 
     await db.query(

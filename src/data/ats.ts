@@ -105,8 +105,15 @@ export const reqOf = (id: string): Requisition | undefined => REQS.find((r) => r
 export interface Offer {
   ctc: number;
   grade: Grade;
-  status: 'Sent' | 'Negotiating' | 'Accepted';
-  sentOn: string;
+  /**
+   * An offer is drafted before it is sent. Making an offer and releasing it to
+   * the candidate are two decisions — the second usually needs somebody else's
+   * approval, and collapsing them puts a mistyped salary in the candidate's
+   * inbox before anyone has read it back.
+   */
+  status: 'Draft' | 'Sent' | 'Negotiating' | 'Accepted';
+  /** Null until released. */
+  sentOn: string | null;
   doj: string;
   site: string;
 }
