@@ -854,3 +854,12 @@ kbd{font-family:var(--font)}
 select.rost{cursor:pointer;appearance:none}
 select.rost:hover{border-color:var(--line-2);box-shadow:var(--shadow-sm)}
 .rost.off{color:var(--ink-3);background:transparent;border-left-color:var(--line-2)}
+
+/* ---------- Paged table footer ---------- */
+.pager{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  padding:11px 14px;border-top:1px solid var(--line);font-size:12.5px;
+}
+.pager-n{display:flex;align-items:center;gap:4px}
+/* Square, so a row of numbers reads as a row of numbers. */
+.pager-n .btn.icon{min-width:29px;height:29px;padding:0;font-size:12px;font-weight:600}

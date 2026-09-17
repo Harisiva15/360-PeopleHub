@@ -9,3 +9,6 @@ export const useAllEmployees = () => useQuery((s) => s.employees.active(), []);
 export const useSurveys = () => useQuery((s) => s.engagement.surveys(), []);
 export const useEnpsHistory = () => useQuery((s) => s.engagement.enpsHistory(), []);
 export const useEnps = (surveyId: string) => useQuery((s) => s.engagement.enpsOf(surveyId), [surveyId]);
+
+/** Recognition is praise — the same record Performance reads, for a different reason. */
+export const usePraise = () => useQuery((s) => s.performance.praise(), []);

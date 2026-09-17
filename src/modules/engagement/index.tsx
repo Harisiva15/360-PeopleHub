@@ -1,17 +1,17 @@
 import { useState } from 'react';
-import { sum } from '../../lib/collections';
+import { sortBy, sum } from '../../lib/collections';
 import { addDays, fmtD, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 
 
 import type { Survey } from '../../services';
 import { DEPTS, ORG } from '../../data/org';
-import { Badge, Banner, Card, EmptyState, Tabs, Tile, StatRow } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, ListRow } from '../../components/common';
-import { Donut, HBar, Legend, LineChart, Ring } from '../../components/charts';
+import { Donut, HBar, Legend, LineChart, PAL, Ring } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { useAllEmployees, useEnpsHistory, useEnps, useSurveys } from './data';
+import { useAllEmployees, useEnpsHistory, useEnps, usePraise, useSurveys, useVisiblePeople } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -152,6 +152,7 @@ function EnResults() {
   const { data: SURVEYS = [] } = useSurveys();
   const { data: ENPS_HISTORY = [] } = useEnpsHistory();
   const { data: enpsScore = 0 } = useEnps('SV2');
+  const { data: praise = [] } = usePraise();
   const pulse = SURVEYS.find((s) => s.id === 'SV1');
   const enps = SURVEYS.find((s) => s.id === 'SV2');
 
@@ -161,16 +162,20 @@ function EnResults() {
   const score = enpsScore;
   const total = (enps.promoters ?? 0) + (enps.passives ?? 0) + (enps.detractors ?? 0);
   const questions = pulse.questions || [];
-  const lowest = questions.length ? Math.min(...questions.map((q) => q.score)) : 0;
+  const openSurveys = SURVEYS.filter((x) => x.status === 'Live');
 
   return (
     <div className="stack">
       <StatRow cols={4}>
-        <Tile label="eNPS" value={(score > 0 ? '+' : '') + score} trend="up" foot="▲ 9 vs last quarter · benchmark +30" />
-        <Tile label="Engagement score" value={(sum(questions, (q) => q.score) / Math.max(1, questions.length)).toFixed(2) + ' / 5'}
+        <Tile icon="📊" label="Engagement score"
+          value={pct(sum(questions, (q) => q.score), Math.max(1, questions.length) * 5) + '%'}
+          foot={`${(sum(questions, (q) => q.score) / Math.max(1, questions.length)).toFixed(2)} out of 5`} />
+        <Tile icon="🏆" label="Total recognitions" value={praise.length}
+          foot="Given across the company" />
+        <Tile icon="🗳" label="Active polls" value={openSurveys.length}
+          foot="Open for responses" />
+        <Tile icon="👥" label="Participation rate" value={pct(pulse.responded, pulse.sent) + '%'}
           foot={`${pulse.responded} of ${pulse.sent} responded`} />
-        <Tile label="Response rate" value={pct(pulse.responded, pulse.sent) + '%'} foot="Target 75%" />
-        <Tile label="Lowest driver" value={lowest.toFixed(1)} foot="Career growth clarity — needs action" />
       </StatRow>
 
       <div className="grid g-2-1">
@@ -319,13 +324,67 @@ function EnManage() {
 
 /* ---------------- entry ---------------- */
 
-type Tab = 'open' | 'results' | 'manage';
+type Tab = 'open' | 'results' | 'recog' | 'manage';
+
+/**
+ * Recognition — praise people have given each other.
+ *
+ * Shown here as well as on Performance because it is the same record read for
+ * a different reason: there it is part of someone's review, here it is a
+ * measure of whether the place is a good one to work in.
+ */
+function EnRecognition() {
+  const { data: praise = [] } = usePraise();
+  const dir = useVisiblePeople();
+
+  if (!praise.length) return <Card><EmptyState msg="No recognition given yet" icon="🏆" /></Card>;
+
+  const byValue = [...new Set(praise.map((p) => p.value))].map((v, i) => ({
+    k: v, c: PAL[i % PAL.length], v: praise.filter((x) => x.value === v).length,
+  }));
+
+  return (
+    <div className="stack">
+      <StatRow cols={3}>
+        <Tile icon="🏆" label="Recognitions" value={praise.length} foot="All time" />
+        <Tile icon="❤️" label="Likes" value={sum(praise, (p) => p.likes)}
+          foot="On recognition posts" />
+        <Tile icon="🙌" label="People recognised"
+          value={new Set(praise.map((p) => p.toId)).size} foot="Distinct recipients" />
+      </StatRow>
+
+      <div className="grid g-2-1">
+        <Card title="Recent recognition" sub={`${praise.length} posts`} flush>
+          {sortBy(praise, (p) => p.on).reverse().slice(0, 25).map((p) => (
+            <ListRow key={p.id}>
+              <Avatar name={dir.name(p.fromId)} size="sm" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 650, fontSize: 12.5 }}>
+                  {dir.name(p.fromId)} → {dir.name(p.toId)}
+                </div>
+                <div className="muted" style={{ fontSize: 11.5 }}>{p.text}</div>
+              </div>
+              <Badge kind="info">{p.value}</Badge>
+              <span className="muted" style={{ fontSize: 11.5 }}>♥ {p.likes}</span>
+            </ListRow>
+          ))}
+        </Card>
+
+        <Card title="What gets recognised" sub="By company value">
+          <HBar rows={byValue} />
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 function Engagement() {
   const app = useApp();
   const tabs: { v: Tab; label: string }[] = app.role === 'employee'
-    ? [{ v: 'open', label: 'Open Surveys' }, { v: 'results', label: 'Results' }]
-    : [{ v: 'results', label: 'Results' }, { v: 'open', label: 'Open Surveys' }, { v: 'manage', label: 'Manage Surveys' }];
+    ? [{ v: 'open', label: 'Polls' }, { v: 'results', label: 'Overview' },
+      { v: 'recog', label: 'Recognition' }]
+    : [{ v: 'results', label: 'Overview' }, { v: 'open', label: 'Polls' },
+      { v: 'recog', label: 'Recognition' }, { v: 'manage', label: 'Manage surveys' }];
 
   const [tab, setTab] = useState<Tab>(tabs[0].v);
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
@@ -335,6 +394,7 @@ function Engagement() {
       <Tabs value={active} options={tabs} onChange={setTab} />
       {active === 'open' && <EnOpen />}
       {active === 'results' && <EnResults />}
+      {active === 'recog' && <EnRecognition />}
       {active === 'manage' && <EnManage />}
     </>
   );

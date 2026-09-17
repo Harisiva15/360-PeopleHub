@@ -85,7 +85,16 @@ export function ApprovalSummary() {
   );
 }
 
-export function CelebRows({ list, dir }: { list: Celebration[]; dir: Directory }) {
+export function CelebRows({ list, dir, onWish }: {
+  list: Celebration[];
+  dir: Directory;
+  /**
+   * Offered per row when given. Wishes are a thing you send to one person on
+   * their day, so the action belongs on their line rather than on a header
+   * button that would have to ask who you meant.
+   */
+  onWish?: (empId: string) => void;
+}) {
   if (!list.length) return <EmptyState msg="Nothing coming up" icon="🎈" />;
   return (
     <>
@@ -108,6 +117,12 @@ export function CelebRows({ list, dir }: { list: Celebration[]; dir: Directory }
               </div>
             </div>
             <Badge kind={c.inDays <= 1 ? 'good' : 'mute'}>{when}</Badge>
+            {onWish && (
+              <button className="btn sm" title={'Send wishes to ' + e.name}
+                onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); onWish(e.id); }}>
+                🎁 Send wishes
+              </button>
+            )}
           </ListRow>
         );
       })}

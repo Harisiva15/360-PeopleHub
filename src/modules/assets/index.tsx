@@ -14,7 +14,7 @@ import { entitledTo } from '../../data/assetWorkflow';
 
 
 import { deptOf, siteOf } from '../../data/org';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, pageOf, Pager, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { HBar } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
@@ -196,6 +196,8 @@ function AsRegister() {
   const [q, setQ] = useState('');
   const [fc, setFc] = useState('');
   const [fs, setFs] = useState('');
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(25);
 
   /* After every hook: the register health is computed by the service. */
   if (!k) return <Card><EmptyState msg="Loading the asset register…" icon="💻" /></Card>;
@@ -209,6 +211,8 @@ function AsRegister() {
       (a.type + ' ' + a.serial + ' ' + a.tag + ' ' + (a.empId ? dir.name(a.empId) : '')).toLowerCase().includes(needle),
     );
   }
+
+  const paged = pageOf(list, page, size);
 
   const byCat = ASSET_CATS.map((c) => ({ k: c.n, c: c.c, v: ASSETS.filter((a) => a.cat === c.id).length }));
 
@@ -242,49 +246,51 @@ function AsRegister() {
             ))}>⤓ Export</button>
       </div>
 
-      <StatRow cols={5}>
-        <Tile label="Assets tracked" value={k.total} foot={`${k.assigned} assigned · ${k.stock} in stock`} />
-        <Tile label="Gross book cost" value={mbS(k.gross)} foot="Capitalised value at purchase" />
-        <Tile label="Net book value" value={mbS(k.net)} foot={`${mbS(k.dep)} depreciated to date`} />
-        <Tile label="Out of warranty" value={k.outOfWarranty} foot="Assigned and unsupported" />
-        <Tile label="Pending recovery" value={k.recovery} foot="Held by employees who are leaving" />
+      <StatRow cols={4}>
+        <Tile icon="📦" label="Total assets" value={k.total} foot={mbS(k.net) + ' net book value'} />
+        <Tile icon="✅" label="Allocated" value={k.assigned}
+          foot={pct(k.assigned, Math.max(1, k.total)) + '% of the fleet'} />
+        <Tile icon="📥" label="Available" value={k.stock}
+          foot={pct(k.stock, Math.max(1, k.total)) + '% in stock'} />
+        <Tile icon="🔧" label="Under maintenance" value={k.repair}
+          foot={k.outOfWarranty + ' out of warranty'} />
       </StatRow>
 
       <Card title="Asset register" sub={`${list.length} of ${ASSETS.length} assets`} flush>
-        <div className="tbl-wrap" style={{ maxHeight: 600, overflow: 'auto' }}>
+        <div className="tbl-wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Asset</th><th>Tag</th><th>Category</th><th>Assigned to</th><th>Location</th>
-                <th className="num">Cost</th><th className="num">Book value</th><th>Warranty</th><th>Status</th>
+                <th className="num">#</th><th>Asset tag</th><th>Asset name</th><th>Category</th>
+                <th>Assigned to</th><th>Location</th><th>Status</th><th>Purchase date</th>
+                <th className="num">Book value</th>
               </tr>
             </thead>
             <tbody>
-              {list.slice(0, 400).map((a) => (
+              {paged.rows.map((a, i) => (
                 <tr key={a.id}>
-                  <td><b>{a.type}</b><div className="mt">{a.serial}</div></td>
+                  {/* Numbered across the whole register, not the page. */}
+                  <td className="num muted">{paged.first + i}</td>
                   <td className="mono">{a.tag}</td>
+                  <td>
+                    <b>{a.type}</b>
+                    <div className="mt">{a.serial}</div>
+                  </td>
                   <td className="nowrap">{acatOf(a.cat).n}</td>
                   <td className="nowrap">{a.empId ? dir.name(a.empId) : <span className="muted">IT stock</span>}</td>
                   <td className="nowrap">{siteOf(a.site || 'CHN').city}</td>
-                  <td className="num">{inr(a.cost)}</td>
-                  <td className="num">{inr(bookValue(a))}</td>
-                  <td className="nowrap">
-                    {inWarranty(a) ? <span className="muted">{fmtD(a.warrantyEnd)}</span> : <Badge kind="warn">Expired</Badge>}
+                  <td>
+                    <AssetBadge s={a.status} />
+                    {a.status === 'Assigned' && !inWarranty(a) && <> <Badge kind="warn">No warranty</Badge></>}
                   </td>
-                  <td><AssetBadge s={a.status} /></td>
+                  <td className="nowrap">{a.purchased ? fmtD(a.purchased) : <span className="muted">—</span>}</td>
+                  <td className="num">{inr(bookValue(a))}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {list.length > 400 && (
-          <div className="card-b">
-            <div className="muted" style={{ fontSize: 12.5 }}>
-              Showing the first 400 of {list.length} — narrow the filters or export the full register.
-            </div>
-          </div>
-        )}
+        <Pager {...paged} noun="assets" onPage={setPage} size={size} onSize={setSize} />
       </Card>
 
       <div className="grid g2">

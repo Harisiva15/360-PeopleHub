@@ -4,7 +4,7 @@
  */
 import { useState } from 'react';
 import { sortBy } from '../../lib/collections';
-import { DOW, fmtD, MON, nextOccur, parseYmd, TODAY, yearsSince, ymd } from '../../lib/dates';
+import { daysBetween, DOW, fmtD, fmtDS, MON, nextOccur, parseYmd, TODAY, yearsSince, ymd } from '../../lib/dates';
 import { downloadCSV } from '../../lib/csv';
 
 import type { Announcement } from '../../data/announcements';
@@ -12,7 +12,7 @@ import { useAllEmployees, useAnnouncements, useCelebrations, useTeam } from './d
 import type { Directory } from './data';
 import type { Employee } from '../../types/employee';
 import { DEPTS, deptOf, HOLIDAYS, ORG, siteOf } from '../../data/org';
-import { Avatar, Badge, Card, EmptyState, PersonCell } from '../../components/ui';
+import { Avatar, Badge, Card, EmptyState, PersonCell, Seg, StatRow, Tabs, Tile } from '../../components/ui';
 import { Chip, Dot, ListRow } from '../../components/common';
 import { HBar } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -25,12 +25,18 @@ import { TITLES } from '../titles';
    Org chart
    ============================================================ */
 
-function OrgNode({ e, depth, dir, onOpen, onExpand }: {
+function OrgNode({ e, depth, dir, onOpen, onExpand, maxDepth = 3 }: {
   e: Employee;
   depth: number;
   dir: Directory;
   onOpen: (id: string) => void;
   onExpand: (id: string) => void;
+  /**
+   * How many levels to draw inline before offering to re-root. Controlled by
+   * the toolbar rather than fixed at three, which is what makes "expand all"
+   * and "collapse all" real rather than decorative.
+   */
+  maxDepth?: number;
 }) {
   const kids = (e.reports || []).map((r) => dir.byId(r)).filter(Boolean) as Employee[];
   return (
@@ -57,10 +63,11 @@ function OrgNode({ e, depth, dir, onOpen, onExpand }: {
       </div>
 
       {/* three levels are drawn inline; deeper branches re-root the tree */}
-      {kids.length > 0 && depth < 3 ? (
+      {kids.length > 0 && depth < maxDepth ? (
         <div>
           {sortBy(kids, (k) => k.name).map((k) => (
-            <OrgNode key={k.id} e={k} depth={depth + 1} dir={dir} onOpen={onOpen} onExpand={onExpand} />
+            <OrgNode key={k.id} e={k} depth={depth + 1} dir={dir}
+              onOpen={onOpen} onExpand={onExpand} maxDepth={maxDepth} />
           ))}
         </div>
       ) : kids.length > 0 ? (
@@ -85,6 +92,9 @@ function OrgChart() {
   /* The tree roots at whoever has no manager — the chief executive. */
   const ceo = everyone.find((e) => !e.managerId);
   const [picked, setPicked] = useState('');
+  const [q, setQ] = useState('');
+  const [depth, setDepth] = useState(3);
+  const [asList, setAsList] = useState(false);
   const rootId = picked || ceo?.id || '';
   const setRootId = setPicked;
   const root = dir.byId(rootId);
@@ -97,18 +107,65 @@ function OrgChart() {
     <div className="stack">
       <div className="toolbar">
         {ceo && rootId !== ceo.id && <button className="btn" onClick={() => setRootId(ceo.id)}>‹ Back to top</button>}
+        <div className="search">
+          <input className="input" placeholder="Search by name or department…"
+            value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
         <select className="input" style={{ width: 'auto' }} value={rootId} onChange={(e) => setRootId(e.target.value)}>
           {managers.map((e) => <option key={e.id} value={e.id}>{e.name} — {e.designation}</option>)}
         </select>
+        <button className="btn sm" onClick={() => setDepth(99)}>Expand all</button>
+        <button className="btn sm" onClick={() => setDepth(1)}>Collapse all</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12.5 }}>{1 + tree.length} people in this tree</span>
+        <Seg value={asList ? 'list' : 'tree'} onChange={(v) => setAsList(v === 'list')} options={[
+          { v: 'tree', label: 'Tree' },
+          { v: 'list', label: 'List' },
+        ]} />
       </div>
 
+      {/*
+        * Headcount per department, counted from the roster rather than stored.
+        * A chart is read to answer "how big is Engineering", and the answer
+        * has to agree with the directory beside it.
+        */}
+      <StatRow cols={5}>
+        {sortBy(DEPTS, (d) => -everyone.filter((e) => e.dept === d.id).length)
+          .slice(0, 5).map((d) => (
+            <Tile key={d.id} icon="🏢" label={d.name}
+              value={everyone.filter((e) => e.dept === d.id).length}
+              foot={dir.byId(d.head ?? '')?.name ?? 'No head named'} />
+          ))}
+      </StatRow>
+
       <div className="grid g-2-1">
-        <Card>
-          <div style={{ overflowX: 'auto' }}>
-            <OrgNode e={root} depth={0} dir={dir} onOpen={show} onExpand={setRootId} />
-          </div>
+        <Card title={asList ? 'Reporting lines' : root.name} sub={asList ? `${everyone.length} people` : root.designation} flush={asList}>
+          {asList ? (
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead>
+                  <tr><th>Name</th><th>Designation</th><th>Department</th><th>Reports to</th><th className="num">Reports</th></tr>
+                </thead>
+                <tbody>
+                  {sortBy(everyone.filter((e) => !q.trim()
+                    || (e.name + ' ' + e.designation + ' ' + deptOf(e.dept).name)
+                      .toLowerCase().includes(q.trim().toLowerCase())), (e) => e.name).map((e) => (
+                    <tr key={e.id} className="clickable" onClick={() => show(e.id)}>
+                      <td><PersonCell e={e} sub={false} /></td>
+                      <td className="nowrap">{e.designation}</td>
+                      <td className="nowrap">{deptOf(e.dept).name}</td>
+                      <td className="nowrap">{e.managerId ? dir.name(e.managerId) : <span className="muted">—</span>}</td>
+                      <td className="num">{e.reports.length || <span className="muted">0</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <OrgNode e={root} depth={0} dir={dir} onOpen={show} onExpand={setRootId} maxDepth={depth} />
+            </div>
+          )}
         </Card>
 
         <div className="stack">
@@ -157,10 +214,26 @@ function Celebrations() {
     name: (id) => everyone.find((e) => e.id === id)?.name ?? '—',
     loading: false,
   } as Directory;
+  const [tab, setTab] = useState<'birthday' | 'anniversary' | 'joiner'>('birthday');
+
   const today = cel.filter((c) => c.inDays === 0);
-  const week = cel.filter((c) => c.inDays > 0 && c.inDays <= 7);
-  const month = cel.filter((c) => c.inDays > 7 && c.inDays <= 30);
   const milestones = everyone.filter((e) => [1, 3, 5, 7, 10].includes(yearsSince(e.doj))).slice(0, 12);
+
+  /*
+   * New joiners are not a celebration record — they are people whose joining
+   * date is recent — so they are derived here rather than expected from the
+   * feed, which only knows about birthdays and anniversaries.
+   */
+  const joiners = sortBy(
+    everyone.filter((e) => daysBetween(e.doj, ymd(TODAY)) <= 60 && e.doj <= ymd(TODAY)),
+    (e) => e.doj).reverse();
+
+  const forTab = tab === 'birthday'
+    ? cel.filter((c) => c.kind === 'birthday')
+    : tab === 'anniversary' ? cel.filter((c) => c.kind === 'anniversary') : [];
+
+  const wish = (empId: string) =>
+    app.toast(`Wishes sent to ${dir.name(empId)} 🎉`, 'ok');
 
   const exportCsv = () =>
     downloadCSV(
@@ -202,11 +275,41 @@ function Celebrations() {
         </div>
       )}
 
-      <div className="grid g3">
-        <Card title="This week" sub={`${week.length} upcoming`} flush><CelebRows list={week} dir={dir} /></Card>
-        <Card title="This month" sub={`${month.length} upcoming`} flush><CelebRows list={month} dir={dir} /></Card>
+      <Tabs value={tab} onChange={setTab} options={[
+        { v: 'birthday', label: 'Birthdays' },
+        { v: 'anniversary', label: 'Work anniversaries' },
+        { v: 'joiner', label: 'New joiners' },
+      ]} />
+
+      <div className="grid g-2-1">
+        <Card
+          title={tab === 'birthday' ? 'Upcoming birthdays'
+            : tab === 'anniversary' ? 'Upcoming work anniversaries' : 'Recently joined'}
+          sub={tab === 'joiner' ? `${joiners.length} in the last 60 days` : `${forTab.length} in the next 60 days`}
+          flush>
+          {tab === 'joiner' ? (
+            joiners.length ? joiners.map((e) => (
+              <ListRow key={e.id} onClick={() => show(e.id)}>
+                <div style={{ fontSize: 17 }}>👋</div>
+                <Avatar name={e.name} size="sm" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{e.name}</div>
+                  <div className="muted" style={{ fontSize: 11.5 }}>
+                    {e.designation} · {deptOf(e.dept).name}
+                  </div>
+                </div>
+                <Badge kind={daysBetween(e.doj, ymd(TODAY)) <= 7 ? 'good' : 'mute'}>
+                  Joined {fmtDS(e.doj)}
+                </Badge>
+              </ListRow>
+            )) : <EmptyState msg="Nobody has joined in the last 60 days" icon="👋" />
+          ) : (
+            <CelebRows list={forTab} dir={dir} onWish={wish} />
+          )}
+        </Card>
+
         <Card title="Work milestones" sub="Employees hitting a year milestone" flush>
-          <CelebRows dir={dir} list={milestones.map((e) => ({
+          <CelebRows dir={dir} onWish={wish} list={milestones.map((e) => ({
             kind: 'anniversary' as const, empId: e.id, date: ymd(nextOccur(e.doj)), inDays: 0, years: yearsSince(e.doj),
           }))} />
         </Card>
@@ -263,6 +366,15 @@ function Announcements() {
   const { data: announcements = [] } = useAnnouncements();
   const canPost = app.role === 'admin' || app.role === 'manager';
   const [acked, setAcked] = useState<Record<string, boolean>>({});
+  const [tag, setTag] = useState('');
+
+  /*
+   * Filter tabs are built from the tags actually in use rather than a fixed
+   * list. A tab that is always empty is worse than no tab, and a post tagged
+   * something new would otherwise be reachable only from "All".
+   */
+  const tags = [...new Set(announcements.map((x) => x.tag))].sort();
+  const shown = tag ? announcements.filter((x) => x.tag === tag) : announcements;
 
   return (
     <div className="stack">
@@ -278,9 +390,15 @@ function Announcements() {
         </div>
       )}
 
+      <Tabs value={tag} onChange={setTag} options={[
+        { v: '', label: `All (${announcements.length})` },
+        ...tags.map((t) => ({ v: t, label: t })),
+      ]} />
+
       <div className="grid g-2-1">
         <div className="stack">
-          {announcements.map((a) => (
+          {!shown.length && <Card><EmptyState msg="Nothing posted under that tag" icon="📣" /></Card>}
+          {shown.map((a) => (
             <Card key={a.id}>
               <div className="row" style={{ gap: 9, marginBottom: 9 }}>
                 <Avatar name={a.by} size="sm" />

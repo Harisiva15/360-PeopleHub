@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { sortBy, sum } from '../../lib/collections';
-import { daysBetween, fmtD, TODAY, tenure, ymd } from '../../lib/dates';
-import { pct } from '../../lib/format';
+import { sortBy } from '../../lib/collections';
+import { TODAY, tenure, ymd } from '../../lib/dates';
 import { downloadCSV } from '../../lib/csv';
 import {
   useAllEmployees, useApproveJoiner, useExitedEmployees, useJoiners, usePeople,
@@ -10,7 +9,7 @@ import {
 import { AddJoinerForm, JoinerQueue } from './AddJoiner';
 import { useLayer } from '../../components/Layer';
 import { DEPTS, deptOf, GRADES, siteOf, SITES } from '../../data/org';
-import { Avatar, Badge, Card, EmptyState, PersonCell, Tile, StatRow } from '../../components/ui';
+import { Avatar, Badge, Card, EmptyState, pageOf, Pager, Tile, StatRow } from '../../components/ui';
 import { Chip, StatusBadge } from '../../components/common';
 import { useShowEmployee } from './Profile';
 import { registerModule } from '../registry';
@@ -54,7 +53,9 @@ function Employees() {
   const [site, setSite] = useState('');
   const [grade, setGrade] = useState('');
   const [status, setStatus] = useState<'Active' | 'Exited'>('Active');
-  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [view, setView] = useState<'grid' | 'list'>('list');
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(25);
 
   /* the directory itself is open to everyone; sensitive fields are gated in the profile */
   const dir = useVisiblePeople();
@@ -74,6 +75,13 @@ function Employees() {
     );
   }
   list = sortBy(list, (e) => e.name);
+
+  /*
+   * Paged rather than truncated. A directory of a hundred people that shows
+   * the first twenty-five and stops is a directory that cannot find the
+   * twenty-sixth.
+   */
+  const paged = pageOf(list, page, size);
 
   const exportCsv = () =>
     downloadCSV(
@@ -123,20 +131,21 @@ function Employees() {
 
       {canAddPeople && <JoinerQueue rows={joiners} onDecide={decide} />}
 
-      <StatRow cols={5}>
-        <Tile label="Employees" value={list.length} foot="Matching current filters" />
-        <Tile label="Average tenure"
-          value={(sum(list, (e) => daysBetween(e.doj, ymd(TODAY))) / Math.max(1, list.length) / 365).toFixed(1) + ' yrs'}
-          foot="Across filtered set" />
-        <Tile label="Gender split" value={pct(list.filter((e) => e.gender === 'F').length, Math.max(1, list.length)) + '% F'}
-          foot={`${list.filter((e) => e.gender === 'F').length} women · ${list.filter((e) => e.gender === 'M').length} men`} />
-        <Tile label="On probation" value={list.filter((e) => e.probation).length} foot="Joined in the last 6 months" />
-        <Tile label="Contractors" value={list.filter((e) => e.empType === 'Contract').length} foot="Non-payroll engagements" />
+      <StatRow cols={4}>
+        <Tile icon="👥" label="Total employees" value={list.length}
+          foot="Matching current filters" />
+        <Tile icon="🏢" label="Departments"
+          value={new Set(list.map((e) => e.dept)).size} foot="Represented in this list" />
+        <Tile icon="📍" label="Locations"
+          value={new Set(list.map((e) => e.site)).size} foot="Offices and remote" />
+        <Tile icon="🎉" label="New joiners"
+          value={list.filter((e) => e.doj.slice(0, 4) === ymd(TODAY).slice(0, 4)).length}
+          foot={`Joined in ${ymd(TODAY).slice(0, 4)}`} />
       </StatRow>
 
       {view === 'grid' ? (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(232px,1fr))' }}>
-          {list.map((e) => (
+          {paged.rows.map((e) => (
             <div key={e.id} className="card clickable" onClick={() => show(e.id)}>
               <div className="card-b" style={{ textAlign: 'center' }}>
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 9 }}>
@@ -159,28 +168,40 @@ function Employees() {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Employee</th><th>Code</th><th>Department</th><th>Designation</th><th>Grade</th>
-                  <th>Location</th><th>Manager</th><th>Joined</th><th>Tenure</th><th>Status</th>
+                  <th className="num">#</th><th>Photo</th><th>Name</th><th>Designation</th>
+                  <th>Department</th><th>Location</th><th>Email</th><th>Status</th>
+                  <th className="right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {list.map((e) => (
+                {paged.rows.map((e, i) => (
                   <tr key={e.id} className="clickable" onClick={() => show(e.id)}>
-                    <td><PersonCell e={e} sub={e.email} /></td>
-                    <td className="mono">{e.code}</td>
-                    <td className="nowrap">{deptOf(e.dept).name}</td>
+                    {/* Numbered from the whole list, not the page — row 27 is
+                        row 27 wherever it is being read. */}
+                    <td className="num muted">{paged.first + i}</td>
+                    <td><Avatar name={e.name} size="sm" /></td>
+                    <td>
+                      <b>{e.name}</b>
+                      <div className="muted" style={{ fontSize: 11 }}>{e.code}</div>
+                    </td>
                     <td className="nowrap">{e.designation}</td>
-                    <td><Badge>{e.grade}</Badge></td>
-                    <td className="nowrap">{siteOf(e.site).name}</td>
-                    <td className="nowrap">{managers.name(e.managerId)}</td>
-                    <td className="nowrap">{fmtD(e.doj)}</td>
-                    <td>{tenure(e.doj)}</td>
-                    <td><StatusBadge status={e.status} />{e.probation && <> <Badge kind="warn">Probation</Badge></>}</td>
+                    <td className="nowrap">{deptOf(e.dept).name}</td>
+                    <td className="nowrap">{siteOf(e.site).city === '—' ? 'Remote' : siteOf(e.site).city}</td>
+                    <td className="nowrap">{e.email}</td>
+                    <td>
+                      <StatusBadge status={e.status} />
+                      {e.probation && <> <Badge kind="warn">Probation</Badge></>}
+                    </td>
+                    <td className="right">
+                      <button className="btn ghost icon sm" title={`Open ${e.name}`}
+                        onClick={(ev) => { ev.stopPropagation(); show(e.id); }}>⋯</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <Pager {...paged} noun="employees" onPage={setPage} size={size} onSize={setSize} />
         </Card>
       )}
 

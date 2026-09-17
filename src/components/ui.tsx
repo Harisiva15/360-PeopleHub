@@ -158,6 +158,107 @@ export function StatRow({
   return <div className={'grid g' + cols}>{tinted}</div>;
 }
 
+/* ---------- Pagination ---------- */
+
+/**
+ * Cut a list into pages.
+ *
+ * Tables here have been truncating instead — "showing the first 400, narrow
+ * the filters" — which tells someone their data is there but refuses to show
+ * it. A page number is the ordinary answer and it lets the count be honest.
+ *
+ * `page` is 1-based because it is shown to people. Returned clamped, so a
+ * filter that shrinks the list while you are on page 9 lands you on the last
+ * page that exists rather than on an empty one.
+ */
+export function pageOf<T>(rows: T[], page: number, size: number) {
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const at = Math.min(Math.max(1, page), pages);
+  const from = (at - 1) * size;
+  return {
+    rows: rows.slice(from, from + size),
+    page: at,
+    pages,
+    total: rows.length,
+    /* 1-based and inclusive, to read as "1 – 6 of 100". */
+    first: rows.length ? from + 1 : 0,
+    last: Math.min(from + size, rows.length),
+  };
+}
+
+/**
+ * The footer under a paged table: what you are looking at, and how to move.
+ *
+ * Page numbers are windowed around the current one. A hundred pages of
+ * buttons is not navigation, and the first and last are always reachable
+ * because "go to the end" is a real intention.
+ */
+export function Pager({
+  page,
+  pages,
+  total,
+  first,
+  last,
+  noun,
+  onPage,
+  size,
+  onSize,
+}: {
+  page: number;
+  pages: number;
+  total: number;
+  first: number;
+  last: number;
+  /** Plural, for the count — "employees", "assets". */
+  noun: string;
+  onPage: (p: number) => void;
+  size?: number;
+  onSize?: (n: number) => void;
+}) {
+  /* At most five numbers, centred on the current page where there is room. */
+  const span = Math.min(5, pages);
+  const start = Math.min(Math.max(1, page - 2), Math.max(1, pages - span + 1));
+  const numbers = Array.from({ length: span }, (_, i) => start + i);
+
+  return (
+    <div className="pager">
+      <span className="muted">
+        {total ? `Showing ${first} – ${last} of ${total} ${noun}` : `No ${noun}`}
+      </span>
+      <div className="spacer" />
+
+      {onSize && (
+        <select className="input sm" style={{ width: 'auto' }} value={size}
+          onChange={(e) => onSize(Number(e.target.value))} title="Rows per page">
+          {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
+        </select>
+      )}
+
+      {pages > 1 && (
+        <div className="pager-n">
+          <button className="btn icon sm" disabled={page === 1}
+            onClick={() => onPage(page - 1)} aria-label="Previous page">‹</button>
+          {numbers[0]! > 1 && (
+            <button className="btn icon sm" onClick={() => onPage(1)}>1</button>
+          )}
+          {numbers[0]! > 2 && <span className="muted">…</span>}
+          {numbers.map((n) => (
+            <button key={n} className={'btn icon sm' + (n === page ? ' primary' : '')}
+              aria-current={n === page ? 'page' : undefined}
+              onClick={() => onPage(n)}>{n}</button>
+          ))}
+          {numbers[numbers.length - 1]! < pages - 1 && <span className="muted">…</span>}
+          {numbers[numbers.length - 1]! < pages && (
+            <button className="btn icon sm" onClick={() => onPage(pages)}>{pages}</button>
+          )}
+          <button className="btn icon sm" disabled={page === pages}
+            onClick={() => onPage(page + 1)} aria-label="Next page">›</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- Badge ---------- */
 
 export type BadgeKind = 'good' | 'warn' | 'crit' | 'info' | 'mute';
