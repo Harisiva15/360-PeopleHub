@@ -10,8 +10,15 @@
   --ink:#0b0b0b;
   --ink-2:#52514e;
   --ink-3:#898781;
-  --line:#e1e0d9;
-  --line-2:#c3c2b7;
+  /*
+   * Two line weights, both lighter than before but not by as much as the first
+   * attempt. A card gets only 1.09 of contrast from the plane behind it, so the
+   * border is doing most of the separating; taking it to 1.20 left edges
+   * dissolving on a cheap monitor. 1.26 is softer than the old 1.32 and still
+   * unambiguously a line.
+   */
+  --line:#e6e5de;
+  --line-2:#d3d2c8;
   --brand:#2a78d6;
   --brand-ink:#184f95;
   --brand-wash:#eaf2fd;
@@ -24,13 +31,37 @@
   --good-wash:#e6f5e6; --warn-wash:#fdf3dd; --crit-wash:#fbe9e9; --info-wash:#eaf2fd;
 
   --grid:#e1e0d9; --axis:#c3c2b7;
-  --ring:rgba(11,11,11,.10);
-  --shadow-sm:0 1px 2px rgba(11,11,11,.06), 0 1px 1px rgba(11,11,11,.04);
-  --shadow-md:0 4px 12px rgba(11,11,11,.08), 0 1px 3px rgba(11,11,11,.05);
-  --shadow-lg:0 16px 48px rgba(11,11,11,.16), 0 2px 8px rgba(11,11,11,.08);
-  --r-sm:6px; --r:10px; --r-lg:14px; --r-xl:20px;
+  --ring:rgba(11,11,11,.08);
+
+  /*
+   * Elevation is light falling from above, so every shadow is offset down and
+   * none of them are tinted grey — a neutral shadow on a warm plane reads as
+   * dirt. These are softer and wider than a typical material set: the surface
+   * should feel lifted, not cut out.
+   */
+  --shadow-sm:0 1px 2px rgba(11,11,11,.04);
+  --shadow-md:0 2px 4px rgba(11,11,11,.04), 0 8px 24px rgba(11,11,11,.06);
+  --shadow-lg:0 4px 8px rgba(11,11,11,.05), 0 24px 64px rgba(11,11,11,.14);
+
+  --r-sm:7px; --r:11px; --r-lg:16px; --r-xl:22px;
   --nav-w:250px;
-  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+
+  /*
+   * A spacing scale rather than ad-hoc numbers. Everything that separates
+   * things comes from here, which is most of what makes a layout feel settled
+   * rather than assembled.
+   */
+  --sp-1:6px; --sp-2:10px; --sp-3:16px; --sp-4:22px; --sp-5:32px;
+
+  /*
+   * The system stack, in the order each platform's best face appears. No web
+   * font: this is an HR tool holding employee records, and a font request to a
+   * third party on every page load is a privacy cost paid for a typeface most
+   * readers would not name. What follows does the work instead — tabular
+   * figures, deliberate tracking, and a weight scale with gaps in it.
+   */
+  --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI Variable Text","Segoe UI",
+    Roboto,"Helvetica Neue",Arial,sans-serif;
 }
 html[data-theme="dark"]{
   color-scheme: dark;
@@ -41,8 +72,8 @@ html[data-theme="dark"]{
   --ink:#ffffff;
   --ink-2:#c3c2b7;
   --ink-3:#898781;
-  --line:#2c2c2a;
-  --line-2:#383835;
+  --line:#2a2a28;
+  --line-2:#3a3a36;
   --brand:#3987e5;
   --brand-ink:#86b6ef;
   --brand-wash:#16283f;
@@ -52,18 +83,35 @@ html[data-theme="dark"]{
   --good-text:#0ca30c;
   --good-wash:#122a12; --warn-wash:#332711; --crit-wash:#331616; --info-wash:#16283f;
   --grid:#2c2c2a; --axis:#383835;
-  --ring:rgba(255,255,255,.10);
-  --shadow-sm:0 1px 2px rgba(0,0,0,.5);
-  --shadow-md:0 4px 12px rgba(0,0,0,.5);
-  --shadow-lg:0 16px 48px rgba(0,0,0,.6);
+  --ring:rgba(255,255,255,.08);
+  /* Shadows read as depth on a light plane and as absence on a dark one, so
+     the dark set leans on the border instead and stays subtle. */
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow-md:0 2px 6px rgba(0,0,0,.45), 0 10px 28px rgba(0,0,0,.35);
+  --shadow-lg:0 4px 10px rgba(0,0,0,.5), 0 28px 68px rgba(0,0,0,.5);
 }
 
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
   margin:0;font-family:var(--font);background:var(--plane);color:var(--ink);
-  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  /* Proper quotes and dashes wherever the face supports them. */
+  font-feature-settings:"kern" 1,"liga" 1,"calt" 1;
+  text-rendering:optimizeLegibility;
 }
+
+/*
+ * Every figure is tabular.
+ *
+ * Proportional digits make a column of numbers ripple — the 1 is narrow, the 0
+ * is wide, and nothing lines up under anything. In a product that is mostly
+ * money and counts, this single rule does more for how considered it looks
+ * than any amount of colour.
+ */
+.tile .val,.num,.mono,td.num,th.num,.clock,.kv-v,.money,
+.tbl td,.tbl th{font-variant-numeric:tabular-nums}
 button,input,select,textarea{font:inherit;color:inherit}
 a{color:var(--brand);text-decoration:none}
 ::-webkit-scrollbar{width:10px;height:10px}
@@ -77,22 +125,32 @@ a{color:var(--brand);text-decoration:none}
   border-right:1px solid var(--line);display:flex;flex-direction:column;
   position:sticky;top:0;height:100vh;z-index:40;
 }
-.brand{padding:15px 16px 13px;border-bottom:1px solid var(--line)}
+.brand{padding:17px var(--sp-3) 15px;border-bottom:1px solid var(--line)}
 .brand img{display:block;width:100%;max-width:194px;height:auto}
 .brand .cap{display:block;font-size:10.5px;color:var(--ink-3);font-weight:650;letter-spacing:.05em;margin-top:7px;text-transform:uppercase}
 .nav{flex:1;overflow-y:auto;padding:10px 10px 20px}
 .nav-group{margin-top:12px}
+.nav-group{margin-top:var(--sp-3)}
 .nav-group>h6{
-  margin:0 0 6px;padding:0 8px;font-size:10.5px;font-weight:700;letter-spacing:.09em;
+  margin:0 0 7px;padding:0 11px;font-size:10px;font-weight:600;letter-spacing:.11em;
   text-transform:uppercase;color:var(--ink-3);
 }
 .nav a{
-  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;
-  color:var(--ink-2);font-weight:500;font-size:13.5px;margin-bottom:2px;cursor:pointer;
+  display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:9px;
+  color:var(--ink-2);font-weight:500;font-size:13.5px;margin-bottom:1px;cursor:pointer;
   border:1px solid transparent;
+  transition:background .13s ease,color .13s ease;
 }
 .nav a:hover{background:var(--surface-3);color:var(--ink)}
-.nav a.on{background:var(--brand-wash);color:var(--brand-ink);font-weight:650;border-color:var(--ring)}
+/*
+ * The selected item is marked by a rule down its left edge rather than a
+ * border all the way round. A boxed item in a list of unboxed ones reads as a
+ * button that wandered in; a rule reads as "you are here".
+ */
+.nav a.on{
+  background:var(--brand-wash);color:var(--brand-ink);font-weight:650;
+  border-color:transparent;box-shadow:inset 2.5px 0 0 var(--brand);
+}
 .nav a .ic{width:18px;text-align:center;font-size:15px;opacity:.95}
 .nav a .pill{margin-left:auto;background:var(--crit);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px}
 .nav a.on .pill{background:var(--brand)}
@@ -101,21 +159,27 @@ a{color:var(--brand);text-decoration:none}
 .topbar{
   position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--surface) 88%,transparent);
   backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line);
-  display:flex;align-items:center;gap:12px;padding:10px 20px;
+  display:flex;align-items:center;gap:12px;padding:12px var(--sp-4);
 }
-.topbar h1{margin:0;font-size:17px;font-weight:700;letter-spacing:-.3px}
+.topbar h1{margin:0;font-size:16.5px;font-weight:650;letter-spacing:-.25px}
 .topbar .sub{font-size:12px;color:var(--ink-3);margin-top:1px}
 .spacer{flex:1}
-.content{padding:20px 22px 60px;max-width:1500px;width:100%}
+.content{padding:var(--sp-4) var(--sp-4) 72px;max-width:1500px;width:100%}
 
 /* ---------- Controls ---------- */
 .btn{
-  display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:8px;
+  display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:9px;
   border:1px solid var(--line-2);background:var(--surface);color:var(--ink);
-  font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:.12s;
+  font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;
+  transition:background .14s ease,border-color .14s ease,box-shadow .14s ease;
 }
-.btn:hover{background:var(--surface-3)}
-.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn:hover{background:var(--surface-2);border-color:var(--ink-3)}
+.btn:active{transform:translateY(.5px)}
+.btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.btn.primary{
+  background:var(--brand);border-color:var(--brand);color:#fff;
+  box-shadow:0 1px 2px color-mix(in srgb,var(--brand) 30%,transparent);
+}
 .btn.primary:hover{background:var(--brand-ink);border-color:var(--brand-ink)}
 .btn.danger{background:var(--crit);border-color:var(--crit);color:#fff}
 .btn.ghost{border-color:transparent;background:transparent}
@@ -154,13 +218,23 @@ textarea.input{min-height:80px;resize:vertical}
 .search:before{content:"⌕";position:absolute;left:10px;top:6px;color:var(--ink-3);font-size:16px}
 
 /* ---------- Surfaces ---------- */
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-sm)}
-.card-h{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line)}
-.card-h h3{margin:0;font-size:14px;font-weight:700;letter-spacing:-.2px}
-.card-h .sub{font-size:11.5px;color:var(--ink-3)}
-.card-b{padding:16px}
+/*
+ * A card is a border or a shadow, not both at full strength. Two edges around
+ * the same rectangle is the most common reason an interface looks busy at rest.
+ */
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  box-shadow:var(--shadow-sm);
+}
+.card-h{
+  display:flex;align-items:center;gap:var(--sp-2);
+  padding:15px var(--sp-4) 14px;border-bottom:1px solid var(--line);
+}
+.card-h h3{margin:0;font-size:14px;font-weight:650;letter-spacing:-.15px}
+.card-h .sub{font-size:11.5px;color:var(--ink-3);margin-top:2px}
+.card-b{padding:var(--sp-4)}
 .card-b.flush{padding:0}
-.grid{display:grid;gap:14px}
+.grid{display:grid;gap:var(--sp-3)}
 .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -244,16 +318,38 @@ textarea.input{min-height:80px;resize:vertical}
 }
 
 /* ---------- Stat tiles ---------- */
-.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 15px;box-shadow:var(--shadow-sm);position:relative;overflow:hidden}
-.tile .lbl{font-size:11.5px;font-weight:650;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
-.tile .val{font-size:26px;font-weight:750;letter-spacing:-.9px;margin-top:5px;line-height:1.1}
-.tile .foot{font-size:11.5px;color:var(--ink-3);margin-top:5px;display:flex;align-items:center;gap:5px}
+.tile{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:16px 17px 15px;box-shadow:var(--shadow-sm);position:relative;overflow:hidden;
+  transition:box-shadow .16s ease,border-color .16s ease;
+}
+.tile:hover{box-shadow:var(--shadow-md);border-color:var(--line-2)}
+.tile .lbl{
+  font-size:11px;font-weight:600;color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.08em;
+}
+/*
+ * 700 rather than 750, with tighter tracking. Very heavy weights read as
+ * shouting at large sizes; the size is already doing the emphasis, and the
+ * tracking is what makes a big number look drawn rather than stretched.
+ */
+.tile .val{
+  font-size:27px;font-weight:700;letter-spacing:-1px;margin-top:7px;line-height:1.08;
+}
+.tile .foot{
+  font-size:11.5px;color:var(--ink-3);margin-top:7px;
+  display:flex;align-items:center;gap:5px;
+}
 .tile .up{color:var(--good-text);font-weight:650}
 .tile .down{color:var(--crit);font-weight:650}
 .tile .spark{position:absolute;right:10px;bottom:8px;opacity:.9}
 
 /* ---------- Badges ---------- */
-.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11.5px;font-weight:650;border:1px solid transparent;white-space:nowrap}
+.badge{
+  display:inline-flex;align-items:center;gap:4px;padding:2.5px 9px;border-radius:20px;
+  font-size:11.5px;font-weight:600;border:1px solid transparent;white-space:nowrap;
+  line-height:1.45;
+}
 .b-good{background:var(--good-wash);color:var(--good-text);border-color:color-mix(in srgb,var(--good) 30%,transparent)}
 .b-warn{background:var(--warn-wash);color:#8a6100;border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
 html[data-theme="dark"] .b-warn{color:#fab219}
@@ -264,12 +360,23 @@ html[data-theme="dark"] .b-warn{color:#fab219}
 /* ---------- Tables ---------- */
 .tbl-wrap{overflow-x:auto}
 table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+/*
+ * The header is a label, not a heading. Uppercase at 700 competes with the
+ * data underneath it; at 600 with wider tracking it recedes and the rows read
+ * first, which is the right order for a table somebody scans.
+ */
 table.tbl th{
-  text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--ink-3);padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;
+  text-align:left;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.075em;
+  color:var(--ink-3);padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap;
   background:var(--surface-2);position:sticky;top:0;z-index:1;
 }
-table.tbl td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+/*
+ * Row height is the whole feel of a table. 9px of padding on a 13px font packs
+ * rows tightly enough that the eye loses its place across a wide row; 11px is
+ * enough to track without turning a register into a list of cards.
+ */
+table.tbl td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.tbl tbody tr{transition:background .12s ease}
 table.tbl tbody tr:hover{background:var(--surface-2)}
 table.tbl tbody tr:last-child td{border-bottom:0}
 table.tbl td.num,table.tbl th.num{text-align:right;font-variant-numeric:tabular-nums}
@@ -344,10 +451,11 @@ html[data-theme="dark"] .tipbox{background:#3a3a37;color:#fff}
 
 /* ---------- Dashboard greeting ---------- */
 .greet{
-  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;
-  padding-bottom:13px;border-bottom:1px solid var(--line);
+  display:flex;align-items:flex-end;justify-content:space-between;
+  gap:var(--sp-3);flex-wrap:wrap;
+  padding-bottom:var(--sp-3);border-bottom:1px solid var(--line);
 }
-.greet .hi{font-size:22px;font-weight:750;letter-spacing:-.5px;line-height:1.15}
+.greet .hi{font-size:23px;font-weight:650;letter-spacing:-.55px;line-height:1.15}
 .greet .sub{font-size:12.5px;color:var(--ink-3);margin-top:4px}
 .greet-notes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 @media (max-width:720px){
