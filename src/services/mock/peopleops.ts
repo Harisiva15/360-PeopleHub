@@ -7,7 +7,7 @@
  * filing rather than design.
  */
 
-import { CHECKINS, CUR_CYCLE, GOALS, PRAISE, REVIEWS } from '../../data/performance';
+import { CHECKINS, CUR_CYCLE, GOALS, PRAISE, REVIEWS, reviewOf } from '../../data/performance';
 import { COURSES, ENROLL } from '../../data/learning';
 import { KB, TICKETS } from '../../data/helpdesk';
 import { sortBy } from '../../lib/collections';
@@ -16,10 +16,10 @@ import { uid } from '../../lib/rng';
 import { enpsOf, ENPS_HISTORY, SURVEYS } from '../../data/engagement';
 import { ANNOUNCE, celebrations } from '../../data/announcements';
 import { FBP, FBP_COMPONENTS, fbpTotal, INSURANCE } from '../../data/benefits';
-import { ACTIVE, EMAP } from '../../data/employees';
+import { ACTIVE, DEMO_EMP, DEMO_MGR, EMAP } from '../../data/employees';
 import type {
   FbpPlan, FbpRow,
-  BenefitsService, EngagementService, HelpdeskService, LearningService,
+  BenefitsService, CheckIn, EngagementService, Goal, HelpdeskService, LearningService,
   NoticeboardService, PerformanceService,
 } from '../contracts';
 import { ok } from './util';
@@ -37,6 +37,98 @@ export const performanceService: PerformanceService = {
   praise() { return ok(PRAISE.slice()); },
   currentCycle() { return ok(CUR_CYCLE); },
   checkins(empIds) { return ok(scoped(CHECKINS, empIds)); },
+
+  addGoal(draft) {
+    if (!draft.title.trim()) return Promise.reject(new Error('A goal needs a title'));
+    const weight = draft.weight ?? 0;
+    if (weight < 0 || weight > 100) return Promise.reject(new Error('A weight runs from 0 to 100'));
+    const g: Goal = {
+      id: 'G-' + (GOALS.length + 1),
+      empId: draft.empId,
+      cycleId: CUR_CYCLE.id,
+      title: draft.title.trim(),
+      category: draft.category ?? '',
+      weight,
+      progress: 0,
+      due: draft.due ?? '',
+      status: 'Behind',
+      alignedTo: draft.alignedTo ?? null,
+      keyResults: (draft.keyResults ?? []).map((k) => ({ k, done: false })),
+    };
+    GOALS.push(g);
+    return ok(g);
+  },
+
+  logCheckin(draft) {
+    if (!draft.empId) return Promise.reject(new Error('Say who the check-in was with'));
+    if (!draft.wins?.trim() && !draft.blockers?.trim() && !draft.next?.trim()) {
+      return Promise.reject(new Error('A check-in needs something written in it'));
+    }
+    const c: CheckIn = {
+      id: 'CI-' + (CHECKINS.length + 1),
+      empId: draft.empId,
+      on: draft.on ?? ymd(TODAY),
+      by: DEMO_MGR.id,
+      wins: draft.wins ?? '',
+      blockers: draft.blockers ?? '',
+      next: draft.next ?? '',
+    };
+    CHECKINS.unshift(c);
+    return ok(c);
+  },
+
+  givePraise(toId, value, text) {
+    if (!text.trim()) return Promise.reject(new Error('Say what they did'));
+    if (toId === DEMO_EMP.id) return Promise.reject(new Error('Praise is for other people'));
+    PRAISE.unshift({
+      id: 'PR-' + (PRAISE.length + 1),
+      fromId: DEMO_EMP.id, toId, value, text: text.trim(), on: ymd(TODAY), likes: 0,
+    });
+    return ok(PRAISE.slice());
+  },
+
+  submitSelfReview(rating, comments) {
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return Promise.reject(new Error('A rating is 1 to 5'));
+    }
+    const r = reviewOf(DEMO_EMP.id);
+    if (!r) return Promise.reject(new Error('No review open for you'));
+    if (r.final) return Promise.reject(new Error('That review is already closed'));
+    r.self = { rating, comments, on: ymd(TODAY) };
+    r.status = 'Self Review';
+    return ok(r);
+  },
+
+  submitManagerReview(empId, rating, comments) {
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return Promise.reject(new Error('A rating is 1 to 5'));
+    }
+    const r = reviewOf(empId);
+    if (!r) return Promise.reject(new Error('That person has not started their review'));
+    if (!r.self.on) return Promise.reject(new Error('Their self-assessment is not in yet'));
+    if (r.final) return Promise.reject(new Error('That review is already closed'));
+    r.manager = { rating, comments, on: ymd(TODAY), by: DEMO_MGR.id };
+    r.status = 'Manager Review';
+    return ok(r);
+  },
+
+  calibrateReview(empId, outcome) {
+    if (!Number.isInteger(outcome.rating) || outcome.rating < 1 || outcome.rating > 5) {
+      return Promise.reject(new Error('A final rating is 1 to 5'));
+    }
+    const r = reviewOf(empId);
+    if (!r) return Promise.reject(new Error('No review to calibrate'));
+    if (!r.manager.on) return Promise.reject(new Error('The manager review is not in yet'));
+    r.final = {
+      rating: outcome.rating,
+      hike: outcome.hike ?? 0,
+      promoted: Boolean(outcome.promoted),
+    };
+    if (outcome.potential) r.potential = outcome.potential;
+    r.pip = Boolean(outcome.pip);
+    r.status = 'Calibrated';
+    return ok(r);
+  },
 
   setGoalProgress(goalId, progress) {
     const g = GOALS.find((x) => x.id === goalId);

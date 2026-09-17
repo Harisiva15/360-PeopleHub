@@ -512,6 +512,46 @@ export interface PerformanceService {
    * the number rather than being set alongside it.
    */
   setGoalProgress(goalId: string, progress: number): Promise<Goal>;
+
+  /** Set a goal, with its key results. */
+  addGoal(draft: NewGoal): Promise<Goal>;
+  /** Log a 1:1. The other party is the caller. */
+  logCheckin(draft: NewCheckIn): Promise<CheckIn>;
+  /** Praise a colleague. Praising yourself is refused. */
+  givePraise(toId: string, value: string, text: string): Promise<Praise[]>;
+  /** The employee's own assessment; opens the review if it is the first thing written. */
+  submitSelfReview(rating: number, comments: string): Promise<Review>;
+  /** The manager's. Refused before the self-assessment is in. */
+  submitManagerReview(empId: string, rating: number, comments: string): Promise<Review>;
+  /** Close a review with its final rating and increment. */
+  calibrateReview(empId: string, outcome: ReviewOutcome): Promise<Review>;
+}
+
+export interface NewGoal {
+  empId: string;
+  title: string;
+  category?: string;
+  weight?: number;
+  due?: string;
+  alignedTo?: string;
+  keyResults?: string[];
+}
+
+export interface NewCheckIn {
+  empId: string;
+  wins?: string;
+  blockers?: string;
+  next?: string;
+  on?: string;
+}
+
+export interface ReviewOutcome {
+  rating: number;
+  hike?: number;
+  promoted?: boolean;
+  /** 9-box vertical axis, 1 to 3. */
+  potential?: number;
+  pip?: boolean;
 }
 
 export interface LearningService {

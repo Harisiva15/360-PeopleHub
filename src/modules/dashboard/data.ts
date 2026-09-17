@@ -53,8 +53,7 @@ export const useCompliancePayments = () => useQuery((s) => s.payroll.complianceP
 export const useCandidates = () => useQuery((s) => s.hiring.candidates(), []);
 export const useRequisitions = () => useQuery((s) => s.hiring.requisitions(), []);
 
-export const useGoals = (ids: string[]) =>
-  useQuery(unbacked((s) => s.performance.goals(ids), []), [key(ids)]);
+export const useGoals = (ids: string[]) => useQuery((s) => s.performance.goals(ids), [key(ids)]);
 export const useCurrentCycle = () => useQuery((s) => s.performance.currentCycle(), []);
 export const useCourses = () => useQuery(unbacked((s) => s.learning.courses(), []), []);
 export const useEnrolments = (ids?: string[]) =>

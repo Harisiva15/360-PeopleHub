@@ -55,6 +55,11 @@ import {
   comment, HelpdeskError, knowledgeBase, listTickets, raiseTicket, resolveTicket,
 } from '../modules/helpdesk/service.ts';
 import {
+  addGoal, calibrateReview, currentCycle, givePraise, listCheckins, listGoals,
+  listPraise, listReviews, logCheckin, PerformanceError, setGoalProgress,
+  submitManagerReview, submitSelfReview,
+} from '../modules/performance/service.ts';
+import {
   activeLoans, bankBatches, compensation, compliancePayments, currentRun, dailyRates,
   inputsFor, listRuns, PayrollError, payslipFor, payslipHistory, processRun, register,
   salaryStructureOf, totals, totalsFor,
@@ -246,6 +251,78 @@ const routes: Route[] = [
     method: 'GET',
     pattern: '/payroll/payslips/:empId/:mk',
     handler: (c, _r, p) => payslipFor(c, p.empId!, p.mk!),
+  },
+  { method: 'GET', pattern: '/performance/cycle', handler: (c) => currentCycle(c) },
+  { method: 'GET', pattern: '/performance/praise', handler: (c) => listPraise(c) },
+  {
+    method: 'POST',
+    pattern: '/performance/praise',
+    handler: (c, _r, _p, body) => {
+      const b = (body ?? {}) as { toId: string; value?: string; text: string };
+      return givePraise(c, b.toId, b.value ?? '', b.text);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/performance/goals',
+    handler: (c, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('empIds');
+      return listGoals(c, ids ? ids.split(',').filter(Boolean) : undefined);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/performance/goals',
+    handler: (c, _r, _p, body) => addGoal(c, (body ?? {}) as Parameters<typeof addGoal>[1]),
+  },
+  {
+    method: 'PUT',
+    pattern: '/performance/goals/:id/progress',
+    handler: (c, _r, p, body) =>
+      setGoalProgress(c, p.id!, Number((body as { progress: number }).progress)),
+  },
+  {
+    method: 'GET',
+    pattern: '/performance/checkins',
+    handler: (c, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('empIds');
+      return listCheckins(c, ids ? ids.split(',').filter(Boolean) : undefined);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/performance/checkins',
+    handler: (c, _r, _p, body) => logCheckin(c, (body ?? {}) as Parameters<typeof logCheckin>[1]),
+  },
+  {
+    method: 'GET',
+    pattern: '/performance/reviews',
+    handler: (c, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('empIds');
+      return listReviews(c, ids ? ids.split(',').filter(Boolean) : undefined);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/performance/reviews/self',
+    handler: (c, _r, _p, body) => {
+      const b = (body ?? {}) as { rating: number; comments?: string };
+      return submitSelfReview(c, Number(b.rating), b.comments ?? '');
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/performance/reviews/:empId/manager',
+    handler: (c, _r, p, body) => {
+      const b = (body ?? {}) as { rating: number; comments?: string };
+      return submitManagerReview(c, p.empId!, Number(b.rating), b.comments ?? '');
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/performance/reviews/:empId/calibrate',
+    handler: (c, _r, p, body) =>
+      calibrateReview(c, p.empId!, (body ?? {}) as Parameters<typeof calibrateReview>[2]),
   },
   { method: 'GET', pattern: '/helpdesk/kb', handler: (c) => knowledgeBase(c) },
   {
@@ -679,6 +756,13 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof BadRequest) return { status: 400, message: error.message };
   if (error instanceof AttendanceError) {
     const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof PerformanceError) {
+    const status = error.code === 'forbidden' || error.code === 'self_review'
+      || error.code === 'self_praise' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };

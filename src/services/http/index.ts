@@ -73,6 +73,29 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/attendance/${empId}/${date}/regularise`, { decision }),
     },
 
+    performance: {
+      goals: (empIds) =>
+        api.get(`/performance/goals${qs({ empIds: empIds?.join(',') })}`),
+      reviews: (empIds) =>
+        api.get(`/performance/reviews${qs({ empIds: empIds?.join(',') })}`),
+      praise: () => api.get('/performance/praise'),
+      currentCycle: () => api.get('/performance/cycle'),
+      checkins: (empIds) =>
+        api.get(`/performance/checkins${qs({ empIds: empIds?.join(',') })}`),
+      setGoalProgress: (goalId, progress) =>
+        api.put(`/performance/goals/${goalId}/progress`, { progress }),
+      addGoal: (draft) => api.post('/performance/goals', draft),
+      logCheckin: (draft) => api.post('/performance/checkins', draft),
+      givePraise: (toId, value, text) =>
+        api.post('/performance/praise', { toId, value, text }),
+      submitSelfReview: (rating, comments) =>
+        api.post('/performance/reviews/self', { rating, comments }),
+      submitManagerReview: (empId, rating, comments) =>
+        api.post(`/performance/reviews/${empId}/manager`, { rating, comments }),
+      calibrateReview: (empId, outcome) =>
+        api.post(`/performance/reviews/${empId}/calibrate`, outcome),
+    },
+
     helpdesk: {
       tickets: (empIds) =>
         api.get(`/helpdesk/tickets${qs({ empIds: empIds?.join(',') })}`),
