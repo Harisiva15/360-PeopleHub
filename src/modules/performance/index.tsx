@@ -10,6 +10,7 @@ import type { Goal, Review } from '../../services';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, Dot, ListRow, StatusBadge } from '../../components/common';
 import { Donut, HBar, Legend, PAL } from '../../components/charts';
+import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
 import {
@@ -17,6 +18,9 @@ import {
   useSetGoalProgress, useTeam, useVisiblePeople,
 } from './data';
 import { useTabFromUrl } from '../tabParam';
+import {
+  CalibrateForm, CheckinForm, GoalForm, ManagerReviewForm, PraiseForm, SelfReviewForm,
+} from './Forms';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -90,6 +94,7 @@ function GoalCard({ g, editable }: { g: Goal; editable?: boolean }) {
 
 function PfGoals() {
   const app = useApp();
+  const layer = useLayer();
   const me = app.me;
   const dir = useVisiblePeople();
   const { data: GOALS = [] } = useGoals([me.id]);
@@ -123,6 +128,23 @@ function PfGoals() {
           <div className="toolbar">
             <div style={{ fontWeight: 750, fontSize: 15 }}>My goals — {cycle.name}</div>
             <div className="spacer" />
+            <button className="btn sm" onClick={() => layer.modal({
+              title: 'Log a 1:1',
+              sub: 'With your manager',
+              body: (close: () => void) => (
+                <CheckinForm close={close} empId={me.id} who={dir.name(me.managerId)} />
+              ),
+              footer: null,
+            })}>✎ Log a 1:1</button>
+            <button className="btn sm primary" onClick={() => layer.modal({
+              title: 'Set a goal',
+              sub: cycle.name,
+              size: 'wide',
+              body: (close: () => void) => (
+                <GoalForm close={close} empId={me.id} who="yourself" />
+              ),
+              footer: null,
+            })}>＋ Set a goal</button>
           </div>
           {goals.map((g) => <GoalCard key={g.id} g={g} editable />)}
           {!goals.length && <Card><EmptyState msg="No goals set for this cycle yet" icon="🎯" /></Card>}
@@ -255,6 +277,7 @@ function PfTeam({ openReview }: { openReview: (id: string) => void }) {
 /* ---------------- Review ---------------- */
 
 function PfReview({ target, setTarget }: { target: string | null; setTarget: (id: string) => void }) {
+  const layer = useLayer();
   const dir = useVisiblePeople();
   const { data: GOALS = [] } = useGoals();
   const { data: REVIEWS = [] } = useReviews();
@@ -286,6 +309,70 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
             ))}
           </select>
           <div className="spacer" />
+          {/*
+            * Only the step that is next. A self-assessment button on somebody
+            * else's review, or a manager's before the self is in, offers an
+            * action the server would refuse.
+            */}
+          {isSelf && rv.self.rating === null && (
+            <button className="btn sm primary" onClick={() => layer.modal({
+              title: 'Your self-assessment',
+              sub: cycle.name,
+              size: 'wide',
+              body: (close: () => void) => <SelfReviewForm close={close} cycle={cycle.name} />,
+              footer: null,
+            })}>Write your assessment</button>
+          )}
+          {!isSelf && rv.self.rating !== null && rv.manager.rating === null && (
+            <button className="btn sm primary" onClick={() => layer.modal({
+              title: 'Your review of ' + e.name,
+              sub: cycle.name,
+              size: 'wide',
+              body: (close: () => void) => (
+                <ManagerReviewForm close={close} empId={e.id} who={e.name}
+                  selfRating={rv.self.rating} selfComments={rv.self.comments} />
+              ),
+              footer: null,
+            })}>Write your review</button>
+          )}
+          {!isSelf && rv.self.rating === null && (
+            <span className="muted" style={{ fontSize: 12 }}>
+              Waiting on their self-assessment
+            </span>
+          )}
+          {!isSelf && rv.manager.rating !== null && !rv.final && (
+            <button className="btn sm" onClick={() => layer.modal({
+              title: 'Calibrate ' + e.name,
+              sub: cycle.name,
+              size: 'wide',
+              body: (close: () => void) => (
+                <CalibrateForm close={close} empId={e.id} who={e.name}
+                  managerRating={rv.manager.rating} />
+              ),
+              footer: null,
+            })}>Calibrate &amp; close</button>
+          )}
+          {!isSelf && (
+            <button className="btn sm" onClick={() => layer.modal({
+              title: 'Log a 1:1',
+              sub: 'With ' + e.name,
+              body: (close: () => void) => (
+                <CheckinForm close={close} empId={e.id} who={e.name} />
+              ),
+              footer: null,
+            })}>✎ 1:1</button>
+          )}
+          {!isSelf && (
+            <button className="btn sm" onClick={() => layer.modal({
+              title: 'Set a goal for ' + e.name,
+              sub: cycle.name,
+              size: 'wide',
+              body: (close: () => void) => (
+                <GoalForm close={close} empId={e.id} who={e.name} />
+              ),
+              footer: null,
+            })}>＋ Goal</button>
+          )}
           <StatusBadge status={rv.status} />
         </div>
       )}
@@ -525,7 +612,9 @@ function PfCalib() {
 /* ---------------- Praise wall ---------------- */
 
 function PfPraise() {
+  const layer = useLayer();
   const dir = useVisiblePeople();
+  const people = dir.list;
   const { data: PRAISE = [] } = usePraise();
   const app = useApp();
   const showEmp = useShowEmployee();
@@ -540,7 +629,14 @@ function PfPraise() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <button className="btn primary" onClick={() => app.toast('Praise composer is not wired in this build')}>🎉 Give praise</button>
+        <button className="btn primary" onClick={() => layer.modal({
+          title: 'Give praise',
+          sub: 'Posted to the wall for everyone to see',
+          body: (close: () => void) => (
+            <PraiseForm close={close} people={people} meId={app.meId} />
+          ),
+          footer: null,
+        })}>🎉 Give praise</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12.5 }}>{PRAISE.length} shout-outs this quarter · visible to everyone</span>
       </div>

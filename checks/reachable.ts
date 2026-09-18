@@ -41,12 +41,6 @@ const ALLOWED: Record<string, string> = {
   'exits.raise': 'the resignation form is still a stub',
   'exits.recordInterview': 'no exit-interview form yet',
   'onboarding.create': 'a journey can only be created by completing a hire, not directly',
-  'performance.addGoal': 'goal authoring has no screen',
-  'performance.logCheckin': '1:1 check-ins have no screen',
-  'performance.givePraise': 'the praise composer is still a stub',
-  'performance.submitSelfReview': 'the appraisal cycle has no screen',
-  'performance.submitManagerReview': 'the appraisal cycle has no screen',
-  'performance.calibrateReview': 'calibration has no screen',
 };
 
 const files: string[] = [];
