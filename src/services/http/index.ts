@@ -201,6 +201,16 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       navBadges: () => api.get('/approvals/badges'),
     },
 
+    benefits: {
+      fbpTotals: (empIds) =>
+        (empIds.length ? api.get(`/fbp/totals${qs({ empIds: empIds.join(',') })}`)
+          : Promise.resolve({})),
+      fbpPlan: (empId) => api.get(`/fbp/${empId}`),
+      fbpRows: () => api.get('/fbp/rows'),
+      declareFbp: (empId, alloc) => api.put(`/fbp/${empId}`, { alloc }),
+      insuranceCover: () => api.get('/fbp/insurance'),
+    },
+
     engagement: {
       surveys: () => api.get('/surveys'),
       enpsOf: (surveyId) => api.get(`/surveys/${surveyId}/enps`),

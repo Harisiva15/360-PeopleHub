@@ -109,6 +109,9 @@ import {
 import {
   EngagementError, enpsHistory, enpsOf, surveys,
 } from '../modules/engagement/service.ts';
+import {
+  BenefitsError, declareFbp, fbpPlan, fbpRows, fbpTotals, insuranceCover,
+} from '../modules/benefits/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -1099,6 +1102,25 @@ const routes: Route[] = [
     pattern: '/surveys/:id/enps',
     handler: (c, _r, p) => enpsOf(c, p.id!),
   },
+
+  /* ---- flexible benefits. Literals before the parameter. ---- */
+  { method: 'GET', pattern: '/fbp/rows', handler: (c) => fbpRows(c) },
+  { method: 'GET', pattern: '/fbp/insurance', handler: (c) => insuranceCover(c) },
+  {
+    method: 'GET',
+    pattern: '/fbp/totals',
+    handler: (c, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('empIds');
+      return fbpTotals(c, ids ? ids.split(',').filter(Boolean) : []);
+    },
+  },
+  { method: 'GET', pattern: '/fbp/:empId', handler: (c, _r, p) => fbpPlan(c, p.empId!) },
+  {
+    method: 'PUT',
+    pattern: '/fbp/:empId',
+    handler: (c, _r, p, body) =>
+      declareFbp(c, p.empId!, (body as { alloc: Record<string, unknown> }).alloc ?? {}),
+  },
 ];
 
 export class NotFound extends Error {}
@@ -1214,6 +1236,12 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof HiringError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof BenefitsError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;

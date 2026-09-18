@@ -156,6 +156,21 @@ const LEAVE_TYPES = [
  * quarter out rather than left null so it appears in the compliance tracker
  * rather than sitting undated forever.
  */
+/*
+ * Flexible-benefit components with their statutory annual ceilings. These are
+ * the Indian heads that carry their own tax treatment — the caps are what the
+ * law allows tax-free against bills, not a company policy, so they are seeded
+ * rather than left for somebody to invent.
+ */
+const FBP_COMPONENTS = [
+  ['fuel', 'Fuel & Vehicle Maintenance', 28800, 'Tax-free against bills, 2,400 per month', '⛽'],
+  ['meal', 'Meal Card', 26400, '50 per meal, 2 meals x 22 days — fully tax-free', '🍱'],
+  ['telecom', 'Telephone & Internet', 24000, 'Tax-free against bills', '📱'],
+  ['books', 'Books & Periodicals', 12000, 'Tax-free against bills', '📚'],
+  ['lta', 'Leave Travel Allowance', 60000, 'Exempt twice in a block of 4 years', '🚆'],
+  ['prof', 'Professional Development', 40000, 'Courses, certifications, conferences', '🎯'],
+];
+
 const COURSES = [
   ['POSH', 'Prevention of Sexual Harassment', 'Compliance', 'Internal', 1.5, true],
   ['INFOSEC', 'Information Security Essentials', 'Compliance', 'Internal', 2, true],
@@ -298,6 +313,14 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET label = EXCLUDED.label`,
       [tenant, code, label, rank, min, max]);
   }
+  for (const [code, name, cap, note, icon] of FBP_COMPONENTS) {
+    await q(`INSERT INTO fbp_component (tenant_id, code, name, annual_cap, note, icon)
+             VALUES ($1,$2,$3,$4,$5,$6)
+             ON CONFLICT (tenant_id, code)
+             DO UPDATE SET name = EXCLUDED.name, annual_cap = EXCLUDED.annual_cap,
+                           note = EXCLUDED.note, icon = EXCLUDED.icon`,
+      [tenant, code, name, cap, note, icon]);
+  }
   for (const [code, title, cat, provider, hours, mandatory] of COURSES) {
     await q(`INSERT INTO course (tenant_id, code, title, category, provider, hours,
                                mandatory, due_on)
@@ -332,7 +355,7 @@ try {
   created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, ${EXPENSE_CATEGORIES.length} expense categories, ${TICKET_CATEGORIES.length} ticket categories, `
     + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts, `
     + `${LETTER_TYPES.length} letter types, ${SECURITY_CONTROLS.length} security controls, `
-    + `${COURSES.length} courses`);
+    + `${COURSES.length} courses, ${FBP_COMPONENTS.length} benefit components`);
 
   /* ---- permissions: admin sees everything, the rest is narrowed later ---- */
   const MODULES = ['dashboard', 'employees', 'leave', 'attendance', 'timesheet', 'payroll',
