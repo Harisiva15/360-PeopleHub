@@ -1,11 +1,11 @@
 /**
- * The org chart's tree building, checked directly.
+ * The people screens — org chart, structure and celebrations.
  *
- * The drawing is CSS and the layout has to be looked at, but the tree
- * underneath it is arithmetic: who sits under whom, how many, and what happens
- * when the reporting lines are malformed. A cycle is the case worth having a
- * test for — it is rare, it comes from a bad import rather than from the app,
- * and without a guard it does not misdraw, it hangs the tab.
+ * The drawing is CSS and has to be looked at; what is checked here is the
+ * arithmetic underneath. Who sits under whom and what happens when the
+ * reporting lines loop; whether a department card's rows sum to its own total;
+ * and whether a recurring date lands in the right year. Each is a mistake that
+ * renders perfectly well and is wrong.
  */
 
 globalThis.localStorage = { getItem: () => null, setItem: () => {} } as unknown as Storage;
@@ -20,6 +20,7 @@ import { AuthProvider } from '../src/auth/AuthContext';
 import { LayerProvider } from '../src/components/Layer';
 import { buildTree, OrgTreeView } from '../src/modules/people/OrgChart';
 import { OrgStructure, subTeams } from '../src/modules/people/OrgStructure';
+import { CelebrationsView, occasionsIn } from '../src/modules/people/Celebrations';
 import { DEPTS } from '../src/data/org';
 import { getServices } from '../src/services';
 import type { Employee } from '../src/types/employee';
@@ -195,6 +196,90 @@ if (ceo) {
   check('but keeps the one asked for', filtered.includes(esc(shown[0]!.name)), true);
 }
 
-console.log(failed ? `\n${failed} check(s) FAILED` : '\nthe org chart tree holds');
+/* ---------- celebrations: projecting recurring dates ---------- */
+
+/*
+ * A birthday is a day and month that returns every year. The service hands
+ * back the next occurrence, whatever year that lands in; the calendar asks for
+ * whichever month is on screen, so the projection has to move the year across
+ * and leave the day and month alone. Getting this wrong shows a March birthday
+ * in the wrong March, which nobody would notice until somebody's day passed
+ * uncelebrated.
+ */
+const nameOf = (id: string) => 'Person ' + id;
+const person = (id: string, doj: string): Employee =>
+  ({ ...emp(id), doj, name: 'Person ' + id } as Employee);
+
+const march = occasionsIn(
+  '2027-03',
+  [{ kind: 'birthday', empId: 'b', date: '2026-03-09', inDays: 0 },
+    { kind: 'anniversary', empId: 'a', date: '2026-03-21', inDays: 0, years: 4 }],
+  [],
+  [],
+  nameOf,
+);
+check('a recurring date is projected onto the month asked for',
+  march.map((o) => o.date), ['2027-03-09', '2027-03-21']);
+check('and keeps its kind', march.map((o) => o.kind), ['birthday', 'anniversary']);
+check('an anniversary keeps the years', march[1]!.years, 4);
+
+check('a recurring date in another month is left out',
+  occasionsIn('2027-04',
+    [{ kind: 'birthday', empId: 'b', date: '2026-03-09', inDays: 0 }], [], [], nameOf).length, 0);
+
+/*
+ * A joining date is not recurring — somebody joined once. Projecting it would
+ * invent an anniversary of joining, which is what the anniversary record is
+ * already for.
+ */
+const joiners = [person('j1', '2026-05-04'), person('j2', '2024-05-04')];
+check('a joiner shows in the month they actually joined',
+  occasionsIn('2026-05', [], joiners, [], nameOf).map((o) => o.empId), ['j1']);
+check('and not in the same month of a later year',
+  occasionsIn('2027-05', [], joiners, [], nameOf).length, 0);
+
+/* Festivals move year to year, so they are matched as the dates they are. */
+const fests = [{ d: '2026-11-08', n: 'Deepavali' }, { d: '2025-10-20', n: 'Deepavali' }];
+check('a festival is taken as the date it falls on',
+  occasionsIn('2026-11', [], [], fests, nameOf).map((o) => o.label), ['Deepavali']);
+check('a festival has no employee attached',
+  occasionsIn('2026-11', [], [], fests, nameOf)[0]!.empId, undefined);
+
+check('everything in a month comes back in date order',
+  occasionsIn('2026-11',
+    [{ kind: 'birthday', empId: 'z', date: '2026-11-20', inDays: 0 }],
+    [person('j3', '2026-11-02')],
+    fests,
+    nameOf).map((o) => o.date), ['2026-11-02', '2026-11-08', '2026-11-20']);
+
+/* ---------- the celebrations screen renders ---------- */
+
+const cel = await s.noticeboard.celebrations(365);
+const celebHtml = renderToStaticMarkup(
+  <MemoryRouter><AuthProvider><AppProvider initialRole="admin">
+    <LayerProvider>
+      <CelebrationsView cel={cel} everyone={everyone} onOpen={() => {}}
+        onWish={() => {}} onAdd={() => {}} canPost />
+    </LayerProvider>
+  </AppProvider></AuthProvider></MemoryRouter>,
+);
+check('the celebrations screen mounts', celebHtml.includes('Celebration calendar'), true);
+check('with every kind in the legend',
+  ['Birthday', 'Work anniversary', 'New joiner', 'Festival']
+    .every((k) => celebHtml.includes(k)), true);
+check('and an add button for someone who may post',
+  celebHtml.includes('Add celebration'), true);
+
+const asEmployee = renderToStaticMarkup(
+  <MemoryRouter><AuthProvider><AppProvider initialRole="employee">
+    <LayerProvider>
+      <CelebrationsView cel={cel} everyone={everyone} onOpen={() => {}}
+        onWish={() => {}} onAdd={() => {}} canPost={false} />
+    </LayerProvider>
+  </AppProvider></AuthProvider></MemoryRouter>,
+);
+check('but none for someone who may not', asEmployee.includes('Add celebration'), false);
+
+console.log(failed ? `\n${failed} check(s) FAILED` : '\nthe people screens hold up');
 process.exit(failed ? 1 : 0);
 

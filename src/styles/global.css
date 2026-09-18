@@ -989,3 +989,59 @@ select.rost:hover{border-color:var(--line-2);box-shadow:var(--shadow-sm)}
   border-right:1px solid var(--line);
 }
 .org-foot span:last-child{border-right:0}
+
+/* ---------- Celebrations ---------- */
+.celeb-hero{
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  padding:22px 24px;border-radius:var(--r-lg);
+  background:linear-gradient(120deg,var(--t-rose),var(--t-violet) 55%,var(--t-blue));
+  border:1px solid color-mix(in srgb,var(--t-violet-ink) 16%,transparent);
+}
+.celeb-hero h2{
+  margin:0;font-size:21px;font-weight:750;letter-spacing:-.5px;color:var(--ink-1);
+}
+.celeb-hero p{margin:5px 0 0;font-size:13px;color:var(--ink-2);max-width:56ch}
+.celeb-add{margin-left:auto}
+
+/* A scrolling row: today's occasions are few, but "few" is not "at most four". */
+.celeb-row{display:flex;gap:11px;overflow-x:auto;padding:13px 14px}
+.celeb-card{
+  flex:0 0 186px;position:relative;text-align:center;
+  padding:16px 13px 14px;border-radius:var(--r-lg);
+  border:1px solid var(--line);background:var(--surface);
+}
+.celeb-card.t-rose{background:var(--t-rose);border-color:color-mix(in srgb,var(--t-rose-ink) 18%,transparent)}
+.celeb-card.t-green{background:var(--t-green);border-color:color-mix(in srgb,var(--t-green-ink) 18%,transparent)}
+.celeb-card.t-violet{background:var(--t-violet);border-color:color-mix(in srgb,var(--t-violet-ink) 18%,transparent)}
+.celeb-card.t-amber{background:var(--t-amber);border-color:color-mix(in srgb,var(--t-amber-ink) 18%,transparent)}
+.celeb-ic{position:absolute;top:9px;right:11px;font-size:15px}
+.celeb-who{
+  display:flex;flex-direction:column;align-items:center;gap:7px;
+  background:transparent;border:0;cursor:pointer;width:100%;font:inherit;color:inherit;
+}
+.celeb-who b{font-size:13px;letter-spacing:-.2px}
+button.celeb-who:hover b{color:var(--brand)}
+.celeb-fest{
+  width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:21px;
+  background:color-mix(in srgb,var(--surface) 70%,transparent);
+}
+.celeb-k{font-size:11px;font-weight:650;color:var(--ink-2);margin-top:6px}
+.celeb-msg{font-size:11.5px;color:var(--ink-2);margin:7px 0 10px;line-height:1.45}
+
+/* ---------- Month calendar ---------- */
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-h{
+  text-align:center;font-size:10.5px;font-weight:700;color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;
+}
+.cal-d{
+  min-height:38px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:5px 0 4px;border-radius:8px;font-size:12px;font-variant-numeric:tabular-nums;
+}
+.cal-d.now{background:var(--brand);color:#fff;font-weight:700}
+.cal-dots{display:flex;gap:3px;height:6px}
+.cal-dot{width:6px;height:6px;border-radius:50%;display:inline-block;flex:0 0 auto}
+.cal-dot.t-rose{background:var(--t-rose-ink)}
+.cal-dot.t-green{background:var(--t-green-ink)}
+.cal-dot.t-violet{background:var(--t-violet-ink)}
+.cal-dot.t-amber{background:var(--t-amber-ink)}

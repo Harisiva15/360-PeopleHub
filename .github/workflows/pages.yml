@@ -41,7 +41,7 @@ jobs:
           npm run check:routes
           npm run check:http
           npm run check:intake
-          npm run check:org
+          npm run check:people
           # Proves the sign-in gate is closed. Needs a configured build, so it
           # runs with placeholder credentials — nothing connects to Supabase,
           # because the render never gets that far.

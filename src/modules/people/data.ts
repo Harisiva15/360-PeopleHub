@@ -3,7 +3,8 @@
  * noticeboard. All reads: this is the part of the app everyone can see.
  */
 
-import { useQuery } from '../../services/react';
+import { useMutation, useQuery } from '../../services/react';
+import type { NewAnnouncement } from '../../services';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
@@ -21,3 +22,7 @@ export const useCelebrations = (days: number) => useQuery((s) => s.noticeboard.c
  * gap: it is not a number they are shown.
  */
 export const useRequisitions = () => useQuery((s) => s.hiring.requisitions(), []);
+
+/** Posting is managers and admins only; the service enforces it. */
+export const usePostAnnouncement = () =>
+  useMutation((s, draft: NewAnnouncement) => s.noticeboard.post(draft));

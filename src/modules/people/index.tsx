@@ -4,21 +4,24 @@
  */
 import { useState } from 'react';
 import { sortBy } from '../../lib/collections';
-import { daysBetween, DOW, fmtD, fmtDS, MON, nextOccur, parseYmd, TODAY, yearsSince, ymd } from '../../lib/dates';
-import { downloadCSV } from '../../lib/csv';
-
 import type { Announcement } from '../../data/announcements';
-import { useAllEmployees, useAnnouncements, useCelebrations, useRequisitions } from './data';
+import { DOW, fmtD, MON, parseYmd, TODAY, ymd } from '../../lib/dates';
+
+import {
+  useAllEmployees, useAnnouncements, useCelebrations, usePostAnnouncement, useRequisitions,
+} from './data';
 import type { Directory } from './data';
-import { DEPTS, deptOf, HOLIDAYS, ORG, siteOf } from '../../data/org';
+import { DEPTS, deptOf, HOLIDAYS, ORG } from '../../data/org';
 import { Avatar, Badge, Card, EmptyState, PersonCell, Seg, StatRow, Tabs, Tile } from '../../components/ui';
 import { NoRoot, OrgTreeView } from './OrgChart';
 import { OrgStructure } from './OrgStructure';
+import { CelebrationsView, KIND } from './Celebrations';
+import type { Occasion } from './Celebrations';
 import { Dot, ListRow } from '../../components/common';
 import { HBar } from '../../components/charts';
+import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
-import { CelebRows } from '../dashboard/shared';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -174,142 +177,81 @@ function OrgChart() {
 function Celebrations() {
   const app = useApp();
   const show = useShowEmployee();
-  const { data: cel = [] } = useCelebrations(60);
+  const layer = useLayer();
+  /*
+   * A year of lookahead: the calendar can be paged to any month, and the
+   * recurring dates are projected onto whichever month is on screen.
+   */
+  const { data: cel = [] } = useCelebrations(365);
   const { data: everyone = [] } = useAllEmployees();
-  const dir = {
-    list: everyone,
-    ids: everyone.map((e) => e.id),
-    byId: (id) => everyone.find((e) => e.id === id),
-    name: (id) => everyone.find((e) => e.id === id)?.name ?? '—',
-    loading: false,
-  } as Directory;
-  const [tab, setTab] = useState<'birthday' | 'anniversary' | 'joiner'>('birthday');
+  const post = usePostAnnouncement();
 
-  const today = cel.filter((c) => c.inDays === 0);
-  const milestones = everyone.filter((e) => [1, 3, 5, 7, 10].includes(yearsSince(e.doj))).slice(0, 12);
+  const canPost = app.role === 'admin' || app.role === 'manager';
+
+  const wish = (o: Occasion) =>
+    app.toast(`Wishes sent to ${o.label} ${KIND[o.kind].icon}`, 'ok');
 
   /*
-   * New joiners are not a celebration record — they are people whose joining
-   * date is recent — so they are derived here rather than expected from the
-   * feed, which only knows about birthdays and anniversaries.
+   * "Add celebration" posts to the noticeboard, which is a real record people
+   * will actually see, rather than to a celebrations feed this system does not
+   * have. Tagged so the board can group them.
    */
-  const joiners = sortBy(
-    everyone.filter((e) => daysBetween(e.doj, ymd(TODAY)) <= 60 && e.doj <= ymd(TODAY)),
-    (e) => e.doj).reverse();
+  const add = () => layer.modal({
+    title: 'Add a celebration',
+    sub: 'Posted to the noticeboard for everyone to see',
+    body: (close: () => void) => <AddCelebration close={close} onPost={post} />,
+    footer: null,
+  });
 
-  const forTab = tab === 'birthday'
-    ? cel.filter((c) => c.kind === 'birthday')
-    : tab === 'anniversary' ? cel.filter((c) => c.kind === 'anniversary') : [];
+  return (
+    <CelebrationsView cel={cel} everyone={everyone} onOpen={show}
+      onWish={wish} onAdd={add} canPost={canPost} />
+  );
+}
 
-  const wish = (empId: string) =>
-    app.toast(`Wishes sent to ${dir.name(empId)} 🎉`, 'ok');
+function AddCelebration({ close, onPost }: {
+  close: () => void;
+  onPost: ReturnType<typeof usePostAnnouncement>;
+}) {
+  const app = useApp();
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
 
-  const exportCsv = () =>
-    downloadCSV(
-      'celebrations.csv',
-      [['Date', 'Employee', 'Occasion', 'Department', 'Location', 'In days']].concat(
-        cel.flatMap((c) => {
-          const e = dir.byId(c.empId);
-          if (!e) return [];
-          return [[c.date, e.name, c.kind === 'birthday' ? 'Birthday' : `${c.years}-year anniversary`,
-            deptOf(e.dept).name, siteOf(e.site).name, String(c.inDays)]];
-        }),
-      ),
-    );
+  const save = async () => {
+    if (!title.trim()) { app.toast('Give it a title', 'err'); return; }
+    try {
+      await onPost.mutate({
+        title: title.trim(),
+        body: body.trim(),
+        tag: 'Celebration',
+        pin: false,
+        dept: 'All',
+      });
+      app.toast('Posted to the noticeboard', 'ok');
+      close();
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not post it', 'err');
+    }
+  };
 
   return (
     <div className="stack">
-      {today.length > 0 && (
-        <div className="card" style={{ background: 'linear-gradient(135deg,var(--brand),var(--s7))', border: 0, color: '#fff' }}>
-          <div className="card-b">
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', opacity: 0.85 }}>
-              Today at {ORG.name}
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 750, letterSpacing: '-.6px', margin: '6px 0 12px' }}>
-              {today.map((c) => (c.kind === 'birthday' ? '🎂 ' : '🎉 ') + dir.name(c.empId)).join('  ·  ')}
-            </div>
-            <div style={{ opacity: 0.9, fontSize: 13 }}>
-              {today.map((c) => c.kind === 'birthday'
-                ? `Wish ${dir.name(c.empId).split(' ')[0]} a happy birthday`
-                : `${dir.name(c.empId).split(' ')[0]} completes ${c.years} year${(c.years ?? 0) > 1 ? 's' : ''} with us`,
-              ).join(' · ')}
-            </div>
-            <div className="row" style={{ marginTop: 14, gap: 8 }}>
-              <button className="btn solid" style={{ background: '#fff', color: 'var(--brand-ink)', borderColor: '#fff' }}
-                onClick={() => app.toast('Wishes sent 🎉', 'ok')}>Send wishes</button>
-              <button className="btn" style={{ background: 'rgba(255,255,255,.16)', borderColor: 'rgba(255,255,255,.3)', color: '#fff' }}
-                onClick={() => app.toast('Posted to announcements', 'ok')}>Post to announcements</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <Tabs value={tab} onChange={setTab} options={[
-        { v: 'birthday', label: 'Birthdays' },
-        { v: 'anniversary', label: 'Work anniversaries' },
-        { v: 'joiner', label: 'New joiners' },
-      ]} />
-
-      <div className="grid g-2-1">
-        <Card
-          title={tab === 'birthday' ? 'Upcoming birthdays'
-            : tab === 'anniversary' ? 'Upcoming work anniversaries' : 'Recently joined'}
-          sub={tab === 'joiner' ? `${joiners.length} in the last 60 days` : `${forTab.length} in the next 60 days`}
-          flush>
-          {tab === 'joiner' ? (
-            joiners.length ? joiners.map((e) => (
-              <ListRow key={e.id} onClick={() => show(e.id)}>
-                <div style={{ fontSize: 17 }}>👋</div>
-                <Avatar name={e.name} size="sm" />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{e.name}</div>
-                  <div className="muted" style={{ fontSize: 11.5 }}>
-                    {e.designation} · {deptOf(e.dept).name}
-                  </div>
-                </div>
-                <Badge kind={daysBetween(e.doj, ymd(TODAY)) <= 7 ? 'good' : 'mute'}>
-                  Joined {fmtDS(e.doj)}
-                </Badge>
-              </ListRow>
-            )) : <EmptyState msg="Nobody has joined in the last 60 days" icon="👋" />
-          ) : (
-            <CelebRows list={forTab} dir={dir} onWish={wish} />
-          )}
-        </Card>
-
-        <Card title="Work milestones" sub="Employees hitting a year milestone" flush>
-          <CelebRows dir={dir} onWish={wish} list={milestones.map((e) => ({
-            kind: 'anniversary' as const, empId: e.id, date: ymd(nextOccur(e.doj)), inDays: 0, years: yearsSince(e.doj),
-          }))} />
-        </Card>
+      <label className="fld">
+        <span>What is being celebrated</span>
+        <input className="input" value={title} autoFocus
+          placeholder="August birthdays bash"
+          onChange={(e) => setTitle(e.target.value)} />
+      </label>
+      <label className="fld">
+        <span>Details</span>
+        <textarea className="input" rows={4} value={body}
+          placeholder="Where, when, and who it is for."
+          onChange={(e) => setBody(e.target.value)} />
+      </label>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={close}>Cancel</button>
+        <button className="btn primary" onClick={save}>Post</button>
       </div>
-
-      <Card title="Next 60 days" sub={`${cel.length} celebrations`} flush
-        actions={<button className="btn sm" onClick={exportCsv}>⤓ Export</button>}>
-        <div className="tbl-wrap">
-          <table className="tbl">
-            <thead>
-              <tr><th>Date</th><th>Employee</th><th>Occasion</th><th>Department</th><th>Location</th><th className="right">In</th></tr>
-            </thead>
-            <tbody>
-              {cel.map((c, i) => {
-                const e = dir.byId(c.empId);
-          if (!e) return null;
-                return (
-                  <tr key={i} className="clickable" onClick={() => show(e.id)}>
-                    <td className="nowrap">{fmtD(c.date)}</td>
-                    <td><PersonCell e={e} /></td>
-                    <td>{c.kind === 'birthday' ? '🎂 Birthday' : `🎉 ${c.years}-year anniversary`}</td>
-                    <td>{deptOf(e.dept).name}</td>
-                    <td>{siteOf(e.site).name}</td>
-                    <td className="right nowrap">{c.inDays === 0 ? <Badge kind="good">Today</Badge> : `${c.inDays} days`}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
     </div>
   );
 }
