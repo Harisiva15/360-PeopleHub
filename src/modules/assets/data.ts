@@ -21,3 +21,7 @@ export const useActOnRequest = () => useMutation((s, id: string, status: string)
 export const useAllocateAsset = () => useMutation((s, assetId: string, empId: string) => s.assets.allocate(assetId, empId));
 export const useMarkReturned = () => useMutation((s, assetId: string) => s.assets.markReturned(assetId));
 export const useOnboardingJourneys = () => useQuery((s) => s.onboarding.list(), []);
+
+/** The movement trail — what happened to the kit, most recent first. */
+export const useAssetMovements = (limit = 12) =>
+  useQuery((s) => s.assets.movements(limit), [limit]);

@@ -948,8 +948,37 @@ export interface NewAsset {
   empId?: string;
 }
 
+/**
+ * One thing that happened to one asset.
+ *
+ * Every allocation, return and retirement has always written one of these;
+ * nothing read them back until the register grew an activity feed.
+ */
+export interface AssetMovement {
+  id: string;
+  assetId: string;
+  asset: string;
+  tag: string;
+  cat: string;
+  /** allocated | returned | transferred | sent_for_repair | back_from_repair | retired | reported_lost */
+  kind: string;
+  fromId: string | null;
+  fromName: string;
+  toId: string | null;
+  toName: string;
+  movedOn: string;
+  /** When the system was told — two things on one day still have an order. */
+  at: string;
+  note: string;
+}
+
 export interface AssetService {
   list(): Promise<Asset[]>;
+  /**
+   * The movement trail, most recent first. An admin sees all of it; anyone
+   * else sees only movements of kit that was theirs.
+   */
+  movements(limit?: number): Promise<AssetMovement[]>;
   /**
    * Put an item into the register, optionally issued to someone straight away.
    *

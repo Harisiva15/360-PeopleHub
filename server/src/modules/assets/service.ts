@@ -227,6 +227,83 @@ export async function pendingRecovery(caller: Caller): Promise<Asset[]> {
  * useful life. `GREATEST(0, ...)` matters: an asset past its life has a book
  * value of zero, not a negative one that would quietly offset the rest.
  */
+export interface AssetMovement {
+  id: string;
+  assetId: string;
+  /** The item, as somebody would say it: "MacBook Pro 16"". */
+  asset: string;
+  tag: string;
+  cat: string;
+  /** allocated | returned | transferred | sent_for_repair | back_from_repair | retired | reported_lost */
+  kind: string;
+  fromId: string | null;
+  fromName: string;
+  toId: string | null;
+  toName: string;
+  movedOn: string;
+  /** When the system was told, which is what orders the trail. */
+  at: string;
+  note: string;
+}
+
+/**
+ * The movement trail — what happened to the kit, most recent first.
+ *
+ * Every allocation, return and retirement has been writing one of these rows
+ * since the register was built, and nothing ever read them back. Ordered by
+ * `recorded_at` rather than `moved_on`: two things that happened on the same
+ * day still happened in an order, and a date cannot say which.
+ */
+export async function listMovements(
+  caller: Caller,
+  limit = 25,
+): Promise<AssetMovement[]> {
+  /*
+   * The whole trail names who holds what, which is the same reason the
+   * register itself is not a directory. An admin sees all of it; anyone else
+   * sees only movements of kit that was theirs.
+   */
+  const n = Math.min(Math.max(1, Math.trunc(limit)), 200);
+  const params: unknown[] = [n];
+  const mine = caller.role === 'admin' ? '' :
+    ` WHERE m.from_employee_id = $2 OR m.to_employee_id = $2`;
+  if (caller.role !== 'admin') params.push(caller.employeeId);
+
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `SELECT m.id, m.asset_id, m.kind, m.moved_on, m.recorded_at, COALESCE(m.note, '') AS note,
+              m.from_employee_id, m.to_employee_id,
+              a.model AS asset, COALESCE(a.tag, '') AS tag,
+              COALESCE(c.code, '') AS cat,
+              COALESCE(f.full_name, '') AS from_name,
+              COALESCE(t.full_name, '') AS to_name
+         FROM asset_movement m
+         JOIN asset a ON a.id = m.asset_id
+         LEFT JOIN asset_category c ON c.id = a.category_id
+         LEFT JOIN employee f ON f.id = m.from_employee_id
+         LEFT JOIN employee t ON t.id = m.to_employee_id
+        ${mine}
+        ORDER BY m.recorded_at DESC, m.id DESC
+        LIMIT $1`, params);
+
+    return rows.map((r) => ({
+      id: r.id as string,
+      assetId: r.asset_id as string,
+      asset: r.asset as string,
+      tag: r.tag as string,
+      cat: r.cat as string,
+      kind: r.kind as string,
+      fromId: (r.from_employee_id as string | null) ?? null,
+      fromName: r.from_name as string,
+      toId: (r.to_employee_id as string | null) ?? null,
+      toName: r.to_name as string,
+      movedOn: r.moved_on as string,
+      at: new Date(r.recorded_at as string).toISOString(),
+      note: r.note as string,
+    }));
+  });
+}
+
 export async function assetKpi(caller: Caller): Promise<AssetKPI> {
   if (caller.role === 'employee') {
     throw new AssetError('only a manager or admin may see the register summary', 'forbidden');

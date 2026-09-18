@@ -22,7 +22,8 @@ import { AUDIT, AUDIT_CATS, CONTROLS, POSTURE, RETENTION } from '../../data/secu
 import { ONBOARD, ONB_TEMPLATE } from '../../data/onboarding';
 import { blankRequest, DOC_REQS, JOINER_DOCUMENTS, requestsFor } from '../../data/docRequests';
 import type {
-  Asset, AssetRequest, AssetService, ExitRecord, DocumentService, ExitDetail, ExitService, Onboarding,
+  Asset, AssetMovement, AssetRequest, AssetService, ExitRecord, DocumentService, ExitDetail,
+  ExitService, Onboarding,
   OnboardingService, SecurityService,
 } from '../contracts';
 import { ok } from './util';
@@ -205,8 +206,59 @@ export const exitService: ExitService = {
   },
 };
 
+/**
+ * The movement trail, derived from the register rather than kept beside it.
+ *
+ * The server writes a real row on every allocation and return. The fixture has
+ * no such log, so it is reconstructed from the state each asset is in — which
+ * means the trail can never disagree with the register it describes, the way a
+ * separately generated one eventually would.
+ */
+function movementsFrom(limit: number): AssetMovement[] {
+  const out: AssetMovement[] = [];
+  const at = (d: string) => new Date(d + 'T09:00:00Z').toISOString();
+
+  ASSETS.forEach((a) => {
+    if (a.empId && a.issued) {
+      out.push({
+        id: a.id + ':alloc', assetId: a.id, asset: a.type, tag: a.tag ?? '',
+        cat: a.cat ?? '', kind: 'allocated',
+        fromId: null, fromName: '', toId: a.empId, toName: empName(a.empId),
+        movedOn: a.issued, at: at(a.issued), note: '',
+      });
+    }
+    if (a.recoveredOn) {
+      out.push({
+        id: a.id + ':ret', assetId: a.id, asset: a.type, tag: a.tag ?? '',
+        cat: a.cat ?? '', kind: 'returned',
+        fromId: a.recoveredFrom ?? null, fromName: a.recoveredFrom ? empName(a.recoveredFrom) : '',
+        toId: null, toName: '', movedOn: a.recoveredOn, at: at(a.recoveredOn), note: '',
+      });
+    }
+    if (a.status === 'In repair' && a.issued) {
+      out.push({
+        id: a.id + ':rep', assetId: a.id, asset: a.type, tag: a.tag ?? '',
+        cat: a.cat ?? '', kind: 'sent_for_repair',
+        fromId: a.empId, fromName: a.empId ? empName(a.empId) : '',
+        toId: null, toName: '', movedOn: a.issued, at: at(a.issued), note: '',
+      });
+    }
+    if (a.status === 'Retired' && a.retiredOn) {
+      out.push({
+        id: a.id + ':retd', assetId: a.id, asset: a.type, tag: a.tag ?? '',
+        cat: a.cat ?? '', kind: 'retired',
+        fromId: null, fromName: '', toId: null, toName: '',
+        movedOn: a.retiredOn, at: at(a.retiredOn), note: '',
+      });
+    }
+  });
+
+  return out.sort((x, y) => (x.at < y.at ? 1 : x.at > y.at ? -1 : 0)).slice(0, limit);
+}
+
 export const assetService: AssetService = {
   list() { return ok(ASSETS.slice()); },
+  movements(limit = 25) { return ok(movementsFrom(limit)); },
   kpi() { return ok(assetKPI()); },
   requests() { return ok(ASSET_REQS.slice()); },
   openRequests() { return ok(arOpen()); },

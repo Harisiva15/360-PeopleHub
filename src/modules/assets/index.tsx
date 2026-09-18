@@ -6,6 +6,7 @@ import { downloadCSV } from '../../lib/csv';
 import { mbS } from '../../data/countries';
 
 import type { Asset } from '../../types/asset';
+import type { AssetMovement } from '../../services';
 import {
   ASSET_CATS, ASSET_STATUS_BADGE, acatOf, assetEol, bookValue, inWarranty,
 } from '../../data/assets';
@@ -14,13 +15,16 @@ import { entitledTo } from '../../data/assetWorkflow';
 
 
 import { deptOf, siteOf } from '../../data/org';
-import { Badge, Banner, Card, EmptyState, pageOf, Pager, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
-import { HBar } from '../../components/charts';
+import {
+  Badge, Banner, Card, EmptyState, pageOf, Pager, PersonCell, Tabs, Tile, StatRow,
+} from '../../components/ui';
+import { BarChart, Donut, HBar, Legend } from '../../components/charts';
+import { ListRow } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import {
-  useAddAsset, useAllEmployees, useAllocateAsset, useAssetKpi, useAssets, useExits,
-  useMarkReturned, useOnboardingJourneys, usePendingRecovery, useVisiblePeople,
+  useAddAsset, useAllEmployees, useAllocateAsset, useAssetKpi, useAssetMovements, useAssets,
+  useExits, useMarkReturned, useOnboardingJourneys, usePendingRecovery, useVisiblePeople,
 } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
@@ -188,6 +192,39 @@ function AddAssetForm({ close }: { close: () => void }) {
   );
 }
 
+/** What each kind of movement looks like at a glance. */
+const MOVE_ICON: Record<string, string> = {
+  allocated: '📤', returned: '📥', transferred: '🔁',
+  sent_for_repair: '🔧', back_from_repair: '✅',
+  retired: '🗑', reported_lost: '⚠️',
+};
+
+/** The movement as a sentence, naming whoever it involved. */
+function movedPhrase(m: AssetMovement): string {
+  switch (m.kind) {
+    case 'allocated': return `Issued to ${m.toName || 'someone'}`;
+    case 'returned': return `Returned by ${m.fromName || 'someone'}`;
+    case 'transferred': return `${m.fromName || 'Someone'} → ${m.toName || 'someone'}`;
+    case 'sent_for_repair': return 'Sent for repair';
+    case 'back_from_repair': return 'Back from repair';
+    case 'retired': return 'Retired from the register';
+    case 'reported_lost': return 'Reported lost';
+    default: return m.kind.replace(/_/g, ' ');
+  }
+}
+
+/** Rough elapsed time — "2 hours ago" is more use here than a timestamp. */
+function since(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 60) return mins <= 1 ? 'just now' : `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
+  const months = Math.round(days / 30);
+  return `${months} month${months === 1 ? '' : 's'} ago`;
+}
+
 function AsRegister() {
   const layer = useLayer();
   const { data: ASSETS = [] } = useAssets();
@@ -196,6 +233,7 @@ function AsRegister() {
   const [q, setQ] = useState('');
   const [fc, setFc] = useState('');
   const [fs, setFs] = useState('');
+  const { data: moves = [] } = useAssetMovements(12);
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(25);
 
@@ -246,15 +284,57 @@ function AsRegister() {
             ))}>⤓ Export</button>
       </div>
 
-      <StatRow cols={4}>
-        <Tile icon="📦" label="Total assets" value={k.total} foot={mbS(k.net) + ' net book value'} />
-        <Tile icon="✅" label="Allocated" value={k.assigned}
+      <StatRow cols={5}>
+        <Tile icon="💻" label="Total assets" value={k.total} foot={mbS(k.net) + ' net book value'} />
+        <Tile icon="✅" label="In use" value={k.assigned}
           foot={pct(k.assigned, Math.max(1, k.total)) + '% of the fleet'} />
-        <Tile icon="📥" label="Available" value={k.stock}
-          foot={pct(k.stock, Math.max(1, k.total)) + '% in stock'} />
-        <Tile icon="🔧" label="Under maintenance" value={k.repair}
-          foot={k.outOfWarranty + ' out of warranty'} />
+        <Tile icon="📦" label="In stock" value={k.stock}
+          foot={pct(k.stock, Math.max(1, k.total)) + '% available'} />
+        <Tile icon="🔧" label="Under repair" value={k.repair}
+          foot={pct(k.repair, Math.max(1, k.total)) + '% out of service'} />
+        <Tile icon="🗑" label="Retired" value={k.retired}
+          foot={pct(k.retired, Math.max(1, k.total)) + '% written off'} />
       </StatRow>
+
+      {/*
+        * Category split, status split and what has actually been happening.
+        * The first two are the same register counted two ways; the third is
+        * the movement trail, which until now was written and never read.
+        */}
+      <div className="grid g3">
+        <Card title="Asset categories" sub={`${k.total} assets`}>
+          <div className="row" style={{ gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Donut size={148} center={k.total} centerSub="assets"
+              slices={byCat.filter((c) => c.v > 0)} />
+            <div style={{ flex: 1, minWidth: 130 }}>
+              <Legend items={byCat.filter((c) => c.v > 0)} />
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Asset status" sub="Where the fleet is">
+          <BarChart labels={['In use', 'In stock', 'Repair', 'Retired']} height={172}
+            series={[{
+              name: 'Assets', color: 'var(--s1)',
+              data: [k.assigned, k.stock, k.repair, k.retired],
+            }]} />
+        </Card>
+
+        <Card title="Recent activity" sub={`Last ${moves.length} movements`} flush>
+          {moves.length ? moves.slice(0, 6).map((m) => (
+            <ListRow key={m.id}>
+              <span style={{ fontSize: 15 }}>{MOVE_ICON[m.kind] ?? '📦'}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 12.5 }}>
+                  {m.asset}{m.tag ? ` · ${m.tag}` : ''}
+                </div>
+                <div className="muted" style={{ fontSize: 11.5 }}>{movedPhrase(m)}</div>
+              </div>
+              <span className="muted nowrap" style={{ fontSize: 11 }}>{since(m.at)}</span>
+            </ListRow>
+          )) : <EmptyState msg="Nothing has moved yet" icon="📦" />}
+        </Card>
+      </div>
 
       <Card title="Asset register" sub={`${list.length} of ${ASSETS.length} assets`} flush>
         <div className="tbl-wrap">
@@ -262,8 +342,8 @@ function AsRegister() {
             <thead>
               <tr>
                 <th className="num">#</th><th>Asset tag</th><th>Asset name</th><th>Category</th>
-                <th>Assigned to</th><th>Location</th><th>Status</th><th>Purchase date</th>
-                <th className="num">Book value</th>
+                <th>Brand</th><th>Assigned to</th><th>Location</th><th>Status</th>
+                <th>Purchased</th><th>Warranty</th><th className="num">Book value</th>
               </tr>
             </thead>
             <tbody>
@@ -277,13 +357,22 @@ function AsRegister() {
                     <div className="mt">{a.serial}</div>
                   </td>
                   <td className="nowrap">{acatOf(a.cat).n}</td>
-                  <td className="nowrap">{a.empId ? dir.name(a.empId) : <span className="muted">IT stock</span>}</td>
-                  <td className="nowrap">{siteOf(a.site || 'CHN').city}</td>
-                  <td>
-                    <AssetBadge s={a.status} />
-                    {a.status === 'Assigned' && !inWarranty(a) && <> <Badge kind="warn">No warranty</Badge></>}
+                  <td className="nowrap">{a.vendor || <span className="muted">—</span>}</td>
+                  <td className="nowrap">
+                    {a.empId
+                      ? <PersonCell e={dir.byId(a.empId)!} sub={false} />
+                      : <span className="muted">IT stock</span>}
                   </td>
+                  <td className="nowrap">{siteOf(a.site || 'CHN').city}</td>
+                  <td><AssetBadge s={a.status} /></td>
                   <td className="nowrap">{a.purchased ? fmtD(a.purchased) : <span className="muted">—</span>}</td>
+                  <td className="nowrap">
+                    {a.warrantyEnd
+                      ? (inWarranty(a)
+                        ? <span className="muted">{fmtD(a.warrantyEnd)}</span>
+                        : <Badge kind="warn">Expired</Badge>)
+                      : <span className="muted">—</span>}
+                  </td>
                   <td className="num">{inr(bookValue(a))}</td>
                 </tr>
               ))}

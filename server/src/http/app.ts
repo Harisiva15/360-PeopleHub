@@ -43,7 +43,7 @@ import {
   removeAnnouncement, setPinned,
 } from '../modules/noticeboard/service.ts';
 import {
-  actOnRequest, addAsset, allocate, AssetError, assetKpi, listAssets,
+  actOnRequest, addAsset, allocate, AssetError, assetKpi, listAssets, listMovements,
   listOpenRequests, listRequests, markReturned, pendingRecovery, requestAsset,
 } from '../modules/assets/service.ts';
 import { ProvisionError } from '../modules/people/provision.ts';
@@ -627,6 +627,14 @@ const routes: Route[] = [
   { method: 'GET', pattern: '/recruiters/tracker', handler: (c) => recruiterTracker(c) },
   { method: 'GET', pattern: '/requisitions/tracker', handler: (c) => requisitionTracker(c) },
   { method: 'GET', pattern: '/assets', handler: (c) => listAssets(c) },
+  {
+    method: 'GET',
+    pattern: '/assets/movements',
+    handler: (c, r) => {
+      const n = new URL(r.url ?? '/', 'http://x').searchParams.get('limit');
+      return listMovements(c, n ? Number(n) : 25);
+    },
+  },
   {
     method: 'POST',
     pattern: '/assets',
