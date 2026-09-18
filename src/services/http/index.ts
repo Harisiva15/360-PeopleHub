@@ -201,6 +201,12 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       navBadges: () => api.get('/approvals/badges'),
     },
 
+    engagement: {
+      surveys: () => api.get('/surveys'),
+      enpsOf: (surveyId) => api.get(`/surveys/${surveyId}/enps`),
+      enpsHistory: () => api.get('/surveys/enps-history'),
+    },
+
     learning: {
       courses: () => api.get('/learning/courses'),
       enrolments: (empIds) =>

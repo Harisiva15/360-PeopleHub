@@ -7,7 +7,6 @@
  */
 
 import { useQuery } from '../../services/react';
-import { unbacked } from '../../services/unbacked';
 
 import { useCaller } from '../../services/people';
 
@@ -48,7 +47,7 @@ export const useEnrolments = (ids?: string[]) =>
   useQuery((s) => s.learning.enrolments(ids), [ids ? key(ids) : 'all']);
 export const useTickets = (ids?: string[]) =>
   useQuery((s) => s.helpdesk.tickets(ids), [ids ? key(ids) : 'all']);
-export const useSurveys = () => useQuery(unbacked((s) => s.engagement.surveys(), []), []);
+export const useSurveys = () => useQuery((s) => s.engagement.surveys(), []);
 
 export const useAnnouncements = () => useQuery((s) => s.noticeboard.announcements(), []);
 export const useCelebrations = (days: number) => useQuery((s) => s.noticeboard.celebrations(days), [days]);

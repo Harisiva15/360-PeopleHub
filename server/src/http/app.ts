@@ -106,6 +106,9 @@ import { approveLoan, listLoans, LoanError } from '../modules/loans/service.ts';
 import {
   courses, enrol, enrolments, LearningError, setProgress,
 } from '../modules/learning/service.ts';
+import {
+  EngagementError, enpsHistory, enpsOf, surveys,
+} from '../modules/engagement/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -1087,6 +1090,15 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       setProgress(c, p.empId!, p.courseId!, (body as { progress: number }).progress),
   },
+
+  /* ---- engagement. Literal before the parameter. ---- */
+  { method: 'GET', pattern: '/surveys', handler: (c) => surveys(c) },
+  { method: 'GET', pattern: '/surveys/enps-history', handler: (c) => enpsHistory(c) },
+  {
+    method: 'GET',
+    pattern: '/surveys/:id/enps',
+    handler: (c, _r, p) => enpsOf(c, p.id!),
+  },
 ];
 
 export class NotFound extends Error {}
@@ -1202,6 +1214,12 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof HiringError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof EngagementError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;

@@ -190,7 +190,14 @@ function EnResults() {
 
         <div className="stack">
           <Card title="eNPS breakdown" sub={`${total} responses`}>
-            <Donut size={160} center={(score > 0 ? '+' : '') + score} centerSub="eNPS"
+            {/*
+               * null is "too few people answered to show a result", which is
+               * not the same as a score of zero — the service withholds it
+               * rather than letting a small team be identified by inspection.
+               */}
+            <Donut size={160}
+              center={score === null ? '—' : (score > 0 ? '+' : '') + score}
+              centerSub={score === null ? 'Too few replies' : 'eNPS'}
               slices={[
                 { k: 'Promoters (9–10)', v: enps.promoters ?? 0, c: 'var(--s6)' },
                 { k: 'Passives (7–8)', v: enps.passives ?? 0, c: 'var(--s4)' },

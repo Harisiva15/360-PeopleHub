@@ -728,8 +728,15 @@ export interface HelpdeskService {
 
 export interface EngagementService {
   surveys(): Promise<Survey[]>;
-  /** The eNPS score for one survey, computed from its promoter split. */
-  enpsOf(surveyId: string): Promise<number>;
+  /**
+   * The eNPS for one survey, computed from its promoter split — or null when
+   * too few people have answered for the result to be shown.
+   *
+   * Null rather than zero: zero is a real score, as many detractors as
+   * promoters, and a caller that cannot tell "nobody answered" from "opinion
+   * is evenly split" will report the first as the second.
+   */
+  enpsOf(surveyId: string): Promise<number | null>;
   /** eNPS by quarter, oldest first. */
   enpsHistory(): Promise<{ k: string; v: number }[]>;
 }

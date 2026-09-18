@@ -25,22 +25,47 @@ export class EngagementError extends Error {
   }
 }
 
+export interface SurveyQuestion {
+  q: string;
+  /** Mean response on the question's own scale. */
+  score: number;
+}
+
 export interface Survey {
   id: string;
   name: string;
-  kind: string;
+  type: string;
   status: 'Draft' | 'Live' | 'Closed';
-  sentOn: string | null;
-  closesOn: string | null;
-  recipients: number;
-  responses: number;
+  sentOn: string;
+  closesOn: string;
+  sent: number;
+  responded: number;
   anonymous: boolean;
   /** Responses needed before any result is shown. */
   floor: number;
+  /** Per-question means, withheld below the floor. */
+  questions?: SurveyQuestion[];
+  /* An eNPS survey carries the split instead of question means. */
+  promoters?: number;
+  passives?: number;
+  detractors?: number;
 }
 
 const TO_STATUS: Record<string, Survey['status']> = {
   draft: 'Draft', live: 'Live', closed: 'Closed',
+};
+
+/**
+ * The screens name three kinds; the column allows six.
+ *
+ * The three the screens do not name — manager effectiveness, exit, custom —
+ * are pulses as far as the rendering is concerned: a set of scale questions
+ * with means. Mapping them to 'Pulse' is how they get drawn at all, rather
+ * than falling through to an empty branch.
+ */
+const TO_TYPE: Record<string, string> = {
+  enps: 'eNPS', onboarding: 'Onboarding', pulse: 'Pulse',
+  manager_effectiveness: 'Pulse', exit: 'Pulse', custom: 'Pulse',
 };
 
 export async function surveys(caller: Caller): Promise<Survey[]> {
@@ -63,18 +88,65 @@ export async function surveys(caller: Caller): Promise<Survey[]> {
          ) r ON true
         ORDER BY s.sent_on DESC NULLS LAST, s.name`);
 
-    return rows.map((x) => ({
-      id: x.id as string,
-      name: x.name as string,
-      kind: x.kind as string,
-      status: TO_STATUS[x.status as string] ?? 'Draft',
-      sentOn: (x.sent_on as string | null) ?? null,
-      closesOn: (x.closes_on as string | null) ?? null,
-      recipients: Number(x.recipients),
-      responses: Number(x.responses),
-      anonymous: Boolean(x.anonymous),
-      floor: Number(x.min_responses_to_show),
-    }));
+    const out: Survey[] = [];
+    for (const x of rows) {
+      const id = x.id as string;
+      const responded = Number(x.responses);
+      const floor = Number(x.min_responses_to_show);
+      const base: Survey = {
+        id,
+        name: x.name as string,
+        type: TO_TYPE[x.kind as string] ?? 'Pulse',
+        status: TO_STATUS[x.status as string] ?? 'Draft',
+        sentOn: (x.sent_on as string | null) ?? '',
+        closesOn: (x.closes_on as string | null) ?? '',
+        sent: Number(x.recipients),
+        responded,
+        anonymous: Boolean(x.anonymous),
+        floor,
+      };
+
+      /*
+       * Below the floor, nothing is attached — no question means, no split.
+       * The anonymity guarantee is that results are withheld, and withholding
+       * them here rather than in the screen means every reader of this API
+       * gets the same protection.
+       */
+      if (responded < floor) { out.push(base); continue; }
+
+      if (base.type === 'eNPS') {
+        const { rows: [split] } = await db.query(
+          `SELECT count(*) FILTER (WHERE sr.score >= 9)::int AS promoters,
+                  count(*) FILTER (WHERE sr.score BETWEEN 7 AND 8)::int AS passives,
+                  count(*) FILTER (WHERE sr.score <= 6)::int AS detractors
+             FROM survey_response sr
+             JOIN survey_question q ON q.id = sr.question_id
+            WHERE q.survey_id = $1 AND q.kind = 'nps' AND sr.score IS NOT NULL`, [id]);
+        out.push({
+          ...base,
+          promoters: Number(split!.promoters),
+          passives: Number(split!.passives),
+          detractors: Number(split!.detractors),
+        });
+        continue;
+      }
+
+      const { rows: qs } = await db.query(
+        `SELECT q.prompt, round(avg(sr.score)::numeric, 1) AS mean
+           FROM survey_question q
+           LEFT JOIN survey_response sr ON sr.question_id = q.id AND sr.score IS NOT NULL
+          WHERE q.survey_id = $1 AND q.kind = 'scale'
+          GROUP BY q.id, q.prompt, q.display_order
+          ORDER BY q.display_order`, [id]);
+      out.push({
+        ...base,
+        questions: qs.map((q) => ({
+          q: q.prompt as string,
+          score: q.mean === null ? 0 : Number(q.mean),
+        })),
+      });
+    }
+    return out;
   });
 }
 
