@@ -121,10 +121,15 @@ export const payrollService: PayrollService = {
     const d = DECL[empId];
     if (!d) return Promise.reject(new Error('No declaration on file for ' + empId));
     if (d.status === 'Verified') return Promise.reject(new Error('Finance has verified this declaration — raise a ticket to reopen it'));
-    /* Only the keys the declaration already carries; the rest are numbers. */
-    Object.keys(d.items).forEach((k) => {
-      d.items[k] = k === 'landlord_pan' ? String(items[k] ?? '') : Number(items[k]) || 0;
-    });
+    /*
+     * A tax identifier is not stored — see the tax service. Refused rather
+     * than dropped, so the caller finds out rather than assuming it saved.
+     */
+    if ('landlord_pan' in items) {
+      return Promise.reject(new Error(
+        "the landlord's PAN is not stored in this deployment"));
+    }
+    Object.keys(d.items).forEach((k) => { d.items[k] = Number(items[k]) || 0; });
     d.status = 'Submitted';
     d.submittedOn = ymd(TODAY);
     return ok(d);

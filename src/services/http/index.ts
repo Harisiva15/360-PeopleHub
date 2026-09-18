@@ -168,11 +168,24 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       activeLoans: () => api.get('/payroll/loans'),
       processRun: (mk) => api.post(`/payroll/${mk}/process`),
       /*
-       * The tax-declaration half of PayrollService is deliberately absent.
-       * Declarations price a regime against PAN-backed proofs, and the
-       * schema holds no PAN; claiming a method the server cannot honour is
-       * worse than not claiming it.
+       * The tax half. The server's rules.ts already carried both regimes, the
+       * slab engine and the HRA test, so these compute against real salary
+       * structures rather than a mock.
+       *
+       * What is still absent is the landlord's PAN: Rule 26C wants it once
+       * annual rent passes a lakh, the column that would hold it is plain
+       * text, and 0003 decided not to keep tax identifiers that way. The
+       * service refuses that one item rather than reversing the decision
+       * quietly — so an HRA claim above that threshold is incomplete until
+       * somebody rules on it.
        */
+      declarations: () => api.get('/tax/declarations'),
+      taxRows: () => api.get('/tax/rows'),
+      taxSummary: (empId) => api.get(`/tax/${empId}/summary`),
+      saveDeclaration: (empId, items) => api.put(`/tax/${empId}`, { items }),
+      setRegime: (empId, regime) => api.put(`/tax/${empId}/regime`, { regime }),
+      submitProofs: (empId) => api.post(`/tax/${empId}/proofs`),
+      verifyDeclaration: (empId) => api.post(`/tax/${empId}/verify`),
     },
 
     onboarding: {

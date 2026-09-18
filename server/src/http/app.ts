@@ -93,6 +93,10 @@ import {
   issueLetter, LetterError, listLetterRequests, listLetterTypes, rejectLetter,
   requestLetter,
 } from '../modules/letters/service.ts';
+import {
+  allDeclarations, declarationFor, saveDeclaration, setRegime, submitProofs,
+  TaxError, taxRows, taxSummary, verifyDeclaration,
+} from '../modules/tax/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -958,6 +962,50 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       rejectLetter(c, p.id!, (body as { reason?: string } | undefined)?.reason ?? ''),
   },
+
+  /* ---- tax declarations ---- */
+  {
+    method: 'GET',
+    pattern: '/tax/declarations',
+    handler: (c) => allDeclarations(c),
+  },
+  {
+    method: 'GET',
+    pattern: '/tax/rows',
+    handler: (c) => taxRows(c),
+  },
+  {
+    method: 'GET',
+    pattern: '/tax/:empId/summary',
+    handler: (c, _r, p) => taxSummary(c, p.empId!),
+  },
+  {
+    method: 'GET',
+    pattern: '/tax/:empId',
+    handler: (c, _r, p) => declarationFor(c, p.empId!),
+  },
+  {
+    method: 'PUT',
+    pattern: '/tax/:empId',
+    handler: (c, _r, p, body) =>
+      saveDeclaration(c, p.empId!, (body as { items: Record<string, unknown> }).items ?? {}),
+  },
+  {
+    method: 'PUT',
+    pattern: '/tax/:empId/regime',
+    handler: (c, _r, p, body) => setRegime(c, p.empId!, (body as { regime: string }).regime),
+  },
+  {
+    method: 'POST',
+    pattern: '/tax/:empId/proofs',
+    handler: (c, _r, p, body) =>
+      submitProofs(c, p.empId!, (body as { note?: string } | undefined)?.note),
+  },
+  {
+    method: 'POST',
+    pattern: '/tax/:empId/verify',
+    handler: (c, _r, p) => verifyDeclaration(c, p.empId!),
+  },
 ];
 
 export class NotFound extends Error {}
@@ -1076,6 +1124,12 @@ function statusFor(error: unknown): { status: number; message: string } {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof TaxError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' || error.code === 'not_supported' ? 400 : 409;
     return { status, message: error.message };
   }
   if (error instanceof LetterError) {

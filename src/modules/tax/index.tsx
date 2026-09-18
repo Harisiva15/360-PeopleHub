@@ -194,12 +194,16 @@ function TaxMe() {
           <h4 style={{ margin: '0 0 10px', fontSize: 13 }}>House Rent Allowance exemption</h4>
           <div className="grid g2" style={{ gap: '0 14px' }}>
             <NumField id="hra_rent" label="Monthly rent paid" hint={'Annual rent: ' + inr(Number(draft.hra_rent) * 12)} items={draft} setItem={setItem} />
-            <div className="field">
-              <label>Landlord PAN (mandatory if annual rent &gt; ₹1,00,000)</label>
-              <input className="input" placeholder="AAAPZ1234C" value={String(draft.landlord_pan ?? '')}
-                onChange={(ev) => setItem('landlord_pan', ev.target.value)} />
-            </div>
           </div>
+
+          {Number(draft.hra_rent) * 12 > 100000 && (
+            <Banner kind="warn" icon="⚠️" title="This claim needs your landlord's PAN">
+              Above ₹1,00,000 of annual rent, Rule 26C requires it and this system
+              does not hold it — tax identifiers are deliberately not stored here.
+              Give it to finance directly; the exemption below is what you would get
+              once they have it.
+            </Banner>
+          )}
 
           <Banner kind="info" icon="🧮">
             <b>HRA exemption: {inr(hx)}</b> — least of: actual HRA {inr(comp(s, 1))}, rent paid − 10% of basic{' '}

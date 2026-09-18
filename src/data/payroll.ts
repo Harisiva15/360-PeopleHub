@@ -91,7 +91,6 @@ export const DECL: Record<string, Declaration> = {};
         '80G': chance(0.18) ? ri(2, 25) * 1000 : 0,
         hra_rent: e.site !== 'WFH' && chance(0.7) ? ri(12, 45) * 1000 : 0,
         home_loan: chance(0.22) ? ri(60, 200) * 1000 : 0,
-        landlord_pan: '',
       },
       proofs: st === 'Verified' ? 'All proofs verified' : st === 'Submitted' ? 'Proofs pending upload' : '',
     };
