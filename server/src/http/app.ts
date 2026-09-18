@@ -103,6 +103,9 @@ import {
 } from '../modules/security/service.ts';
 import { navBadges, pending, pendingCount } from '../modules/approvals/service.ts';
 import { approveLoan, listLoans, LoanError } from '../modules/loans/service.ts';
+import {
+  courses, enrol, enrolments, LearningError, setProgress,
+} from '../modules/learning/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -1059,6 +1062,31 @@ const routes: Route[] = [
     pattern: '/loans/:id/approve',
     handler: (c, _r, p) => approveLoan(c, p.id!),
   },
+
+  /* ---- learning ---- */
+  { method: 'GET', pattern: '/learning/courses', handler: (c) => courses(c) },
+  {
+    method: 'GET',
+    pattern: '/learning/enrolments',
+    handler: (c, req) => {
+      const ids = new URL(req.url ?? '/', 'http://x').searchParams.get('empIds');
+      return enrolments(c, ids ? ids.split(',').filter(Boolean) : undefined);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/learning/enrolments',
+    handler: (c, _r, _p, body) => {
+      const b = body as { empId: string; courseId: string };
+      return enrol(c, b.empId, b.courseId);
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: '/learning/enrolments/:empId/:courseId',
+    handler: (c, _r, p, body) =>
+      setProgress(c, p.empId!, p.courseId!, (body as { progress: number }).progress),
+  },
 ];
 
 export class NotFound extends Error {}
@@ -1174,6 +1202,12 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof HiringError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof LearningError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;

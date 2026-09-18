@@ -43,9 +43,9 @@ export const useRequisitions = () => useQuery((s) => s.hiring.requisitions(), []
 
 export const useGoals = (ids: string[]) => useQuery((s) => s.performance.goals(ids), [key(ids)]);
 export const useCurrentCycle = () => useQuery((s) => s.performance.currentCycle(), []);
-export const useCourses = () => useQuery(unbacked((s) => s.learning.courses(), []), []);
+export const useCourses = () => useQuery((s) => s.learning.courses(), []);
 export const useEnrolments = (ids?: string[]) =>
-  useQuery(unbacked((s) => s.learning.enrolments(ids), []), [ids ? key(ids) : 'all']);
+  useQuery((s) => s.learning.enrolments(ids), [ids ? key(ids) : 'all']);
 export const useTickets = (ids?: string[]) =>
   useQuery((s) => s.helpdesk.tickets(ids), [ids ? key(ids) : 'all']);
 export const useSurveys = () => useQuery(unbacked((s) => s.engagement.surveys(), []), []);

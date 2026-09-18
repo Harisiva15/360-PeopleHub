@@ -201,6 +201,15 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       navBadges: () => api.get('/approvals/badges'),
     },
 
+    learning: {
+      courses: () => api.get('/learning/courses'),
+      enrolments: (empIds) =>
+        api.get(`/learning/enrolments${qs({ empIds: empIds?.join(',') })}`),
+      enrol: (empId, courseId) => api.post('/learning/enrolments', { empId, courseId }),
+      setProgress: (empId, courseId, progress) =>
+        api.put(`/learning/enrolments/${empId}/${courseId}`, { progress }),
+    },
+
     loans: {
       list: (status) => api.get(`/loans${qs({ status })}`),
       approve: (id) => api.post(`/loans/${id}/approve`),

@@ -147,6 +147,24 @@ const LEAVE_TYPES = [
  * provides them; the rest are honest 'not_started', and the security screen
  * shows those as not met rather than inventing a middle state.
  */
+/*
+ * The courses a new tenant actually needs on day one — the four that are
+ * legally or contractually mandatory in India, plus two that are not.
+ *
+ * POSH is the one with a statute behind it: the Sexual Harassment of Women at
+ * Workplace Act 2013 requires awareness programmes, and its due date is set a
+ * quarter out rather than left null so it appears in the compliance tracker
+ * rather than sitting undated forever.
+ */
+const COURSES = [
+  ['POSH', 'Prevention of Sexual Harassment', 'Compliance', 'Internal', 1.5, true],
+  ['INFOSEC', 'Information Security Essentials', 'Compliance', 'Internal', 2, true],
+  ['CONDUCT', 'Code of Conduct', 'Compliance', 'Internal', 1, true],
+  ['DPDP', 'Handling Personal Data', 'Compliance', 'Internal', 1.5, true],
+  ['MGR-1', 'First-time Manager', 'Leadership', 'Internal', 8, false],
+  ['COMMS', 'Working Across Timezones', 'Effectiveness', 'Internal', 3, false],
+];
+
 const SECURITY_CONTROLS = [
   ['ENC-TRANSIT', 'Encryption in transit', 'implemented', 'TLS on every connection, enforced by the database and the API.'],
   ['ENC-REST', 'Encryption at rest', 'implemented', 'Provided by the managed database and object storage.'],
@@ -280,6 +298,16 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET label = EXCLUDED.label`,
       [tenant, code, label, rank, min, max]);
   }
+  for (const [code, title, cat, provider, hours, mandatory] of COURSES) {
+    await q(`INSERT INTO course (tenant_id, code, title, category, provider, hours,
+                               mandatory, due_on)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,
+                     CASE WHEN $7 THEN CURRENT_DATE + 90 ELSE NULL END)
+             ON CONFLICT (tenant_id, code)
+             DO UPDATE SET title = EXCLUDED.title, category = EXCLUDED.category,
+                           hours = EXCLUDED.hours, mandatory = EXCLUDED.mandatory`,
+      [tenant, code, title, cat, provider, hours, mandatory]);
+  }
   for (const [code, name, status, note] of SECURITY_CONTROLS) {
     await q(`INSERT INTO security_control (tenant_id, code, name, framework, status, note)
              VALUES ($1,$2,$3,'Baseline',$4,$5)
@@ -303,7 +331,8 @@ try {
   }
   created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, ${EXPENSE_CATEGORIES.length} expense categories, ${TICKET_CATEGORIES.length} ticket categories, `
     + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts, `
-    + `${LETTER_TYPES.length} letter types, ${SECURITY_CONTROLS.length} security controls`);
+    + `${LETTER_TYPES.length} letter types, ${SECURITY_CONTROLS.length} security controls, `
+    + `${COURSES.length} courses`);
 
   /* ---- permissions: admin sees everything, the rest is narrowed later ---- */
   const MODULES = ['dashboard', 'employees', 'leave', 'attendance', 'timesheet', 'payroll',
