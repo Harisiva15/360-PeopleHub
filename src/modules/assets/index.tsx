@@ -26,6 +26,7 @@ import {
   useAddAsset, useAllEmployees, useAllocateAsset, useAssetKpi, useAssetMovements, useAssets,
   useExits, useMarkReturned, useOnboardingJourneys, usePendingRecovery, useVisiblePeople,
 } from './data';
+import { RequestAssetForm } from './RequestForm';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -36,12 +37,23 @@ const AssetBadge = ({ s }: { s: string }) => (
 /* ---------------- My assets (employee) ---------------- */
 
 function AsMine() {
+  const layerForRequest = useLayer();
   const { data: ASSETS = [] } = useAssets();
   const app = useApp();
   const mine = ASSETS.filter((a) => a.empId === app.meId);
 
   return (
     <div className="stack">
+      <div className="toolbar">
+        <div className="spacer" />
+        <button className="btn primary" onClick={() => layerForRequest.modal({
+          title: 'Request equipment',
+          sub: 'Goes to your approver, then to IT',
+          body: (close: () => void) => <RequestAssetForm close={close} me={app.me} />,
+          footer: null,
+        })}>＋ Request equipment</button>
+      </div>
+
       <StatRow cols={4}>
         <Tile label="Assets issued to me" value={mine.length} foot={`Across ${uniq(mine.map((a) => a.cat)).length} categories`} />
         <Tile label="Book value held" value={mbS(sum(mine, bookValue))} foot={`Written down from ${mbS(sum(mine, (a) => a.cost!))}`} />

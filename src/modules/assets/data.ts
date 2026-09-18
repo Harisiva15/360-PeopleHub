@@ -3,6 +3,7 @@
  */
 
 import { useMutation, useQuery } from '../../services/react';
+import type { NewAssetRequest } from '../../services';
 import type { NewAsset } from '../../services';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
@@ -25,3 +26,7 @@ export const useOnboardingJourneys = () => useQuery((s) => s.onboarding.list(), 
 /** The movement trail — what happened to the kit, most recent first. */
 export const useAssetMovements = (limit = 12) =>
   useQuery((s) => s.assets.movements(limit), [limit]);
+
+/** Raising a request — the approval side has always worked. */
+export const useRequestAsset = () =>
+  useMutation((s, draft: NewAssetRequest) => s.assets.requestAsset(draft));

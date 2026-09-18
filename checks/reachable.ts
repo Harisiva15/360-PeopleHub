@@ -16,7 +16,9 @@
  *
  * Anything genuinely not meant to be called from a screen goes in `ALLOWED`
  * with a reason. The list is the point: it is a short, checkable statement of
- * what is built but not yet usable, and it only shrinks.
+ * what is built but not yet usable, and it only shrinks. It now holds nothing
+ * but plumbing — every server method a person could want is reachable — so a
+ * new entry here means a feature was left half-finished.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -36,11 +38,6 @@ const ALLOWED: Record<string, string> = {
   'employees.visible': 'called through services/people.ts, which every module shares',
   'employees.byIds': 'called through services/people.ts to resolve a directory in bulk',
 
-  /* built on the server, no screen yet */
-  'assets.requestAsset': 'no employee-facing "ask for kit" form yet',
-  'exits.raise': 'the resignation form is still a stub',
-  'exits.recordInterview': 'no exit-interview form yet',
-  'onboarding.create': 'a journey can only be created by completing a hire, not directly',
 };
 
 const files: string[] = [];

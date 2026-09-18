@@ -9,11 +9,15 @@ import { deptOf, siteOf } from '../../data/org';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, ListRow, StatusBadge } from '../../components/common';
 import { HBar, PAL, Ring } from '../../components/charts';
+import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
-import { useCompleteJourney, useJourneys, useSetTask, useVisiblePeople } from './data';
+import {
+  useAllEmployees, useCompleteJourney, useJourneys, useSetTask, useVisiblePeople,
+} from './data';
 import { DocumentCollection } from '../documents/collection';
 import { CollectionView } from './Collection';
+import { StartJourneyForm } from './StartForm';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -121,7 +125,9 @@ function OnboardingView() {
 
 function JourneysView() {
   const { data: ONBOARD = [] } = useJourneys();
+  const { data: people = [] } = useAllEmployees();
   const app = useApp();
+  const layer = useLayer();
   const list = app.role === 'admin'
     ? ONBOARD
     : ONBOARD.filter((o) => o.managerId === app.meId || isMyReport(app.meId, o.managerId));
@@ -131,6 +137,19 @@ function JourneysView() {
 
   return (
     <div className="stack">
+      <div className="toolbar">
+        <div className="spacer" />
+        {(app.role === 'admin' || app.role === 'manager') && (
+          <button className="btn primary" onClick={() => layer.modal({
+            title: 'Start an onboarding journey',
+            sub: 'For somebody joining outside the recruitment pipeline',
+            size: 'wide',
+            body: (close: () => void) => <StartJourneyForm close={close} people={people} />,
+            footer: null,
+          })}>＋ Start a journey</button>
+        )}
+      </div>
+
       <StatRow cols={4}>
         <Tile label="Active journeys" value={list.filter((x) => x.status !== 'Completed').length} foot={`${list.length} total this quarter`} />
         <Tile label="Joining this month" value={list.filter((x) => x.doj.slice(0, 7) === monthKey(TODAY)).length} foot="Confirmed start dates" />

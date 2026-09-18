@@ -12,6 +12,7 @@ import { DEPTS, deptOf } from '../../data/org';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, Divide, ListRow, StatusBadge } from '../../components/common';
 import { HBar, PAL } from '../../components/charts';
+import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
 import {
@@ -19,6 +20,7 @@ import {
   useSetClearance, useSettleExit, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
+import { ExitInterviewForm, RaiseExitForm } from './Forms';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -65,6 +67,30 @@ function exitScope(role: string, meId: string, exits: ExitRecord[], dir: Directo
 /* ---------------- Exit board ---------------- */
 
 function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
+  const layer = useLayer();
+
+  /* Raising an exit and recording the conversation at the end of it are the
+     two ends of this page; both were unreachable. */
+  const raise = (people: { id: string; name: string; designation: string }[], meId: string) =>
+    layer.modal({
+      title: 'Raise an exit',
+      sub: 'Clearance and the settlement start from the last working day',
+      size: 'wide',
+      body: (close: () => void) => (
+        <RaiseExitForm close={close} people={people as never} meId={meId} canChoosePerson />
+      ),
+      footer: null,
+    });
+  const interview = (exitId: string, who: string) =>
+    layer.modal({
+      title: 'Exit interview',
+      sub: who,
+      size: 'wide',
+      body: (close: () => void) => (
+        <ExitInterviewForm close={close} exitId={exitId} who={who} />
+      ),
+      footer: null,
+    });
   const { data: allExits = [] } = useExits();
   const dir = useVisiblePeople();
   const app = useApp();
@@ -73,8 +99,24 @@ function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
     k: r, c: PAL[i % 8], v: list.filter((x) => x.reason === r).length,
   }));
 
+  /* The exit still waiting on its conversation, if there is one. */
+  const needsInterview = list.find((x) => x.status !== 'Settled' && !x.interview?.done);
+
   return (
     <div className="stack">
+      <div className="toolbar">
+        <div className="spacer" />
+        {needsInterview && (
+          <button className="btn" onClick={() =>
+            interview(needsInterview.id, dir.name(needsInterview.empId))}>
+            ✎ Exit interview
+          </button>
+        )}
+        <button className="btn primary" onClick={() => raise(dir.list, app.meId)}>
+          ＋ Raise an exit
+        </button>
+      </div>
+
       <StatRow cols={5}>
         <Tile label="In notice period" value={list.filter((x) => x.status === 'Notice Period').length} foot="Serving notice right now" />
         <Tile label="In clearance" value={list.filter((x) => x.status === 'In Clearance').length} foot="Handover and clearance open" />
@@ -455,6 +497,7 @@ function XtAna() {
 /* ---------------- My exit ---------------- */
 
 function XtMe() {
+  const layer = useLayer();
   const app = useApp();
   const me = app.me;
   /* Every hook runs before the branch — the exit may or may not exist. */
@@ -482,7 +525,16 @@ function XtMe() {
             ['Active loans', loans.length ? `${inr(sum(loans, (l) => l.outstanding))} outstanding — recovered from F&F` : 'None'],
           ]} />
           <button className="btn danger" style={{ marginTop: 14 }}
-            onClick={() => app.toast('Resignation flow is not wired in this build')}>Submit resignation</button>
+            onClick={() => layer.modal({
+              title: 'Submit your resignation',
+              sub: 'Clearance and the settlement start from your last working day',
+              size: 'wide',
+              body: (close: () => void) => (
+                <RaiseExitForm close={close} people={[app.me]} meId={app.meId}
+                  canChoosePerson={false} />
+              ),
+              footer: null,
+            })}>Submit resignation</button>
         </Card>
       </div>
     );
