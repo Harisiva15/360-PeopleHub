@@ -35,10 +35,12 @@
    * A dark rail against a light page gives the layout a spine — the eye knows
    * where the app is and where the work is without a border having to say so.
    */
-  --rail:#182338;
-  --rail-2:#1f2c45;
-  --rail-ink:#c8d2e4;
-  --rail-ink-dim:#8494ad;
+  --rail:#243347;
+  --rail-2:#2f4159;
+  --rail-sunk:#1d2a3b;
+  --rail-line:#35485f;
+  --rail-ink:#dde5f0;
+  --rail-ink-dim:#9db0c9;
   /* Not the brand blue: white on #2a78d6 is 4.42, and the nav label is 13.5px
      so it needs 4.5. This is the nearest blue that carries white legibly. */
   --rail-on:#2872cc;
@@ -106,10 +108,12 @@ html[data-theme="dark"]{
   --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
   --good-text:#0ca30c;
   --good-wash:#122a12; --warn-wash:#332711; --crit-wash:#331616; --info-wash:#16283f;
-  --rail:#121a29;
-  --rail-2:#1b2537;
-  --rail-ink:#c8d2e4;
-  --rail-ink-dim:#7e8da5;
+  --rail:#1a2433;
+  --rail-2:#243244;
+  --rail-sunk:#141c28;
+  --rail-line:#2b3a4d;
+  --rail-ink:#d7e0ec;
+  --rail-ink-dim:#93a4bb;
   --rail-on:#3987e5;
 
   --t-blue:#16283f;   --t-blue-ink:#9cc4f5;
@@ -1170,3 +1174,75 @@ button.celeb-who:hover b{color:var(--brand)}
 .nav-solo .ic{width:18px;text-align:center;font-size:15px;opacity:.85}
 .nav-solo.on .ic{opacity:1}
 .nav-solo .pill{margin-left:auto;background:var(--crit);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px}
+
+/* ---------- Module-first sidebar ---------- */
+/*
+ * A top-level row is the module. Its sub-views sit in a panel a shade sunk
+ * into the rail, so the nesting reads as depth — an indent alone disappears
+ * against a dark ground, where there is not enough contrast for an edge to
+ * register.
+ */
+.nav-find { padding: 0 11px 10px; }
+.nav-find-in {
+  width: 100%; padding: 8px 11px; border-radius: 9px;
+  background: var(--rail-sunk); color: var(--rail-ink);
+  border: 1px solid var(--rail-line);
+  font: inherit; font-size: 13px;
+}
+.nav-find-in::placeholder { color: var(--rail-ink-dim); }
+.nav-find-in:focus {
+  outline: none; border-color: var(--rail-on);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rail-on) 25%, transparent);
+}
+/* The clear affordance a search input gets for free, made visible on a dark
+   ground instead of staying black-on-navy. */
+.nav-find-in::-webkit-search-cancel-button { filter: invert(1); opacity: .55; }
+
+.nav-top {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 9px 12px; margin-bottom: 2px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--rail-ink);
+  font: inherit; font-size: 13.5px; font-weight: 500;
+  cursor: pointer; text-align: left;
+  transition: background .13s ease, color .13s ease;
+}
+.nav-top:hover { background: var(--rail-2); color: #fff; }
+.nav-top .ic { width: 18px; text-align: center; font-size: 15px; opacity: .85; }
+.nav-top:hover .ic, .nav-top.on .ic { opacity: 1; }
+.nav-top.on {
+  background: var(--rail-on); color: #fff; font-weight: 600;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--rail-on) 45%, transparent);
+}
+/* A shut section holding the current page says so, without claiming to be it. */
+.nav-top.here { color: #fff; background: var(--rail-2); }
+.nav-top .pill {
+  background: var(--crit); color: #fff; font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 20px;
+}
+.nav-caret { font-size: 14px; opacity: .5; transition: transform .15s ease; }
+.nav-sec.open .nav-caret { transform: rotate(90deg); }
+.nav-sec.open > .nav-top { color: #fff; }
+
+.nav-subs {
+  background: var(--rail-sunk);
+  border-radius: 10px;
+  padding: 5px;
+  margin: 0 0 6px;
+}
+.nav-sub {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 8px;
+  color: var(--rail-ink-dim); font-size: 12.5px; font-weight: 500;
+  transition: background .13s ease, color .13s ease;
+}
+.nav-sub:hover { background: var(--rail-2); color: #fff; }
+.nav-sub.on { background: var(--rail-on); color: #fff; font-weight: 600; }
+.nav-dot {
+  width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto;
+  background: currentColor; opacity: .5;
+}
+.nav-sub.on .nav-dot { opacity: 1; }
+.nav-sub .pill {
+  background: var(--crit); color: #fff; font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 20px;
+}
