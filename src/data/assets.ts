@@ -1,5 +1,5 @@
-/* Shares the RNG stream with WhatsApp — this import fixes the draw order. */
-import './whatsapp';
+/* Shares the RNG stream with staffing — this import fixes the draw order. */
+import './staffing';
 
 import { sum } from '../lib/collections';
 import { addDays, daysBetween, parseYmd, TODAY, ymd } from '../lib/dates';

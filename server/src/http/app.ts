@@ -117,10 +117,6 @@ import {
   matchesForRequirement, moveSubmission, openRequirements, placements, rateCards,
   redeploymentPlan, requirements, sows, StaffingError, submissions, vendors,
 } from '../modules/staffing/service.ts';
-import {
-  consent, consentRows, log as messageLog, MessagingError, rules as messageRules,
-  setConsent, setRuleEnabled, setTemplateEnabled, stats as messageStats, templates,
-} from '../modules/messaging/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -1172,40 +1168,6 @@ const routes: Route[] = [
       moveSubmission(c, p.id!, (body as { stage: string }).stage),
   },
 
-  /* ---- messaging. Literals before parameters throughout. ---- */
-  { method: 'GET', pattern: '/messaging/templates', handler: (c) => templates(c) },
-  { method: 'GET', pattern: '/messaging/rules', handler: (c) => messageRules(c) },
-  { method: 'GET', pattern: '/messaging/stats', handler: (c) => messageStats(c) },
-  { method: 'GET', pattern: '/messaging/consent', handler: (c) => consentRows(c) },
-  {
-    method: 'GET',
-    pattern: '/messaging/log',
-    handler: (c, req) =>
-      messageLog(c, new URL(req.url ?? '/', 'http://x').searchParams.get('empId') ?? undefined),
-  },
-  {
-    method: 'GET',
-    pattern: '/messaging/consent/:empId',
-    handler: (c, _r, p) => consent(c, p.empId!),
-  },
-  {
-    method: 'PUT',
-    pattern: '/messaging/consent/:empId',
-    handler: (c, _r, p, body) => {
-      const b = body as { key: 'optIn' | 'marketing'; on: boolean };
-      return setConsent(c, p.empId!, b.key, b.on);
-    },
-  },
-  {
-    method: 'PUT',
-    pattern: '/messaging/templates/:id/enabled',
-    handler: (c, _r, p, body) => setTemplateEnabled(c, p.id!, (body as { on: boolean }).on),
-  },
-  {
-    method: 'PUT',
-    pattern: '/messaging/rules/:id/enabled',
-    handler: (c, _r, p, body) => setRuleEnabled(c, p.id!, (body as { on: boolean }).on),
-  },
 ];
 
 export class NotFound extends Error {}
@@ -1321,12 +1283,6 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof HiringError) {
-    const status = error.code === 'forbidden' ? 403
-      : error.code === 'not_found' ? 404
-        : error.code === 'invalid' ? 400 : 409;
-    return { status, message: error.message };
-  }
-  if (error instanceof MessagingError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;

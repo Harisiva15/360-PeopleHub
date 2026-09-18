@@ -43,7 +43,7 @@ export const PERMS: Record<AppRole, string[]> = {
     'expenses', 'learning', 'performance', 'tax', 'planner',
     // The team-level additions.
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'shifts',
-    'whatsapp', 'clients', 'requirements', 'bench', 'placements', 'vendors',
+    'clients', 'requirements', 'bench', 'placements', 'vendors',
   ],
 
   /* Everything above, plus the tenant. */
@@ -52,7 +52,7 @@ export const PERMS: Record<AppRole, string[]> = {
     'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
     'expenses', 'learning', 'performance', 'tax', 'planner',
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'shifts',
-    'whatsapp', 'clients', 'requirements', 'bench', 'placements', 'vendors',
+    'clients', 'requirements', 'bench', 'placements', 'vendors',
     // The tenant-level additions.
     'settings', 'security', 'billing', 'exec',
   ],
@@ -104,7 +104,7 @@ export const LIVE_MODULES = new Set([
   'celebrations', 'announcements', 'payroll', 'hiring', 'onboarding', 'documents',
   'assets', 'expenses', 'helpdesk', 'performance', 'exit', 'planner', 'settings',
   'shifts', 'tax', 'approvals', 'security', 'learning', 'engagement', 'benefits', 'reports', 'staffing', 'exec',
-  'clients', 'requirements', 'bench', 'placements', 'vendors', 'billing', 'whatsapp',
+  'clients', 'requirements', 'bench', 'placements', 'vendors', 'billing',
 ]);
 
 /**

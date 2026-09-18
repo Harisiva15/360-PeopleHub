@@ -32,7 +32,6 @@ export * from './exit';
 export * from './payinputs';
 export * from './letters';
 export * from './staffing';
-export * from './whatsapp';
 export * from './assets';
 export * from './assetWorkflow';
 export * from './security';

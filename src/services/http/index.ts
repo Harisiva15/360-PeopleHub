@@ -201,18 +201,6 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       navBadges: () => api.get('/approvals/badges'),
     },
 
-    whatsapp: {
-      templates: () => api.get('/messaging/templates'),
-      rules: () => api.get('/messaging/rules'),
-      stats: () => api.get('/messaging/stats'),
-      consentRows: () => api.get('/messaging/consent'),
-      consent: (empId) => api.get(`/messaging/consent/${empId}`),
-      log: (empId) => api.get(`/messaging/log${qs({ empId })}`),
-      setConsent: (empId, key, on) => api.put(`/messaging/consent/${empId}`, { key, on }),
-      setTemplateEnabled: (id, on) => api.put(`/messaging/templates/${id}/enabled`, { on }),
-      setRuleEnabled: (id, on) => api.put(`/messaging/rules/${id}/enabled`, { on }),
-    },
-
     staffing: {
       kpi: () => api.get('/staffing/kpi'),
       clients: () => api.get('/staffing/clients'),

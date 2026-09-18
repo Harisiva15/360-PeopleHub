@@ -33,7 +33,6 @@ const LOADERS: Record<string, () => Promise<unknown>> = {
   announcements: () => import('./people'),
   engagement: () => import('./engagement'),
   assets: () => import('./assets'),
-  whatsapp: () => import('./whatsapp'),
   helpdesk: () => import('./helpdesk'),
 
   payroll: () => import('./payroll'),

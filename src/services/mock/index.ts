@@ -20,7 +20,6 @@ import {
   noticeboardService, performanceService,
 } from './peopleops';
 import { timesheetService } from './timesheet';
-import { whatsappService } from './whatsapp';
 import { approvalsService } from './approvals';
 import { joinersService } from './joiners';
 import { plannerService } from './planner';
@@ -49,7 +48,6 @@ export const mockServices: Services = {
   security: securityService,
   onboarding: onboardingService,
   config: configService,
-  whatsapp: whatsappService,
   approvals: approvalsService,
   joiners: joinersService,
   planner: plannerService,

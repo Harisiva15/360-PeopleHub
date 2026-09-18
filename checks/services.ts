@@ -412,23 +412,6 @@ const check = (label: string, got: unknown, want: unknown) => {
   check('a valid allocation declares the plan', declared.status, 'Declared');
   check('the allocation is what was declared', declared.alloc.meal, 26400);
 
-  /* ---- whatsapp: consent is per category, and marketing rides on opt-in ---- */
-  await s.whatsapp.setConsent(DEMO_EMP.id, 'optIn', true);
-  await s.whatsapp.setConsent(DEMO_EMP.id, 'marketing', true);
-  const withdrawn = await s.whatsapp.setConsent(DEMO_EMP.id, 'optIn', false);
-  check('withdrawing HR updates withdraws celebrations too', withdrawn.marketing, false);
-  let marketingFirst = false;
-  try { await s.whatsapp.setConsent(DEMO_EMP.id, 'marketing', true); } catch { marketingFirst = true; }
-  check('celebrations cannot be opted into alone', marketingFirst, true);
-
-  const templates = await s.whatsapp.templates();
-  const unapproved = templates.find((t) => t.status !== 'Approved');
-  if (unapproved) {
-    let notLive = false;
-    try { await s.whatsapp.setTemplateEnabled(unapproved.id, true); } catch { notLive = true; }
-    check('an unapproved template cannot go live', notLive, true);
-  }
-
   /* ---- performance: progress derives the status and the key results ---- */
   const goals = await s.performance.goals([DEMO_EMP.id]);
   if (goals.length) {

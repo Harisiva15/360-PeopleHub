@@ -14,7 +14,6 @@ export const TITLES: Record<string, string> = {
   announcements: 'Announcements',
   engagement: 'Engagement',
   assets: 'IT Assets',
-  whatsapp: 'WhatsApp',
   helpdesk: 'HR Helpdesk',
 
   payroll: 'Payroll & Payslips',

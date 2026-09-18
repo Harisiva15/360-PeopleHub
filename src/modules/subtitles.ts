@@ -35,10 +35,6 @@ export const SUBTITLES: Record<string, (ctx: ModuleCtx) => string> = {
     (c.role === 'employee'
       ? 'Equipment issued to you'
       : 'The register, allocations, requests and depreciation'),
-  whatsapp: (c) =>
-    (c.role === 'admin'
-      ? 'Templates, routing rules, delivery log and consent'
-      : 'Your WhatsApp notification settings'),
   helpdesk: () => 'Ticketing with SLAs, plus a self-service knowledge base',
 
   payroll: () => 'India payroll · PF, ESI, Professional Tax and TDS',

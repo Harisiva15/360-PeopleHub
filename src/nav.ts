@@ -204,7 +204,6 @@ export const NAV: NavGroup[] = [
     ],
   },
 
-  { group: 'WhatsApp', ic: '💬', k: 'whatsapp', items: [] },
 
   {
     group: 'Settings',

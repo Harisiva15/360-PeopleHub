@@ -21,7 +21,6 @@
 
 import type { AppRole, Employee } from '../types/employee';
 import type { FbpPlan } from '../data/benefits';
-import type { WaConsent, WaLogEntry, WaTemplate } from '../data/whatsapp';
 import type { LeaveBalance, LeaveRequest, LeaveStatus } from '../data/leave';
 import type { AttRecord } from '../data/attendance';
 import type { Timesheet, TSStatus } from '../data/timesheet';
@@ -60,7 +59,6 @@ import type { Holiday, Site } from '../types/org';
    service it calls, not from the dataset behind it. */
 export type { Employee } from '../types/employee';
 export type { FbpComponent, FbpPlan } from '../data/benefits';
-export type { WaConsent, WaLogEntry, WaTemplate } from '../data/whatsapp';
 export type { LeaveRequest, LeaveStatus } from '../data/leave';
 export type { AttRecord, AttStatus, Regularisation } from '../data/attendance';
 export type { Timesheet, TSRow, TSStatus } from '../data/timesheet';
@@ -1122,69 +1120,6 @@ export interface OnboardingService {
   complete(id: string): Promise<Onboarding>;
 }
 
-/* ---------- WhatsApp notifications ---------- */
-
-/** Delivery and consent health for the business account. */
-export interface WaStats {
-  sent: number;
-  delivered: number;
-  read: number;
-  failed: number;
-  replies: number;
-  deliveryRate: number;
-  readRate: number;
-  cost: number;
-  optIn: number;
-  optInRate: number;
-  active: number;
-  /** How many people the consent numbers were computed over. */
-  workforce: number;
-}
-
-/** One person's consent, with the employee it belongs to. */
-export interface WaConsentRow {
-  employee: Employee;
-  consent: WaConsent;
-}
-
-/** One automation rule: a template, a trigger, an audience. */
-export interface WaRule {
-  id: string;
-  /** The template code it fires. */
-  tpl: string;
-  when: string;
-  to: string;
-  /** Held back until local working hours. */
-  quiet: boolean;
-  on: boolean;
-}
-
-export interface WhatsAppService {
-  templates(): Promise<WaTemplate[]>;
-  /**
-   * The automation rules — what fires a template, and at whom.
-   *
-   * Added alongside `setRuleEnabled`, which had nothing to list against it:
-   * the screens were rendering rules from a constant and offering a toggle
-   * that went nowhere. Storage arrived in migration 0026.
-   */
-  rules(): Promise<WaRule[]>;
-  /** The send log, newest first, optionally narrowed to one person. */
-  log(empId?: string): Promise<WaLogEntry[]>;
-  stats(): Promise<WaStats>;
-  consent(empId: string): Promise<WaConsent>;
-  consentRows(): Promise<WaConsentRow[]>;
-  /**
-   * Turn one consent category on or off. Withdrawing HR updates withdraws the
-   * marketing category with it, since marketing rides on the same number.
-   */
-  setConsent(empId: string, key: 'optIn' | 'marketing', on: boolean): Promise<WaConsent>;
-  /** Pause or resume a template. A template Meta has not approved cannot go live. */
-  setTemplateEnabled(id: string, on: boolean): Promise<WaTemplate>;
-  /** Pause or resume an automation rule. */
-  setRuleEnabled(id: string, on: boolean): Promise<{ id: string; on: boolean }>;
-}
-
 /* ---------- the approval inbox ---------- */
 
 /** One queue waiting on the signed-in user. */
@@ -1421,7 +1356,6 @@ export interface Services {
   onboarding: OnboardingService;
   config: ConfigService;
   leave: LeaveService;
-  whatsapp: WhatsAppService;
   approvals: ApprovalsService;
   joiners: JoinersService;
   planner: PlannerService;

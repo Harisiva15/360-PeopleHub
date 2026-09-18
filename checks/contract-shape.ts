@@ -67,7 +67,6 @@ const ALLOWED: Record<string, string> = {
   exits: 'an exit is raised by the employee lifecycle, not typed in',
   staffing: 'the staffing book is out of scope for this release',
   security: 'the audit log is written by the modules being audited, never directly',
-  whatsapp: 'messages are sent by the modules that have something to say',
   approvals: 'a view over other modules queues, owning no records of its own',
 };
 
