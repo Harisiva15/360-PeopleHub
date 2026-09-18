@@ -6,6 +6,7 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import type { AppRole } from '../../types/employee';
+import type { FenceUpdate } from '../../services';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
@@ -13,6 +14,8 @@ export type { Directory } from '../../services/people';
 export const useAllEmployees = () => useQuery((s) => s.employees.active(), []);
 export const useExitedEmployees = () => useQuery((s) => s.employees.exited(), []);
 export const useSites = () => useQuery((s) => s.config.sites(), []);
+export const useUpdateFence = () =>
+  useMutation((s, siteId: string, patch: FenceUpdate) => s.config.updateFence(siteId, patch));
 export const useHolidays = () => useQuery((s) => s.config.holidays(), []);
 export const useCompensation = () => useQuery((s) => s.payroll.compensation(), []);
 export const usePayRuns = () => useQuery((s) => s.payroll.runs(), []);

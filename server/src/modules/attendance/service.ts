@@ -185,6 +185,29 @@ const DERIVE = `
          END AS distance_m
     FROM resolved LEFT JOIN site s ON s.id = resolved.punch_site_id`;
 
+/**
+ * The moment a punch happened, as something `timestamptz` will accept.
+ *
+ * The client used to send a bare 'HH:MM' here, which Postgres rejected outright
+ * — so every live punch came back a 500 with a datetime parse error behind it,
+ * and the one thing everybody does every morning did not work at all. A
+ * wall-clock time cannot be resolved into an instant anyway once shifts carry
+ * timezones: 09:20 is on time in Chennai and four hours early against New York
+ * hours, and the string alone does not say which.
+ *
+ * Rejected here rather than in the database, so a bad value is a 400 naming
+ * the field instead of a 500 naming a column.
+ */
+function instantOf(at: string | undefined): string {
+  if (!at) return new Date().toISOString();
+  const t = Date.parse(at);
+  if (Number.isNaN(t)) {
+    throw new AttendanceError(
+      `punch time must be an ISO-8601 instant, not ${JSON.stringify(at)}`, 'invalid');
+  }
+  return new Date(t).toISOString();
+}
+
 async function reload(db: TenantClient, empId: string, date: string): Promise<AttRecord> {
   const { rows } = await db.query(
     `${PROJECTION} WHERE a.employee_id = $1 AND a.work_date = $2`, [empId, date]);
@@ -202,8 +225,9 @@ export async function punchIn(
     throw new AttendanceError('you can only punch for yourself', 'forbidden');
   }
 
+  const when = instantOf(at.at);
+
   return withTenant(caller, async (db) => {
-    const when = at.at ?? new Date().toISOString();
     const { rows } = await db.query(DERIVE,
       [empId, when, at.site ?? null, at.lat ?? null, at.lng ?? null]);
     const d = rows[0];
@@ -255,8 +279,9 @@ export async function punchOut(
     throw new AttendanceError('you can only punch for yourself', 'forbidden');
   }
 
+  const when = instantOf(at.at);
+
   return withTenant(caller, async (db) => {
-    const when = at.at ?? new Date().toISOString();
     const { rows } = await db.query(DERIVE,
       [empId, when, at.site ?? null, at.lat ?? null, at.lng ?? null]);
     const d = rows[0];

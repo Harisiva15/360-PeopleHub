@@ -48,12 +48,16 @@ const bar = (r: Row) => {
   return '#'.repeat(n) + '.'.repeat(20 - n);
 };
 
+/* `--detail` names every method still on the mock, not just how many. */
+const DETAIL = process.argv.includes('--detail');
+
 const show = (title: string, list: Row[], withDetail: boolean) => {
   if (!list.length) return;
   console.log(`\n${title}`);
   for (const r of list) {
     console.log(`  ${r.name.padEnd(13)} ${bar(r)}  ${String(r.live).padStart(2)}/${String(r.total).padEnd(2)}`
-      + (withDetail && r.missing.length <= 8 ? `   ${r.missing.join(', ')}` : ''));
+      + (withDetail && !DETAIL && r.missing.length <= 8 ? `   ${r.missing.join(', ')}` : ''));
+    if (DETAIL) for (const m of r.missing) console.log(`                    ${m}`);
   }
 };
 

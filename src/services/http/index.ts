@@ -283,6 +283,15 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
     config: {
       sites: () => api.get('/config/sites'),
       holidays: () => api.get('/config/holidays'),
+      /*
+       * `PUT /config/sites/:code/fence` had been routed and guarded on the
+       * server since the config module was written, and was simply never
+       * mapped here — so moving a site's geo-fence went to the mock and was
+       * lost on reload. checks/reachable.ts could not see it: it asks whether
+       * live methods have screen callers, and an unmapped method is not live.
+       */
+      updateFence: (siteId, patch) =>
+        api.put(`/config/sites/${siteId}/fence`, patch),
       setLeaveQuota: (typeId, quota) =>
         api.put(`/config/leave-types/${typeId}/quota`, { quota }),
       addHoliday: (date, name, optional) =>

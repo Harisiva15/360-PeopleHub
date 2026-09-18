@@ -60,6 +60,19 @@ function applyMode(r: AttRecord, at: PunchAt): void {
   }
 }
 
+/**
+ * The clock time an instant reads as, for the mock's display fields.
+ *
+ * The mock has no shift timezone to resolve against, so it uses the browser's
+ * — which is what it was effectively doing before, when the client sent a
+ * wall-clock string straight through.
+ */
+const hhmm = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+};
+
 export const attendanceService: AttendanceService = {
   list(q) {
     let out = ATT.slice();
@@ -90,7 +103,7 @@ export const attendanceService: AttendanceService = {
   punchIn(empId, date, at) {
     const r = ensure(empId, date, 'P');
     applyMode(r, at);
-    r.inT = at.at;
+    r.inT = hhmm(at.at);
     r.late = false;
     return ok(r);
   },
@@ -98,7 +111,7 @@ export const attendanceService: AttendanceService = {
   punchOut(empId, date, at) {
     const r = ensure(empId, date, 'P');
     applyMode(r, at);
-    r.outT = at.at;
+    r.outT = hhmm(at.at);
     if (r.inT) r.mins = Math.max(0, toMins(r.outT) - toMins(r.inT) - BREAK_MINS);
     return ok(r);
   },

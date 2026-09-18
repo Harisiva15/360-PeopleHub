@@ -171,6 +171,14 @@ export interface PunchAt {
   lat: number | null;
   lng: number | null;
   src: string;
+  /**
+   * When the punch happened, as an ISO-8601 instant.
+   *
+   * Not 'HH:MM'. A wall-clock time is ambiguous the moment shifts carry
+   * timezones — 09:20 is on time in Chennai and four hours early against New
+   * York hours, and the string alone cannot say which. The server renders it
+   * back in the shift's own zone.
+   */
   at: string;
 }
 

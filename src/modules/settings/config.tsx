@@ -15,6 +15,7 @@ import { Badge, Banner, Card, KV, Table, TableWrap } from '../../components/ui';
 import { Dot, ListRow } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
+import { FenceForm } from './Fence';
 import {
   useAddHoliday, useAllEmployees, useAttendanceAll, useCandidates, useCompensation,
   useHolidays, useLeaveAll, usePayRuns, useRequisitions, useSetLeaveQuota, useSites,
@@ -31,37 +32,66 @@ const CAPTURE_TOGGLES: [string, boolean][] = [
   ['Require a reason on regularisation', true],
 ];
 
-function SiteCard({ site, assigned }: { site: Site; assigned: number }) {
+function SiteCard(
+  { site, assigned, onFence }:
+  { site: Site; assigned: number; onFence: (s: Site) => void },
+) {
+  const fenced = site.lat !== null && site.lng !== null && site.radius !== null;
   return (
-    <Card title={site.name} sub={site.addr}>
+    <Card title={site.name} sub={site.addr}
+      actions={
+        <button className="btn sm" onClick={() => onFence(site)}>
+          {fenced ? 'Move fence' : 'Set a fence'}
+        </button>
+      }>
       <KV rows={[
         ['City', site.city || '—'],
         ['Country', site.country],
         ['Timezone', site.tz],
         ['Shift timing', site.shift],
         ['Employees based here', String(assigned)],
+        ['Geo-fence', fenced
+          ? `${site.radius} m around ${site.lat!.toFixed(4)}, ${site.lng!.toFixed(4)}`
+          : <span className="muted">Not set — punches here are never measured</span>],
       ]} />
     </Card>
   );
 }
 
 /**
- * Locations are read-only here.
+ * Locations, with the fence editable again.
  *
- * They were editable when a site owned a geo-fence and a default shift that
- * was pushed to everyone based there. The fence is gone, and the shift is now
- * a regional tag on the employee record — an India-shift and a US-shift person
- * can sit in the same office, so a site-wide push would overwrite one of them.
+ * The note that used to sit here said the fence was gone. It was, between
+ * migrations 0016 and 0018 — and 0018 brought it back without anybody
+ * revisiting this screen, so it went on claiming no coordinates were collected
+ * while every punch was storing one.
+ *
+ * The default shift stays un-editable per site, and that part of the old note
+ * still holds: a shift is now a regional tag on the person, so an India-shift
+ * and a US-shift colleague can sit in the same office and a site-wide push
+ * would overwrite one of them.
  */
 export function LocationsTab() {
   const app = useApp();
+  const layer = useLayer();
   const { data: sites = [] } = useSites();
   const { data: everyone = [] } = useAllEmployees();
+
+  const editFence = (site: Site) => layer.modal({
+    title: `Geo-fence — ${site.name}`,
+    sub: 'What counts as being at this site',
+    size: 'narrow',
+    body: (close: () => void) => <FenceForm close={close} site={site} />,
+    footer: null,
+  });
   return (
     <div className="stack">
-      <Banner kind="info" icon="📍" title="No location tracking">
-        Punching in and out records a time and a work mode — office, home or client site. No coordinates are requested
-        from the browser and none are stored, so there is nothing here to configure a radius against.
+      <Banner kind="warn" icon="📍" title="Punches record where they were made">
+        Punching in asks the browser for a position and stores it against the punch,
+        with the distance from this site at that moment. A punch outside the fence is
+        flagged for review, never refused. A punch history with coordinates is a
+        movement history of a named person — it belongs in the retention register,
+        and people should be told it is collected.
       </Banner>
 
       <div className="grid g2">
@@ -70,6 +100,7 @@ export function LocationsTab() {
             key={s.id}
             site={s}
             assigned={everyone.filter((e) => e.site === s.id).length}
+            onFence={editFence}
           />
         ))}
       </div>

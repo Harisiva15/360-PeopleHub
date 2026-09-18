@@ -59,10 +59,12 @@ function locate(): Promise<Fix | null> {
   });
 }
 
-const nowHM = () => {
-  const d = new Date();
-  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-};
+/*
+ * An instant, not a wall-clock time. The server measures lateness against the
+ * shift's timezone, which a bare 'HH:MM' cannot be resolved into — and the
+ * timestamptz column refused it outright, so every live punch failed.
+ */
+const nowInstant = () => new Date().toISOString();
 
 const nowHMS = () => {
   const d = new Date();
@@ -112,7 +114,7 @@ export function PunchWidget({ empId }: { empId: string }) {
       lat: fix?.lat ?? null,
       lng: fix?.lng ?? null,
       src: 'Web',
-      at: nowHM(),
+      at: nowInstant(),
     };
     const r = kind === 'in'
       ? await punchIn.mutate(empId, ds, at)
