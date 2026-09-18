@@ -9,7 +9,8 @@
  * pipeline could be read, filtered and charted, and nothing could be put into
  * it.
  *
- * A method counts as reachable when some file under `src/modules` names it as
+ * A method counts as reachable when some file under `src/modules` or
+ * `src/shell` names it as
  * `.<service>.<method>(`. That is how the hooks in each module's `data.ts` call
  * the service, so it finds the call whether a screen uses it directly or
  * through a hook.
@@ -47,6 +48,12 @@ const walk = (dir: string) => readdirSync(dir).forEach((f) => {
   else if (/\.tsx?$/.test(f)) files.push(p);
 });
 walk('src/modules');
+/*
+ * The shell counts too. It is not a module, but it is a screen: the sidebar
+ * pills come from approvals.navBadges, and scanning only src/modules reported
+ * that as built-and-unreachable while it was rendering on every route change.
+ */
+walk('src/shell');
 const src = files.map((f) => readFileSync(f, 'utf8')).join('\n');
 
 const mock = mockServices as unknown as Record<string, Record<string, unknown>>;

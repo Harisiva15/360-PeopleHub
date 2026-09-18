@@ -57,16 +57,15 @@ export const useExits = () => useQuery((s) => s.exits.list(), []);
 /**
  * The approval inbox, assembled and scoped by the service.
  *
- * Still composed from the in-memory dataset rather than from the live queues,
- * so a configured build shows an empty inbox instead of invented requests with
- * real people's names on them. Empty is wrong but harmless; a fabricated leave
- * request waiting on you is wrong and actionable.
+ * No longer wrapped: the queues behind it are all live, and the server counts
+ * them in one statement scoped to the session rather than trusting the caller
+ * it is handed.
  */
 export const usePendingItems = () => {
   const caller = useCaller();
-  return useQuery(unbacked((s) => s.approvals.pending(caller), []), [caller.role, caller.meId]);
+  return useQuery((s) => s.approvals.pending(caller), [caller.role, caller.meId]);
 };
 export const usePendingCount = () => {
   const caller = useCaller();
-  return useQuery(unbacked((s) => s.approvals.pendingCount(caller), 0), [caller.role, caller.meId]);
+  return useQuery((s) => s.approvals.pendingCount(caller), [caller.role, caller.meId]);
 };

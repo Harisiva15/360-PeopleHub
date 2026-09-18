@@ -190,6 +190,36 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       verifyDeclaration: (empId) => api.post(`/tax/${empId}/verify`),
     },
 
+    approvals: {
+      /*
+       * The caller argument is ignored on all three: the server scopes to the
+       * session. Sending who you are so the server can decide what you may
+       * approve would make the boundary a suggestion.
+       */
+      pending: () => api.get('/approvals/pending'),
+      pendingCount: () => api.get('/approvals/count'),
+      navBadges: () => api.get('/approvals/badges'),
+    },
+
+    loans: {
+      list: (status) => api.get(`/loans${qs({ status })}`),
+      approve: (id) => api.post(`/loans/${id}/approve`),
+    },
+
+    security: {
+      audit: (cat, sev) => api.get(`/security/audit${qs({ cat, sev })}`),
+      auditCategories: () => api.get('/security/audit/categories'),
+      controls: () => api.get('/security/controls'),
+      retention: () => api.get('/security/retention'),
+      /*
+       * `posture` stays on the mock. It reports whether each person's device
+       * has a second factor, is managed, encrypted and patched, and nothing
+       * here knows any of that — no MDM, no identity feed, no agent. A
+       * fabricated "94% encrypted" on a security page is a false assurance
+       * somebody repeats to a client, not a placeholder.
+       */
+    },
+
     onboarding: {
       list: () => api.get('/onboarding'),
       create: (draft) => api.post('/onboarding', draft),

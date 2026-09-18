@@ -103,7 +103,7 @@ export const LIVE_MODULES = new Set([
   'dashboard', 'attendance', 'timesheet', 'leave', 'employees', 'org', 'people',
   'celebrations', 'announcements', 'payroll', 'hiring', 'onboarding', 'documents',
   'assets', 'expenses', 'helpdesk', 'performance', 'exit', 'planner', 'settings',
-  'shifts', 'tax',
+  'shifts', 'tax', 'approvals', 'security',
 ]);
 
 /**

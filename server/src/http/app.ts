@@ -98,6 +98,11 @@ import {
   allDeclarations, declarationFor, saveDeclaration, setRegime, submitProofs,
   TaxError, taxRows, taxSummary, verifyDeclaration,
 } from '../modules/tax/service.ts';
+import {
+  audit, auditCategories, controls, retention, SecurityError,
+} from '../modules/security/service.ts';
+import { navBadges, pending, pendingCount } from '../modules/approvals/service.ts';
+import { approveLoan, listLoans, LoanError } from '../modules/loans/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -1018,6 +1023,42 @@ const routes: Route[] = [
     pattern: '/tax/:empId/verify',
     handler: (c, _r, p) => verifyDeclaration(c, p.empId!),
   },
+
+  /* ---- security ---- */
+  {
+    method: 'GET',
+    pattern: '/security/audit',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return audit(c, q.get('cat') ?? undefined, q.get('sev') ?? undefined,
+        Number(q.get('limit') ?? 200));
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/security/audit/categories',
+    handler: (c) => auditCategories(c),
+  },
+  { method: 'GET', pattern: '/security/controls', handler: (c) => controls(c) },
+  { method: 'GET', pattern: '/security/retention', handler: (c) => retention(c) },
+
+  /* ---- approvals: the caller is the scope, so nothing is passed ---- */
+  { method: 'GET', pattern: '/approvals/pending', handler: (c) => pending(c) },
+  { method: 'GET', pattern: '/approvals/count', handler: (c) => pendingCount(c) },
+  { method: 'GET', pattern: '/approvals/badges', handler: (c) => navBadges(c) },
+
+  /* ---- loans ---- */
+  {
+    method: 'GET',
+    pattern: '/loans',
+    handler: (c, req) =>
+      listLoans(c, new URL(req.url ?? '/', 'http://x').searchParams.get('status') ?? undefined),
+  },
+  {
+    method: 'POST',
+    pattern: '/loans/:id/approve',
+    handler: (c, _r, p) => approveLoan(c, p.id!),
+  },
 ];
 
 export class NotFound extends Error {}
@@ -1133,6 +1174,18 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof HiringError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof LoanError) {
+    const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof SecurityError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;

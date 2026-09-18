@@ -141,6 +141,25 @@ const LEAVE_TYPES = [
  * no queue — a salary certificate is true the moment it is asked for. The rest
  * assert something a person has to check first, so they wait for HR.
  */
+/*
+ * The control framework, with each one's status as it actually stands rather
+ * than as it would look best. Three are genuinely met because the platform
+ * provides them; the rest are honest 'not_started', and the security screen
+ * shows those as not met rather than inventing a middle state.
+ */
+const SECURITY_CONTROLS = [
+  ['ENC-TRANSIT', 'Encryption in transit', 'implemented', 'TLS on every connection, enforced by the database and the API.'],
+  ['ENC-REST', 'Encryption at rest', 'implemented', 'Provided by the managed database and object storage.'],
+  ['TENANCY', 'Tenant isolation', 'implemented', 'Row-level security on every table, forced, with the app role NOBYPASSRLS. Verified by scripts/verify-isolation.mjs.'],
+  ['AUDIT', 'Audit trail', 'in_progress', 'Config, access, people, payroll and hiring write audit rows. Coverage is not yet complete across every write.'],
+  ['RETENTION', 'Retention enforcement', 'in_progress', 'The register is enforced by scripts/retention.mjs for attendance location. Other record kinds have no handler yet.'],
+  ['MFA', 'Multi-factor authentication', 'not_started', 'Available from the identity provider; not yet mandatory, and nothing here reports enrolment.'],
+  ['MDM', 'Managed devices', 'not_started', 'No device management feed. The posture screen is not backed by anything real.'],
+  ['BACKUP', 'Backup and restore drill', 'not_started', 'Managed backups exist; a restore has never been rehearsed.'],
+  ['ACCESS-REVIEW', 'Periodic access review', 'not_started', 'The table exists; no review has been run.'],
+  ['PENTEST', 'Independent penetration test', 'not_started', 'Not commissioned.'],
+];
+
 const LETTER_TYPES = [
   ['exp', 'Experience Letter', false, false],
   ['salcert', 'Salary Certificate', true, false],
@@ -261,6 +280,13 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET label = EXCLUDED.label`,
       [tenant, code, label, rank, min, max]);
   }
+  for (const [code, name, status, note] of SECURITY_CONTROLS) {
+    await q(`INSERT INTO security_control (tenant_id, code, name, framework, status, note)
+             VALUES ($1,$2,$3,'Baseline',$4,$5)
+             ON CONFLICT (tenant_id, code)
+             DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, note = EXCLUDED.note`,
+      [tenant, code, name, status, note]);
+  }
   for (const [code, name, instant, approval] of LETTER_TYPES) {
     await q(`INSERT INTO letter_type (tenant_id, code, name, instant, requires_approval)
              VALUES ($1,$2,$3,$4,$5)
@@ -277,7 +303,7 @@ try {
   }
   created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, ${EXPENSE_CATEGORIES.length} expense categories, ${TICKET_CATEGORIES.length} ticket categories, `
     + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts, `
-    + `${LETTER_TYPES.length} letter types`);
+    + `${LETTER_TYPES.length} letter types, ${SECURITY_CONTROLS.length} security controls`);
 
   /* ---- permissions: admin sees everything, the rest is narrowed later ---- */
   const MODULES = ['dashboard', 'employees', 'leave', 'attendance', 'timesheet', 'payroll',
