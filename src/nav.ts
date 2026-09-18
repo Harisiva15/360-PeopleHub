@@ -144,7 +144,6 @@ export const NAV: NavGroup[] = [
       { k: 'payroll', ic: '⚖', n: 'Statutory', to: '/payroll?v=stat', roles: ['admin'] },
       { k: 'tax', ic: '%', n: 'Tax declaration' },
       { k: 'benefits', ic: '♡', n: 'Benefits & flexi' },
-      { k: 'expenses', ic: '🧾', n: 'Expense & travel' },
     ],
   },
   {
