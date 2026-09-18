@@ -19,6 +19,7 @@ import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
 import { useShowPayslip } from './Payslip';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { Employee } from '../../types/employee';
@@ -944,7 +945,7 @@ function Payroll() {
         ? [{ v: 'me', label: 'My Payslips' }, { v: 'team', label: 'Team Cost' }]
         : [{ v: 'me', label: 'My Payslips' }, { v: 'struct', label: 'My Salary Structure' }];
 
-  const [tab, setTab] = useState<Tab>(tabs[0].v);
+  const [tab, setTab] = useTabFromUrl<Tab>(tabs[0]!.v, tabs.map((t) => t.v));
   const { data: runs = [] } = usePayRuns();
   const [picked, setPicked] = useState('');
   /* Default to the last closed cycle once the runs arrive. */

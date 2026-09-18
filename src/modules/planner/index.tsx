@@ -21,6 +21,7 @@ import {
   useAllEmployees, useBoard, useCommentOnItem, useCreateItem, useCreateIteration,
   useItems, useIterations, useMoveItem, useMyItems, useUpdateItem, useVisiblePeople,
 } from './data';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -595,7 +596,7 @@ const TABS: { v: Tab; label: string }[] = [
 ];
 
 function Planner() {
-  const [tab, setTab] = useState<Tab>('board');
+  const [tab, setTab] = useTabFromUrl<Tab>('board', ['board', 'mine', 'actions', 'iterations']);
   return (
     <>
       <Tabs value={tab} options={TABS} onChange={setTab} />

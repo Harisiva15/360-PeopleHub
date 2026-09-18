@@ -87,7 +87,8 @@ export function Shell({ children }: { children: ReactNode }) {
         <nav className="nav">
           {NAV.map((g) => {
             if (g.roles && !g.roles.includes(app.role)) return null;
-            const items = g.items.filter((i) => app.can(i.k));
+            const items = g.items.filter((i) =>
+              app.can(i.k) && (!i.roles || i.roles.includes(app.role)));
             if (!items.length) return null;
 
             /* A section of one needs no header to expand. */

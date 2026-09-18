@@ -26,6 +26,7 @@ import {
 import { HiringOverview } from './Overview';
 import { OfferLetter } from './OfferLetter';
 import { TrackerView } from './Tracker';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { AppRole } from '../../types/employee';
@@ -863,7 +864,8 @@ function Hiring() {
   const show = useShowCandidate();
   const { data: CANDS = [] } = useCandidates();
   const { data: REQS = [] } = useRequisitions();
-  const [tab, setTab] = useState<Tab>('cands');
+  const [tab, setTab] = useTabFromUrl<Tab>('cands',
+    ['cands', 'pipe', 'reqs', 'ivs', 'offers', 'track', 'fun']);
   const [stage, setStage] = useState('');
 
   const mine = hiringScope(app.role, app.meId, CANDS);

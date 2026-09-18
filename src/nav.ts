@@ -25,6 +25,14 @@ export interface NavItem {
   ic: string;
   n: string;
   /**
+   * Roles this entry is for. Needed wherever a link points at a tab rather
+   * than a page: Payroll is reachable by everybody — that is where a payslip
+   * lives — but the register, the inputs and the disbursal file inside it are
+   * not. Permission is per route, so without this the menu offers an employee
+   * a tab the page will not render.
+   */
+  roles?: readonly ('employee' | 'manager' | 'admin')[];
+  /**
    * Where the link goes. Defaults to `/${k}`; a `?v=` names the tab to open,
    * so one page can appear in two sections showing different things.
    */
@@ -72,7 +80,6 @@ export const NAV: NavGroup[] = [
       { k: 'timesheet', ic: '▤', n: 'Timesheet' },
       { k: 'leave', ic: '↗', n: 'Leave' },
       { k: 'expenses', ic: '🧾', n: 'Expense & travel' },
-      { k: 'helpdesk', ic: '◒', n: 'Helpdesk' },
     ],
   },
   {
@@ -88,11 +95,9 @@ export const NAV: NavGroup[] = [
       { k: 'approvals', ic: '✓', n: 'Approvals' },
       { k: 'attendance', ic: '◉', n: 'Attendance', to: '/attendance?v=live' },
       { k: 'leave', ic: '↗', n: 'Leave', to: '/leave?v=team' },
-      { k: 'expenses', ic: '🧾', n: 'Expense & travel', to: '/expenses?v=all' },
       { k: 'timesheet', ic: '▤', n: 'Timesheet', to: '/timesheet?v=team' },
       { k: 'performance', ic: '◈', n: 'Performance', to: '/performance?v=team' },
       { k: 'shifts', ic: '◑', n: 'Roster' },
-      { k: 'onboarding', ic: '⇥', n: 'Onboarding' },
       { k: 'exit', ic: '⇤', n: 'Exit & F&F' },
       { k: 'reports', ic: '▥', n: 'Reports' },
     ],
@@ -120,13 +125,26 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    /* Mine, but money — kept apart because it is read at different times. */
-    group: 'My pay',
+    /*
+     * Everything about money in one place. Payroll has ten surfaces behind
+     * tabs — runs, the register, inputs, disbursal, statutory — and a person
+     * looking for the salary register should not have to know it lives inside
+     * a tab of a page called Payslips.
+     */
+    group: 'Pay',
     ic: '₹',
     items: [
-      { k: 'payroll', ic: '₹', n: 'Payslips' },
+      { k: 'payroll', ic: '₹', n: 'My payslips', to: '/payroll?v=me' },
+      { k: 'payroll', ic: '▦', n: 'Salary structure', to: '/payroll?v=struct' },
+      { k: 'payroll', ic: '◫', n: 'Team cost', to: '/payroll?v=team', roles: ['manager'] },
+      { k: 'payroll', ic: '▶', n: 'Payroll runs', to: '/payroll?v=runs', roles: ['admin'] },
+      { k: 'payroll', ic: '☰', n: 'Salary register', to: '/payroll?v=reg', roles: ['admin'] },
+      { k: 'payroll', ic: '⇢', n: 'Payroll inputs', to: '/payroll?v=inputs', roles: ['admin'] },
+      { k: 'payroll', ic: '🏦', n: 'Bank & disbursal', to: '/payroll?v=bank', roles: ['admin'] },
+      { k: 'payroll', ic: '⚖', n: 'Statutory', to: '/payroll?v=stat', roles: ['admin'] },
       { k: 'tax', ic: '%', n: 'Tax declaration' },
       { k: 'benefits', ic: '♡', n: 'Benefits & flexi' },
+      { k: 'expenses', ic: '🧾', n: 'Expense & travel' },
     ],
   },
   {
@@ -137,7 +155,6 @@ export const NAV: NavGroup[] = [
       { k: 'employees', ic: '☰', n: 'Employees' },
       { k: 'org', ic: '⌘', n: 'Org chart' },
       { k: 'documents', ic: '▧', n: 'Documents' },
-      { k: 'helpdesk', ic: '◒', n: 'Helpdesk' },
     ],
   },
   {
@@ -151,19 +168,58 @@ export const NAV: NavGroup[] = [
     items: [
       { k: 'announcements', ic: '⚑', n: 'Announcements' },
       { k: 'engagement', ic: '🗳', n: 'Surveys & polls', to: '/engagement?v=open' },
-      { k: 'helpdesk', ic: '📚', n: 'Articles', to: '/helpdesk?v=kb' },
       { k: 'celebrations', ic: '★', n: 'Celebrations' },
     ],
   },
   {
-    /* Tools rather than records — opened to do a job, not to look yourself up. */
+    /* Project work: the board, what is assigned to me, and where an iteration
+       has got to. Tracking and status are the whole point, so they are named. */
+    group: 'Projects',
+    ic: '◱',
+    items: [
+      { k: 'planner', ic: '▦', n: 'Board', to: '/planner?v=board' },
+      { k: 'planner', ic: '◉', n: 'My work', to: '/planner?v=mine' },
+      { k: 'planner', ic: '✓', n: 'Action items', to: '/planner?v=actions' },
+      { k: 'planner', ic: '◷', n: 'Iterations', to: '/planner?v=iterations' },
+      { k: 'timesheet', ic: '▤', n: 'Time against projects', to: '/timesheet?v=util',
+        roles: ['manager', 'admin'] },
+    ],
+  },
+  {
+    /* Raising a ticket and finding the answer yourself are the same desk. */
+    group: 'Helpdesk',
+    ic: '◒',
+    items: [
+      { k: 'helpdesk', ic: '✎', n: 'Raise a ticket', to: '/helpdesk?v=my' },
+      { k: 'helpdesk', ic: '☰', n: 'Ticket queue', to: '/helpdesk?v=queue', roles: ['manager', 'admin'] },
+      { k: 'helpdesk', ic: '📚', n: 'Knowledge base', to: '/helpdesk?v=kb' },
+      { k: 'helpdesk', ic: '◷', n: 'SLA & analytics', to: '/helpdesk?v=sla', roles: ['manager', 'admin'] },
+    ],
+  },
+  {
     group: 'Apps',
     ic: '⊞',
     items: [
-      { k: 'planner', ic: '◱', n: 'Project planner' },
-      { k: 'hiring', ic: '◎', n: 'Recruitment' },
       { k: 'assets', ic: '💻', n: 'IT assets' },
       { k: 'whatsapp', ic: '💬', n: 'WhatsApp' },
+    ],
+  },
+  {
+    /*
+     * Recruitment, listed by what a recruiter is doing rather than by tab.
+     * Open requisitions and submissions are the two things asked about daily.
+     */
+    group: 'Recruitment',
+    ic: '◎',
+    roles: ['manager', 'admin'],
+    items: [
+      { k: 'hiring', ic: '💼', n: 'Open requisitions', to: '/hiring?v=reqs' },
+      { k: 'hiring', ic: '☰', n: 'Candidates', to: '/hiring?v=cands' },
+      { k: 'hiring', ic: '▦', n: 'Pipeline board', to: '/hiring?v=pipe' },
+      { k: 'hiring', ic: '📅', n: 'Interviews', to: '/hiring?v=ivs' },
+      { k: 'hiring', ic: '📄', n: 'Offers', to: '/hiring?v=offers' },
+      { k: 'hiring', ic: '◷', n: 'Activity tracker', to: '/hiring?v=track' },
+      { k: 'onboarding', ic: '⇥', n: 'Onboarding' },
     ],
   },
   {
