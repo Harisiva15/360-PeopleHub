@@ -6,15 +6,15 @@
  */
 
 import { addDays, daysBetween, isWeekend, parseYmd, TODAY, ymd } from '../../lib/dates';
-import { ACTIVE, empName } from '../../data/employees';
+import { ACTIVE, DEMO_EMP, empName } from '../../data/employees';
 import { LEAVE_BAL } from '../../data/leave';
 import { OVERTIME, ROSTER, SHIFTS } from '../../data/shifts';
 import { LOANS } from '../../data/loans';
-import { LETTER_REQS } from '../../data/letters';
+import { LETTER_REQS, LETTER_TYPES } from '../../data/letters';
 import { CANDS, INTERVIEWS, REQS, reqOf, STAGES } from '../../data/ats';
 import type {
-  Candidate, HiringService, Interview, InterviewRow, LetterService, LoanService,
-  Overtime, RecruiterStat, ReqActivity, Requisition, ShiftService,
+  Candidate, HiringService, Interview, InterviewRow, LetterRequest, LetterService,
+  LoanService, Overtime, RecruiterStat, ReqActivity, Requisition, ShiftService,
 } from '../contracts';
 import type { Offer } from '../../data/ats';
 import { ok } from './util';
@@ -141,17 +141,74 @@ export const loanService: LoanService = {
   },
 };
 
+const refOf = (type: string, id: string) =>
+  `${type.toUpperCase()}/${TODAY.getFullYear()}/${id.slice(-4).toUpperCase()}`;
+
+/* Stands in for what the service renders from the facts on file. */
+const bodyFor = (type: string, empId: string) =>
+  `${LETTER_TYPES.find((t) => t.id === type)?.n ?? 'Letter'} for ${empName(empId)}, `
+  + 'issued on ' + ymd(TODAY) + '.';
+
 export const letterService: LetterService = {
+  types() {
+    return ok(LETTER_TYPES.map((t) => ({
+      code: t.id, name: t.n, instant: t.self, requiresApproval: !t.self,
+    })));
+  },
+
   requests(status) {
     return ok(status ? LETTER_REQS.filter((l) => l.status === status) : LETTER_REQS.slice());
+  },
+
+  request(draft) {
+    const t = LETTER_TYPES.find((x) => x.id === draft.type);
+    if (!t) return Promise.reject(new Error('No such letter type: ' + draft.type));
+    /* One open request per person per type — asking twice should not queue two. */
+    if (LETTER_REQS.some((l) => l.empId === DEMO_EMP.id && l.type === t.id && l.status === 'Pending')) {
+      return Promise.reject(new Error('You already have an open request for that letter'));
+    }
+    const id = 'LTR-' + (900 + LETTER_REQS.length);
+    const row: LetterRequest = {
+      id,
+      empId: DEMO_EMP.id,
+      type: t.id,
+      purpose: draft.purpose ?? '',
+      requestedOn: ymd(TODAY),
+      status: 'Pending',
+      issuedOn: null,
+      body: '',
+      reference: null,
+      declineReason: null,
+    };
+    /* An instant letter is not a request — it is true the moment it is asked for. */
+    if (t.self) {
+      row.status = 'Issued';
+      row.issuedOn = ymd(TODAY);
+      row.body = bodyFor(t.id, row.empId);
+      row.reference = refOf(t.id, id);
+    }
+    LETTER_REQS.unshift(row);
+    return ok(row);
   },
 
   issue(id) {
     const l = LETTER_REQS.find((x) => x.id === id);
     if (!l) return Promise.reject(new Error('No such letter request: ' + id));
-    if (l.status === 'Issued') return Promise.reject(new Error('Already issued'));
+    if (l.status !== 'Pending') return Promise.reject(new Error('That request was already ' + l.status.toLowerCase()));
     l.status = 'Issued';
     l.issuedOn = ymd(TODAY);
+    l.body = bodyFor(l.type, l.empId);
+    l.reference = refOf(l.type, l.id);
+    return ok(l);
+  },
+
+  reject(id, reason) {
+    const l = LETTER_REQS.find((x) => x.id === id);
+    if (!l) return Promise.reject(new Error('No such letter request: ' + id));
+    if (l.status !== 'Pending') return Promise.reject(new Error('That request was already ' + l.status.toLowerCase()));
+    if (!reason.trim()) return Promise.reject(new Error('Say why — the employee sees this'));
+    l.status = 'Rejected';
+    l.declineReason = reason.trim();
     return ok(l);
   },
 };

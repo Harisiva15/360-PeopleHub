@@ -10,14 +10,17 @@ import { HBar, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { Badge, Banner, Card, EmptyState, PersonCell, Table, TableWrap, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, ListRow } from '../../components/common';
+import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { DocumentCollection } from './collection';
 import { useShowLetter } from './Letter';
+import { RequestLetterForm } from './RequestLetter';
 import {
   useAllEmployees, useDocuments, useDocumentTypes, useIssueLetter, useLetterRequests,
-  useVisiblePeople,
+  useLetterTypes, useRejectLetter, useVisiblePeople,
 } from './data';
 
 type Tab = 'gen' | 'mine' | 'queue' | 'repo';
@@ -25,7 +28,6 @@ type Tab = 'gen' | 'mine' | 'queue' | 'repo';
 const letterName = (id: string) => LETTER_TYPES.find((t) => t.id === id)?.n || id;
 
 /** Documents an employee can upload themselves, outside the HR-issued set. */
-const UPLOADABLE = ['PAN Card', 'Aadhaar', 'Passport', 'Degree Certificate', 'Previous Relieving Letter', 'Address Proof'];
 
 /** Document types this person has not filed, over rows already fetched. */
 const missingFor = (empId: string, types: string[], docs: { empId: string; type: string }[]) =>
@@ -93,9 +95,19 @@ function GenTab() {
 
 function MineTab() {
   const app = useApp();
+  const layer = useLayer();
   const { data: docs = [] } = useDocuments([app.meId]);
   const { data: allReqs = [] } = useLetterRequests();
+  const { data: types = [] } = useLetterTypes();
   const reqs = allReqs.filter((l) => l.empId === app.meId);
+
+  const askForLetter = () => layer.modal({
+    title: 'Request a letter',
+    sub: 'Instant letters are generated straight away',
+    size: 'narrow',
+    body: (close: () => void) => <RequestLetterForm close={close} types={types} />,
+    footer: null,
+  });
 
   return (
     <div className="stack">
@@ -118,16 +130,27 @@ function MineTab() {
           )}
         </Card>
 
-        <Card title="My letter requests" sub={`${reqs.length} requests`} flush>
+        <Card title="My letter requests" sub={`${reqs.length} requests`} flush
+          actions={
+            <button className="btn sm primary" onClick={askForLetter}>＋ Request a letter</button>
+          }>
           {reqs.length ? (
             reqs.map((l) => (
               <ListRow key={l.id}>
                 <span>✉️</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 650, fontSize: 12.5 }}>{letterName(l.type)}</div>
-                  <div className="muted" style={{ fontSize: 11.5 }}>{l.purpose} · requested {fmtD(l.requestedOn)}</div>
+                  <div className="muted" style={{ fontSize: 11.5 }}>
+                    {l.status === 'Rejected' && l.declineReason
+                      ? l.declineReason
+                      : l.reference
+                        ? `${l.reference} · issued ${fmtD(l.issuedOn!)}`
+                        : `${l.purpose || 'No purpose given'} · requested ${fmtD(l.requestedOn)}`}
+                  </div>
                 </div>
-                <Badge kind={l.status === 'Issued' ? 'good' : 'warn'}>{l.status === 'Issued' ? 'Issued' : 'Pending'}</Badge>
+                <Badge kind={l.status === 'Issued' ? 'good' : l.status === 'Rejected' ? 'crit' : 'warn'}>
+                  {l.status}
+                </Badge>
               </ListRow>
             ))
           ) : (
@@ -136,16 +159,14 @@ function MineTab() {
         </Card>
       </div>
 
-      <Card title="Upload a document" sub="Certificates, proofs and personal records">
-        <div className="grid g3">
-          {UPLOADABLE.map((d) => (
-            <div key={d} style={{ cursor: 'pointer' }} onClick={() => app.toast(d + ' uploaded — pending HR verification', 'ok')}>
-              <Banner icon="📎" title={d}>
-                <span className="muted" style={{ fontSize: 11.5 }}>Click to upload · PDF or image</span>
-              </Banner>
-            </div>
-          ))}
-        </div>
+      <Card title="Documents HR asks for" sub="What is outstanding, and what has been checked">
+        <DocumentCollection scope={{ empId: app.meId }} />
+        <Banner kind="info" icon="📎" title="Attachments are not stored yet">
+          HR tracks what has been received and verified here. Handing the file over
+          still happens outside the system — there is no document storage in this
+          deployment, and a button claiming to keep your degree certificate would
+          be lying about where it went.
+        </Banner>
       </Card>
     </div>
   );
@@ -159,15 +180,31 @@ function QueueTab() {
   const { data: LETTER_REQS = [] } = useLetterRequests();
   const dir = useVisiblePeople();
   const issueLetter = useIssueLetter();
+  const rejectLetter = useRejectLetter();
   const pend = LETTER_REQS.filter((l) => l.status === 'Pending');
   const thisMonth = LETTER_REQS.filter((l) => l.issuedOn && monthKey(l.issuedOn) === monthKey(TODAY)).length;
 
   const markIssued = async (id: string) => {
     try {
-      await issueLetter.mutate(id);
-      app.toast('Letter issued and emailed to the employee', 'ok');
+      const done = await issueLetter.mutate(id);
+      app.toast(done.reference ? `Letter issued · ${done.reference}` : 'Letter issued', 'ok');
     } catch (e) {
       app.toast(e instanceof Error ? e.message : 'Could not issue the letter', 'err');
+    }
+  };
+
+  /*
+   * A refusal the employee can act on. Prompting rather than a silent reject:
+   * the reason is shown to them, and the service refuses an empty one.
+   */
+  const refuse = async (id: string) => {
+    const reason = window.prompt('Why is this being refused? The employee sees this.');
+    if (reason === null) return;
+    try {
+      await rejectLetter.mutate(id, reason);
+      app.toast('Request refused', 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not refuse the request', 'err');
     }
   };
 
@@ -195,14 +232,26 @@ function QueueTab() {
                   <td className="mono">{l.id}</td>
                   <td>{dir.byId(l.empId) && <PersonCell e={dir.byId(l.empId)!} />}</td>
                   <td>{letterName(l.type)}</td>
-                  <td>{l.purpose}</td>
+                  <td>
+                    {l.purpose || <span className="muted">—</span>}
+                    {l.status === 'Rejected' && l.declineReason && (
+                      <div className="muted" style={{ fontSize: 11.5 }}>Refused: {l.declineReason}</div>
+                    )}
+                  </td>
                   <td className="nowrap">{fmtD(l.requestedOn)}</td>
-                  <td><Badge kind={l.status === 'Issued' ? 'good' : 'warn'}>{l.status === 'Issued' ? 'Issued' : 'Pending'}</Badge></td>
+                  <td>
+                    <Badge kind={l.status === 'Issued' ? 'good' : l.status === 'Rejected' ? 'crit' : 'warn'}>
+                      {l.status}
+                    </Badge>
+                    {l.reference && (
+                      <div className="mono muted" style={{ fontSize: 10.5 }}>{l.reference}</div>
+                    )}
+                  </td>
                   <td className="right nowrap">
                     {l.status === 'Pending' ? (
                       <>
-                        <button className="btn sm primary" onClick={() => showLetter(l.type, l.empId)}>Generate</button>{' '}
-                        <button className="btn sm" onClick={() => markIssued(l.id)}>Mark issued</button>
+                        <button className="btn sm" onClick={() => refuse(l.id)}>Refuse</button>{' '}
+                        <button className="btn sm primary" onClick={() => markIssued(l.id)}>Issue</button>
                       </>
                     ) : (
                       <button className="btn sm" onClick={() => showLetter(l.type, l.empId)}>View</button>

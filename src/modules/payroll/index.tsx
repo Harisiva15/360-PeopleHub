@@ -244,7 +244,6 @@ function PyRegister({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
 /* ---------------- Payroll inputs ---------------- */
 
 function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
-  const app = useApp();
   const showEmp = useShowEmployee();
   const { data: runs = [] } = usePayRuns();
   const { data: curRun } = useCurrentRun();
@@ -272,7 +271,6 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
         </select>
         <StatusBadge status={run.status} />
         <div className="spacer" />
-        <button className="btn" onClick={() => app.toast('Bulk upload is not wired in this build')}>⤒ Bulk upload</button>
         <button className="btn" onClick={() =>
           downloadCSV(`payroll_input_template_${mk}.csv`,
             [['Emp Code', 'Name', 'Bonus', 'Arrears', 'Incentive', 'Overtime/Other', 'Reimbursement']].concat(
@@ -285,6 +283,13 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
           {monthLabelLong(mk)} is locked. Corrections flow into the next cycle as arrears.
         </Banner>
       )}
+
+      <Banner kind="info" icon="➕" title="Inputs are entered outside the app for now">
+        This is a read-only view of what payroll will pick up. Bonus, arrears and
+        incentive rows are keyed straight into the pay run; entering or importing
+        them here is not built yet, and the export below gives you the template in
+        the meantime.
+      </Banner>
 
       <StatRow cols={5}>
         <Tile label="Employees with inputs" value={withInput.length} foot={`Out of ${list.length} on payroll`} />

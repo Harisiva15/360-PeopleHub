@@ -429,9 +429,31 @@ export interface LoanService {
   approve(id: string): Promise<Loan>;
 }
 
+/** A letter the tenant issues. */
+export interface LetterTypeRow {
+  code: string;
+  name: string;
+  instant: boolean;
+  requiresApproval: boolean;
+}
+
 export interface LetterService {
+  /** The catalogue. An instant type is issued the moment it is asked for. */
+  types(): Promise<LetterTypeRow[]>;
   requests(status?: LetterRequest['status']): Promise<LetterRequest[]>;
+  /**
+   * Ask for a letter. An instant type comes back already issued; anything else
+   * joins the HR queue.
+   */
+  request(draft: { type: string; purpose?: string }): Promise<LetterRequest>;
+  /**
+   * Issue a queued letter. The text is rendered by the service from the facts
+   * on file — never passed in, or the endpoint becomes a way to make the
+   * company assert anything.
+   */
   issue(id: string): Promise<LetterRequest>;
+  /** Refuse one. The reason is shown to the employee, so it is required. */
+  reject(id: string, reason: string): Promise<LetterRequest>;
 }
 
 /* ---------- hiring ---------- */

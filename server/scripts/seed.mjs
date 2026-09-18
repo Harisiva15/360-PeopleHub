@@ -136,6 +136,22 @@ const LEAVE_TYPES = [
  * carried no timezone, which is the one thing a shift has to know once
  * somebody in Chennai works US hours.
  */
+/*
+ * Letters HR issues. `instant` means the letter is generated from live data with
+ * no queue — a salary certificate is true the moment it is asked for. The rest
+ * assert something a person has to check first, so they wait for HR.
+ */
+const LETTER_TYPES = [
+  ['exp', 'Experience Letter', false, false],
+  ['salcert', 'Salary Certificate', true, false],
+  ['addr', 'Address Proof Letter', true, false],
+  ['appt', 'Appointment Letter', true, false],
+  ['inc', 'Increment / Revision Letter', true, false],
+  ['noc', 'No Objection Certificate', false, true],
+  ['rel', 'Relieving Letter', false, true],
+  ['form16', 'Form 16', true, false],
+];
+
 const SHIFTS = [
   ['IN', 'India Shift', '09:30', '18:30', 'Asia/Kolkata', 'IN'],
   ['US', 'US Shift', '09:00', '18:00', 'America/New_York', 'US'],
@@ -245,6 +261,14 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET label = EXCLUDED.label`,
       [tenant, code, label, rank, min, max]);
   }
+  for (const [code, name, instant, approval] of LETTER_TYPES) {
+    await q(`INSERT INTO letter_type (tenant_id, code, name, instant, requires_approval)
+             VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT (tenant_id, code)
+             DO UPDATE SET name = EXCLUDED.name, instant = EXCLUDED.instant,
+                           requires_approval = EXCLUDED.requires_approval`,
+      [tenant, code, name, instant, approval]);
+  }
   for (const [code, name, quota, carry, encash] of LEAVE_TYPES) {
     await q(`INSERT INTO leave_type (tenant_id, code, name, annual_quota, carry_forward_max, encashable)
              VALUES ($1,$2,$3,$4,$5,$6)
@@ -252,7 +276,8 @@ try {
       [tenant, code, name, quota, carry, encash]);
   }
   created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, ${EXPENSE_CATEGORIES.length} expense categories, ${TICKET_CATEGORIES.length} ticket categories, `
-    + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts`);
+    + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts, `
+    + `${LETTER_TYPES.length} letter types`);
 
   /* ---- permissions: admin sees everything, the rest is narrowed later ---- */
   const MODULES = ['dashboard', 'employees', 'leave', 'attendance', 'timesheet', 'payroll',

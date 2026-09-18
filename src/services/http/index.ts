@@ -316,6 +316,15 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       approveOvertime: (id) => api.post(`/overtime/${id}/approve`),
       rejectOvertime: (id) => api.post(`/overtime/${id}/reject`),
     },
+
+    letters: {
+      types: () => api.get('/letters/types'),
+      requests: (status) => api.get(`/letters${qs({ status })}`),
+      /* No empId: the server takes the requester from the session. */
+      request: (draft) => api.post('/letters', draft),
+      issue: (id) => api.post(`/letters/${id}/issue`),
+      reject: (id, reason) => api.post(`/letters/${id}/reject`, { reason }),
+    },
   };
 }
 

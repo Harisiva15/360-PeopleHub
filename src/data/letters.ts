@@ -32,8 +32,13 @@ export interface LetterRequest {
   type: string;
   purpose: string;
   requestedOn: string;
-  status: 'Pending' | 'Issued';
+  status: 'Pending' | 'Issued' | 'Rejected';
   issuedOn: string | null;
+  /** The letter as issued, frozen. Empty until it is. */
+  body: string;
+  /** Quotable on the phone. Null until issued. */
+  reference: string | null;
+  declineReason: string | null;
 }
 
 export const LETTER_REQS: LetterRequest[] = [];
@@ -51,10 +56,16 @@ export const LETTER_REQS: LetterRequest[] = [];
       requestedOn: ymd(on),
       status: pick(['Pending', 'Pending', 'Issued', 'Issued', 'Issued'] as LetterRequest['status'][]),
       issuedOn: null,
+      body: '',
+      reference: null,
+      declineReason: null,
     });
   }
   LETTER_REQS.forEach((l) => {
-    if (l.status === 'Issued') l.issuedOn = ymd(addDays(parseYmd(l.requestedOn), ri(1, 3)));
+    if (l.status !== 'Issued') return;
+    l.issuedOn = ymd(addDays(parseYmd(l.requestedOn), ri(1, 3)));
+    l.reference = `${l.type.toUpperCase()}/${l.issuedOn.slice(0, 4)}/${l.id.slice(-4)}`;
+    l.body = 'Issued before this build kept the letter text.';
   });
 })();
 

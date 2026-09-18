@@ -89,6 +89,10 @@ import {
   actOnOvertime, listOvertime, listShifts, raiseOvertime, rosterFor,
   setEmployeeShift, ShiftError, shiftCoverage,
 } from '../modules/shifts/service.ts';
+import {
+  issueLetter, LetterError, listLetterRequests, listLetterTypes, rejectLetter,
+  requestLetter,
+} from '../modules/letters/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -924,6 +928,36 @@ const routes: Route[] = [
     pattern: '/overtime/:id/reject',
     handler: (c, _r, p) => actOnOvertime(c, p.id!, 'rejected'),
   },
+
+  /* ---- HR letters ---- */
+  {
+    method: 'GET',
+    pattern: '/letters/types',
+    handler: (c) => listLetterTypes(c),
+  },
+  {
+    method: 'GET',
+    pattern: '/letters',
+    handler: (c, req) =>
+      listLetterRequests(c,
+        new URL(req.url ?? '/', 'http://x').searchParams.get('status') ?? undefined),
+  },
+  {
+    method: 'POST',
+    pattern: '/letters',
+    handler: (c, _r, _p, body) => requestLetter(c, body as Parameters<typeof requestLetter>[1]),
+  },
+  {
+    method: 'POST',
+    pattern: '/letters/:id/issue',
+    handler: (c, _r, p) => issueLetter(c, p.id!),
+  },
+  {
+    method: 'POST',
+    pattern: '/letters/:id/reject',
+    handler: (c, _r, p, body) =>
+      rejectLetter(c, p.id!, (body as { reason?: string } | undefined)?.reason ?? ''),
+  },
 ];
 
 export class NotFound extends Error {}
@@ -1039,6 +1073,12 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof HiringError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof LetterError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
