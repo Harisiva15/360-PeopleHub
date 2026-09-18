@@ -19,6 +19,7 @@ import {
 } from './data';
 import type { Directory } from './data';
 import { MonthCalendar } from '../dashboard/shared';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -633,7 +634,7 @@ function Attendance() {
         { v: 'reg', label: 'Regularisation' }, { v: 'cal', label: 'Holiday Calendar' },
       ];
 
-  const [tab, setTab] = useState<Tab>(tabs[0].v);
+  const [tab, setTab] = useTabFromUrl<Tab>(tabs[0]!.v, tabs.map((t) => t.v));
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
   const approver = usePeople([app.me.managerId]);
 

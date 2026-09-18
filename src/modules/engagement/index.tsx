@@ -12,6 +12,7 @@ import { Donut, HBar, Legend, LineChart, PAL, Ring } from '../../components/char
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { useAllEmployees, useEnpsHistory, useEnps, usePraise, useSurveys, useVisiblePeople } from './data';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -386,7 +387,7 @@ function Engagement() {
     : [{ v: 'results', label: 'Overview' }, { v: 'open', label: 'Polls' },
       { v: 'recog', label: 'Recognition' }, { v: 'manage', label: 'Manage surveys' }];
 
-  const [tab, setTab] = useState<Tab>(tabs[0].v);
+  const [tab, setTab] = useTabFromUrl<Tab>(tabs[0]!.v, tabs.map((t) => t.v));
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
 
   return (

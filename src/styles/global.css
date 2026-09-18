@@ -1129,3 +1129,44 @@ button.celeb-who:hover b{color:var(--brand)}
 /* ---------- Skill chips in a table cell ---------- */
 .skills{display:flex;gap:4px;flex-wrap:wrap}
 .skills .chip{font-size:10.5px;padding:2px 7px}
+
+/* ---------- Collapsible sidebar sections ---------- */
+/*
+ * The header is a button, not a label: it is the control that opens the
+ * section, so it has to look pressable and take focus like anything else.
+ */
+.nav-h{
+  display:flex;align-items:center;gap:11px;width:100%;cursor:pointer;
+  padding:9px 12px;margin-bottom:2px;border:0;border-radius:10px;
+  background:transparent;color:var(--rail-ink-dim);
+  font:inherit;font-size:11.5px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;
+  transition:background .13s ease,color .13s ease;
+}
+.nav-h:hover{background:var(--rail-2);color:#fff}
+.nav-h .ic{width:18px;text-align:center;font-size:14px;opacity:.8}
+.nav-h .pill{
+  background:var(--crit);color:#fff;font-size:10px;font-weight:700;
+  padding:1px 6px;border-radius:20px;letter-spacing:0;
+}
+.nav-caret{
+  font-size:14px;opacity:.55;transition:transform .15s ease;transform:rotate(0deg);
+}
+.nav-group.open .nav-caret{transform:rotate(90deg)}
+/* Children sit in from their header, so the nesting is visible without a rule. */
+.nav-group.open>a{margin-left:10px;padding-left:12px}
+
+/* Home is a section of one and reads as a first-class destination. */
+.nav-solo{
+  display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:10px;
+  color:var(--rail-ink);font-weight:500;font-size:13.5px;margin-bottom:2px;
+  border:1px solid transparent;
+}
+.nav-solo:hover{background:var(--rail-2);color:#fff}
+.nav-solo.on{
+  background:var(--rail-on);color:#fff;font-weight:600;
+  box-shadow:0 2px 8px color-mix(in srgb,var(--rail-on) 45%,transparent);
+}
+.nav-solo .ic{width:18px;text-align:center;font-size:15px;opacity:.85}
+.nav-solo.on .ic{opacity:1}
+.nav-solo .pill{margin-left:auto;background:var(--crit);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px}

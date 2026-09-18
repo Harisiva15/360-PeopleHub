@@ -17,6 +17,7 @@ import {
   useTickets, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -475,7 +476,7 @@ function Helpdesk() {
         { v: 'sla', label: 'SLA & Analytics' }, { v: 'kb', label: 'Knowledge Base' },
       ];
 
-  const [tab, setTab] = useState<Tab>(tabs[0].v);
+  const [tab, setTab] = useTabFromUrl<Tab>(tabs[0]!.v, tabs.map((t) => t.v));
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
 
   return (

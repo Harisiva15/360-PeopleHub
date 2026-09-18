@@ -18,6 +18,7 @@ import {
 } from './data';
 import type { Directory } from './data';
 import { ClaimBadge, ClaimTable } from './ClaimTable';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -562,7 +563,7 @@ function Expenses() {
         { v: 'adv', label: 'Travel Advances' }, { v: 'ana', label: 'Analytics' }, { v: 'policy', label: 'Expense Policy' },
       ];
 
-  const [tab, setTab] = useState<Tab>('my');
+  const [tab, setTab] = useTabFromUrl<Tab>('my', ['my', 'appr', 'all', 'adv', 'ana', 'policy']);
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
 
   return (

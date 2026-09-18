@@ -15,6 +15,7 @@ import {
 } from './data';
 import type { Directory } from './data';
 import { MyWeek } from './MyWeek';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -390,7 +391,7 @@ function TimesheetView() {
         { v: 'appr', label: 'Pending Approval' }, { v: 'util', label: 'Utilisation' },
       ];
 
-  const [tab, setTab] = useState<Tab>('my');
+  const [tab, setTab] = useTabFromUrl<Tab>('my', ['my', 'team', 'appr', 'util', 'hist']);
   const [ws, setWs] = useState(ymd(mondayOf(TODAY)));
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
 

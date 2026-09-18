@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { logoFor } from '../assets/logo';
-import { NAV, TABBAR } from '../nav';
+import { hrefOf, NAV, TABBAR } from '../nav';
 import { TITLES } from '../modules/titles';
 import { SUBTITLES } from '../modules/subtitles';
 import { useNavBadges } from './badges';
@@ -20,6 +20,36 @@ export function Shell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const route = pathname.replace(/^\//, '') || 'dashboard';
   const [navOpen, setNavOpen] = useState(false);
+
+  /*
+   * Which sections are expanded. Remembered per browser so the sidebar is
+   * where you left it, and the section holding the current route is always
+   * open — landing on a page whose section is shut leaves nothing highlighted
+   * and no way to see where you are.
+   */
+  const [shut, setShut] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('nav.shut');
+      if (saved) return new Set(JSON.parse(saved) as string[]);
+    } catch { /* a private window has no storage; everything starts as it comes */ }
+    return new Set(NAV.filter((g) => !g.solo && !g.open).map((g) => g.group));
+  });
+
+  /*
+   * A section holding the current route is always open — landing on a page
+   * whose section is shut leaves nothing highlighted and no way to see where
+   * you are. A page in two sections opens both; that is honest about where it
+   * can be reached from.
+   */
+  const holdsRoute = (group: string) =>
+    NAV.find((g) => g.group === group)?.items.some((i) => i.k === route) ?? false;
+  const isOpen = (group: string) => holdsRoute(group) || !shut.has(group);
+  const toggle = (group: string) => setShut((s) => {
+    const next = new Set(s);
+    if (next.has(group)) next.delete(group); else next.add(group);
+    try { localStorage.setItem('nav.shut', JSON.stringify([...next])); } catch { /* fine */ }
+    return next;
+  });
   const [mobile, setMobile] = useState(isMobile);
 
   useEffect(() => {
@@ -56,15 +86,48 @@ export function Shell({ children }: { children: ReactNode }) {
 
         <nav className="nav">
           {NAV.map((g) => {
+            if (g.roles && !g.roles.includes(app.role)) return null;
             const items = g.items.filter((i) => app.can(i.k));
             if (!items.length) return null;
+
+            /* A section of one needs no header to expand. */
+            if (g.solo) {
+              const i = items[0]!;
+              const badge = badges[i.k] || 0;
+              return (
+                <Link key={g.group} to={hrefOf(i)}
+                  className={'nav-solo' + (route === i.k ? ' on' : '')}>
+                  <span className="ic">{i.ic}</span>
+                  {i.n}
+                  {badge > 0 && <span className="pill">{badge}</span>}
+                </Link>
+              );
+            }
+
+            const open = isOpen(g.group);
+            /*
+             * A badge inside a shut section would be invisible, which is the
+             * one thing a badge must not be, so the header carries the total
+             * of everything folded under it.
+             */
+            const inside = items.reduce((n, i) => n + (badges[i.k] || 0), 0);
+
             return (
-              <div className="nav-group" key={g.group}>
-                <h6>{g.group}</h6>
-                {items.map((i) => {
+              <div className={'nav-group' + (open ? ' open' : '')} key={g.group}>
+                <button className="nav-h" onClick={() => toggle(g.group)} aria-expanded={open}>
+                  <span className="ic">{g.ic}</span>
+                  <span style={{ flex: 1, textAlign: 'left' }}>{g.group}</span>
+                  {!open && inside > 0 && <span className="pill">{inside}</span>}
+                  <span className="nav-caret" aria-hidden="true">›</span>
+                </button>
+
+                {open && items.map((i) => {
                   const badge = badges[i.k] || 0;
                   return (
-                    <Link key={i.k} to={'/' + i.k} className={route === i.k ? 'on' : ''}>
+                    /* The key carries the destination: one route can appear
+                       twice in a section-less-list and React needs them apart. */
+                    <Link key={hrefOf(i)} to={hrefOf(i)}
+                      className={route === i.k ? 'on' : ''}>
                       <span className="ic">{i.ic}</span>
                       {i.n}
                       {badge > 0 && <span className="pill">{badge}</span>}

@@ -11,6 +11,7 @@ import { Donut, HBar, Legend } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import {
@@ -571,7 +572,7 @@ function Leave() {
         { v: 'cal', label: 'Team Calendar' }, { v: 'pol', label: 'Policy' },
       ];
 
-  const [tab, setTab] = useState<Tab>('me');
+  const [tab, setTab] = useTabFromUrl<Tab>('me', ['me', 'appr', 'team', 'cal', 'pol']);
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
 
   return (

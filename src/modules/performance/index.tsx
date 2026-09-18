@@ -16,6 +16,7 @@ import {
   useAllEmployees, useCheckins, useCurrentCycle, useGoals, usePraise, useReviews,
   useSetGoalProgress, useTeam, useVisiblePeople,
 } from './data';
+import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 
@@ -688,7 +689,7 @@ function Performance() {
         { v: 'calib', label: '9-Box & Calibration' }, { v: 'praise', label: 'Praise Wall' }, { v: 'cycle', label: 'Cycle Timeline' },
       ];
 
-  const [tab, setTab] = useState<Tab>('goals');
+  const [tab, setTab] = useTabFromUrl<Tab>('goals', ['goals', 'team', 'review', 'praise', 'cycle', 'calib']);
   const [rvTarget, setRvTarget] = useState<string | null>(null);
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
 
