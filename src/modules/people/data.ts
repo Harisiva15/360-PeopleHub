@@ -26,3 +26,8 @@ export const useRequisitions = () => useQuery((s) => s.hiring.requisitions(), []
 /** Posting is managers and admins only; the service enforces it. */
 export const usePostAnnouncement = () =>
   useMutation((s, draft: NewAnnouncement) => s.noticeboard.post(draft));
+
+export const useSetPinned = () =>
+  useMutation((s, id: string, pinned: boolean) => s.noticeboard.setPinned(id, pinned));
+export const useRemoveAnnouncement = () =>
+  useMutation((s, id: string) => s.noticeboard.remove(id));

@@ -1045,3 +1045,47 @@ button.celeb-who:hover b{color:var(--brand)}
 .cal-dot.t-green{background:var(--t-green-ink)}
 .cal-dot.t-violet{background:var(--t-violet-ink)}
 .cal-dot.t-amber{background:var(--t-amber-ink)}
+
+/* ---------- Announcements ---------- */
+.ann-hero{
+  position:relative;padding:22px 24px 24px;border-radius:var(--r-lg);
+  background:linear-gradient(115deg,var(--t-blue),var(--t-violet));
+  border:1px solid color-mix(in srgb,var(--t-blue-ink) 18%,transparent);
+}
+.ann-hero-t h2{
+  margin:9px 0 0;font-size:21px;font-weight:750;letter-spacing:-.5px;color:var(--ink-1);
+}
+.ann-hero-t p{margin:6px 0 0;font-size:13px;color:var(--ink-2);max-width:68ch;line-height:1.55}
+.ann-dots{position:absolute;right:20px;bottom:18px;display:flex;gap:6px}
+.ann-dot{
+  width:8px;height:8px;border-radius:50%;padding:0;cursor:pointer;
+  border:0;background:color-mix(in srgb,var(--ink-3) 40%,transparent);
+}
+.ann-dot.on{background:var(--brand);width:20px;border-radius:5px}
+
+.ann-row{
+  display:flex;gap:12px;align-items:flex-start;
+  padding:14px;border-bottom:1px solid var(--line);
+}
+.ann-row:last-child{border-bottom:0}
+.ann-ic{
+  flex:0 0 auto;width:42px;height:42px;border-radius:11px;
+  display:grid;place-items:center;font-size:18px;background:var(--surface-2);
+}
+.ann-ic.t-blue{background:var(--t-blue)}
+.ann-ic.t-violet{background:var(--t-violet)}
+.ann-ic.t-rose{background:var(--t-rose)}
+.ann-ic.t-green{background:var(--t-green)}
+.ann-ic.t-amber{background:var(--t-amber)}
+.ann-title{
+  background:0;border:0;padding:0;cursor:pointer;text-align:left;
+  font:inherit;font-size:14px;font-weight:700;letter-spacing:-.25px;color:var(--ink-1);
+}
+.ann-title:hover{color:var(--brand)}
+/* Clamped until opened: a board of full posts is a board nobody scans. */
+.ann-body{
+  font-size:12.5px;color:var(--ink-2);line-height:1.55;margin-top:4px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.ann-body.open{-webkit-line-clamp:unset;overflow:visible}
+.ann-side{flex:0 0 auto;text-align:right}

@@ -5,17 +5,18 @@
 import { useState } from 'react';
 import { sortBy } from '../../lib/collections';
 import type { Announcement } from '../../data/announcements';
-import { DOW, fmtD, MON, parseYmd, TODAY, ymd } from '../../lib/dates';
 
 import {
-  useAllEmployees, useAnnouncements, useCelebrations, usePostAnnouncement, useRequisitions,
+  useAllEmployees, useAnnouncements, useCelebrations, usePostAnnouncement,
+  useRemoveAnnouncement, useRequisitions, useSetPinned,
 } from './data';
 import type { Directory } from './data';
-import { DEPTS, deptOf, HOLIDAYS, ORG } from '../../data/org';
-import { Avatar, Badge, Card, EmptyState, PersonCell, Seg, StatRow, Tabs, Tile } from '../../components/ui';
+import { DEPTS, deptOf } from '../../data/org';
+import { Avatar, Badge, Card, EmptyState, PersonCell, Seg, StatRow, Tile } from '../../components/ui';
 import { NoRoot, OrgTreeView } from './OrgChart';
 import { OrgStructure } from './OrgStructure';
 import { CelebrationsView, KIND } from './Celebrations';
+import { AnnouncementsView } from './Announcements';
 import type { Occasion } from './Celebrations';
 import { Dot, ListRow } from '../../components/common';
 import { HBar } from '../../components/charts';
@@ -260,11 +261,6 @@ function AddCelebration({ close, onPost }: {
    Announcements
    ============================================================ */
 
-const POLICY_DOCS = [
-  'Employee Handbook 2026', 'Leave & Attendance Policy', 'POSH Policy',
-  'Information Security Policy', 'Travel & Reimbursement Policy', 'Referral Programme',
-];
-
 /** Acknowledgement counts are illustrative, so they are fixed per post. */
 const ackCount = (a: Announcement) => {
   let h = 0;
@@ -274,108 +270,135 @@ const ackCount = (a: Announcement) => {
 
 function Announcements() {
   const app = useApp();
+  const layer = useLayer();
   const { data: announcements = [] } = useAnnouncements();
+  const post = usePostAnnouncement();
+  const setPinned = useSetPinned();
+  const removeOne = useRemoveAnnouncement();
+
   const canPost = app.role === 'admin' || app.role === 'manager';
   const [acked, setAcked] = useState<Record<string, boolean>>({});
-  const [tag, setTag] = useState('');
 
-  /*
-   * Filter tabs are built from the tags actually in use rather than a fixed
-   * list. A tab that is always empty is worse than no tab, and a post tagged
-   * something new would otherwise be reachable only from "All".
-   */
-  const tags = [...new Set(announcements.map((x) => x.tag))].sort();
-  const shown = tag ? announcements.filter((x) => x.tag === tag) : announcements;
+  const ack = (a: Announcement) => {
+    /*
+     * Acknowledgement is local to this session. There is no per-person
+     * acknowledgement record on the server, so the button remembers what you
+     * pressed and says so — it does not pretend to have filed anything.
+     */
+    setAcked((s) => ({ ...s, [a.id]: true }));
+    app.toast('Acknowledged', 'ok');
+  };
+
+  const pin = async (a: Announcement) => {
+    try {
+      await setPinned.mutate(a.id, !a.pin);
+      app.toast(a.pin ? 'Unpinned' : 'Pinned to the top', 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not change that', 'err');
+    }
+  };
+
+  const remove = async (a: Announcement) => {
+    if (!window.confirm(`Take down "${a.title}"? This cannot be undone.`)) return;
+    try {
+      await removeOne.mutate(a.id);
+      app.toast('Announcement taken down', 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not take it down', 'err');
+    }
+  };
+
+  const compose = () => layer.modal({
+    title: 'New announcement',
+    sub: app.role === 'admin' ? 'Goes to everyone' : 'Goes to your department',
+    size: 'wide',
+    body: (close: () => void) => <Compose close={close} onPost={post} canPin={app.role === 'admin'} />,
+    footer: null,
+  });
+
+  return (
+    <AnnouncementsView
+      announcements={announcements}
+      role={app.role}
+      meName={app.me.name}
+      acks={acked}
+      ackCount={ackCount}
+      onAck={ack}
+      onPost={compose}
+      onPin={pin}
+      onRemove={remove}
+      canPost={canPost}
+    />
+  );
+}
+
+function Compose({ close, onPost, canPin }: {
+  close: () => void;
+  onPost: ReturnType<typeof usePostAnnouncement>;
+  canPin: boolean;
+}) {
+  const app = useApp();
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [tag, setTag] = useState('Announcement');
+  const [dept, setDept] = useState('All');
+  const [pin, setPin] = useState(false);
+
+  const save = async () => {
+    if (!title.trim()) { app.toast('Give it a title', 'err'); return; }
+    if (!body.trim()) { app.toast('Say what it is about', 'err'); return; }
+    try {
+      await onPost.mutate({ title: title.trim(), body: body.trim(), tag, pin, dept });
+      app.toast('Posted to the noticeboard', 'ok');
+      close();
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not post it', 'err');
+    }
+  };
 
   return (
     <div className="stack">
-      {canPost && (
-        <div className="toolbar">
-          <button className="btn primary" onClick={() => app.toast('Announcement composer is not wired in this build')}>
-            ＋ New announcement
-          </button>
-          <div className="spacer" />
-          <span className="muted" style={{ fontSize: 12.5 }}>
-            Posting as {app.me.name} · visible to {app.role === 'admin' ? 'all employees' : 'your team'}
-          </span>
-        </div>
+      <label className="fld">
+        <span>Title</span>
+        <input className="input" value={title} autoFocus
+          placeholder="Bengaluru office relocation"
+          onChange={(e) => setTitle(e.target.value)} />
+      </label>
+      <label className="fld">
+        <span>Body</span>
+        <textarea className="input" rows={5} value={body}
+          placeholder="What is happening, when, and what people need to do."
+          onChange={(e) => setBody(e.target.value)} />
+      </label>
+      <div className="grid g2">
+        <label className="fld">
+          <span>Category</span>
+          <select className="input" value={tag} onChange={(e) => setTag(e.target.value)}>
+            {['Announcement', 'Policy', 'Payroll', 'Holiday', 'Attendance', 'Compliance', 'Hiring']
+              .map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </label>
+        <label className="fld">
+          <span>Audience</span>
+          <select className="input" value={dept} onChange={(e) => setDept(e.target.value)}>
+            <option value="All">Everyone</option>
+            {DEPTS.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </label>
+      </div>
+      {canPin && (
+        <label className="row muted" style={{ gap: 7, fontSize: 12.5 }}>
+          <input type="checkbox" checked={pin} onChange={(e) => setPin(e.target.checked)} />
+          Feature this at the top of the board
+        </label>
       )}
-
-      <Tabs value={tag} onChange={setTag} options={[
-        { v: '', label: `All (${announcements.length})` },
-        ...tags.map((t) => ({ v: t, label: t })),
-      ]} />
-
-      <div className="grid g-2-1">
-        <div className="stack">
-          {!shown.length && <Card><EmptyState msg="Nothing posted under that tag" icon="📣" /></Card>}
-          {shown.map((a) => (
-            <Card key={a.id}>
-              <div className="row" style={{ gap: 9, marginBottom: 9 }}>
-                <Avatar name={a.by} size="sm" />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{a.by}</div>
-                  <div className="muted" style={{ fontSize: 11.5 }}>
-                    {fmtD(a.on)} · {a.dept === 'All' ? 'All employees' : deptOf(a.dept).name}
-                  </div>
-                </div>
-                <Badge kind="info">{a.tag}</Badge>
-                {a.pin && <span title="Pinned">📌</span>}
-              </div>
-              <h3 style={{ margin: '0 0 6px', fontSize: 16, letterSpacing: '-.3px' }}>{a.title}</h3>
-              <div style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>{a.body}</div>
-              <div className="row" style={{ marginTop: 12, gap: 7 }}>
-                <button className="btn sm ghost" onClick={() => {
-                  setAcked((s) => ({ ...s, [a.id]: true }));
-                  app.toast('Acknowledged', 'ok');
-                }}>
-                  👍 {acked[a.id] ? 'Acknowledged' : 'Acknowledge'}
-                </button>
-                <span className="muted" style={{ fontSize: 11.5 }}>
-                  {ackCount(a) + (acked[a.id] ? 1 : 0)} employees acknowledged
-                </span>
-              </div>
-            </Card>
-          ))}
-        </div>
-
-        <div className="stack">
-          <Card title="Holiday calendar" sub={`${ORG.fy} · ${HOLIDAYS.length} holidays`} flush>
-            <div style={{ maxHeight: 420, overflow: 'auto' }}>
-              {HOLIDAYS.map((h) => (
-                <ListRow key={h.d + h.n}>
-                  <div className="right" style={{ width: 52, flex: '0 0 52px' }}>
-                    <div style={{ fontWeight: 750, fontSize: 15, lineHeight: 1 }}>{parseYmd(h.d).getDate()}</div>
-                    <div className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase' }}>{MON[parseYmd(h.d).getMonth()]}</div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 12.5 }}>{h.n}</div>
-                    <div className="muted" style={{ fontSize: 11.5 }}>
-                      {DOW[parseYmd(h.d).getDay()]}{h.opt ? ' · Optional' : ''}
-                    </div>
-                  </div>
-                  {h.d < ymd(TODAY) ? <Badge>Past</Badge> : <Badge kind="good">Upcoming</Badge>}
-                </ListRow>
-              ))}
-            </div>
-          </Card>
-
-          <Card title="Quick links" sub="Policies & handbooks" flush>
-            {POLICY_DOCS.map((p) => (
-              <ListRow key={p} onClick={() => app.toast('Opening ' + p)}>
-                <span>📄</span>
-                <div style={{ flex: 1 }}>{p}</div>
-                <span className="muted">PDF</span>
-              </ListRow>
-            ))}
-          </Card>
-        </div>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={close}>Cancel</button>
+        <button className="btn primary" onClick={save}>Post</button>
       </div>
     </div>
   );
 }
-
-/* ---------------- registration ---------------- */
 
 registerModule({
   key: 'org',
