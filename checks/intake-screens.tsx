@@ -32,6 +32,7 @@ import { CollectionView, rankIntake } from '../src/modules/onboarding/Collection
 import { DocumentCollection } from '../src/modules/documents/collection';
 import { OfferLetter } from '../src/modules/hiring/OfferLetter';
 import { perHire, stalled, TrackerView } from '../src/modules/hiring/Tracker';
+import { HiringOverview, timeToHire, trendOf } from '../src/modules/hiring/Overview';
 import { getServices } from '../src/services';
 import type { DocRequest, Onboarding, ReqActivity } from '../src/services';
 import type { AppRole } from '../src/types/employee';
@@ -219,6 +220,62 @@ check('the tracker screen mounts',
   render(<TrackerView />).includes('Activity by job order'), true);
 check('and shows the recruiter table too',
   render(<TrackerView />).includes('Activity by recruiter'), true);
+
+/* ---------- the recruitment overview ---------- */
+
+/*
+ * The reference puts an arrow against every headline figure. Only some of
+ * those are knowable: applications carry a date, so this month against last is
+ * arithmetic. The rest would be decoration, and the rule that keeps it honest
+ * is that no comparison means no arrow.
+ */
+const THIS = '2026-09-17';
+const applied = (n: number, m = '09') => Array.from({ length: n }, () => `2026-${m}-05`);
+
+check('a rise is reported as a rise',
+  trendOf([...applied(12, '09'), ...applied(10, '08')], THIS), { pct: 20, up: true });
+check('a fall is reported as a fall',
+  trendOf([...applied(8, '09'), ...applied(10, '08')], THIS), { pct: 20, up: false });
+check('no change is flat, not absent',
+  trendOf([...applied(5, '09'), ...applied(5, '08')], THIS), { pct: 0, up: true });
+/*
+ * Up from nothing is not a percentage. "+100%" from a base of zero says less
+ * than saying nothing, and the arrow implies a comparison nobody made.
+ */
+check('nothing to compare against gives no trend',
+  trendOf(applied(9, '09'), THIS), null);
+check('and an empty set likewise', trendOf([], THIS), null);
+check('months other than this and last are ignored',
+  trendOf([...applied(4, '09'), ...applied(4, '08'), ...applied(99, '03')], THIS), { pct: 0, up: true });
+
+/* Time to hire is averaged only over people who have both dates. */
+const hire = (applied: string, sent: string | null, stage = 'hired') => ({
+  ...cands[0]!, id: applied + sent, stage, appliedOn: applied,
+  offer: sent === null ? null : { ...(cands[0]!.offer ?? {}), sentOn: sent },
+}) as typeof cands[number];
+
+check('time to hire averages apply-to-offer',
+  timeToHire([hire('2026-09-01', '2026-09-11'), hire('2026-09-01', '2026-09-21')]), 15);
+/*
+ * Somebody hired with no offer date contributes no span. Counting them as
+ * zero would report a process faster than any that has ever run.
+ */
+check('a hire with no offer date is left out, not counted as zero',
+  timeToHire([hire('2026-09-01', '2026-09-11'), hire('2026-09-01', null)]), 10);
+check('candidates who are not hired do not count',
+  timeToHire([hire('2026-09-01', '2026-09-11'), hire('2026-01-01', '2026-09-01', 'offer')]), 10);
+check('no hires at all gives no figure, not zero', timeToHire([]), null);
+
+/* The band renders, and clicking a stage is offered. */
+const overview = render(
+  <HiringOverview cands={cands} reqs={await s.hiring.requisitions()}
+    onCandidate={() => {}} onStage={() => {}} stage="" />);
+check('the overview band renders the pipeline',
+  overview.includes('Hiring pipeline'), true);
+check('with a column per live stage',
+  (overview.match(/class="pipe-col/g) ?? []).length, 7);
+check('and the open requisitions beside it',
+  overview.includes('Open requisitions'), true);
 
 console.log(failed
   ? `\n${failed} check(s) FAILED`

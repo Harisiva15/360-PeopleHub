@@ -7,13 +7,16 @@ import { reqOf, SOURCES, STAGES } from '../../data/ats';
 import type { Candidate, Interview, Requisition } from '../../services';
 
 import { DEPTS, deptOf, GRADES, siteOf } from '../../data/org';
-import { Avatar, Badge, Banner, Card, EmptyState, KV, Tabs, Tile, StatRow } from '../../components/ui';
+import {
+  Avatar, Badge, Banner, Card, EmptyState, KV, pageOf, Pager, Tabs, Tile, StatRow,
+} from '../../components/ui';
 import { Chip, Divide, Dot, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
 import { useCandidates, useInterviews, useMoveCandidate, useRequisitions, useVisiblePeople } from './data';
+import { HiringOverview } from './Overview';
 import { OfferLetter } from './OfferLetter';
 import { TrackerView } from './Tracker';
 import { registerModule } from '../registry';
@@ -401,86 +404,136 @@ function HrReqs() {
 
 /* ---------------- Candidates ---------------- */
 
-function HrCands() {
+function HrCands({ stage, onStage }: { stage: string; onStage: (s: string) => void }) {
   const { data: CANDS = [] } = useCandidates();
+  const { data: REQS = [] } = useRequisitions();
+  const dir = useVisiblePeople();
   const app = useApp();
   const show = useShowCandidate();
   const [q, setQ] = useState('');
-  const [st, setSt] = useState('');
+  const [job, setJob] = useState('');
+  const [rec, setRec] = useState('');
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(25);
 
   let list = hiringScope(app.role, app.meId, CANDS);
-  if (st) list = list.filter((c) => c.stage === st);
+  if (stage) list = list.filter((c) => c.stage === stage);
+  if (job) list = list.filter((c) => c.reqId === job);
+  if (rec) list = list.filter((c) => reqOf(c.reqId)?.recruiterId === rec);
   if (q) {
     const needle = q.toLowerCase();
-    list = list.filter((c) => (c.name + ' ' + c.email + ' ' + c.current + ' ' + c.skills.join(' ')).toLowerCase().includes(needle));
+    list = list.filter((c) =>
+      (c.name + ' ' + c.email + ' ' + c.current + ' ' + c.loc + ' ' + c.skills.join(' '))
+        .toLowerCase().includes(needle));
   }
   list = sortBy(list, (c) => c.appliedOn, 'desc');
+  const paged = pageOf(list, page, size);
+
+  /* Recruiters who actually own a requisition — not the whole directory. */
+  const recruiters = [...new Set(REQS.map((r) => r.recruiterId).filter(Boolean))];
 
   const exportCsv = () =>
     downloadCSV('candidates.csv',
-      [['Name', 'Email', 'Phone', 'Applied for', 'Stage', 'Experience', 'Current employer', 'Current CTC', 'Expected CTC', 'Notice', 'Source', 'Rating', 'Applied']].concat(
-        list.map((c) => [c.name, c.email, c.phone, reqOf(c.reqId)?.title || '', c.stage, c.exp, c.current,
-          String(c.ctcCur), String(c.ctcExp), c.notice, c.source, String(c.rating), c.appliedOn]),
+      [['Name', 'Email', 'Phone', 'Applied for', 'Stage', 'Experience', 'Location',
+        'Current employer', 'Skills', 'Notice', 'Source', 'Rating', 'Recruiter', 'Applied']].concat(
+        list.map((c) => [c.name, c.email, c.phone, reqOf(c.reqId)?.title || '', c.stage, c.exp,
+          c.loc, c.current, c.skills.join(' / '), c.notice, c.source, String(c.rating),
+          dir.name(reqOf(c.reqId)?.recruiterId ?? ''), c.appliedOn]),
       ));
 
   return (
     <div className="stack">
       <div className="toolbar">
         <div className="search">
-          <input className="input" placeholder="Search candidates…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="input" placeholder="Search by name, email, skill or location…"
+            value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <select className="input" style={{ width: 'auto' }} value={st} onChange={(e) => setSt(e.target.value)}>
-          <option value="">All stages</option>
-          {STAGES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        <select className="input" style={{ width: 'auto' }} value={job}
+          onChange={(e) => setJob(e.target.value)}>
+          <option value="">All jobs</option>
+          {REQS.map((r) => <option key={r.id} value={r.id}>{r.title}</option>)}
+        </select>
+        <select className="input" style={{ width: 'auto' }} value={stage}
+          onChange={(e) => onStage(e.target.value)}>
+          <option value="">All statuses</option>
+          {STAGES.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+        <select className="input" style={{ width: 'auto' }} value={rec}
+          onChange={(e) => setRec(e.target.value)}>
+          <option value="">All recruiters</option>
+          {recruiters.map((id) => <option key={id} value={id}>{dir.name(id)}</option>)}
         </select>
         <div className="spacer" />
         <button className="btn" onClick={exportCsv}>⤓ Export</button>
       </div>
 
-      <Card title="Candidates" sub={`${list.length} records`} flush>
-        <div className="tbl-wrap" style={{ maxHeight: 620, overflow: 'auto' }}>
+      <Card title="Candidates" sub={`${list.length} of ${CANDS.length}`} flush>
+        <div className="tbl-wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Candidate</th><th>Applied for</th><th>Stage</th><th>Experience</th><th>Current employer</th>
-                <th className="num">Current CTC</th><th className="num">Expected</th><th>Notice</th><th>Source</th><th>Rating</th><th>Applied</th>
+                <th>Candidate</th><th>Job title</th><th>Experience</th><th>Location</th>
+                <th>Skills</th><th>Status</th><th>Applied on</th><th>Recruiter</th>
+                <th className="right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {list.map((c) => {
+              {paged.rows.map((c) => {
                 const r = reqOf(c.reqId);
-                const s = STAGES.find((x) => x.id === c.stage)!;
+                const st = STAGES.find((x) => x.id === c.stage)!;
                 return (
                   <tr key={c.id} className="clickable" onClick={() => show(c.id)}>
-                    <td><CandCell c={c} sub={c.loc} /></td>
+                    <td>
+                      <div className="person">
+                        <Avatar name={c.name} size="sm" />
+                        <div style={{ minWidth: 0 }}>
+                          <div className="nm">{c.name}</div>
+                          <div className="mt">{c.email}</div>
+                        </div>
+                      </div>
+                    </td>
                     <td className="nowrap">{r ? r.title : '—'}</td>
+                    <td className="nowrap">{c.exp}</td>
+                    <td className="nowrap">{c.loc}</td>
+                    <td>
+                      {/* Three is what fits; the drawer has the rest. */}
+                      <div className="skills">
+                        {c.skills.slice(0, 3).map((k) => <Chip key={k}>{k}</Chip>)}
+                        {c.skills.length > 3 && (
+                          <span className="muted" style={{ fontSize: 10.5 }}>
+                            +{c.skills.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       <span className="badge" style={{
-                        background: `color-mix(in srgb, ${s.color} 15%, transparent)`,
-                        color: s.color,
-                        borderColor: `color-mix(in srgb, ${s.color} 35%, transparent)`,
-                      }}>{s.name}</span>
+                        background: `color-mix(in srgb, ${st.color} 15%, transparent)`,
+                        color: st.color,
+                        borderColor: `color-mix(in srgb, ${st.color} 35%, transparent)`,
+                      }}>{st.name}</span>
                     </td>
-                    <td>{c.exp}</td>
-                    <td className="nowrap">{c.current}</td>
-                    <td className="num">{lakh(c.ctcCur)}</td>
-                    <td className="num">{lakh(c.ctcExp)}</td>
-                    <td>{c.notice}</td>
-                    <td>{c.source}</td>
-                    <td><Stars n={c.rating} /></td>
                     <td className="nowrap">{fmtD(c.appliedOn)}</td>
+                    <td className="nowrap">
+                      {r?.recruiterId ? dir.name(r.recruiterId) : <span className="muted">—</span>}
+                    </td>
+                    <td className="right nowrap">
+                      <button className="btn ghost icon sm" title={`Open ${c.name}`}
+                        onClick={(e) => { e.stopPropagation(); show(c.id); }}>👁</button>
+                      <a className="btn ghost icon sm" title={`Email ${c.name}`}
+                        href={`mailto:${c.email}`} onClick={(e) => e.stopPropagation()}>✉</a>
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+        <Pager {...paged} noun="candidates" onPage={setPage} size={size} onSize={setSize} />
       </Card>
     </div>
   );
 }
-
-/* ---------------- Interviews ---------------- */
 
 function HrIvs() {
   const { data: CANDS = [] } = useCandidates();
@@ -701,27 +754,57 @@ function HrFunnel() {
 
 /* ---------------- entry ---------------- */
 
-type Tab = 'pipe' | 'reqs' | 'cands' | 'ivs' | 'offers' | 'track' | 'fun';
+type Tab = 'cands' | 'pipe' | 'reqs' | 'ivs' | 'offers' | 'track' | 'fun';
 
 const TABS: { v: Tab; label: string }[] = [
-  { v: 'pipe', label: 'Pipeline' }, { v: 'reqs', label: 'Requisitions' }, { v: 'cands', label: 'Candidates' },
-  { v: 'ivs', label: 'Interviews' }, { v: 'offers', label: 'Offers' },
-  { v: 'track', label: 'Activity tracker' }, { v: 'fun', label: 'Analytics' },
+  { v: 'cands', label: 'Candidates' },
+  { v: 'pipe', label: 'Pipeline board' },
+  { v: 'reqs', label: 'Job requisitions' },
+  { v: 'ivs', label: 'Interviews' },
+  { v: 'offers', label: 'Offers' },
+  { v: 'track', label: 'Activity tracker' },
+  { v: 'fun', label: 'Analytics' },
 ];
 
+/**
+ * The module: one overview, then the detail underneath.
+ *
+ * The pipeline used to be a tab of its own beside Candidates, which meant
+ * leaving the picture to read the detail and leaving the detail to check the
+ * picture. It is now a band that stays, and clicking a stage filters the
+ * candidates below — the same list, looked at from the top or from the side.
+ */
 function Hiring() {
-  const [tab, setTab] = useState<Tab>('pipe');
+  const app = useApp();
+  const show = useShowCandidate();
+  const { data: CANDS = [] } = useCandidates();
+  const { data: REQS = [] } = useRequisitions();
+  const [tab, setTab] = useState<Tab>('cands');
+  const [stage, setStage] = useState('');
+
+  const mine = hiringScope(app.role, app.meId, CANDS);
+  const myReqs = reqScope(app.role, app.meId, REQS);
+
+  /* Filtering by stage is a question about candidates, so it opens that tab. */
+  const pickStage = (s: string) => {
+    setStage(s);
+    if (s) setTab('cands');
+  };
+
   return (
-    <>
+    <div className="stack">
+      <HiringOverview cands={mine} reqs={myReqs} onCandidate={show}
+        onStage={pickStage} stage={stage} />
+
       <Tabs value={tab} options={TABS} onChange={setTab} />
+      {tab === 'cands' && <HrCands stage={stage} onStage={pickStage} />}
       {tab === 'pipe' && <HrPipeline />}
       {tab === 'reqs' && <HrReqs />}
-      {tab === 'cands' && <HrCands />}
       {tab === 'ivs' && <HrIvs />}
       {tab === 'offers' && <HrOffers />}
       {tab === 'track' && <TrackerView />}
       {tab === 'fun' && <HrFunnel />}
-    </>
+    </div>
   );
 }
 
