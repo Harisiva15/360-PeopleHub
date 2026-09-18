@@ -41,6 +41,11 @@ export function useRegularisableDays(empId: string, since: string) {
 
 /* ---------- writes ---------- */
 
+export const useLocationNotice = () =>
+  useQuery((s) => s.attendance.locationNotice(), []);
+export const useAcknowledgeLocationNotice = () =>
+  useMutation((s) => s.attendance.acknowledgeLocationNotice());
+
 export const usePunchIn = () =>
   useMutation((s, empId: string, date: string, at: PunchAt) => s.attendance.punchIn(empId, date, at));
 

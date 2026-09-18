@@ -22,7 +22,8 @@ import { siteOf } from '../../data/org';
 import { KV } from '../../components/ui';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { useDay, usePeople, usePunchIn, usePunchOut } from './data';
+import { useDay, useLocationNotice, usePeople, usePunchIn, usePunchOut } from './data';
+import { LocationNoticeBody } from './LocationNotice';
 
 /** Where the device thinks it is, or null if it will not say. */
 interface Fix { lat: number; lng: number; acc: number }
@@ -76,6 +77,7 @@ export function PunchWidget({ empId }: { empId: string }) {
   const layer = useLayer();
   const self = usePeople([empId]);
   const homeSite = self.byId(empId)?.site ?? 'CHN';
+  const { data: notice } = useLocationNotice();
   const [mode, setMode] = useState('');
   /* The employee arrives asynchronously; until then fall back to their base site. */
   const activeMode = mode || (homeSite === 'WFH' ? 'WFH' : homeSite);
@@ -103,12 +105,41 @@ export function PunchWidget({ empId }: { empId: string }) {
 
   const modes = [homeSite === 'WFH' ? 'CHN' : homeSite, 'WFH', 'CLIENT'];
 
+  /*
+   * Shown once, before the first punch that would record a position. Resolves
+   * to whether they acknowledged — a decline is a normal answer, not a
+   * cancellation, so the punch continues either way with no fix attached.
+   */
+  const tellThemFirst = () => new Promise<boolean>((resolve) => {
+    layer.modal({
+      title: notice!.title,
+      sub: 'Please read this before you check in',
+      size: 'narrow',
+      body: (close: () => void) => (
+        <LocationNoticeBody close={close} notice={notice!} onDone={resolve} />
+      ),
+      footer: null,
+      /* Dismissing without choosing is a decline, not a hang. */
+      onClose: () => resolve(false),
+    });
+  });
+
   const doPunch = async (kind: 'in' | 'out') => {
     const ds = ymd(TODAY);
     const site = siteOf(activeMode);
-    if (!site.remote) app.toast('Checking your location…');
 
-    const fix = site.remote ? null : await locate();
+    /*
+     * Only for a mode that is actually fenced. Telling somebody their home
+     * address is recorded, before a punch that never asks for one, would be
+     * a false statement in the other direction.
+     */
+    let mayLocate = site.remote ? false : Boolean(notice?.acknowledgedAt);
+    if (!site.remote && notice && !notice.acknowledgedAt) {
+      mayLocate = await tellThemFirst();
+    }
+
+    if (mayLocate) app.toast('Checking your location…');
+    const fix = mayLocate ? await locate() : null;
     const at = {
       site: activeMode,
       lat: fix?.lat ?? null,

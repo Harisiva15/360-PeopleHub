@@ -208,6 +208,101 @@ function instantOf(at: string | undefined): string {
   return new Date(t).toISOString();
 }
 
+/**
+ * The current version of the location notice.
+ *
+ * Bumped when the wording below changes materially. An acknowledgement of
+ * version 1 does not cover version 2 — which is the whole reason the row
+ * records a version rather than just a date.
+ */
+export const LOCATION_NOTICE_VERSION = 1;
+
+/**
+ * What somebody is told before their position is ever recorded.
+ *
+ * Kept on the server so the wording that was acknowledged and the wording that
+ * is shown cannot drift apart — a notice held only in the screen could be
+ * edited without anybody's acknowledgement ceasing to be claimed as valid.
+ */
+export const LOCATION_NOTICE = {
+  version: LOCATION_NOTICE_VERSION,
+  title: 'Checking in records where you are',
+  body: [
+    'When you check in at an office, the app asks your browser for your position '
+    + 'and stores it against that punch, with how far you were from the site.',
+    'It is used to confirm attendance at a site and to settle disputes about it. '
+    + 'A punch outside the boundary is flagged for review, never refused.',
+    'Working from home or at a client site never asks for a position at all.',
+    'You can decline. Your punches still work and still count — they are simply '
+    + 'recorded without a location.',
+    'Positions are cleared after 24 months. The punch itself is kept, because it '
+    + 'is a payroll record.',
+  ],
+} as const;
+
+export interface LocationNotice {
+  version: number;
+  title: string;
+  body: readonly string[];
+  /** When this person acknowledged this version, or null if they have not. */
+  acknowledgedAt: string | null;
+}
+
+/** Has this person been shown the current notice, and when. */
+export async function locationNotice(caller: Caller): Promise<LocationNotice> {
+  if (!caller.employeeId) {
+    throw new AttendanceError('this login has no employee record', 'forbidden');
+  }
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `SELECT acknowledged_at FROM location_notice
+        WHERE employee_id = $1 AND notice_version = $2`,
+      [caller.employeeId, LOCATION_NOTICE_VERSION]);
+    return {
+      ...LOCATION_NOTICE,
+      acknowledgedAt: (rows[0]?.acknowledged_at as string | undefined) ?? null,
+    };
+  });
+}
+
+/**
+ * Record that this person was shown it.
+ *
+ * Idempotent, and it does not overwrite: re-acknowledging keeps the original
+ * date, because when somebody was first told is the fact that matters. The
+ * caller is the session — acknowledging on behalf of somebody else is exactly
+ * the thing this record exists to make impossible.
+ */
+export async function acknowledgeLocationNotice(caller: Caller): Promise<LocationNotice> {
+  if (!caller.employeeId) {
+    throw new AttendanceError('this login has no employee record', 'forbidden');
+  }
+  return withTenant(caller, async (db) => {
+    await db.query(
+      `INSERT INTO location_notice (employee_id, notice_version)
+       VALUES ($1, $2)
+       ON CONFLICT (tenant_id, employee_id, notice_version) DO NOTHING`,
+      [caller.employeeId, LOCATION_NOTICE_VERSION]);
+    const { rows } = await db.query(
+      `SELECT acknowledged_at FROM location_notice
+        WHERE employee_id = $1 AND notice_version = $2`,
+      [caller.employeeId, LOCATION_NOTICE_VERSION]);
+    return {
+      ...LOCATION_NOTICE,
+      acknowledgedAt: (rows[0]?.acknowledged_at as string | undefined) ?? null,
+    };
+  });
+}
+
+/** Whether this person has been told, inside a transaction already open. */
+async function hasSeenNotice(db: TenantClient, empId: string): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `SELECT 1 FROM location_notice
+      WHERE employee_id = $1 AND notice_version = $2`,
+    [empId, LOCATION_NOTICE_VERSION]);
+  return Boolean(rowCount);
+}
+
 async function reload(db: TenantClient, empId: string, date: string): Promise<AttRecord> {
   const { rows } = await db.query(
     `${PROJECTION} WHERE a.employee_id = $1 AND a.work_date = $2`, [empId, date]);
@@ -228,8 +323,19 @@ export async function punchIn(
   const when = instantOf(at.at);
 
   return withTenant(caller, async (db) => {
+    /*
+     * No notice, no position. The punch itself goes through either way — an
+     * employee who has not read a dialog still worked the day, and refusing it
+     * would be a payroll fault dressed as a privacy control. What is withheld
+     * is the collection, and it is withheld here rather than in the screen, so
+     * a client that sends coordinates anyway achieves nothing.
+     */
+    const told = await hasSeenNotice(db, empId);
+    const lat = told ? at.lat ?? null : null;
+    const lng = told ? at.lng ?? null : null;
+
     const { rows } = await db.query(DERIVE,
-      [empId, when, at.site ?? null, at.lat ?? null, at.lng ?? null]);
+      [empId, when, at.site ?? null, lat, lng]);
     const d = rows[0];
     if (!d) throw new AttendanceError('no such employee', 'not_found');
 
@@ -263,7 +369,7 @@ export async function punchIn(
              distance_m = EXCLUDED.distance_m, geo_ok = EXCLUDED.geo_ok,
              updated_at = now()`,
       [empId, date, at.site === WFH ? 'W' : 'P', when, d.site_id, at.src ?? 'web', d.is_late,
-        at.lat ?? null, at.lng ?? null, remote ? null : d.distance_m, geoOk]);
+        lat, lng, remote ? null : d.distance_m, geoOk]);
 
     return reload(db, empId, date);
   });
@@ -282,8 +388,19 @@ export async function punchOut(
   const when = instantOf(at.at);
 
   return withTenant(caller, async (db) => {
+    /*
+     * No notice, no position. The punch itself goes through either way — an
+     * employee who has not read a dialog still worked the day, and refusing it
+     * would be a payroll fault dressed as a privacy control. What is withheld
+     * is the collection, and it is withheld here rather than in the screen, so
+     * a client that sends coordinates anyway achieves nothing.
+     */
+    const told = await hasSeenNotice(db, empId);
+    const lat = told ? at.lat ?? null : null;
+    const lng = told ? at.lng ?? null : null;
+
     const { rows } = await db.query(DERIVE,
-      [empId, when, at.site ?? null, at.lat ?? null, at.lng ?? null]);
+      [empId, when, at.site ?? null, lat, lng]);
     const d = rows[0];
     if (!d) throw new AttendanceError('no such employee', 'not_found');
 

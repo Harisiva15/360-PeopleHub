@@ -73,6 +73,32 @@ const hhmm = (iso: string): string => {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 };
 
+/**
+ * The location notice, mirroring the server's wording.
+ *
+ * Duplicated rather than imported because the mock cannot reach the server —
+ * and the duplication is the point of the version number: if these drift, the
+ * acknowledgement recorded against version 1 no longer describes what anybody
+ * was shown.
+ */
+const NOTICE = {
+  version: 1,
+  title: 'Checking in records where you are',
+  body: [
+    'When you check in at an office, the app asks your browser for your position '
+    + 'and stores it against that punch, with how far you were from the site.',
+    'It is used to confirm attendance at a site and to settle disputes about it. '
+    + 'A punch outside the boundary is flagged for review, never refused.',
+    'Working from home or at a client site never asks for a position at all.',
+    'You can decline. Your punches still work and still count — they are simply '
+    + 'recorded without a location.',
+    'Positions are cleared after 24 months. The punch itself is kept, because it '
+    + 'is a payroll record.',
+  ],
+} as const;
+
+let noticeAck: string | null = null;
+
 export const attendanceService: AttendanceService = {
   list(q) {
     let out = ATT.slice();
@@ -98,6 +124,16 @@ export const attendanceService: AttendanceService = {
           || r.geoOk === false),
     );
     return ok(rows);
+  },
+
+  locationNotice() {
+    return ok({ ...NOTICE, acknowledgedAt: noticeAck });
+  },
+
+  acknowledgeLocationNotice() {
+    /* Keeps the original date, the way the server's ON CONFLICT DO NOTHING does. */
+    noticeAck = noticeAck ?? new Date().toISOString();
+    return ok({ ...NOTICE, acknowledgedAt: noticeAck });
   },
 
   punchIn(empId, date, at) {

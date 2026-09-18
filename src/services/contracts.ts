@@ -182,8 +182,28 @@ export interface PunchAt {
   at: string;
 }
 
+/**
+ * What somebody is told before a punch ever records where they are.
+ *
+ * Notice rather than consent: the retention register declares legitimate
+ * interest as the basis, and asking somebody to agree while processing anyway
+ * if they decline is worse than not asking. Until it is acknowledged the
+ * server discards any coordinates sent with a punch — the punch still counts.
+ */
+export interface LocationNotice {
+  version: number;
+  title: string;
+  body: readonly string[];
+  /** When this person acknowledged this version, or null if they have not. */
+  acknowledgedAt: string | null;
+}
+
 export interface AttendanceService {
   list(q: AttendanceQuery): Promise<AttRecord[]>;
+  /** The location notice and whether this caller has seen it. */
+  locationNotice(): Promise<LocationNotice>;
+  /** Record that they have. Idempotent; keeps the original date. */
+  acknowledgeLocationNotice(): Promise<LocationNotice>;
   forDay(empId: string, date: string): Promise<AttRecord | null>;
   /** Days worth regularising: absent, or missing one of the two punches. */
   regularisable(empId: string, since: string): Promise<AttRecord[]>;

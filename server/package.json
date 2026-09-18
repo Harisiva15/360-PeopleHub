@@ -14,6 +14,7 @@
     "check:ratelimit": "node --experimental-strip-types scripts/rate-limit.test.mjs",
     "check": "npm run check:schema && npm run check:schema:test && npm run check:ratelimit && npm run typecheck",
     "inspect": "node scripts/inspect.mjs",
+    "retention": "node scripts/retention.mjs",
     "verify:isolation": "node scripts/verify-isolation.mjs",
     "check:tls": "node scripts/check-tls.mjs",
     "ci:bootstrap": "node scripts/ci-bootstrap.mjs",

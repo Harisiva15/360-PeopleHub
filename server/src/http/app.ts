@@ -31,8 +31,9 @@ import {
   approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
 } from '../modules/joiners/service.ts';
 import {
-  actOnRegularisation, AttendanceError, attendanceForDay, listAttendance,
-  punchIn, punchOut, raiseRegularisation, regularisableDays,
+  acknowledgeLocationNotice, actOnRegularisation, AttendanceError, attendanceForDay,
+  listAttendance, locationNotice, punchIn, punchOut, raiseRegularisation,
+  regularisableDays,
 } from '../modules/attendance/service.ts';
 import {
   addRow, approveTimesheet, listTimesheets, recallTimesheet, rejectTimesheet,
@@ -193,6 +194,17 @@ const routes: Route[] = [
         ...(p.get('regularisedOnly') === 'true' ? { regularisedOnly: true } : {}),
       });
     },
+  },
+  {
+    /* Literal before the parameter, or 'location-notice' reads as an empId. */
+    method: 'GET',
+    pattern: '/attendance/location-notice',
+    handler: (c) => locationNotice(c),
+  },
+  {
+    method: 'POST',
+    pattern: '/attendance/location-notice',
+    handler: (c) => acknowledgeLocationNotice(c),
   },
   {
     method: 'GET',

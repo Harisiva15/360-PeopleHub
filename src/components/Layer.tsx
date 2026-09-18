@@ -1,4 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
+} from 'react';
 import type { ReactNode } from 'react';
 
 type Render = ReactNode | ((close: () => void) => ReactNode);
@@ -11,6 +13,16 @@ export interface LayerOpts {
   footer?: Render | null;
   headExtra?: ReactNode;
   size?: 'narrow' | 'wide' | 'xl';
+  /**
+   * Called once when the layer goes away, however it goes — a button inside
+   * it, the ✕, Escape, or a click on the scrim.
+   *
+   * Added for a caller that awaits an answer from the layer: without a hook on
+   * dismissal, closing the dialog any other way leaves that promise pending
+   * forever and the action behind it never finishes. A layer that can be
+   * dismissed has to be able to say so.
+   */
+  onClose?: () => void;
 }
 
 interface LayerApi {
@@ -30,12 +42,25 @@ const resolve = (r: Render, close: () => void): ReactNode => (typeof r === 'func
 export function LayerProvider({ children }: { children: ReactNode }) {
   const [layer, setLayer] = useState<LayerState | null>(null);
 
-  const close = useCallback(() => setLayer(null), []);
+  /*
+   * The open layer's onClose, held in a ref rather than read off state: close
+   * runs during the same tick that clears the state, and reading it from there
+   * would sometimes find it already gone. Cleared as it fires, so a second
+   * close — Escape landing just after a button, say — cannot call it twice.
+   */
+  const onClose = useRef<(() => void) | undefined>(undefined);
+
+  const close = useCallback(() => {
+    const fn = onClose.current;
+    onClose.current = undefined;
+    setLayer(null);
+    fn?.();
+  }, []);
 
   const api = useMemo<LayerApi>(
     () => ({
-      modal: (o) => setLayer({ ...o, kind: 'modal' }),
-      drawer: (o) => setLayer({ ...o, kind: 'drawer' }),
+      modal: (o) => { onClose.current = o.onClose; setLayer({ ...o, kind: 'modal' }); },
+      drawer: (o) => { onClose.current = o.onClose; setLayer({ ...o, kind: 'drawer' }); },
       close,
     }),
     [close],

@@ -59,6 +59,8 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         regularisedOnly: q.regularisedOnly ? 'true' : undefined,
       })}`),
       forDay: (empId, date) => api.get(`/attendance/${empId}/${date}`),
+      locationNotice: () => api.get('/attendance/location-notice'),
+      acknowledgeLocationNotice: () => api.post('/attendance/location-notice'),
       regularisable: (empId, since) =>
         api.get(`/attendance/${empId}/regularisable${qs({ since })}`),
       punchIn: (empId, date, at) =>
