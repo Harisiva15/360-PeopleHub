@@ -50,6 +50,14 @@ const TO_PRIORITY: Record<string, string> = {
 const TO_IV_STATUS: Record<string, string> = {
   scheduled: 'Scheduled', completed: 'Completed', no_show: 'No Show', cancelled: 'No Show',
 };
+/*
+ * Verdicts are stored as the contract writes them and shown as people say
+ * them. Returning the stored form meant the badge — which looks for "Hire" —
+ * matched none of them, so every positive verdict rendered as a red no-hire.
+ */
+const TO_VERDICT: Record<string, string> = {
+  strong_hire: 'Strong Hire', hire: 'Hire', hold: 'Hold', no_hire: 'No Hire',
+};
 
 export interface Requisition {
   id: string;
@@ -233,12 +241,25 @@ const toCand = (r: Record<string, unknown>): Candidate => ({
   offer: null,
 });
 
+/*
+ * The wall-clock time of an interview is the time where it is being held, so
+ * it is rendered in the requisition's site timezone rather than the database
+ * session's. Without the conversion `to_char` uses UTC and a 10:00 booking in
+ * Chennai is shown to everyone — including the panel member — as 04:30.
+ *
+ * A requisition with no site falls back to the same default the site table
+ * itself declares, so a missing site reads as head office rather than as UTC.
+ */
 const IV_PROJECTION = `
   SELECT i.id, i.candidate_id, i.requisition_id, i.round, i.panel_member_id,
          i.mode, i.status, i.verdict, i.feedback,
-         to_char(i.scheduled_at, 'YYYY-MM-DD') AS iv_date,
-         to_char(i.scheduled_at, 'HH24:MI') AS iv_time
-    FROM interview i`;
+         to_char(i.scheduled_at AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'),
+                 'YYYY-MM-DD') AS iv_date,
+         to_char(i.scheduled_at AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'),
+                 'HH24:MI') AS iv_time
+    FROM interview i
+    LEFT JOIN requisition r ON r.id = i.requisition_id
+    LEFT JOIN site s ON s.id = r.site_id`;
 
 const toInterview = (r: Record<string, unknown>): Interview => ({
   id: r.id as string,
@@ -250,7 +271,7 @@ const toInterview = (r: Record<string, unknown>): Interview => ({
   panelId: r.panel_member_id as string,
   mode: (r.mode as string) ?? 'video',
   status: TO_IV_STATUS[r.status as string] ?? 'Scheduled',
-  verdict: (r.verdict as string | null) ?? null,
+  verdict: r.verdict ? TO_VERDICT[r.verdict as string] ?? (r.verdict as string) : null,
   feedback: (r.feedback as string) ?? '',
 });
 

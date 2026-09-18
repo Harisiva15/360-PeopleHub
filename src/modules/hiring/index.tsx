@@ -15,7 +15,14 @@ import { BarChart, Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
-import { useCandidates, useInterviews, useMoveCandidate, useRequisitions, useVisiblePeople } from './data';
+import {
+  useAllEmployees as usePanel, useCandidates, useInterviews, useMoveCandidate,
+  useRequisitions, useVisiblePeople,
+} from './data';
+import {
+  FeedbackForm, MakeOfferForm, NewCandidateForm, NewRequisitionForm,
+  OfferResponseForm, ScheduleInterviewForm,
+} from './Intake';
 import { HiringOverview } from './Overview';
 import { OfferLetter } from './OfferLetter';
 import { TrackerView } from './Tracker';
@@ -163,6 +170,45 @@ function useShowCandidate() {
     });
   };
 
+  /**
+   * What can be done to a candidate depends on where they are.
+   *
+   * Booking an interview, drafting an offer and recording an answer are three
+   * different moments in one conversation, and offering all three at once
+   * invites somebody to record an answer to an offer that was never made.
+   */
+  function StageActions({ c }: { c: Candidate }) {
+    const { data: people = [] } = usePanel();
+    const r = reqOf(c.reqId);
+    const terminal = c.stage === 'hired' || c.stage === 'rejected';
+
+    const open = (title: string, body: (close: () => void) => React.ReactNode) =>
+      layer.modal({ title, sub: c.name, size: 'wide', body, footer: null });
+
+    if (terminal) return null;
+
+    return (
+      <>
+        <button className="btn sm" onClick={() => open('Book an interview',
+          (x) => <ScheduleInterviewForm close={x} cand={c} people={people} />)}>
+          📅 Interview
+        </button>
+        {!c.offer && (
+          <button className="btn sm" onClick={() => open('Draft an offer',
+            (x) => <MakeOfferForm close={x} cand={c} req={r} />)}>
+            📄 Offer
+          </button>
+        )}
+        {c.offer && c.offer.status !== 'Draft' && c.offer.status !== 'Accepted' && (
+          <button className="btn sm" onClick={() => open('Record the answer',
+            (x) => <OfferResponseForm close={x} cand={c} />)}>
+            ✓ Answer
+          </button>
+        )}
+      </>
+    );
+  }
+
   function StageFooter({ c, close }: { c: Candidate; close: () => void }) {
     const [stage, setStage] = useState(c.stage);
     const move = useMoveCandidate();
@@ -184,6 +230,8 @@ function useShowCandidate() {
     return (
       <>
         <button className="btn" onClick={close}>Close</button>
+        <StageActions c={c} />
+        <div className="spacer" />
         <select className="input" style={{ width: 'auto' }} value={stage} onChange={(e) => setStage(e.target.value)}>
           {STAGES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
@@ -198,6 +246,7 @@ function useShowCandidate() {
 function HrPipeline() {
   const { data: CANDS = [] } = useCandidates();
   const { data: REQS = [] } = useRequisitions();
+  const layer = useLayer();
   const { data: INTERVIEWS = [] } = useInterviews();
   const move = useMoveCandidate();
   const app = useApp();
@@ -230,7 +279,13 @@ function HrPipeline() {
           {scope.map((r) => <option key={r.id} value={r.id}>{r.id} — {r.title}</option>)}
         </select>
         <div className="spacer" />
-        <button className="btn" onClick={() => app.toast('Candidate intake is not wired in this build')}>＋ Add candidate</button>
+        <button className="btn primary" onClick={() => layer.modal({
+          title: 'Submit a candidate',
+          sub: 'Against an open requisition',
+          size: 'wide',
+          body: (close: () => void) => <NewCandidateForm close={close} reqs={REQS} />,
+          footer: null,
+        })}>＋ Add candidate</button>
       </div>
 
       <Banner kind="info" icon="🖱️">
@@ -301,9 +356,12 @@ function HrPipeline() {
 function HrReqs() {
   const { data: REQS = [] } = useRequisitions();
   const { data: CANDS = [] } = useCandidates();
+  const { data: people = [] } = usePanel();
   const dir = useVisiblePeople();
   const app = useApp();
   const layer = useLayer();
+  /* The server refuses anyone else; the button is hidden for the same reason. */
+  const canOpen = app.role === 'admin' || app.role === 'manager';
   const list = reqScope(app.role, app.meId, REQS);
   const open = list.filter((r) => r.status === 'Open');
 
@@ -344,6 +402,15 @@ function HrReqs() {
       <div className="toolbar">
         <div className="spacer" />
         <button className="btn" onClick={exportCsv}>⤓ Export</button>
+        {canOpen && (
+          <button className="btn primary" onClick={() => layer.modal({
+            title: 'Open a requisition',
+            sub: 'A role to hire for',
+            size: 'wide',
+            body: (close: () => void) => <NewRequisitionForm close={close} people={people} />,
+            footer: null,
+          })}>＋ Create requisition</button>
+        )}
       </div>
 
       <StatRow cols={4}>
@@ -540,7 +607,9 @@ function HrIvs() {
   const { data: INTERVIEWS = [] } = useInterviews();
   const dir = useVisiblePeople();
   const app = useApp();
+  const layer = useLayer();
   const show = useShowCandidate();
+  const candOf = (id: string) => CANDS.find((x) => x.id === id);
   const mine = INTERVIEWS.filter((i) => app.role === 'admin' || i.panelId === app.meId || isMyReport(app.meId, i.panelId));
   const upcoming = sortBy(mine.filter((i) => i.status === 'Scheduled'), (i) => i.date);
   const done = sortBy(mine.filter((i) => i.status !== 'Scheduled'), (i) => i.date, 'desc');
@@ -559,7 +628,22 @@ function HrIvs() {
         <td><StatusBadge status={i.status} /></td>
         {showV
           ? <td>{i.verdict ? <VerdictBadge v={i.verdict} /> : '—'}</td>
-          : <td className="right"><button className="btn sm" onClick={(e) => { e.stopPropagation(); app.toast('Feedback form is not wired in this build'); }}>Feedback</button></td>}
+          : (
+            <td className="right">
+              <button className="btn sm" onClick={(e) => {
+                e.stopPropagation();
+                layer.modal({
+                  title: 'Interview feedback',
+                  sub: candOf(i.candId)?.name ?? '',
+                  body: (close: () => void) => (
+                    <FeedbackForm close={close} interviewId={i.id}
+                      who={candOf(i.candId)?.name ?? ''} round={i.round} />
+                  ),
+                  footer: null,
+                });
+              }}>Feedback</button>
+            </td>
+          )}
       </tr>
     );
   };
