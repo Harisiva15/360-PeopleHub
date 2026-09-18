@@ -3,13 +3,25 @@
    ============================================================ */
 :root{
   color-scheme: light;
-  --plane:#f5f5f3;
+  /*
+   * The 360 People Hub palette.
+   *
+   * Cool blues rather than the warm neutrals this started with, to match the
+   * cloud mark. Two colours in the brand set cannot carry white text and are
+   * therefore never used behind any: the primary blue #087FF5 reads 3.91
+   * against white and the green #35B96B reads 2.53. Both stay as fills,
+   * charts and accents; --brand is a darkened blue that carries a 15px button
+   * label at 4.60, and --brand-bright is the brand blue itself for everything
+   * that is not text.
+   */
+  --plane:#EDF3FA;
   --surface:#ffffff;
-  --surface-2:#fafaf8;
-  --surface-3:#f0efec;
-  --ink:#0b0b0b;
-  --ink-2:#52514e;
-  --ink-3:#898781;
+  --surface-2:#F4F8FC;
+  --surface-3:#E8F0F8;
+  --ink:#0B2A52;
+  --ink-2:#17365D;
+  /* Darker than the palette's #64748B, which fell to 4.14 on the sunk surface. */
+  --ink-3:#5C6B80;
   /*
    * Two line weights, both lighter than before but not by as much as the first
    * attempt. A card gets only 1.09 of contrast from the plane behind it, so the
@@ -17,18 +29,29 @@
    * dissolving on a cheap monitor. 1.26 is softer than the old 1.32 and still
    * unambiguously a line.
    */
-  --line:#e6e5de;
-  --line-2:#d3d2c8;
-  --brand:#2a78d6;
-  --brand-ink:#184f95;
-  --brand-wash:#eaf2fd;
+  --line:#D9E4F0;
+  --line-2:#BED0E4;
+  /* Carries white at 4.60. See the note above on why it is not #087FF5. */
+  --brand:#0A74DE;
+  --brand-bright:#087FF5;
+  --brand-ink:#0B5CB8;
+  --brand-wash:#E7F2FE;
+  --cyan:#16B8E8;
 
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+  /*
+   * The categorical series keeps its spacing — these have to stay tellable
+   * apart from one another, which is a different constraint from contrast
+   * against a background. Only --s1 moves, onto the brand blue, so a chart and
+   * a button do not sit side by side in two almost-identical blues.
+   */
+  --s1:#087FF5; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
   --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
 
-  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
-  --good-text:#006300;
-  --good-wash:#e6f5e6; --warn-wash:#fdf3dd; --crit-wash:#fbe9e9; --info-wash:#eaf2fd;
+  --good:#1E9E5A; --warn:#C77A06; --serious:#ec835a; --crit:#D23B3B;
+  /* The text variants, darkened until they carry at 4.5 on white. */
+  --good-text:#157A44;
+  --warn-text:#A05F00;
+  --good-wash:#E4F6EC; --warn-wash:#FDF2DE; --crit-wash:#FCEAEA; --info-wash:#E7F2FE;
 
   /*
    * The navigation rail is its own surface, and it is now a quiet one.
@@ -45,14 +68,14 @@
    * uppercase section headers are the tightest at 5.2, and the selected pill's
    * blue is the one white carries at 13.5px.
    */
-  --rail:#f3f2ec;
-  --rail-2:#e7e5db;
-  --rail-sunk:#eae8e0;
-  --rail-line:#dedbd0;
-  --rail-ink:#26251f;
-  --rail-ink-dim:#67655c;
+  --rail:#EAF1FA;
+  --rail-2:#D8E6F5;
+  --rail-sunk:#E0EAF6;
+  --rail-line:#CFDEEE;
+  --rail-ink:#12314F;
+  --rail-ink-dim:#546B85;
   /* The strongest ink on the rail — hover and the open section's header. */
-  --rail-ink-hi:#111110;
+  --rail-ink-hi:#08203A;
 
   /*
    * The sign-in page, which is the only screen with its own ground.
@@ -63,13 +86,16 @@
    * green is darker than the mark's own — the logo's #3aa757 reads at 3.98,
    * which is fine for a logo and short of the 4.5 a heading needs.
    */
-  --login-ground:#f4f9ff;
-  --login-ink:#0f2d52;
+  --login-ground:#F4F8FC;
+  --login-ink:#0B2A52;
   --login-ink-2:#46607f;
   --login-accent:#28804a;
-  /* Not the brand blue: white on #2a78d6 is 4.42, and the nav label is 13.5px
-     so it needs 4.5. This is the nearest blue that carries white legibly. */
-  --rail-on:#2872cc;
+  /*
+   * The selected pill is simply --brand now. It used to be its own blue
+   * because the old brand carried white at 4.42; the current one carries it at
+   * 4.60, so the rail and a primary button can stop being two different blues.
+   */
+  --rail-on:var(--brand);
 
   /*
    * Tinted stat cards. Each is a wash with matching ink, so the figure on it
@@ -117,23 +143,37 @@
 }
 html[data-theme="dark"]{
   color-scheme: dark;
-  --plane:#0d0d0d;
-  --surface:#1a1a19;
-  --surface-2:#212120;
-  --surface-3:#2c2c2a;
-  --ink:#ffffff;
-  --ink-2:#c3c2b7;
-  --ink-3:#898781;
-  --line:#2a2a28;
-  --line-2:#3a3a36;
-  --brand:#3987e5;
-  --brand-ink:#86b6ef;
-  --brand-wash:#16283f;
+  /*
+   * The same palette on a dark ground — cool blues rather than the warm
+   * near-blacks this used to be, so the two themes agree about what the
+   * product is.
+   *
+   * --brand keeps the light theme's value. A brighter blue is the instinct in
+   * a dark theme and it is wrong here: white on #3E9BFF reads 2.86, while the
+   * same #0A74DE carries white at 4.60 and still stands clear of the card at
+   * 3.88. The brighter blue stays as --brand-bright for fills and charts.
+   */
+  --plane:#080C12;
+  --surface:#121820;
+  --surface-2:#0F141B;
+  --surface-3:#1B2430;
+  --ink:#EAF2FB;
+  --ink-2:#B4C6DA;
+  --ink-3:#8497AD;
+  --line:#25313F;
+  --line-2:#35455A;
+  --brand:#0A74DE;
+  --brand-bright:#3E9BFF;
+  --brand-ink:#8CC4FF;
+  --brand-wash:#132537;
+  --cyan:#46CBF5;
 
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+  --s1:#3E9BFF; --s2:#d95926; --s3:#199e70; --s4:#c98500;
   --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
-  --good-text:#0ca30c;
-  --good-wash:#122a12; --warn-wash:#332711; --crit-wash:#331616; --info-wash:#16283f;
+  --good:#3FBE79; --warn:#D99413; --crit:#E56A6A;
+  --good-text:#5DD196;
+  --warn-text:#E8AE43;
+  --good-wash:#122A1E; --warn-wash:#2E2411; --crit-wash:#301818; --info-wash:#132537;
   /*
    * Lifted off the page rather than sunk below it, and neutral rather than
    * navy — the same reasoning as the light theme, so the two agree about what
@@ -141,14 +181,14 @@ html[data-theme="dark"]{
    * carried white at only 3.64, which had been failing here since the dark
    * theme was written.
    */
-  --rail:#202021;
-  --rail-2:#2e2e2e;
-  --rail-sunk:#191919;
-  --rail-line:#383835;
-  --rail-ink:#dedcd4;
-  --rail-ink-dim:#97958c;
+  --rail:#161D26;
+  --rail-2:#222C39;
+  --rail-sunk:#10161D;
+  --rail-line:#2A3644;
+  --rail-ink:#E4EDF7;
+  --rail-ink-dim:#93A6BA;
   --rail-ink-hi:#ffffff;
-  --rail-on:#2872cc;
+  --rail-on:var(--brand);
 
   /*
    * The same page on a dark ground. The tile tints are redefined rather than
@@ -156,9 +196,9 @@ html[data-theme="dark"]{
    * and would glare, so each becomes a dark plate at about 1.2 — enough to
    * read as a tile, not enough to shout.
    */
-  --login-ground:#14181d;
-  --login-ink:#eaf1f8;
-  --login-ink-2:#a8bacd;
+  --login-ground:#0F141B;
+  --login-ink:#EAF2FB;
+  --login-ink-2:#B4C6DA;
   --login-accent:#5fc183;
 
   --t-blue:#16283f;   --t-blue-ink:#9cc4f5;
