@@ -11,13 +11,16 @@ export const useAllEmployees = () => useQuery((s) => s.employees.active(), []);
 export const useOvertime = (empIds?: string[], status?: Overtime['status']) =>
   useQuery((s) => s.shifts.overtime(empIds, status), [empIds ? empIds.join(',') : 'all', status ?? '']);
 export const useApproveOvertime = () =>
-  useMutation((s, id: string, approverId: string) => s.shifts.approveOvertime(id, approverId));
+  useMutation((s, id: string) => s.shifts.approveOvertime(id));
+export const useRejectOvertime = () =>
+  useMutation((s, id: string) => s.shifts.rejectOvertime(id));
 export const useRaiseOvertime = () => useMutation((s, o: NewOvertime) => s.shifts.raiseOvertime(o));
 
-export const useRoster = (empIds: string[]) =>
-  useQuery((s) => s.shifts.roster(empIds), [empIds.join(',')]);
+export const useShiftProfiles = () => useQuery((s) => s.shifts.profiles(), []);
+export const useRoster = (empIds: string[], from: string, days: number) =>
+  useQuery((s) => s.shifts.roster(empIds, from, days), [empIds.join(','), from, String(days)]);
 export const useSetShift = () =>
-  useMutation((s, empId: string, date: string, shiftId: string) => s.shifts.setShift(empId, date, shiftId));
+  useMutation((s, empId: string, shiftCode: string) => s.shifts.setShift(empId, shiftCode));
 export const useTodayCoverage = () => useQuery((s) => s.shifts.todayCoverage(), []);
 
 export const useLeaveBalance = (empId: string, type: string) =>

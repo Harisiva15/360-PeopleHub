@@ -130,11 +130,17 @@ const LEAVE_TYPES = [
   ['PL', 'Paternity Leave', 5, 0, false],
   ['LOP', 'Loss of Pay', 0, 0, false],
 ];
+/*
+ * Regional working-hours profiles, not rotational patterns — see migration
+ * 0015. The prototype's General / Early / Night / Flexible are gone: they
+ * carried no timezone, which is the one thing a shift has to know once
+ * somebody in Chennai works US hours.
+ */
 const SHIFTS = [
-  ['GEN', 'General', '09:30', '18:30', false],
-  ['EARLY', 'Early', '06:00', '15:00', false],
-  ['NIGHT', 'Night', '21:30', '06:30', true],
-  ['FLEX', 'Flexible', null, null, false],
+  ['IN', 'India Shift', '09:30', '18:30', 'Asia/Kolkata', 'IN'],
+  ['US', 'US Shift', '09:00', '18:00', 'America/New_York', 'US'],
+  ['UK', 'UK Shift', '09:00', '17:30', 'Europe/London', 'GB'],
+  ['AE', 'UAE Shift', '09:00', '18:00', 'Asia/Dubai', 'AE'],
 ];
 
 const client = new pg.Client({ connectionString: url, ssl: sslConfig() });
@@ -189,11 +195,14 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
       [tenant, code, name]);
   }
-  for (const [code, name, start, end, night] of SHIFTS) {
-    await q(`INSERT INTO shift (tenant_id, code, name, starts_at, ends_at, is_night, is_flexible)
+  for (const [code, name, start, end, tz, region] of SHIFTS) {
+    await q(`INSERT INTO shift (tenant_id, code, name, starts_at, ends_at, timezone, region)
              VALUES ($1,$2,$3,$4,$5,$6,$7)
-             ON CONFLICT (tenant_id, code) DO UPDATE SET name = EXCLUDED.name`,
-      [tenant, code, name, start, end, night, code === 'FLEX']);
+             ON CONFLICT (tenant_id, code)
+             DO UPDATE SET name = EXCLUDED.name, starts_at = EXCLUDED.starts_at,
+                           ends_at = EXCLUDED.ends_at, timezone = EXCLUDED.timezone,
+                           region = EXCLUDED.region`,
+      [tenant, code, name, start, end, tz, region]);
   }
   for (const [code, name, city, country, lat, lng, radius] of SITES) {
     await q(`INSERT INTO site (tenant_id, code, name, city, country,

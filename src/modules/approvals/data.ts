@@ -69,7 +69,8 @@ export const useApproveClaim = () => useMutation((s, id: string, by: string) => 
 export const useRejectClaim = () =>
   useMutation((s, id: string, by: string, note: string) => s.expenses.rejectClaim(id, by, note));
 export const useReimburseClaim = () => useMutation((s, id: string) => s.expenses.reimburseClaim(id));
-export const useApproveOvertime = () => useMutation((s, id: string, by: string) => s.shifts.approveOvertime(id, by));
+export const useApproveOvertime = () => useMutation((s, id: string) => s.shifts.approveOvertime(id));
+export const useRejectOvertime = () => useMutation((s, id: string) => s.shifts.rejectOvertime(id));
 export const useApproveLoan = () => useMutation((s, id: string) => s.loans.approve(id));
 export const useIssueLetter = () => useMutation((s, id: string) => s.letters.issue(id));
 

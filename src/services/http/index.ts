@@ -294,6 +294,28 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.post<LeaveRequest>(`/leave/${id}/reject`, { note }),
       cancel: (id: string) => api.post<LeaveRequest>(`/leave/${id}/cancel`),
     },
+
+    shifts: {
+      profiles: () => api.get('/shifts'),
+      todayCoverage: () => api.get('/shifts/coverage'),
+      roster: (empIds, from, days) =>
+        (empIds.length
+          ? api.get(`/shifts/roster${qs({ empIds: empIds.join(','), from, days: String(days) })}`)
+          : Promise.resolve({})),
+      /*
+       * A profile change is a change to the person, so it hangs off the
+       * employee rather than off a date — migration 0015 dropped the per-day
+       * roster the old signature assumed.
+       */
+      setShift: (empId, shiftCode) =>
+        api.put(`/employees/${empId}/shift`, { shift: shiftCode }),
+      overtime: (empIds, status) =>
+        api.get(`/overtime${qs({ empIds: empIds?.join(','), status })}`),
+      raiseOvertime: (o) => api.post('/overtime', o),
+      /* No approver argument: the server takes it from the session. */
+      approveOvertime: (id) => api.post(`/overtime/${id}/approve`),
+      rejectOvertime: (id) => api.post(`/overtime/${id}/reject`),
+    },
   };
 }
 

@@ -116,7 +116,7 @@ function Approvals() {
 
   const approveOt = async (o: Overtime) => {
     try {
-      await doApproveOt.mutate(o.id, app.meId);
+      await doApproveOt.mutate(o.id);
       app.toast('Overtime approved', 'ok');
     } catch (e) { fail(e); }
   };

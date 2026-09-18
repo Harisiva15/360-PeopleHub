@@ -5,7 +5,7 @@
  * of its own; splitting them into three files would be filing, not design.
  */
 
-import { daysBetween, TODAY, ymd } from '../../lib/dates';
+import { addDays, daysBetween, isWeekend, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { ACTIVE, empName } from '../../data/employees';
 import { LEAVE_BAL } from '../../data/leave';
 import { OVERTIME, ROSTER, SHIFTS } from '../../data/shifts';
@@ -23,7 +23,22 @@ import { ok } from './util';
 const hhmmOf = (d: Date) =>
   String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 
+/** Everyone currently on a given profile, by their standing shift. */
+const onShift = (code: string) =>
+  ACTIVE().filter((e) => {
+    const week = ROSTER[e.id] ?? {};
+    return Object.values(week).some((s) => s === code);
+  });
+
 export const shiftService: ShiftService = {
+  profiles() {
+    return ok(SHIFTS.map((s) => ({
+      id: s.id, code: s.id, name: s.n, start: s.start, end: s.end,
+      timezone: s.tz, region: s.region, night: s.night, flexible: false,
+      headcount: onShift(s.id).length,
+    })));
+  },
+
   overtime(empIds, status) {
     let out = OVERTIME.slice();
     if (empIds) {
@@ -34,57 +49,83 @@ export const shiftService: ShiftService = {
     return ok(out);
   },
 
-  approveOvertime(id, approverId) {
+  approveOvertime(id) {
     const o = OVERTIME.find((x) => x.id === id);
     if (!o) return Promise.reject(new Error('No such overtime record: ' + id));
-    if (o.status === 'Approved') return Promise.reject(new Error('Already approved'));
+    if (o.status !== 'Pending') return Promise.reject(new Error('That claim was already ' + o.status.toLowerCase()));
     o.status = 'Approved';
-    o.approverId = approverId;
-    /* Comp off is earned on approval — eight hours to the day. */
-    const bal = LEAVE_BAL[o.empId]?.CO;
-    if (o.compensation === 'Comp Off' && bal) bal.quota += Math.round(o.hours / 8);
+    /*
+     * Eight hours to the day, rounded *down*: a part-day credit is not
+     * something the leave ledger can hold, and rounding up would hand out a
+     * full day for five hours' work.
+     */
+    if (o.compensation === 'Comp Off') {
+      const days = Math.floor(o.hours / 8);
+      const bal = LEAVE_BAL[o.empId]?.CO;
+      if (days > 0 && bal) { bal.quota += days; o.credited = days; }
+    }
+    return ok(o);
+  },
+
+  rejectOvertime(id) {
+    const o = OVERTIME.find((x) => x.id === id);
+    if (!o) return Promise.reject(new Error('No such overtime record: ' + id));
+    if (o.status !== 'Pending') return Promise.reject(new Error('That claim was already ' + o.status.toLowerCase()));
+    o.status = 'Rejected';
     return ok(o);
   },
 
   raiseOvertime(o) {
-    if (o.hours <= 0) return Promise.reject(new Error('Overtime must be at least an hour'));
-    if (o.hours > 12) return Promise.reject(new Error('More than 12 hours in a day needs an exception'));
+    if (o.hours <= 0) return Promise.reject(new Error('Overtime must be more than zero hours'));
+    if (o.hours > 12) return Promise.reject(new Error('More than 12 hours in one day needs an exception, not a claim'));
     if (!o.reason.trim()) return Promise.reject(new Error('Say what the extra hours were for'));
+    if (o.date > ymd(TODAY)) return Promise.reject(new Error('That day has not happened yet'));
     const row: Overtime = {
       id: 'OT-' + (900 + OVERTIME.length),
       empId: o.empId, date: o.date, hours: o.hours, reason: o.reason,
-      status: 'Pending', compensation: o.compensation, approverId: null,
+      status: 'Pending', compensation: o.compensation, approverId: null, credited: 0,
     };
     OVERTIME.unshift(row);
     return ok(row);
   },
 
-  roster(empIds) {
+  roster(empIds, from, days) {
     const out: Record<string, Record<string, string>> = {};
-    empIds.forEach((id) => { out[id] = { ...(ROSTER[id] ?? {}) }; });
-    return ok(out);
-  },
-
-  setShift(empId, date, shiftId) {
-    if (shiftId !== 'OFF' && !SHIFTS.some((s) => s.id === shiftId)) {
-      return Promise.reject(new Error('That is not a shift pattern'));
-    }
-    ROSTER[empId] = ROSTER[empId] ?? {};
-    ROSTER[empId][date] = shiftId;
-    return ok({ empId, date, shiftId });
-  },
-
-  todayCoverage() {
-    const today = ymd(TODAY);
-    const out: Record<string, number> = {};
-    SHIFTS.forEach((s) => { out[s.id] = 0; });
-    ACTIVE().forEach((e) => {
-      const s = ROSTER[e.id]?.[today];
-      if (s && out[s] !== undefined) out[s] += 1;
+    empIds.forEach((id) => {
+      const week: Record<string, string> = {};
+      for (let i = 0; i < days; i++) {
+        const d = ymd(addDays(parseYmd(from), i));
+        /* Fall back to the standing profile when the window runs past what is generated. */
+        week[d] = ROSTER[id]?.[d]
+          ?? (isWeekend(parseYmd(d)) ? 'OFF' : standingOf(id));
+      }
+      out[id] = week;
     });
     return ok(out);
   },
+
+  setShift(empId, shiftCode) {
+    if (!SHIFTS.some((s) => s.id === shiftCode)) {
+      return Promise.reject(new Error('No such shift: ' + shiftCode));
+    }
+    /* A profile change applies to every day, because it is a change to the person. */
+    const week = ROSTER[empId] ?? (ROSTER[empId] = {});
+    Object.keys(week).forEach((d) => { if (week[d] !== 'OFF') week[d] = shiftCode; });
+    return ok({ empId, shift: shiftCode });
+  },
+
+  todayCoverage() {
+    const out: Record<string, number> = {};
+    SHIFTS.forEach((s) => { out[s.id] = onShift(s.id).length; });
+    return ok(out);
+  },
 };
+
+/** The profile somebody is on, read off whichever working day is generated. */
+function standingOf(empId: string): string {
+  const week = ROSTER[empId] ?? {};
+  return Object.values(week).find((s) => s !== 'OFF') ?? 'IN';
+}
 
 export const loanService: LoanService = {
   list(status) {

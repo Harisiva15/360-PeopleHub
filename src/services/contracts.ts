@@ -372,19 +372,54 @@ export interface NewOvertime {
   compensation: Overtime['compensation'];
 }
 
+/** A working-hours profile, with how many people are on it. */
+export interface ShiftProfile {
+  id: string;
+  code: string;
+  name: string;
+  start: string;
+  end: string;
+  /** The clock these hours are measured against, as an IANA name. */
+  timezone: string;
+  region: string;
+  night: boolean;
+  flexible: boolean;
+  headcount: number;
+}
+
+/**
+ * Shifts and overtime.
+ *
+ * **A shift is a region's working hours, not a rotation.** Migration 0015
+ * dropped the per-day roster table: somebody in Chennai working US hours does
+ * not rotate, and the timezone — the part that decides whether a 21:30 punch
+ * is late — had nowhere to live in the old model.
+ *
+ * So `roster` reports each person's standing profile across a span of days
+ * rather than a grid somebody fills in, and `setShift` changes the person
+ * rather than a day.
+ */
 export interface ShiftService {
+  /** The working-hours profiles this tenant runs, with headcount on each. */
+  profiles(): Promise<ShiftProfile[]>;
   overtime(empIds?: string[], status?: Overtime['status']): Promise<Overtime[]>;
   /**
    * Approving credits comp off when that is the compensation, which is why the
-   * two happen together behind the service rather than in the screen.
+   * two happen together behind the service rather than in the screen. The
+   * approver is the session, not an argument — passing it would let a caller
+   * sign somebody else's name.
    */
-  approveOvertime(id: string, approverId: string): Promise<Overtime>;
+  approveOvertime(id: string): Promise<Overtime>;
+  rejectOvertime(id: string): Promise<Overtime>;
   raiseOvertime(o: NewOvertime): Promise<Overtime>;
-  /** The roster for a set of people, keyed by employee id then date. */
-  roster(empIds: string[]): Promise<Record<string, Record<string, string>>>;
-  /** Reassign one person's shift on one day. Refuses an unknown pattern. */
-  setShift(empId: string, date: string, shiftId: string): Promise<{ empId: string; date: string; shiftId: string }>;
-  /** How many people are on each shift pattern today. */
+  /**
+   * Each person's shift across `days` from `from`, keyed by employee then
+   * date. Every working day carries the same code; weekends come back 'OFF'.
+   */
+  roster(empIds: string[], from: string, days: number): Promise<Record<string, Record<string, string>>>;
+  /** Move somebody onto a different profile. Takes effect now, not on a date. */
+  setShift(empId: string, shiftCode: string): Promise<{ empId: string; shift: string }>;
+  /** How many active people are on each shift profile. */
   todayCoverage(): Promise<Record<string, number>>;
 }
 

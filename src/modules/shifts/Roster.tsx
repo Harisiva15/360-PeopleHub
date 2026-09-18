@@ -1,20 +1,25 @@
 /**
- * The roster — who is on which shift, a week at a time.
+ * The roster — who works which hours, a week at a time.
  *
  * People down the side, days across the top, and a coloured cell where they
  * meet. That shape is the point: a rota is read by scanning a row to see one
  * person's week and scanning a column to see whether Tuesday is covered, and
  * both have to be possible without clicking anything.
  *
- * **The cell says the shift, not a location.** What the system actually knows
- * is which pattern somebody is on — General, Early, Mid, Night — and the hours
- * that pattern runs. Labelling cells "Office" or "Remote" would be inventing a
- * fact nobody has recorded; the work mode is captured at punch-in, on
- * attendance, and belongs there rather than on a plan made a week earlier.
+ * **The row is one shift, not seven decisions.** Migration 0015 dropped the
+ * per-day roster table: this business does not rotate, it spans timezones, so
+ * a shift is a standing working-hours profile tagged on the person. Changing
+ * it changes every day, which is why the control sits at the start of the row
+ * rather than in each cell — a per-cell dropdown would offer a choice the
+ * system cannot store, and would quietly discard four of the five days you set.
+ *
+ * **The cell says the shift, not a location.** What the system knows is which
+ * hours somebody keeps. Labelling cells "Office" or "Remote" would invent a
+ * fact nobody recorded; the work mode is captured at punch-in, on attendance.
  *
  * **Every colour is repeated by a word.** The legend explains the palette, but
- * the shift name is in the cell regardless, because a rota read by someone
- * colour-blind, or printed in grey, still has to say who is working nights.
+ * the shift code is in the cell regardless, because a rota read by someone
+ * colour-blind, or printed in grey, still has to say who works which hours.
  */
 
 import { useMemo, useState } from 'react';
@@ -25,7 +30,7 @@ import { downloadCSV } from '../../lib/csv';
 import { Avatar, Badge, Card, EmptyState, Seg, StatRow, Tile } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 import { visibleIds } from '../../state/rbac';
-import { useAllEmployees, useRoster, useSetShift } from './data';
+import { useAllEmployees, useRoster, useSetShift, useShiftProfiles } from './data';
 
 /** 12-hour clock, because a rota is read by people not machines. */
 function h12(t: string): string {
@@ -36,12 +41,24 @@ function h12(t: string): string {
   return `${hour}:${String(m).padStart(2, '0')} ${suffix}`;
 }
 
-/** Assignable values: every pattern, plus the day off. */
-const ASSIGNABLE = [...SHIFTS.map((s) => ({ id: s.id, n: s.n })), { id: 'OFF', n: 'Off' }];
+/**
+ * The local time in a shift's own zone, so "09:00 New York" is not read as
+ * nine o'clock here. Only shown where the zone differs from the reader's.
+ */
+function offsetNote(tz: string): string | null {
+  try {
+    const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!tz || tz === here) return null;
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date()) + ' there now';
+  } catch { return null; }
+}
 
 export function RosterView() {
   const app = useApp();
   const { data: people = [] } = useAllEmployees();
+  const { data: profiles = [] } = useShiftProfiles();
   const setShift = useSetShift();
 
   const [ws, setWs] = useState(() => ymd(mondayOf(TODAY)));
@@ -58,41 +75,61 @@ export function RosterView() {
 
   /* Only people the caller may see; a rota is still a list of colleagues. */
   const allowed = useMemo(() => new Set(visibleIds(app.role, app.meId)), [app.role, app.meId]);
-  const roster = useRoster(people.filter((e) => allowed.has(e.id)).map((e) => e.id));
+  const visible = useMemo(() => people.filter((e) => allowed.has(e.id)), [people, allowed]);
+  const ids = useMemo(() => visible.map((e) => e.id), [visible]);
+  const roster = useRoster(ids, ws, days);
 
-  const rows = people
-    .filter((e) => allowed.has(e.id))
+  /* Profiles come from the server where it is live, and fall back to the
+     four the mock knows about, so the legend is never empty. */
+  const shiftList = profiles.length
+    ? profiles.map((p) => ({ id: p.code, n: p.name, tz: p.timezone, region: p.region, c: shiftOf(p.code).c }))
+    : SHIFTS.map((s) => ({ id: s.id, n: s.n, tz: s.tz, region: s.region, c: s.c }));
+
+  const cellOf = (empId: string, date: string) => roster.data?.[empId]?.[date] ?? 'IN';
+  /** Somebody's standing profile: whichever code their working days carry. */
+  const standingOf = (empId: string) =>
+    dates.map((d) => cellOf(empId, d)).find((s) => s !== 'OFF') ?? 'IN';
+
+  const rows = visible
     .filter((e) => (!dept || e.dept === dept) && (!site || e.site === site))
     .filter((e) => !q.trim() || e.name.toLowerCase().includes(q.trim().toLowerCase()))
-    .filter((e) => !shift
-      || dates.some((d) => (roster.data?.[e.id]?.[d] ?? 'GEN') === shift));
-
-  const cellOf = (empId: string, date: string) => roster.data?.[empId]?.[date] ?? 'GEN';
+    .filter((e) => !shift || standingOf(e.id) === shift);
 
   /* Coverage counts people working, so a day off is not a shift. */
   const working = dates.map((d) => rows.filter((e) => cellOf(e.id, d) !== 'OFF').length);
-  const nights = rows.reduce((n, e) =>
-    n + dates.filter((d) => shiftOf(cellOf(e.id, d)).night).length, 0);
   const offDays = rows.reduce((n, e) =>
     n + dates.filter((d) => cellOf(e.id, d) === 'OFF').length, 0);
+  /*
+   * The whole reason the timezone moved onto the shift: people measured
+   * against a clock that is not their office's. Compared by country rather
+   * than by code, because the UK shift's region is GB and its code is not.
+   */
+  const awayHours = rows.filter((e) => {
+    const s = shiftList.find((x) => x.id === standingOf(e.id));
+    return s ? s.region !== siteOf(e.site).country : false;
+  }).length;
 
   const mayEdit = app.role === 'admin' || app.role === 'manager';
 
-  const assign = async (empId: string, date: string, shiftId: string) => {
+  const assign = async (empId: string, shiftCode: string) => {
     try {
-      await setShift.mutate(empId, date, shiftId);
+      await setShift.mutate(empId, shiftCode);
+      app.toast('Shift changed', 'ok');
     } catch (e) {
       app.toast(e instanceof Error ? e.message : 'Could not change the shift', 'err');
     }
   };
 
   const exportCsv = () => downloadCSV(`roster-${ws}.csv`,
-    [['Employee', 'Designation', 'Department', 'Location', ...dates.map((d) => fmtDS(d))]].concat(
-      rows.map((e) => [e.name, e.designation, deptOf(e.dept).name, siteOf(e.site).city,
-        ...dates.map((d) => {
-          const s = cellOf(e.id, d);
-          return s === 'OFF' ? 'Off' : `${shiftOf(s).n} ${shiftOf(s).start}–${shiftOf(s).end}`;
-        })])));
+    [['Employee', 'Designation', 'Department', 'Location', 'Shift', 'Hours', 'Timezone',
+      ...dates.map((d) => fmtDS(d))]].concat(
+      rows.map((e) => {
+        const code = standingOf(e.id);
+        const s = shiftOf(code);
+        return [e.name, e.designation, deptOf(e.dept).name, siteOf(e.site).city,
+          s.n, `${s.start}–${s.end}`, s.tz,
+          ...dates.map((d) => (cellOf(e.id, d) === 'OFF' ? 'Off' : code))];
+      })));
 
   return (
     <div className="stack">
@@ -116,7 +153,7 @@ export function RosterView() {
         </select>
         <select className="input sm" value={shift} onChange={(e) => setShiftFilter(e.target.value)}>
           <option value="">All shifts</option>
-          {ASSIGNABLE.map((s) => <option key={s.id} value={s.id}>{s.n}</option>)}
+          {shiftList.map((s) => <option key={s.id} value={s.id}>{s.n}</option>)}
         </select>
         <Seg value={span} onChange={setSpan} options={[
           { v: 'week', label: 'Week' },
@@ -135,8 +172,8 @@ export function RosterView() {
         <Tile icon="📅" label="Covered today"
           value={working[dates.indexOf(ymd(TODAY))] ?? '—'}
           foot={dates.includes(ymd(TODAY)) ? 'Working today' : 'Today is outside this range'} />
-        <Tile icon="🌙" label="Night shifts" value={nights}
-          foot="Across the period shown" />
+        <Tile icon="🌍" label="On another country's hours" value={awayHours}
+          foot="Measured against a client's clock" />
         <Tile icon="🛌" label="Days off" value={offDays} foot="Across the period shown" />
       </StatRow>
 
@@ -147,6 +184,7 @@ export function RosterView() {
               <thead>
                 <tr>
                   <th style={{ minWidth: 190 }}>Employee</th>
+                  <th style={{ minWidth: 150 }}>Shift</th>
                   {dates.map((d) => {
                     const today = d === ymd(TODAY);
                     return (
@@ -161,50 +199,53 @@ export function RosterView() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((e) => (
-                  <tr key={e.id}>
-                    <td>
-                      <div className="person">
-                        <Avatar name={e.name} size="sm" />
-                        <div style={{ minWidth: 0 }}>
-                          <div className="nm">{e.name}</div>
-                          <div className="mt">{e.designation}</div>
+                {rows.map((e) => {
+                  const code = standingOf(e.id);
+                  const s = shiftOf(code);
+                  const away = offsetNote(s.tz);
+                  return (
+                    <tr key={e.id}>
+                      <td>
+                        <div className="person">
+                          <Avatar name={e.name} size="sm" />
+                          <div style={{ minWidth: 0 }}>
+                            <div className="nm">{e.name}</div>
+                            <div className="mt">{e.designation}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    {dates.map((d) => {
-                      const id = cellOf(e.id, d);
-                      const s = shiftOf(id);
-                      const off = id === 'OFF';
-                      return (
-                        <td key={d} className="rost-cell">
-                          {mayEdit ? (
-                            <select
-                              className={'rost' + (off ? ' off' : '')}
-                              style={off ? undefined : { borderLeftColor: s.c }}
-                              value={id}
-                              onChange={(ev) => assign(e.id, d, ev.target.value)}
-                              title={off ? 'Day off' : `${s.n} · ${h12(s.start)} – ${h12(s.end)}`}>
-                              {ASSIGNABLE.map((o) => (
-                                <option key={o.id} value={o.id}>{o.n}</option>
-                              ))}
-                            </select>
-                          ) : (
+                      </td>
+                      <td>
+                        {mayEdit ? (
+                          <select className="rost" style={{ borderLeftColor: s.c }}
+                            value={code} onChange={(ev) => assign(e.id, ev.target.value)}
+                            title={`${s.n} · ${h12(s.start)} – ${h12(s.end)} ${s.tz}`}>
+                            {shiftList.map((o) => (
+                              <option key={o.id} value={o.id}>{o.n}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="rost" style={{ borderLeftColor: s.c }}>{s.n}</div>
+                        )}
+                        <div className="muted" style={{ fontSize: 10.5, marginTop: 3 }}>
+                          {h12(s.start)} – {h12(s.end)}{away ? ` · ${away}` : ''}
+                        </div>
+                      </td>
+                      {dates.map((d) => {
+                        const cell = cellOf(e.id, d);
+                        const off = cell === 'OFF';
+                        return (
+                          <td key={d} className="rost-cell">
                             <div className={'rost' + (off ? ' off' : '')}
-                              style={off ? undefined : { borderLeftColor: s.c }}>
-                              {off ? 'Off' : s.n}
+                              style={off ? undefined : { borderLeftColor: s.c }}
+                              title={off ? 'Week off' : `${s.n} · ${h12(s.start)} – ${h12(s.end)}`}>
+                              {off ? 'Off' : cell}
                             </div>
-                          )}
-                          {!off && (
-                            <div className="muted" style={{ fontSize: 10.5, marginTop: 3 }}>
-                              {s.start === '—' ? 'Flexible' : `${h12(s.start)} – ${h12(s.end)}`}
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -217,7 +258,7 @@ export function RosterView() {
             Showing {rows.length} of {people.length} employees
           </span>
           <div className="spacer" />
-          {SHIFTS.map((s) => (
+          {shiftList.map((s) => (
             <span key={s.id} className="row" style={{ gap: 5, fontSize: 11.5 }}>
               <i style={{
                 width: 9, height: 9, borderRadius: 3, background: s.c, display: 'inline-block',
@@ -234,7 +275,14 @@ export function RosterView() {
         </div>
       </Card>
 
-      {!mayEdit && <Badge kind="info">Your manager sets the rota; this is a read-only view</Badge>}
+      {mayEdit
+        ? (
+          <Badge kind="info">
+            A shift is the hours somebody keeps, not a day's assignment — changing it
+            applies from now on, every working day.
+          </Badge>
+        )
+        : <Badge kind="info">Your manager sets the shift; this is a read-only view</Badge>}
     </div>
   );
 }

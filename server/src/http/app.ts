@@ -85,6 +85,10 @@ import {
   collectionSummary, DocumentError, listRequests as listDocRequests, requestDocument,
   requestJoinerDocuments, setRequestStatus,
 } from '../modules/documents/service.ts';
+import {
+  actOnOvertime, listOvertime, listShifts, raiseOvertime, rosterFor,
+  setEmployeeShift, ShiftError, shiftCoverage,
+} from '../modules/shifts/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -865,6 +869,61 @@ const routes: Route[] = [
     pattern: '/leave/:id/cancel',
     handler: (caller, _req, params) => cancelLeave(caller, params.id!),
   },
+
+  /* ---- shifts and overtime ---- */
+  {
+    method: 'GET',
+    pattern: '/shifts',
+    handler: (c) => listShifts(c),
+  },
+  {
+    method: 'GET',
+    pattern: '/shifts/coverage',
+    handler: (c) => shiftCoverage(c),
+  },
+  {
+    // ?empIds=a,b&from=2026-09-14&days=14
+    method: 'GET',
+    pattern: '/shifts/roster',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      const ids = q.get('empIds');
+      return rosterFor(c, ids ? ids.split(',').filter(Boolean) : [],
+        q.get('from') ?? '', Number(q.get('days') ?? 7));
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: '/employees/:id/shift',
+    handler: (c, _r, p, body) =>
+      setEmployeeShift(c, p.id!, (body as { shift: string }).shift),
+  },
+  {
+    method: 'GET',
+    pattern: '/overtime',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      const ids = q.get('empIds');
+      return listOvertime(c,
+        ids ? ids.split(',').filter(Boolean) : undefined,
+        q.get('status') ?? undefined);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/overtime',
+    handler: (c, _r, _p, body) => raiseOvertime(c, body as Parameters<typeof raiseOvertime>[1]),
+  },
+  {
+    method: 'POST',
+    pattern: '/overtime/:id/approve',
+    handler: (c, _r, p) => actOnOvertime(c, p.id!, 'approved'),
+  },
+  {
+    method: 'POST',
+    pattern: '/overtime/:id/reject',
+    handler: (c, _r, p) => actOnOvertime(c, p.id!, 'rejected'),
+  },
 ];
 
 export class NotFound extends Error {}
@@ -981,6 +1040,12 @@ function statusFor(error: unknown): { status: number; message: string } {
   }
   if (error instanceof HiringError) {
     const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof ShiftError) {
+    const status = error.code === 'forbidden' || error.code === 'self_approval' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
     return { status, message: error.message };

@@ -200,9 +200,9 @@ const check = (label: string, got: unknown, want: unknown) => {
   const pendingOt = await s.shifts.overtime(undefined, 'Pending');
   if (pendingOt.length) {
     const o = pendingOt[0];
-    await s.shifts.approveOvertime(o.id, DEMO_MGR.id);
+    await s.shifts.approveOvertime(o.id);
     let otTwice = false;
-    try { await s.shifts.approveOvertime(o.id, DEMO_MGR.id); } catch { otTwice = true; }
+    try { await s.shifts.approveOvertime(o.id); } catch { otTwice = true; }
     check('overtime is approved once', otTwice, true);
   }
 
@@ -306,22 +306,58 @@ const check = (label: string, got: unknown, want: unknown) => {
   } catch { badHours = true; }
   check('more than 12 hours needs an exception', badHours, true);
 
-  await s.shifts.approveOvertime(ot.id, DEMO_MGR.id);
+  const otApproved = await s.shifts.approveOvertime(ot.id);
   const otAfter = (await s.leave.balance(DEMO_EMP.id, 'CO'))!;
   check('approving eight hours credits one comp off day', otAfter.quota, otBefore.quota + 1);
+  check('and the claim says how many days it bought', otApproved.credited, 1);
   let otTwice = false;
-  try { await s.shifts.approveOvertime(ot.id, DEMO_MGR.id); } catch { otTwice = true; }
+  try { await s.shifts.approveOvertime(ot.id); } catch { otTwice = true; }
   check('overtime is approved once', otTwice, true);
 
-  const rosterBefore = await s.shifts.roster([DEMO_EMP.id]);
-  await s.shifts.setShift(DEMO_EMP.id, '2026-09-10', 'NIGHT');
-  const rosterAfter = await s.shifts.roster([DEMO_EMP.id]);
-  check('the roster takes the new shift', rosterAfter[DEMO_EMP.id]['2026-09-10'], 'NIGHT');
-  check('the roster read is a copy, not the store',
-    rosterBefore[DEMO_EMP.id]['2026-09-10'] !== 'NIGHT' || true, true);
+  /*
+   * Under eight hours credits nothing. Rounding up would hand out a day for
+   * five hours' work, and "Approved" with no day earned is the case the screen
+   * has to be able to explain.
+   */
+  const short = await s.shifts.raiseOvertime({
+    empId: DEMO_EMP.id, date: '2026-09-03', hours: 5,
+    reason: 'Short evening', compensation: 'Comp Off',
+  });
+  const shortDone = await s.shifts.approveOvertime(short.id);
+  check('five hours credits no comp off day', shortDone.credited, 0);
+  check('and the balance does not move',
+    (await s.leave.balance(DEMO_EMP.id, 'CO'))!.quota, otAfter.quota);
+
+  let otRejectTwice = false;
+  const toReject = await s.shifts.raiseOvertime({
+    empId: DEMO_EMP.id, date: '2026-09-04', hours: 3,
+    reason: 'Not agreed in advance', compensation: 'Comp Off',
+  });
+  check('a claim can be rejected', (await s.shifts.rejectOvertime(toReject.id)).status, 'Rejected');
+  try { await s.shifts.rejectOvertime(toReject.id); } catch { otRejectTwice = true; }
+  check('and only once', otRejectTwice, true);
+
+  /*
+   * A shift is the hours somebody keeps, not a day's assignment — migration
+   * 0015 dropped the per-day table, so changing it changes every working day.
+   */
+  const otWeek = '2026-09-07';
+  await s.shifts.setShift(DEMO_EMP.id, 'US');
+  const rosterAfter = await s.shifts.roster([DEMO_EMP.id], otWeek, 7);
+  const working = Object.entries(rosterAfter[DEMO_EMP.id]).filter(([, v]) => v !== 'OFF');
+  check('the shift change applies to every working day',
+    working.every(([, v]) => v === 'US'), true);
+  check('and the week still has its two days off',
+    Object.values(rosterAfter[DEMO_EMP.id]).filter((v) => v === 'OFF').length, 2);
   let badShift = false;
-  try { await s.shifts.setShift(DEMO_EMP.id, '2026-09-10', 'NOPE'); } catch { badShift = true; }
-  check('an unknown shift pattern is refused', badShift, true);
+  try { await s.shifts.setShift(DEMO_EMP.id, 'NOPE'); } catch { badShift = true; }
+  check('an unknown shift is refused', badShift, true);
+
+  const profiles = await s.shifts.profiles();
+  check('every profile carries the clock it is measured against',
+    profiles.every((x) => x.timezone.includes('/')), true);
+  check('and the headcounts sum to the people on a shift',
+    profiles.reduce((n, x) => n + x.headcount, 0) > 0, true);
 
   /* ---- tax: both regimes priced on the same gross ---- */
   const tax = await s.payroll.taxSummary(DEMO_EMP.id);
