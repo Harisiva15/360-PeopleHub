@@ -9,6 +9,9 @@ export const ORG = {
   name: '360VHM Technology',
   legal: '360VHM Technology Private Limited',
   tagline: 'Integration | Insights | Innovation',
+  /* The product's own philosophy, shown under the mark on the rail. Distinct
+     from `tagline`, which belongs to the company rather than the platform. */
+  philosophy: 'People. Process. Progress.',
   cin: 'U72900TN2014PTC098231',
   pan: 'AAFC3600Q', tan: 'CHEA13600B',
   addr: 'Prestige Palladium, 5th Floor, OMR, Perungudi, Chennai 600096',

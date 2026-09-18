@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { logoFor } from '../assets/logo';
+import { LOGO_ON_RAIL } from '../assets/logo';
 import { hrefOf, NAV, TABBAR } from '../nav';
 import { useNavBadges } from './badges';
 import { ORG } from '../data/org';
@@ -92,10 +92,8 @@ export function Shell({ children }: { children: ReactNode }) {
     <div id="app">
       <aside className={'sidebar' + (navOpen ? ' open' : '') + (tight && !mobile ? ' tight' : '')}>
         <div className="brand">
-          <img src={logoFor(app.theme)} alt={ORG.name + ' — ' + ORG.tagline} />
-          <span className="cap">
-            {ORG.product} · {ORG.fy}
-          </span>
+          <img src={LOGO_ON_RAIL} alt={ORG.name + ' — ' + ORG.tagline} />
+          <span className="cap">{ORG.philosophy}</span>
           {!mobile && (
             <button
               className="rail-tight"

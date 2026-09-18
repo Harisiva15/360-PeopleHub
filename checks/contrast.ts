@@ -98,6 +98,7 @@ const PAIRS: Pair[] = [
   ['rail: hover plate inside the well', '--rail-2', '--rail-sunk', 1.2],
   ['rail: sub-item label in the well', '--rail-ink-dim', '--rail-sunk', 4.5],
   ['rail: rule', '--rail-line', '--rail', 1.2],
+  ['rail: the philosophy line under the mark', '--rail-brandline', '--rail', 4.5],
   ['rail: selected pill against the rail', '--rail-on', '--rail', 3.0],
   ['rail: selected pill against the well', '--rail-on', '--rail-sunk', 3.0],
   ['rail: selected pill label', '#ffffff', '--rail-on', 4.5],

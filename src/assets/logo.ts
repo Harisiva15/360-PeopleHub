@@ -9,22 +9,34 @@
  * caches it across deploys, and the only cost is that it paints a moment after
  * the shell rather than with it.
  *
- * **One mark, two grounds.** The logo has a navy wordmark and a slate tagline,
- * which read well on the light rail and disappear on the dark one. Rather than
- * recolour the artwork — which is not this file's decision to make — the dark
- * theme sits it on a light plate, the way a brand guideline normally handles a
- * mark with dark elements. `logoFor` keeps its signature so no caller changes.
+ * **One mark, two grounds.** The wordmark "People" is set in the same navy as
+ * the navigation rail and measures 1.07 against it — invisible, not merely
+ * dim. So there are two assets: the supplied artwork for light grounds, and a
+ * reversed lockup for the rail, where that word is white.
+ *
+ * The reversed one is derived rather than drawn, by `scripts/reverse-logo.mjs`,
+ * which also gives back the alpha the supplied file's hard-keyed edge threw
+ * away — a ring of near-white pixels that is invisible on white and a halo on
+ * navy. Re-run that script if the artwork is ever replaced.
+ *
+ * If a proper reversed asset is ever supplied by whoever owns the brand, it
+ * replaces the derived one here and nothing else moves.
  */
 
 import mark from './360-people-hub.png';
+import reversed from './360-people-hub-reversed.png';
 
+/** The artwork as supplied. For white and near-white grounds. */
 export const LOGO_LIGHT = mark;
 
-/*
- * The same artwork. Kept as a separate export because the two are a brand
- * decision that could diverge — if a reversed version is ever supplied, it
- * lands here and nothing else moves.
+/**
+ * The reversed lockup, for the navy rail. Not a dark-theme variant — the rail
+ * is navy in both themes, so this is about the surface, not the theme.
  */
-export const LOGO_DARK = mark;
+export const LOGO_ON_RAIL = reversed;
 
-export const logoFor = (_theme: 'light' | 'dark'): string => mark;
+/**
+ * Kept for callers that ask by theme. Both themes put the mark on the same
+ * navy rail, so both get the reversed lockup.
+ */
+export const logoFor = (_theme: 'light' | 'dark'): string => reversed;

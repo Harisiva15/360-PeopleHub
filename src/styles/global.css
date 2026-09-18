@@ -105,6 +105,9 @@
   --rail-ink-dim:#93ACC6;
   /* The strongest ink on the rail — hover and the open section's header. */
   --rail-ink-hi:#FFFFFF;
+  /* The philosophy line under the mark. Lighter than the section headers so it
+     reads as brand rather than as another label. 7.79 on the rail. */
+  --rail-brandline:#A9C2DC;
 
   /*
    * The sign-in page, which is the only screen with its own ground.
@@ -253,6 +256,7 @@ html[data-theme="dark"]{
   --rail-ink:#D6E4F4;
   --rail-ink-dim:#A3B8CC;
   --rail-ink-hi:#ffffff;
+  --rail-brandline:#A9C2DC;
   --rail-on:var(--brand);
 
   /*
@@ -333,7 +337,7 @@ a{color:var(--brand);text-decoration:none}
 .sidebar{transition:width .2s cubic-bezier(.4,0,.2,1),flex-basis .2s cubic-bezier(.4,0,.2,1)}
 .sidebar.tight{width:var(--nav-w-tight);flex-basis:var(--nav-w-tight)}
 .sidebar.tight .brand{padding:14px 10px 12px}
-.sidebar.tight .brand img{max-width:44px;padding:5px}
+.sidebar.tight .brand img{max-width:44px}
 .sidebar.tight .brand .cap,
 .sidebar.tight .nav-label,
 .sidebar.tight .nav-caret,
@@ -361,24 +365,27 @@ a{color:var(--brand);text-decoration:none}
 .brand img{display:block;width:100%;max-width:150px;height:auto;margin-inline:auto}
 
 /*
- * The mark on the navy rail.
+ * The mark sits straight on the rail.
  *
- * The supplied artwork is an opaque PNG — navy wordmark, slate tagline, on a
- * white ground — so it cannot be whited out in CSS: `invert` would turn its
- * background black, and `brightness(0) invert(1)` would flatten the cloud and
- * both brand colours into one silhouette. The plate is what a brand guideline
- * reaches for instead, and it is now both themes' answer rather than the dark
- * theme's, because both rails are navy.
- *
- * A reversed asset — white lockup, transparent ground — would replace this
- * rule and nothing else.
+ * It used to sit on a white plate, on the belief that the artwork was opaque
+ * and could not be reversed. It is not opaque — it has always had an alpha
+ * channel — so the plate was solving a problem that was not there, and the
+ * navy showing through is simply the mark as drawn. What *is* true is that the
+ * wordmark "People" is navy and would vanish, which is why the rail uses a
+ * reversed lockup; see `src/assets/logo.ts`.
  */
-.brand img {
-  background: #ffffff;
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
+.brand img { background: none; padding: 0; }
+/*
+ * The product's philosophy, under the mark. Sentence case rather than the
+ * uppercase the old caption used: "People. Process. Progress." is three
+ * sentences, and setting sentences in capitals with letter-spacing turns them
+ * into a label. Measured at 7.79 on the rail — quiet, and still readable.
+ */
+.brand .cap{
+  display:block;margin-top:9px;text-align:center;
+  font-size:11.5px;font-weight:600;letter-spacing:.01em;
+  color:var(--rail-brandline);
 }
-.brand .cap{display:block;font-size:10.5px;color:var(--rail-ink-dim);font-weight:600;letter-spacing:.05em;margin-top:7px;text-transform:uppercase}
 
 /*
  * The signed-in strip at the foot of the rail. It takes rail tokens for the
