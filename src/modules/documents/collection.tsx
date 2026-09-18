@@ -20,6 +20,7 @@ import { useApp } from '../../state/AppContext';
 import {
   useDocRequests, useDocSummary, useRequestDocument, useSetDocStatus, useVisiblePeople,
 } from './data';
+import { Icon } from '../../components/icons';
 
 const LABEL: Record<string, string> = {
   pending: 'Pending', received: 'Received', verified: 'Verified',
@@ -130,7 +131,7 @@ export function DocumentCollection({ scope, title }: { scope: DocScope; title?: 
 
       {blocking > 0 && (
         <div style={{ padding: '10px 14px 0' }}>
-          <Banner kind="warn" icon="📋">
+          <Banner kind="warn" icon={<Icon n="goal" size="lg" />}>
             {blocking} mandatory {blocking === 1 ? 'document is' : 'documents are'} still outstanding.
           </Banner>
         </div>
@@ -163,7 +164,7 @@ export function DocumentCollection({ scope, title }: { scope: DocScope; title?: 
             ))}
           </ListRow>
         );
-      }) : <EmptyState msg="Nothing has been requested yet" icon="📄" />}
+      }) : <EmptyState msg="Nothing has been requested yet" icon={<Icon n="document" size="lg" />} />}
     </Card>
   );
 }

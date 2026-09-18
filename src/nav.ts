@@ -21,6 +21,8 @@
  * render.
  */
 
+import type { IconName } from './components/icons';
+
 export type Role = 'employee' | 'manager' | 'admin';
 
 export interface NavItem {
@@ -35,7 +37,8 @@ export interface NavItem {
 
 export interface NavGroup {
   group: string;
-  ic: string;
+  /** Name in `src/components/icons.tsx`, not a glyph. */
+  ic: IconName;
   /** The module this section is — so a section with no sub-items is a link. */
   k: string;
   roles?: readonly Role[];
@@ -45,11 +48,11 @@ export interface NavGroup {
 }
 
 export const NAV: NavGroup[] = [
-  { group: 'Dashboard', ic: '⌂', k: 'dashboard', items: [] },
+  { group: 'Dashboard', ic: 'dashboard', k: 'dashboard', items: [] },
 
   {
     group: 'Internal hiring',
-    ic: '◎',
+    ic: 'hiring',
     k: 'hiring',
     roles: ['manager', 'admin'],
     items: [
@@ -65,7 +68,7 @@ export const NAV: NavGroup[] = [
 
   {
     group: 'Employees',
-    ic: '👥',
+    ic: 'employees',
     k: 'employees',
     items: [
       { k: 'employees', n: 'Directory' },
@@ -77,7 +80,7 @@ export const NAV: NavGroup[] = [
 
   {
     group: 'Leave & attendance',
-    ic: '◉',
+    ic: 'attendance',
     k: 'attendance',
     open: true,
     items: [
@@ -93,7 +96,7 @@ export const NAV: NavGroup[] = [
 
   {
     group: 'Timesheet',
-    ic: '▤',
+    ic: 'timesheet',
     k: 'timesheet',
     items: [
       { k: 'timesheet', n: 'Timesheet entry', to: '/timesheet?v=entry' },
@@ -105,7 +108,7 @@ export const NAV: NavGroup[] = [
 
   {
     group: 'Payroll',
-    ic: '₹',
+    ic: 'payroll',
     k: 'payroll',
     items: [
       { k: 'payroll', n: 'My payslips', to: '/payroll?v=me' },
@@ -124,7 +127,7 @@ export const NAV: NavGroup[] = [
 
   {
     group: 'Performance',
-    ic: '◈',
+    ic: 'performance',
     k: 'performance',
     items: [
       { k: 'performance', n: 'Goals', to: '/performance?v=goals' },
@@ -139,7 +142,7 @@ export const NAV: NavGroup[] = [
 
   {
     group: 'Projects',
-    ic: '◱',
+    ic: 'projects',
     k: 'planner',
     items: [
       { k: 'planner', n: 'Board', to: '/planner?v=board' },
@@ -149,11 +152,11 @@ export const NAV: NavGroup[] = [
     ],
   },
 
-  { group: 'IT assets', ic: '💻', k: 'assets', items: [] },
+  { group: 'IT assets', ic: 'assets', k: 'assets', items: [] },
 
   {
     group: 'Engagement',
-    ic: '◍',
+    ic: 'engagement',
     k: 'engagement',
     items: [
       { k: 'engagement', n: 'Overview', to: '/engagement?v=results' },
@@ -162,12 +165,12 @@ export const NAV: NavGroup[] = [
     ],
   },
 
-  { group: 'Celebrations', ic: '★', k: 'celebrations', items: [] },
-  { group: 'Announcements', ic: '⚑', k: 'announcements', items: [] },
+  { group: 'Celebrations', ic: 'celebrations', k: 'celebrations', items: [] },
+  { group: 'Announcements', ic: 'announcements', k: 'announcements', items: [] },
 
   {
     group: 'Helpdesk',
-    ic: '◒',
+    ic: 'helpdesk',
     k: 'helpdesk',
     items: [
       { k: 'helpdesk', n: 'My tickets', to: '/helpdesk?v=my' },
@@ -191,7 +194,7 @@ export const NAV: NavGroup[] = [
      * book, and rebuilding working pages to move them was never the ask.
      */
     group: 'Recruitment',
-    ic: '⬢',
+    ic: 'recruitment',
     k: 'recruitment',
     roles: ['admin'],
     items: [
@@ -216,7 +219,7 @@ export const NAV: NavGroup[] = [
 
   {
     group: 'Reports',
-    ic: '▥',
+    ic: 'reports',
     k: 'reports',
     roles: ['manager', 'admin'],
     items: [
@@ -229,7 +232,7 @@ export const NAV: NavGroup[] = [
 
   {
     group: 'Settings',
-    ic: '⚙',
+    ic: 'settings',
     k: 'settings',
     roles: ['admin'],
     items: [

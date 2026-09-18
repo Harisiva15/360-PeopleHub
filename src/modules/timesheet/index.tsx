@@ -28,6 +28,7 @@ import { MyWeek, overtimeOf } from './MyWeek';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 const hrs = (n: number) => n.toFixed(2);
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
@@ -92,7 +93,7 @@ function DecideForm({
           {who} sees this, so say what they should do next.
         </div>
       </div>
-      {err && <div className="ts-err-box">⚠ {err}</div>}
+      {err && <div className="ts-err-box"><Icon n="warn" size="lg" /> {err}</div>}
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
         <button className="btn" onClick={close}>Cancel</button>
         <button className="btn danger" disabled={decide.pending || !note.trim()} onClick={act}>
@@ -226,7 +227,7 @@ function TsHist({ setWs, setTab }: { setWs: (s: string) => void; setTab: (t: 'en
               ))}
             </select>
             <button className="btn sm" disabled={!list.length}
-              onClick={() => exportTS(list, 'my_timesheets.csv', approvers)}>⤓ Export</button>
+              onClick={() => exportTS(list, 'my_timesheets.csv', approvers)}><Icon n="download" size="lg" /> Export</button>
           </div>
         )}>
         {list.length ? (
@@ -265,7 +266,7 @@ function TsHist({ setWs, setTab }: { setWs: (s: string) => void; setTab: (t: 'en
             </table>
           </div>
         ) : (
-          <EmptyState icon="🗓"
+          <EmptyState icon={<Icon n="schedule" size="lg" />}
             msg={loading ? 'Loading your weeks…' : 'No weeks match that filter'} />
         )}
       </Card>
@@ -360,7 +361,7 @@ function TsApprovals({ ws, setWs }: { ws: string; setWs: (s: string) => void }) 
         <button className="btn sm" onClick={() => setWs(ymd(mondayOf(TODAY)))}>This week</button>
         <div className="spacer" />
         <button className="btn sm" disabled={!weekSheets.length}
-          onClick={() => exportTS(weekSheets, `team_timesheet_${ws}.csv`, dir)}>⤓ Export</button>
+          onClick={() => exportTS(weekSheets, `team_timesheet_${ws}.csv`, dir)}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={4}>

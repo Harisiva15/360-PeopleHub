@@ -25,6 +25,7 @@ import { STAGES } from '../../data/ats';
 import { deptOf, siteOf } from '../../data/org';
 import { Avatar, Badge, Card, EmptyState, StatRow, Tile } from '../../components/ui';
 import { ListRow } from '../../components/common';
+import { Icon } from '../../components/icons';
 
 /** The columns the overview shows, in pipeline order. `rejected` is not one. */
 const FLOW = STAGES.filter((s) => s.id !== 'rejected');
@@ -105,15 +106,15 @@ export function HiringOverview({
   return (
     <div className="stack">
       <StatRow cols={5}>
-        <Tile icon="💼" label="Open jobs" value={open.length}
+        <Tile icon={<Icon n="briefcase" size="lg" />} label="Open jobs" value={open.length}
           foot={`${open.reduce((n, r) => n + Math.max(0, r.openings - r.filled), 0)} positions to fill`} />
-        <Tile icon="👥" label="Total candidates" value={cands.length}
+        <Tile icon={<Icon n="people" size="lg" />} label="Total candidates" value={cands.length}
           foot={arrow(applied, 'applied this month')} trend={applied?.up ? 'up' : 'down'} />
-        <Tile icon="🔄" label="In progress" value={inProgress}
+        <Tile icon={<Icon n="swap" size="lg" />} label="In progress" value={inProgress}
           foot="Still being worked on" />
-        <Tile icon="🤝" label="Offers released" value={offers.length}
+        <Tile icon={<Icon n="recruitment" size="lg" />} label="Offers released" value={offers.length}
           foot={arrow(offerTrend, 'sent this month')} trend={offerTrend?.up ? 'up' : 'down'} />
-        <Tile icon="✅" label="Hired" value={hired.length}
+        <Tile icon={<Icon n="done" size="lg" />} label="Hired" value={hired.length}
           foot={tth === null
             ? arrow(hireTrend, 'this cycle')
             : `${tth} days from apply to offer`} />
@@ -181,7 +182,7 @@ export function HiringOverview({
               <Badge kind={n ? 'info' : 'warn'}>{n} candidate{n === 1 ? '' : 's'}</Badge>
             </ListRow>
           );
-        }) : <EmptyState msg="No open requisitions" icon="💼" />}
+        }) : <EmptyState msg="No open requisitions" icon={<Icon n="briefcase" size="lg" />} />}
       </Card>
     </div>
   );

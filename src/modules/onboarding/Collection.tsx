@@ -16,6 +16,7 @@ import { ListRow } from '../../components/common';
 import { DocumentCollection } from '../documents/collection';
 import { useDocRequests } from '../documents/data';
 import { useJourneys } from './data';
+import { Icon } from '../../components/icons';
 
 /** Outstanding means it has not arrived — a rejected document has not arrived. */
 export const outstanding = (r: DocRequest) => r.status === 'pending' || r.status === 'rejected';
@@ -106,7 +107,7 @@ export function CollectionView() {
                   ? <Badge kind={daysToJoin <= 7 ? 'crit' : 'warn'}>{missing} missing</Badge>
                   : <Badge kind="good">Cleared</Badge>}
               </ListRow>
-            )) : <EmptyState msg="No joiners in intake" icon="📄" />}
+            )) : <EmptyState msg="No joiners in intake" icon={<Icon n="document" size="lg" />} />}
           </div>
         </Card>
 

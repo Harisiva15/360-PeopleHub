@@ -6,6 +6,7 @@ import { deptOf, ORG, siteOf } from '../../data/org';
 import type { Employee, Payslip, SalaryStructure } from '../../services';
 import { getServices } from '../../services';
 import { useLayer } from '../../components/Layer';
+import { Icon } from '../../components/icons';
 
 /** Indian numbering system, for the amount-in-words line on Indian payslips. */
 function inWords(value: number): string {
@@ -176,8 +177,8 @@ export function useShowPayslip() {
               ['Deductions', 'Amount'],
               ...p.ded.map((x) => [x.k, x.a]),
               ['Total deductions', p.totalDed], ['Net pay', p.net],
-            ])}>⤓ CSV</button>
-          <button className="btn primary" onClick={() => window.print()}>🖨 Print / Save PDF</button>
+            ])}><Icon n="download" size="lg" /> CSV</button>
+          <button className="btn primary" onClick={() => window.print()}><Icon n="print" size="lg" /> Print / Save PDF</button>
         </>
       ),
     });

@@ -20,6 +20,7 @@ import { CollectionView } from './Collection';
 import { StartJourneyForm } from './StartForm';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 const progressOf = (x: Onboarding) => pct(x.tasks.filter((t) => t.done).length, x.tasks.length);
 
@@ -101,7 +102,7 @@ function OnbDetail({ o }: { o: Onboarding }) {
         <Card title="Tasks by owner" sub="Responsibility split">
           <HBar rows={byOwner} />
           <Divide />
-          <Banner kind="info" icon="📧">
+          <Banner kind="info" icon={<Icon n="mail" size="lg" />}>
             Welcome email, IT asset request and payroll setup are triggered automatically 3 days before the joining date.
           </Banner>
         </Card>
@@ -146,7 +147,7 @@ function JourneysView() {
             size: 'wide',
             body: (close: () => void) => <StartJourneyForm close={close} people={people} />,
             footer: null,
-          })}>＋ Start a journey</button>
+          })}><Icon n="add" size="lg" /> Start a journey</button>
         )}
       </div>
 
@@ -173,7 +174,7 @@ function JourneysView() {
                 </div>
                 <StatusBadge status={x.status} />
               </ListRow>
-            )) : <EmptyState msg="No onboarding journeys" icon="🚀" />}
+            )) : <EmptyState msg="No onboarding journeys" icon={<Icon n="rocket" size="lg" />} />}
           </div>
         </Card>
 

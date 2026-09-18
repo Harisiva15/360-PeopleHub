@@ -17,6 +17,7 @@ import type { Directory } from './data';
 import { RosterView } from './Roster';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 /** Indicative hourly rate used to price approved overtime. */
 const OT_HOURLY = 450;
@@ -104,7 +105,7 @@ function OtTable(
     onApprove: (o: Overtime) => void; onReject: (o: Overtime) => void;
   },
 ) {
-  if (!list.length) return <EmptyState msg="Nothing logged" icon="⏱️" />;
+  if (!list.length) return <EmptyState msg="Nothing logged" icon={<Icon n="timer" size="lg" />} />;
   return (
     <div className="tbl-wrap">
       <table className="tbl">
@@ -246,7 +247,7 @@ function ShOt() {
 
   return (
     <div className="stack">
-      <Banner kind="info" icon="⏱️" title="How extra hours are compensated">
+      <Banner kind="info" icon={<Icon n="timer" size="lg" />} title="How extra hours are compensated">
         Hours worked beyond your shift can be claimed as comp off — one day per full eight
         hours, rounded down — or as overtime pay at 1.5× the hourly rate, paid with the next
         run. Your manager approves; the comp-off day is credited the moment they do.
@@ -270,7 +271,7 @@ function ShOt() {
               size: 'narrow',
               body: (close) => <LogForm close={close} />,
               footer: null,
-            })}>＋ Log extra hours</button>
+            })}><Icon n="add" size="lg" /> Log extra hours</button>
         }>
         <OtTable list={mine} dir={dir} act={false} onApprove={approve} onReject={reject} />
       </Card>

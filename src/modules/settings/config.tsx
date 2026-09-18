@@ -21,6 +21,7 @@ import {
   useHolidays, useLeaveAll, usePayRuns, useRequisitions, useSetLeaveQuota, useSites,
   useTimesheetsAll, useVisiblePeople,
 } from './data';
+import { Icon } from '../../components/icons';
 
 /* ---------- Locations ---------- */
 
@@ -86,7 +87,7 @@ export function LocationsTab() {
   });
   return (
     <div className="stack">
-      <Banner kind="warn" icon="📍" title="Punches record where they were made">
+      <Banner kind="warn" icon={<Icon n="location" size="lg" />} title="Punches record where they were made">
         Punching in asks the browser for a position and stores it against the punch,
         with the distance from this site at that moment. A punch outside the fence is
         flagged for review, never refused. A punch history with coordinates is a
@@ -280,7 +281,7 @@ export function LeavePolicyTab() {
         <Card
           title="Holiday calendar"
           sub={`${HOLIDAYS.length} holidays configured`}
-          actions={<button className="btn sm" onClick={addHoliday}>＋ Add</button>}
+          actions={<button className="btn sm" onClick={addHoliday}><Icon n="add" size="lg" /> Add</button>}
           flush
         >
           <div style={{ maxHeight: 420, overflow: 'auto' }}>
@@ -437,7 +438,7 @@ export function OrgTab() {
           sub={`${DEPTS.length} configured`}
           actions={
             <button className="btn sm" onClick={() => app.toast('Department creation requires CEO approval in this configuration')}>
-              ＋ Add
+              <Icon n="add" size="lg" /> Add
             </button>
           }
           flush
@@ -638,7 +639,7 @@ export function ConfigAuditTab() {
     <Card
       title="Audit log"
       sub="Configuration and privileged actions · last 30 days"
-      actions={<button className="btn sm" onClick={() => app.toast('Audit log exported', 'ok')}>⤓ Export</button>}
+      actions={<button className="btn sm" onClick={() => app.toast('Audit log exported', 'ok')}><Icon n="download" size="lg" /> Export</button>}
       flush
     >
       <TableWrap>

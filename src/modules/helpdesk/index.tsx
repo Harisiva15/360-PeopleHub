@@ -20,6 +20,7 @@ import type { Directory } from './data';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 const PRIO_TONE: Record<string, 'crit' | 'warn' | 'info' | 'mute'> = {
   Urgent: 'crit', High: 'warn', Medium: 'info', Low: 'mute',
@@ -40,7 +41,7 @@ function TicketTable(
   { list, dir, showEmp, onOpen }:
   { list: Ticket[]; dir: Directory; showEmp?: boolean; onOpen: (t: Ticket) => void },
 ) {
-  if (!list.length) return <EmptyState msg="No tickets here" icon="🎫" />;
+  if (!list.length) return <EmptyState msg="No tickets here" icon={<Icon n="ticket" size="lg" />} />;
   return (
     <div className="tbl-wrap">
       <table className="tbl">
@@ -59,7 +60,7 @@ function TicketTable(
                 <div className="muted mono" style={{ fontSize: 11 }}>{t.id}</div>
               </td>
               {showEmp && <td><PersonCell e={dir.byId(t.empId)!} /></td>}
-              <td className="nowrap">{tCat(t.cat).ic} {tCat(t.cat).n}</td>
+              <td className="nowrap"><Icon n={tCat(t.cat).ic} /> {tCat(t.cat).n}</td>
               <td><PrioBadge p={t.priority} /></td>
               <td className="nowrap">{dir.name(t.assigneeId)}</td>
               <td className="nowrap">{fmtD(t.createdOn)}</td>
@@ -107,7 +108,7 @@ function TicketBody({ t, close }: { t: Ticket; close: () => void }) {
         ]} />
       </div>
 
-      <Banner icon="💬">{t.desc}</Banner>
+      <Banner icon={<Icon n="helpdesk" size="lg" />}>{t.desc}</Banner>
 
       {t.comments.length > 0 && (
         <>
@@ -187,7 +188,7 @@ function NewTicketForm({ close }: { close: () => void }) {
         <div className="field">
           <label>Category</label>
           <select className="input" value={cat} onChange={(e) => setCat(e.target.value)}>
-            {TICKET_CATS.map((c) => <option key={c.id} value={c.id}>{c.ic} {c.n} — {c.sla} h SLA</option>)}
+            {TICKET_CATS.map((c) => <option key={c.id} value={c.id}>{c.n} — {c.sla} h SLA</option>)}
           </select>
         </div>
         <div className="field">
@@ -205,7 +206,7 @@ function NewTicketForm({ close }: { close: () => void }) {
         <label>Describe the issue</label>
         <textarea className="input" style={{ minHeight: 90 }} value={desc} onChange={(e) => setDesc(e.target.value)} />
       </div>
-      <Banner kind="info" icon="⏱️">
+      <Banner kind="info" icon={<Icon n="timer" size="lg" />}>
         {tCat(cat).n} tickets are handled by {deptOf(tCat(cat).team).name} with a {tCat(cat).sla}-hour resolution target.
       </Banner>
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
@@ -254,7 +255,7 @@ function HdMy() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <button className="btn primary" onClick={raise}>＋ Raise a ticket</button>
+        <button className="btn primary" onClick={raise}><Icon n="add" size="lg" /> Raise a ticket</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12.5 }}>Average first response: 4 h · resolution within SLA 87%</span>
       </div>
@@ -275,7 +276,7 @@ function HdMy() {
       <Card title="Common questions" sub="Might save you a ticket" flush>
         {KB.slice(0, 5).map((k, i) => (
           <ListRow key={i}>
-            <span>{tCat(k.cat).ic}</span>
+            <Icon n={tCat(k.cat).ic} />
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 650, fontSize: 12.5 }}>{k.q}</div>
               <div className="muted" style={{ fontSize: 11.5 }}>{tCat(k.cat).n}</div>
@@ -406,7 +407,7 @@ function HdSla() {
             <tbody>
               {byCat.map((r) => (
                 <tr key={r.c.id}>
-                  <td>{r.c.ic} <b>{r.c.n}</b></td>
+                  <td><Icon n={r.c.ic} /> <b>{r.c.n}</b></td>
                   <td>{deptOf(r.c.team).name}</td>
                   <td className="num">{r.n}</td>
                   <td className="num">{r.c.sla} h</td>
@@ -445,7 +446,7 @@ function HdKb() {
         {list.map((k, i) => (
           <Card key={i}>
             <div className="row" style={{ gap: 8, marginBottom: 7 }}>
-              <Badge kind="info">{tCat(k.cat).ic} {tCat(k.cat).n}</Badge>
+              <Badge kind="info"><Icon n={tCat(k.cat).ic} size="sm" /> {tCat(k.cat).n}</Badge>
             </div>
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>{k.q}</div>
             <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>{k.a}</div>
@@ -458,7 +459,7 @@ function HdKb() {
         ))}
       </div>
 
-      {!list.length && <Card><EmptyState msg="Nothing matches that search" icon="🔍" /></Card>}
+      {!list.length && <Card><EmptyState msg="Nothing matches that search" icon={<Icon n="search" size="lg" />} /></Card>}
     </div>
   );
 }

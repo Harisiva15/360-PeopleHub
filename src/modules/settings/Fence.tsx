@@ -22,6 +22,7 @@ import { useState } from 'react';
 import type { Site } from '../../types/org';
 import { useApp } from '../../state/AppContext';
 import { useUpdateFence } from './data';
+import { Icon } from '../../components/icons';
 
 export function FenceForm({ close, site }: { close: () => void; site: Site }) {
   const app = useApp();
@@ -92,7 +93,7 @@ export function FenceForm({ close, site }: { close: () => void; site: Site }) {
       </div>
 
       <div className="row">
-        <button className="btn sm" onClick={useMyPosition}>📍 Use my current position</button>
+        <button className="btn sm" onClick={useMyPosition}><Icon n="location" size="lg" /> Use my current position</button>
       </div>
 
       <label className="fld">

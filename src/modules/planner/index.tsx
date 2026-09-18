@@ -24,6 +24,7 @@ import {
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 /** The columns a card travels through, in order. */
 const COLUMNS = [
@@ -344,7 +345,7 @@ function PlannerBoard() {
           {PROJECTS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <div className="spacer" />
-        <button className="btn primary" onClick={openNew}>＋ New item</button>
+        <button className="btn primary" onClick={openNew}><Icon n="add" size="lg" /> New item</button>
       </div>
 
       <div className="board">
@@ -397,20 +398,20 @@ function ActionTracker() {
       </Banner>
 
       <StatRow cols={4}>
-        <Tile tone="blue" icon="📋" label="Open" value={open.length} foot="Still to close out" />
-        <Tile tone="rose" icon="⚠" label="Overdue" value={overdue.length}
+        <Tile tone="blue" icon={<Icon n="goal" size="lg" />} label="Open" value={open.length} foot="Still to close out" />
+        <Tile tone="rose" icon={<Icon n="warn" size="lg" />} label="Overdue" value={overdue.length}
           foot={overdue.length ? 'Past the agreed date' : 'Nothing late'} />
-        <Tile tone="amber" icon="⏳" label="Due this week" value={
+        <Tile tone="amber" icon={<Icon n="hourglass" size="lg" />} label="Due this week" value={
           open.filter((a) => a.due && a.due >= ymd(TODAY) && a.due <= ymd(addDays(TODAY, 7))).length
         } foot="Next seven days" />
-        <Tile tone="green" icon="✓" label="Closed" value={closed.length} foot="Done" />
+        <Tile tone="green" icon={<Icon n="ok" size="lg" />} label="Closed" value={closed.length} foot="Done" />
       </StatRow>
 
       <Card title="Open actions" sub={`${open.length} outstanding`} flush
         actions={<button className="btn sm primary" onClick={() => layer.modal({
           title: 'New action item', sub: 'From a meeting, review or audit',
           body: (close) => <NewItemForm close={close} fixedKind="action" />, footer: null,
-        })}>＋ Raise an action</button>}>
+        })}><Icon n="add" size="lg" /> Raise an action</button>}>
         {open.length ? (
           <div className="tbl-wrap">
             <table className="tbl">
@@ -558,7 +559,7 @@ function Iterations() {
     <div className="stack">
       <div className="toolbar">
         <div className="spacer" />
-        <button className="btn primary" onClick={openNew}>＋ Plan an iteration</button>
+        <button className="btn primary" onClick={openNew}><Icon n="add" size="lg" /> Plan an iteration</button>
       </div>
 
       {iterations.length ? (

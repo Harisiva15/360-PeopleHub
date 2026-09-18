@@ -18,6 +18,7 @@ import {
   useAllEmployees, useClients, useCompensation, useConsultants, useCurrentRun, useExits,
   usePayrollTotals, usePlacements, useRequirements, useStaffingKpi,
 } from './data';
+import { Icon } from '../../components/icons';
 
 /**
  * Indicative month-on-month headcount drift for the sparkline. Fixed rather
@@ -52,7 +53,7 @@ function ExecView() {
   const { data: clients = [] } = useClients();
   const { data: placements = [] } = usePlacements();
 
-  if (!k || !t || !curRun) return <EmptyState msg="Loading the executive view…" icon="◈" />;
+  if (!k || !t || !curRun) return <EmptyState msg="Loading the executive view…" icon={<Icon n="performance" size="lg" />} />;
 
   const rev = k.revenueMonthly;
   const cost = k.costMonthly;

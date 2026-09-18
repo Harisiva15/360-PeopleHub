@@ -38,6 +38,7 @@ import {
   useSurveys, useTeam, useTickets, useTimesheetsIn,
 } from './data';
 import type { Directory } from './data';
+import { Icon } from '../../components/icons';
 
 /** Build a directory view over an already-fetched roster. */
 const asDirectory = (list: { id: string; name: string }[]): Directory => ({
@@ -88,7 +89,7 @@ function DashAdmin() {
   const openings = sum(openReq, (r) => Math.max(0, r.openings - r.filled));
   const exitsYear = leavers.filter((x) => x.lwd >= ymd(addDays(TODAY, -365)));
   const attrition = pct(exitsYear.length, act.length + exitsYear.length);
-  if (!curRun || !run || runs.length < 2) return <EmptyState msg="Loading your dashboard…" icon="◧" />;
+  if (!curRun || !run || runs.length < 2) return <EmptyState msg="Loading your dashboard…" icon={<Icon n="pie" size="lg" />} />;
   const CUR_RUN = curRun;
   /* eNPS comes from the quarterly survey, not a stored figure. */
   const enpsSurvey = surveys.find((x) => x.id === 'SV2');
@@ -126,17 +127,17 @@ function DashAdmin() {
       </>} />
 
       <StatRow cols={5}>
-        <Tile tone="blue" icon="👥" label="Headcount" value={act.length} trend="up"
+        <Tile tone="blue" icon={<Icon n="people" size="lg" />} label="Headcount" value={act.length} trend="up"
           foot={<>▲ {ht.data[7] - ht.data[4]} vs 3 months ago</>}
           spark={<Spark data={ht.data} color="var(--s1)" />} />
-        <Tile tone="green" icon="📅" label="Present today"
+        <Tile tone="green" icon={<Icon n="calendar" size="lg" />} label="Present today"
           value={<>{present} <span style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 600 }}>/ {working}</span></>}
           foot={`${at.c.W} WFH · ${at.c.L} on leave · ${at.c.A} absent`} />
-        <Tile tone="violet" icon="₹" label={'Net payable · ' + monthLabel(CUR_RUN.mk)} value={lakh(run.net)}
+        <Tile tone="violet" icon={<Icon n="rupee" size="lg" />} label={'Net payable · ' + monthLabel(CUR_RUN.mk)} value={lakh(run.net)}
           foot={<><StatusBadge status={CUR_RUN.status} /> <span className="muted">{run.count} employees</span></>} />
-        <Tile tone="amber" icon="🎯" label="Open positions" value={openings}
+        <Tile tone="amber" icon={<Icon n="target" size="lg" />} label="Open positions" value={openings}
           foot={`${openReq.length} live requisitions · ${cands.filter((c) => c.stage === 'offer').length} in offer`} />
-        <Tile tone="rose" icon="📉" label="Attrition (12 mo)" value={attrition + '%'} foot={`${exitsYear.length} exits · industry avg 18%`} />
+        <Tile tone="rose" icon={<Icon n="down" size="lg" />} label="Attrition (12 mo)" value={attrition + '%'} foot={`${exitsYear.length} exits · industry avg 18%`} />
       </StatRow>
 
       <div className="grid g-2-1">
@@ -253,7 +254,7 @@ function DashAdmin() {
           <Divide />
           <div className="row wrap" style={{ gap: 8 }}>
             {SITES.filter((s) => !s.remote).map((s) => (
-              <Chip key={s.id}>📍 {s.name} · {s.tz}</Chip>
+              <Chip key={s.id}><Icon n="location" size="lg" /> {s.name} · {s.tz}</Chip>
             ))}
           </div>
         </Card>
@@ -266,7 +267,7 @@ function DashAdmin() {
                 <div style={{ fontWeight: 650, fontSize: 13 }}>{a.title}</div>
                 <div className="muted" style={{ fontSize: 11.5 }}>{a.by} · {fmtD(a.on)}</div>
               </div>
-              {a.pin && <span title="Pinned">📌</span>}
+              {a.pin && <span title="Pinned"><Icon n="flag" size="lg" /> </span>}
             </ListRow>
           ))}
         </Card>
@@ -344,13 +345,13 @@ function DashManager() {
       </div>
 
       <StatRow cols={4}>
-        <Tile tone="blue" icon="👥" label="Team size" value={team.length}
+        <Tile tone="blue" icon={<Icon n="people" size="lg" />} label="Team size" value={team.length}
           foot={`${team.filter((t) => t.managerId === me.id).length} direct · ${team.length - team.filter((t) => t.managerId === me.id).length} skip-level`} />
-        <Tile tone="green" icon="📅" label="Present today" value={at.c.P + at.c.W} foot={`${at.c.W} WFH · ${at.c.L} leave · ${at.c.A} absent`} />
-        <Tile tone="violet" icon="⏱" label="Hours logged (4 wks)" value={sum(last4, (w) => w.hours) + ' h'}
+        <Tile tone="green" icon={<Icon n="calendar" size="lg" />} label="Present today" value={at.c.P + at.c.W} foot={`${at.c.W} WFH · ${at.c.L} leave · ${at.c.A} absent`} />
+        <Tile tone="violet" icon={<Icon n="timer" size="lg" />} label="Hours logged (4 wks)" value={sum(last4, (w) => w.hours) + ' h'}
           foot={Math.round((sum(last4, (w) => w.billable) / Math.max(1, sum(last4, (w) => w.hours))) * 100) + '% billable'}
           spark={<Spark data={last4.map((w) => w.hours)} color="var(--s3)" />} />
-        <Tile tone="amber" icon="✓" label="Pending approvals" value={awaiting}
+        <Tile tone="amber" icon={<Icon n="ok" size="lg" />} label="Pending approvals" value={awaiting}
           foot={`${pendLeave.length} leave · ${pendTS.length} timesheets · ${pendReg.length} regularisations`} />
       </StatRow>
 
@@ -399,7 +400,7 @@ function DashManager() {
                   {fmtDS(l.from)}{l.days > 1 ? ' – ' + fmtDS(l.to) : ''}
                 </div>
               </ListRow>
-            )) : <EmptyState msg="No approved leave in the next 3 weeks" icon="🗓" />}
+            )) : <EmptyState msg="No approved leave in the next 3 weeks" icon={<Icon n="schedule" size="lg" />} />}
           </div>
         </Card>
       </div>
@@ -497,13 +498,13 @@ function DashEmployee() {
       </div>
 
       <StatRow cols={4}>
-        <Tile tone="green" icon="🌴" label="Leave available"
+        <Tile tone="green" icon={<Icon n="holiday" size="lg" />} label="Leave available"
           value={<>{sum(bals, (b) => b.avail).toFixed(1)} <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 600 }}>days</span></>}
           foot={bals.map((b) => `${b.type} ${b.avail}`).slice(0, 3).join(' · ')} />
-        <Tile tone="blue" icon="⏱" label="This week" value={(myTS ? myTS.total : 0) + ' h'}
+        <Tile tone="blue" icon={<Icon n="timer" size="lg" />} label="This week" value={(myTS ? myTS.total : 0) + ' h'}
           foot={myTS ? <><StatusBadge status={myTS.status} /> <span className="muted">target 40 h</span></> : 'Not started'}
           spark={<Spark data={wk.map((w) => w.v)} color="var(--s1)" />} />
-        <Tile tone="violet" icon="₹" label={'Net pay' + (lastRun ? ' · ' + monthLabel(lastRun.mk) : '')} value={ps ? m(ps.net) : '—'}
+        <Tile tone="violet" icon={<Icon n="rupee" size="lg" />} label={'Net pay' + (lastRun ? ' · ' + monthLabel(lastRun.mk) : '')} value={ps ? m(ps.net) : '—'}
           foot={ps
             ? <span className="muted">Gross {m(ps.gross)} · {ctry.empTax.split(' ')[0]} {m(ps.statutory.tax)}</span>
             : <span className="muted">No payslip yet</span>} />

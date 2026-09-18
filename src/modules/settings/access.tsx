@@ -13,6 +13,7 @@ import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { ACCOUNTS, PERMS, SCOPE } from '../../state/rbac';
 import { useAllEmployees, useSetRole } from './data';
+import { Icon } from '../../components/icons';
 
 export const ROLES: AppRole[] = ['admin', 'manager', 'employee'];
 
@@ -245,7 +246,7 @@ function ChangeRoleBody({ e, onPick }: { e: Employee; onPick: (r: AppRole) => vo
           <option value="employee">Employee — self-service</option>
         </select>
       </div>
-      <Banner kind="warn" icon="⚠️">
+      <Banner kind="warn" icon={<Icon n="warn" size="lg" />}>
         Changing a role takes effect immediately and is recorded in the audit log.
       </Banner>
     </>

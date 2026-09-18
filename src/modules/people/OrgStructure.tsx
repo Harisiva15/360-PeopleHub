@@ -23,6 +23,7 @@ import type { Requisition } from '../../services';
 import { sortBy } from '../../lib/collections';
 import { DEPTS, deptOf, siteOf } from '../../data/org';
 import { Avatar, EmptyState } from '../../components/ui';
+import { Icon } from '../../components/icons';
 
 /** How many designations get their own line before the rest are folded up. */
 const NAMED_ROWS = 4;
@@ -55,7 +56,7 @@ function PersonLine({ e, role, onOpen }: { e: Employee; role?: string; onOpen: (
       <span className="org-t">
         <span className="org-n">{e.name}</span>
         <span className="org-d">{role ?? e.designation}</span>
-        <span className="org-m">📍 {siteOf(e.site).city === '—' ? 'Remote' : siteOf(e.site).city}</span>
+        <span className="org-m"><Icon n="location" size="lg" /> {siteOf(e.site).city === '—' ? 'Remote' : siteOf(e.site).city}</span>
       </span>
     </button>
   );
@@ -101,7 +102,7 @@ export function OrgStructure({
 
   if (!ceo) {
     return (
-      <EmptyState icon="☰"
+      <EmptyState icon={<Icon n="menu" size="lg" />}
         msg="Nobody sits at the top of the chart — every employee has a manager, so there is no structure to draw from." />
     );
   }

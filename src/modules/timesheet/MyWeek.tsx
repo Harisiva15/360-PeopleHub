@@ -33,6 +33,7 @@ import {
   useAddEntry, useCopyPreviousWeek, useRecallSheet, useRemoveEntry, useSetComment,
   useSheet, useSubmitSheet, useUpdateEntry,
 } from './data';
+import { Icon } from '../../components/icons';
 
 /** The contracted week. Anything past this is overtime, and is labelled so. */
 export const STANDARD_WEEK = 40;
@@ -185,11 +186,11 @@ function StoredRow({
         <td className="right nowrap">
           {editable
             ? <button className="btn ghost icon sm" title="Remove this line"
-              aria-label="Remove this line" onClick={drop}>🗑</button>
+              aria-label="Remove this line" onClick={drop}><Icon n="remove" size="lg" /> </button>
             : <span className="muted">—</span>}
         </td>
       </tr>
-      {err && <tr className="ts-err"><td colSpan={8}>⚠ {err}</td></tr>}
+      {err && <tr className="ts-err"><td colSpan={8}><Icon n="warn" size="lg" /> {err}</td></tr>}
     </>
   );
 }
@@ -228,7 +229,7 @@ function DraftRow({
             aria-label="Discard this line" onClick={() => onDrop(draft.key)}>✕</button>
         </td>
       </tr>
-      {err && <tr className="ts-err"><td colSpan={8}>⚠ {err}</td></tr>}
+      {err && <tr className="ts-err"><td colSpan={8}><Icon n="warn" size="lg" /> {err}</td></tr>}
     </>
   );
 }
@@ -321,7 +322,7 @@ function BulkForm({ sheet, close }: { sheet: Timesheet; close: () => void }) {
           onChange={(e) => setRemarks(e.target.value)} />
       </div>
 
-      {err && <Banner kind="warn" icon="⚠" title="Not everything went in">{err}</Banner>}
+      {err && <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Not everything went in">{err}</Banner>}
 
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
         <button className="btn" onClick={close}>Cancel</button>
@@ -425,7 +426,7 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
           ...(overtime ? [['Overtime', hrs(overtime)] as [string, string]] : []),
         ]} />
         {drafts.length > 0 && (
-          <Banner kind="warn" icon="⚠" title="Unsaved lines">
+          <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Unsaved lines">
             {drafts.length} {drafts.length === 1 ? 'line has' : 'lines have'} not been saved,
             and will not be submitted.
           </Banner>
@@ -514,22 +515,21 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
         <div className="spacer" />
         {editable && (
           <>
-            <button className="btn sm" disabled={copyPrev.pending} onClick={doCopy}>
-              ⧉ Copy previous week
+            <button className="btn sm" disabled={copyPrev.pending} onClick={doCopy}><Icon n="swap" size="lg" /> Copy previous week
             </button>
-            <button className="btn sm" onClick={bulk}>≣ Bulk entry</button>
+            <button className="btn sm" onClick={bulk}><Icon n="goal" size="lg" /> Bulk entry</button>
           </>
         )}
       </div>
 
       {sheet.status === 'Returned' && sheet.note && (
-        <Banner kind="warn" icon="↩︎" title="Returned for correction">{sheet.note}</Banner>
+        <Banner kind="warn" icon={<Icon n="undo" size="lg" />} title="Returned for correction">{sheet.note}</Banner>
       )}
       {sheet.status === 'Rejected' && sheet.note && (
-        <Banner kind="warn" icon="✕" title="Rejected">{sheet.note}</Banner>
+        <Banner kind="warn" icon={<Icon n="close" size="lg" />} title="Rejected">{sheet.note}</Banner>
       )}
       {sheet.status === 'Approved' && (
-        <Banner kind="good" icon="✓" title="Approved">
+        <Banner kind="good" icon={<Icon n="ok" size="lg" />} title="Approved">
           This week is closed. Ask your manager to reopen it if something is wrong.
         </Banner>
       )}
@@ -563,7 +563,7 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
                   {!sheet.entries.length && !drafts.length && (
                     <tr>
                       <td colSpan={8}>
-                        <EmptyState icon="⏱"
+                        <EmptyState icon={<Icon n="timer" size="lg" />}
                           msg={editable
                             ? 'Nothing logged yet — add a row, or copy last week'
                             : 'No hours were logged this week'} />
@@ -632,7 +632,7 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
                   </div>
                 ))}
               </div>
-            ) : <EmptyState msg="Nothing logged yet this week" icon="⏱" />}
+            ) : <EmptyState msg="Nothing logged yet this week" icon={<Icon n="timer" size="lg" />} />}
           </Card>
 
           <Card title="Submission">

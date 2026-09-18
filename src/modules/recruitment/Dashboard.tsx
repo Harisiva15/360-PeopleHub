@@ -23,6 +23,7 @@ import { Card, EmptyState, StatRow, Tile } from '../../components/ui';
 import { HBar } from '../../components/charts';
 import { useFunnel, useJobOrders, useRecruitmentKpi, useVisiblePeople } from './data';
 import { Aging, Commercials, PriorityBadge, SlaBadge, jobNo } from './shared';
+import { Icon } from '../../components/icons';
 
 /* ---------------- the funnel ---------------- */
 
@@ -146,7 +147,7 @@ export function Filters({
 
 export function OrderTable({ rows, empty }: { rows: JobOrderRow[]; empty: string }) {
   const dir = useVisiblePeople();
-  if (!rows.length) return <EmptyState icon="📋" msg={empty} />;
+  if (!rows.length) return <EmptyState icon={<Icon n="goal" size="lg" />} msg={empty} />;
 
   return (
     <div className="tbl-wrap">
@@ -230,25 +231,25 @@ export function RecruitmentDashboard() {
       <Filters f={f} set={setF} book={book} />
 
       <StatRow cols={4}>
-        <Tile icon="📋" label="Open jobs" value={kpi?.openJobs ?? '—'}
+        <Tile icon={<Icon n="goal" size="lg" />} label="Open jobs" value={kpi?.openJobs ?? '—'}
           foot="Currently taking submissions" />
-        <Tile icon="👤" label="Jobs assigned" value={kpi?.assignedJobs ?? '—'}
+        <Tile icon={<Icon n="person" size="lg" />} label="Jobs assigned" value={kpi?.assignedJobs ?? '—'}
           foot={kpi ? `${kpi.openJobs - kpi.assignedJobs} with nobody on the desk` : ''} />
-        <Tile icon="📤" label="Total submissions" value={kpi?.submissions ?? '—'}
+        <Tile icon={<Icon n="submission" size="lg" />} label="Total submissions" value={kpi?.submissions ?? '—'}
           foot="Profiles put to clients" />
-        <Tile icon="🗓" label="Interviews" value={kpi?.interviews ?? '—'}
+        <Tile icon={<Icon n="schedule" size="lg" />} label="Interviews" value={kpi?.interviews ?? '—'}
           foot="Scheduled with the client" />
       </StatRow>
 
       <StatRow cols={4}>
-        <Tile icon="📨" label="Offers" value={kpi?.offers ?? '—'} foot="Released to candidates" />
-        <Tile icon="✅" label="Hires" value={kpi?.hires ?? '—'}
+        <Tile icon={<Icon n="send" size="lg" />} label="Offers" value={kpi?.offers ?? '—'} foot="Released to candidates" />
+        <Tile icon={<Icon n="done" size="lg" />} label="Hires" value={kpi?.hires ?? '—'}
           foot={kpi && kpi.submissions
             ? `${pct(kpi.hires, kpi.submissions)}% of submissions`
             : 'Successful placements'} />
-        <Tile icon="⏳" label="Jobs closing soon" value={kpi?.closingSoon ?? '—'}
+        <Tile icon={<Icon n="hourglass" size="lg" />} label="Jobs closing soon" value={kpi?.closingSoon ?? '—'}
           foot="Fill target inside a week" />
-        <Tile icon="⚠️" label="Aging jobs" value={kpi?.aging ?? '—'}
+        <Tile icon={<Icon n="warn" size="lg" />} label="Aging jobs" value={kpi?.aging ?? '—'}
           foot="Past a target and still open" />
       </StatRow>
 

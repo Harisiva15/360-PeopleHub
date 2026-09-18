@@ -26,6 +26,7 @@ import {
 } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 type Tab = 'post' | 'access' | 'audit' | 'privacy';
 
@@ -231,7 +232,7 @@ function AccessTab({ goToAudit }: { goToAudit: () => void }) {
       <Card
         title="Access review findings"
         sub={`${findings.length} items · ranked by risk`}
-        actions={<button className="btn sm" onClick={exportCSV}>⤓ Export</button>}
+        actions={<button className="btn sm" onClick={exportCSV}><Icon n="download" size="lg" /> Export</button>}
         flush
       >
         {findings.length ? (
@@ -253,7 +254,7 @@ function AccessTab({ goToAudit }: { goToAudit: () => void }) {
             ))}
           </div>
         ) : (
-          <EmptyState msg="No open access findings" icon="✓" />
+          <EmptyState msg="No open access findings" icon={<Icon n="ok" size="lg" />} />
         )}
       </Card>
 
@@ -326,7 +327,7 @@ function AuditTab() {
         </select>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12.5 }}>Append-only · retained 2 years</span>
-        <button className="btn" onClick={exportCSV}>⤓ Export</button>
+        <button className="btn" onClick={exportCSV}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={4}>
@@ -418,7 +419,7 @@ function PrivacyTab() {
       <Card
         title="Data inventory and retention"
         sub="What we hold, why, and for how long"
-        actions={<button className="btn sm" onClick={exportCSV}>⤓ Export</button>}
+        actions={<button className="btn sm" onClick={exportCSV}><Icon n="download" size="lg" /> Export</button>}
         flush
       >
         <Table>
@@ -476,7 +477,7 @@ function PrivacyTab() {
         </Card>
       </div>
 
-      <Banner kind="info" icon="ℹ">
+      <Banner kind="info" icon={<Icon n="info" size="lg" />}>
         Attendance geo-coordinates are the most sensitive routine collection in this system. They are captured only
         times, the work mode chosen, and the coordinates captured at punch — compared against the site's
         geo-fence, retained for 24 months, and never used for continuous tracking between punches.

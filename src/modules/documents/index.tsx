@@ -22,6 +22,7 @@ import {
   useAllEmployees, useDocuments, useDocumentTypes, useIssueLetter, useLetterRequests,
   useLetterTypes, useRejectLetter, useVisiblePeople,
 } from './data';
+import { Icon } from '../../components/icons';
 
 type Tab = 'gen' | 'mine' | 'queue' | 'repo';
 
@@ -44,7 +45,7 @@ function GenTab() {
 
   return (
     <div className="stack">
-      <Banner kind="info" icon="📄" title="Self-service letters">
+      <Banner kind="info" icon={<Icon n="document" size="lg" />} title="Self-service letters">
         Letters marked “instant” are generated immediately with your live employment data and a digital signature.
         Others go to HR and are usually issued within 2–3 working days.
       </Banner>
@@ -116,7 +117,7 @@ function MineTab() {
           {docs.length ? (
             docs.map((d) => (
               <ListRow key={d.id}>
-                <span>📄</span>
+                <span><Icon n="document" size="lg" /> </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 650, fontSize: 12.5 }}>{d.type}</div>
                   <div className="muted" style={{ fontSize: 11.5 }}>Uploaded {fmtD(d.on)}</div>
@@ -132,12 +133,12 @@ function MineTab() {
 
         <Card title="My letter requests" sub={`${reqs.length} requests`} flush
           actions={
-            <button className="btn sm primary" onClick={askForLetter}>＋ Request a letter</button>
+            <button className="btn sm primary" onClick={askForLetter}><Icon n="add" size="lg" /> Request a letter</button>
           }>
           {reqs.length ? (
             reqs.map((l) => (
               <ListRow key={l.id}>
-                <span>✉️</span>
+                <span><Icon n="mail" size="lg" /> ️</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 650, fontSize: 12.5 }}>{letterName(l.type)}</div>
                   <div className="muted" style={{ fontSize: 11.5 }}>
@@ -154,14 +155,14 @@ function MineTab() {
               </ListRow>
             ))
           ) : (
-            <EmptyState msg="No requests yet" icon="✉️" />
+            <EmptyState msg="No requests yet" icon={<Icon n="mail" size="lg" />} />
           )}
         </Card>
       </div>
 
       <Card title="Documents HR asks for" sub="What is outstanding, and what has been checked">
         <DocumentCollection scope={{ empId: app.meId }} />
-        <Banner kind="info" icon="📎" title="Attachments are not stored yet">
+        <Banner kind="info" icon={<Icon n="attachment" size="lg" />} title="Attachments are not stored yet">
           HR tracks what has been received and verified here. Handing the file over
           still happens outside the system — there is no document storage in this
           deployment, and a button claiming to keep your degree certificate would
@@ -294,7 +295,7 @@ function RepoTab() {
           sub={`${missing.length} people`}
           actions={
             <button className="btn sm" onClick={() => app.toast('Reminder emails sent to employees with incomplete files', 'ok')}>
-              📧 Send reminders
+              <Icon n="mail" size="lg" /> Send reminders
             </button>
           }
           flush

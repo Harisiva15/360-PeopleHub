@@ -22,6 +22,7 @@ import { MonthCalendar } from '../dashboard/shared';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 const ATT_LABEL: Record<string, { kind: 'good' | 'info' | 'warn' | 'crit' | 'mute'; label: string }> = {
   P: { kind: 'good', label: 'Present' },
@@ -69,7 +70,7 @@ function AttRow({ r, person, onClick }: { r: AttRecord; person?: Employee; onCli
       <td className="nowrap">{fmtD(r.date)} <span className="muted">{dowOf(r.date)}</span></td>
       <td>
         <Badge kind={b.kind}>{b.label}</Badge>
-        {r.reg && <> <Badge kind="info" >⟳ {r.reg.status}</Badge></>}
+        {r.reg && <> <Badge kind="info" ><Icon n="refresh" size="lg" /> {r.reg.status}</Badge></>}
       </td>
       <td className="mono">
         {r.inT ? <>{fmtTime(r.inT)}{r.late && <span style={{ color: 'var(--crit)' }} title="Late"> •</span>}</> : '—'}
@@ -120,8 +121,8 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
           {months.map((m) => <option key={m} value={m}>{monthLabelLong(m)}</option>)}
         </select>
         <div className="spacer" />
-        <button className="btn" onClick={onRegularise}>＋ Request regularisation</button>
-        <button className="btn" onClick={exportCsv}>⤓ Export</button>
+        <button className="btn" onClick={onRegularise}><Icon n="add" size="lg" /> Request regularisation</button>
+        <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={5}>
@@ -218,7 +219,7 @@ function AttLive() {
                 <option value="L">On leave</option>
                 <option value="A">Absent</option>
               </select>
-              <button className="btn sm" onClick={exportCsv}>⤓</button>
+              <button className="btn sm" onClick={exportCsv}><Icon n="download" size="lg" /> </button>
             </div>
           }>
           <div style={{ maxHeight: 560, overflow: 'auto' }} className="tbl-wrap">
@@ -348,7 +349,7 @@ function AttLog() {
           {SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <div className="spacer" />
-        <button className="btn" onClick={exportCsv}>⤓ Export muster roll</button>
+        <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export muster roll</button>
       </div>
 
       <StatRow cols={4}>
@@ -419,7 +420,7 @@ function RegTable({ list, act, dir, onApprove, onReject }: {
   onReject: (r: AttRecord) => void;
   dir?: Directory;
 }) {
-  if (!list.length) return <EmptyState msg="Nothing here" icon="⟳" />;
+  if (!list.length) return <EmptyState msg="Nothing here" icon={<Icon n="refresh" size="lg" />} />;
   return (
     <div className="tbl-wrap">
       <table className="tbl">
@@ -492,7 +493,7 @@ function AttReg({ onRegularise }: { onRegularise: () => void }) {
       )}
 
       <Card title="My requests" sub={`${mine.length} total`} flush
-        actions={<button className="btn sm primary" onClick={onRegularise}>＋ New request</button>}>
+        actions={<button className="btn sm primary" onClick={onRegularise}><Icon n="add" size="lg" /> New request</button>}>
         <RegTable list={mine} act={false} onApprove={approve} onReject={reject} />
       </Card>
 
@@ -522,7 +523,7 @@ function AttCal() {
       <div className="grid g-2-1">
         <Card title={'Holiday calendar ' + y}
           sub={`${HOLIDAYS.filter((h) => !h.opt).length} fixed · ${HOLIDAYS.filter((h) => h.opt).length} optional`}
-          actions={<button className="btn sm" onClick={exportCsv}>⤓ Export</button>} flush>
+          actions={<button className="btn sm" onClick={exportCsv}><Icon n="download" size="lg" /> Export</button>} flush>
           <div className="tbl-wrap">
             <table className="tbl">
               <thead>

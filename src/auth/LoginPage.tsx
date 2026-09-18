@@ -24,6 +24,7 @@ import { ORG } from '../data/org';
 import { useAuth } from './AuthContext';
 import { providerLabel, ssoProviders } from './supabase';
 import type { SsoProvider } from './supabase';
+import { Icon } from '../components/icons';
 
 /** Drawn rather than fetched — a sign-in page should not wait on a CDN. */
 const PROVIDER_MARK: Record<SsoProvider, string> = {
@@ -40,12 +41,12 @@ const PROVIDER_MARK: Record<SsoProvider, string> = {
  * promises something that is not behind the login.
  */
 const CAPABILITIES: { k: string; ic: string; tone: string }[] = [
-  { k: 'Employee\nManagement', ic: '👥', tone: 'blue' },
-  { k: 'Leave &\nAttendance', ic: '🗓', tone: 'green' },
-  { k: 'Payroll &\nBenefits', ic: '📄', tone: 'violet' },
-  { k: 'Performance\n& Growth', ic: '📊', tone: 'teal' },
-  { k: 'Engagement\n& Recognition', ic: '⭐', tone: 'amber' },
-  { k: 'IT Assets\n& Support', ic: '💻', tone: 'rose' },
+  { k: 'Employee\nManagement', ic: 'people', tone: 'blue' },
+  { k: 'Leave &\nAttendance', ic: 'schedule', tone: 'green' },
+  { k: 'Payroll &\nBenefits', ic: 'document', tone: 'violet' },
+  { k: 'Performance\n& Growth', ic: 'chart', tone: 'teal' },
+  { k: 'Engagement\n& Recognition', ic: 'star', tone: 'amber' },
+  { k: 'IT Assets\n& Support', ic: 'laptop', tone: 'rose' },
 ];
 
 export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
@@ -130,7 +131,7 @@ export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
 
             <form onSubmit={onSubmit}>
               <div className="login-field">
-                <span className="login-ic" aria-hidden="true">✉</span>
+                <span className="login-ic" aria-hidden="true"><Icon n="mail" size="lg" /> </span>
                 <input
                   id="login-email"
                   className="input"

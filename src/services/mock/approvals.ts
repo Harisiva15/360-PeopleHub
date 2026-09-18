@@ -24,16 +24,16 @@ export const approvalsService: ApprovalsService = {
   pending({ role, meId }) {
     const ids = visibleIds(role, meId).filter((i) => i !== meId);
     const rows: PendingItem[] = [
-      { ic: '🌴', k: 'Leave requests', n: LEAVES.filter((l) => l.status === 'Pending' && ids.includes(l.empId)).length, r: 'leave' },
-      { ic: '⏱️', k: 'Timesheets', n: TS.filter((t) => t.status === 'Submitted' && ids.includes(t.empId)).length, r: 'timesheet' },
-      { ic: '📍', k: 'Attendance regularisations', n: ATT.filter((a) => a.reg && a.reg.status === 'Pending' && ids.includes(a.empId)).length, r: 'attendance' },
-      { ic: '🎯', k: 'Interview feedback pending', n: INTERVIEWS.filter((i) => i.panelId === meId && i.status === 'Completed' && !i.feedback).length, r: 'hiring' },
-      { ic: '📄', k: 'Offers awaiting approval', n: role === 'admin' ? CANDS.filter((c) => c.offer && c.offer.status === 'Sent').length : 0, r: 'hiring' },
-      { ic: '🧾', k: 'Expense claims', n: CLAIMS.filter((c) => c.status === 'Submitted' && ids.includes(c.empId)).length, r: 'expenses' },
-      { ic: '⏱️', k: 'Overtime requests', n: OVERTIME.filter((o) => o.status === 'Pending' && ids.includes(o.empId)).length, r: 'shifts' },
-      { ic: '🏦', k: 'Loan applications', n: role === 'admin' ? LOANS.filter((l) => l.status === 'Pending Approval').length : 0, r: 'benefits' },
-      { ic: '✉️', k: 'Letter requests', n: role === 'admin' ? LETTER_REQS.filter((l) => l.status === 'Pending').length : 0, r: 'documents' },
-      { ic: '📝', k: 'Performance reviews to write', n: role === 'employee' ? 0 : REVIEWS.filter((r) => ids.includes(r.empId) && r.self.rating && !r.manager.rating).length, r: 'performance' },
+      { ic: 'holiday', k: 'Leave requests', n: LEAVES.filter((l) => l.status === 'Pending' && ids.includes(l.empId)).length, r: 'leave' },
+      { ic: 'timer', k: 'Timesheets', n: TS.filter((t) => t.status === 'Submitted' && ids.includes(t.empId)).length, r: 'timesheet' },
+      { ic: 'location', k: 'Attendance regularisations', n: ATT.filter((a) => a.reg && a.reg.status === 'Pending' && ids.includes(a.empId)).length, r: 'attendance' },
+      { ic: 'target', k: 'Interview feedback pending', n: INTERVIEWS.filter((i) => i.panelId === meId && i.status === 'Completed' && !i.feedback).length, r: 'hiring' },
+      { ic: 'document', k: 'Offers awaiting approval', n: role === 'admin' ? CANDS.filter((c) => c.offer && c.offer.status === 'Sent').length : 0, r: 'hiring' },
+      { ic: 'invoice', k: 'Expense claims', n: CLAIMS.filter((c) => c.status === 'Submitted' && ids.includes(c.empId)).length, r: 'expenses' },
+      { ic: 'timer', k: 'Overtime requests', n: OVERTIME.filter((o) => o.status === 'Pending' && ids.includes(o.empId)).length, r: 'shifts' },
+      { ic: 'bank', k: 'Loan applications', n: role === 'admin' ? LOANS.filter((l) => l.status === 'Pending Approval').length : 0, r: 'benefits' },
+      { ic: 'mail', k: 'Letter requests', n: role === 'admin' ? LETTER_REQS.filter((l) => l.status === 'Pending').length : 0, r: 'documents' },
+      { ic: 'note', k: 'Performance reviews to write', n: role === 'employee' ? 0 : REVIEWS.filter((r) => ids.includes(r.empId) && r.self.rating && !r.manager.rating).length, r: 'performance' },
     ];
     return ok(rows.filter((i) => i.n > 0));
   },

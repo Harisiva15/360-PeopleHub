@@ -29,6 +29,7 @@ import {
   useAssign, useJobOrder, useLogActivity, useRelease, useUpdateJobOrder, useVisiblePeople,
 } from './data';
 import { Commercials, PriorityBadge, SlaBadge, jobNo, rateUnit } from './shared';
+import { Icon } from '../../components/icons';
 
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -54,7 +55,7 @@ function clockOf(at: string): string {
  */
 function Timeline({ rows }: { rows: JobActivity[] }) {
   const dir = useVisiblePeople();
-  if (!rows.length) return <EmptyState icon="🕑" msg="Nothing has happened on this order yet" />;
+  if (!rows.length) return <EmptyState icon={<Icon n="clock" size="lg" />} msg="Nothing has happened on this order yet" />;
 
   const days = sortBy(
     Array.from(new Set(rows.map((a) => dayOf(a.at)))),
@@ -145,7 +146,7 @@ function LogForm({ id, close }: { id: string; close: () => void }) {
           placeholder={counted ? 'Optional — the count is enough' : 'What the desk should know'}
           onChange={(e) => setSummary(e.target.value)} />
       </div>
-      {err && <div className="ts-err-box">⚠ {err}</div>}
+      {err && <div className="ts-err-box"><Icon n="warn" size="lg" /> {err}</div>}
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
         <button className="btn" onClick={close}>Cancel</button>
         <button className="btn primary" disabled={add.pending} onClick={save}>Log it</button>
@@ -275,7 +276,7 @@ function AssignForm({
           onChange={(e) => setNotes(e.target.value)} />
       </div>
 
-      {err && <div className="ts-err-box">⚠ {err}</div>}
+      {err && <div className="ts-err-box"><Icon n="warn" size="lg" /> {err}</div>}
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
         <button className="btn" onClick={close}>Cancel</button>
         <button className="btn primary" disabled={assign.pending} onClick={save}>
@@ -405,7 +406,7 @@ export function JobOrderPage({ id, back }: { id: string; back: () => void }) {
 
   if (!d) {
     return (
-      <EmptyState icon="📋"
+      <EmptyState icon={<Icon n="goal" size="lg" />}
         msg={loading ? 'Loading the job order…' : 'That job order could not be found'} />
     );
   }
@@ -473,7 +474,7 @@ export function JobOrderPage({ id, back }: { id: string; back: () => void }) {
       </div>
 
       {d.sla.state === 'Overdue' && (
-        <Banner kind="warn" icon="⚠"
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />}
           title={`Behind on ${d.sla.behind}`}>
           This order is {d.sla.aging} {d.sla.aging === 1 ? 'day' : 'days'} past its fill target
           and has been open for {d.sla.daysOpen}.

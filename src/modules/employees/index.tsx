@@ -16,6 +16,7 @@ import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { useApp } from '../../state/AppContext';
 import type { Grade } from '../../types/country';
+import { Icon } from '../../components/icons';
 
 function Employees() {
   const app = useApp();
@@ -123,22 +124,22 @@ function Employees() {
           <button className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')} title="Grid">▦</button>
           <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')} title="List">☰</button>
         </div>
-        <button className="btn" onClick={exportCsv}>⤓ Export</button>
+        <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export</button>
         {canAddPeople && (
-          <button className="btn primary" onClick={addJoiner}>＋ Add employee</button>
+          <button className="btn primary" onClick={addJoiner}><Icon n="add" size="lg" /> Add employee</button>
         )}
       </div>
 
       {canAddPeople && <JoinerQueue rows={joiners} onDecide={decide} />}
 
       <StatRow cols={4}>
-        <Tile icon="👥" label="Total employees" value={list.length}
+        <Tile icon={<Icon n="people" size="lg" />} label="Total employees" value={list.length}
           foot="Matching current filters" />
-        <Tile icon="🏢" label="Departments"
+        <Tile icon={<Icon n="building" size="lg" />} label="Departments"
           value={new Set(list.map((e) => e.dept)).size} foot="Represented in this list" />
-        <Tile icon="📍" label="Locations"
+        <Tile icon={<Icon n="location" size="lg" />} label="Locations"
           value={new Set(list.map((e) => e.site)).size} foot="Offices and remote" />
-        <Tile icon="🎉" label="New joiners"
+        <Tile icon={<Icon n="party" size="lg" />} label="New joiners"
           value={list.filter((e) => e.doj.slice(0, 4) === ymd(TODAY).slice(0, 4)).length}
           foot={`Joined in ${ymd(TODAY).slice(0, 4)}`} />
       </StatRow>

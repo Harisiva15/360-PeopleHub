@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ComponentType } from 'react';
+import type { IconName } from '../../components/icons';
 import { Card, EmptyState } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
@@ -8,12 +9,14 @@ import type { AppRole } from '../../types/employee';
 import { RepAttendance, RepAttrition, RepHeadcount, RepLeave } from './people';
 import { RepCompliance, RepPayroll, RepSpend } from './money';
 import { RepHiring, RepService, RepTalent, RepUtil } from './work';
+import { Icon } from '../../components/icons';
 
 interface ReportDef {
   id: string;
   n: string;
   d: string;
-  ic: string;
+  /** Name in `src/components/icons.tsx`, not a glyph. */
+  ic: IconName;
   roles: AppRole[];
   Body: ComponentType;
 }
@@ -23,17 +26,17 @@ interface ReportDef {
  * manager sees only the ones that stay meaningful inside their own team.
  */
 const REPORTS: ReportDef[] = [
-  { id: 'attendance', n: 'Attendance Summary', d: 'Presence, WFH, late marks and absence', ic: '◉', roles: ['admin', 'manager'], Body: RepAttendance },
-  { id: 'payroll', n: 'Payroll Cost Analysis', d: 'Gross, deductions and net across months and departments', ic: '₹', roles: ['admin'], Body: RepPayroll },
-  { id: 'headcount', n: 'Headcount & Diversity', d: 'Distribution by department, grade, location and gender', ic: '☰', roles: ['admin', 'manager'], Body: RepHeadcount },
-  { id: 'attrition', n: 'Attrition & Retention', d: 'Exits, reasons, tenure at exit and retention rate', ic: '↘', roles: ['admin'], Body: RepAttrition },
-  { id: 'hiring', n: 'Hiring Effectiveness', d: 'Funnel conversion, source quality and time to hire', ic: '◎', roles: ['admin', 'manager'], Body: RepHiring },
-  { id: 'leave', n: 'Leave Liability', d: 'Balances, utilisation and encashment liability', ic: '↗', roles: ['admin', 'manager'], Body: RepLeave },
-  { id: 'utilisation', n: 'Timesheet Utilisation', d: 'Billable vs non-billable effort by project and person', ic: '▤', roles: ['admin', 'manager'], Body: RepUtil },
-  { id: 'compliance', n: 'Statutory Compliance', d: 'PF, ESI, PT and TDS remittance summary', ic: '§', roles: ['admin'], Body: RepCompliance },
-  { id: 'talent', n: 'Performance & Talent', d: 'Goal achievement, rating spread, 9-box and recognition', ic: '◈', roles: ['admin', 'manager'], Body: RepTalent },
-  { id: 'spend', n: 'Expense & Employee Cost', d: 'Claims, loans, benefits and total cost per employee', ic: '🧾', roles: ['admin'], Body: RepSpend },
-  { id: 'service', n: 'Helpdesk & Engagement', d: 'Ticket SLAs, survey scores and learning completion', ic: '◒', roles: ['admin', 'manager'], Body: RepService },
+  { id: 'attendance', n: 'Attendance Summary', d: 'Presence, WFH, late marks and absence', ic: 'attendance', roles: ['admin', 'manager'], Body: RepAttendance },
+  { id: 'payroll', n: 'Payroll Cost Analysis', d: 'Gross, deductions and net across months and departments', ic: 'rupee', roles: ['admin'], Body: RepPayroll },
+  { id: 'headcount', n: 'Headcount & Diversity', d: 'Distribution by department, grade, location and gender', ic: 'people', roles: ['admin', 'manager'], Body: RepHeadcount },
+  { id: 'attrition', n: 'Attrition & Retention', d: 'Exits, reasons, tenure at exit and retention rate', ic: 'down', roles: ['admin'], Body: RepAttrition },
+  { id: 'hiring', n: 'Hiring Effectiveness', d: 'Funnel conversion, source quality and time to hire', ic: 'hiring', roles: ['admin', 'manager'], Body: RepHiring },
+  { id: 'leave', n: 'Leave Liability', d: 'Balances, utilisation and encashment liability', ic: 'up', roles: ['admin', 'manager'], Body: RepLeave },
+  { id: 'utilisation', n: 'Timesheet Utilisation', d: 'Billable vs non-billable effort by project and person', ic: 'timesheet', roles: ['admin', 'manager'], Body: RepUtil },
+  { id: 'compliance', n: 'Statutory Compliance', d: 'PF, ESI, PT and TDS remittance summary', ic: 'policy', roles: ['admin'], Body: RepCompliance },
+  { id: 'talent', n: 'Performance & Talent', d: 'Goal achievement, rating spread, 9-box and recognition', ic: 'performance', roles: ['admin', 'manager'], Body: RepTalent },
+  { id: 'spend', n: 'Expense & Employee Cost', d: 'Claims, loans, benefits and total cost per employee', ic: 'invoice', roles: ['admin'], Body: RepSpend },
+  { id: 'service', n: 'Helpdesk & Engagement', d: 'Ticket SLAs, survey scores and learning completion', ic: 'helpdesk', roles: ['admin', 'manager'], Body: RepService },
 ];
 
 const availableTo = (role: AppRole) => REPORTS.filter((r) => r.roles.includes(role));
@@ -43,7 +46,7 @@ function ReportsView() {
   const avail = availableTo(app.role);
   const [sel, setSel] = useState(avail[0]?.id);
 
-  if (!avail.length) return <EmptyState msg="No reports are available for your role." icon="▥" />;
+  if (!avail.length) return <EmptyState msg="No reports are available for your role." icon={<Icon n="chart" size="lg" />} />;
 
   /* A role switch can strip the selected report out of the catalogue. */
   const active = avail.find((r) => r.id === sel) || avail[0];
@@ -59,7 +62,7 @@ function ReportsView() {
             style={r.id === active.id ? { background: 'var(--brand-wash)' } : undefined}
             onClick={() => setSel(r.id)}
           >
-            <div style={{ fontSize: 15, width: 20, textAlign: 'center' }}>{r.ic}</div>
+            <div style={{ width: 20, display: 'grid', placeItems: 'center' }}><Icon n={r.ic} size="lg" /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 650, fontSize: 12.5 }}>{r.n}</div>
               <div className="muted" style={{ fontSize: 11 }}>{r.d}</div>

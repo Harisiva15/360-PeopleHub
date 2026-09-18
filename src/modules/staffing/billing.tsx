@@ -12,6 +12,7 @@ import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { monthlyUnits } from './shared';
+import { Icon } from '../../components/icons';
 
 const INV_TONE: Record<string, 'good' | 'info' | 'crit' | 'warn' | 'mute'> = {
   Paid: 'good', Sent: 'info', Overdue: 'crit', Disputed: 'warn', Draft: 'mute',
@@ -29,7 +30,7 @@ function BlInv() {
   const { data: k } = useKpi();
   const { data: INVOICES = [] } = useInvoices();
   const [f, setF] = useState('');
-  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon={<Icon n="clock" size="lg" />} />;
   const list = sortBy(f ? INVOICES.filter((i) => i.status === f) : INVOICES, (i) => i.issuedOn, 'desc');
 
   return (
@@ -45,7 +46,7 @@ function BlInv() {
             [['ID', 'Client', 'Period', 'Lines', 'Amount', 'Tax', 'Total', 'Currency', 'Issued', 'Due', 'Status', 'Paid on']].concat(
               INVOICES.map((i) => [i.id, clientOf(i.clientId).name, i.period, String(i.lines.length),
                 String(i.amount), String(i.tax), String(i.total), i.ccy, i.issuedOn, i.dueOn, i.status, i.paidOn || '']),
-            ))}>⤓ Export</button>
+            ))}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={5}>
@@ -210,7 +211,7 @@ function BlGen() {
         </button>
       </div>
 
-      <Banner kind="info" icon="🧾" title="How billing is generated">
+      <Banner kind="info" icon={<Icon n="invoice" size="lg" />} title="How billing is generated">
         Approved client timesheets for the period are matched to the placement rate and the SOW purchase order, tax is
         applied by client country, and a draft invoice is created per client. Invoices for VMS clients are pushed to
         Fieldglass or Beeline instead of being emailed.

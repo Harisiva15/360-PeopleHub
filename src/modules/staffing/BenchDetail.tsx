@@ -17,6 +17,7 @@ import { countryOf, money } from '../../data/countries';
 import { Avatar, Badge, Card, EmptyState, KV } from '../../components/ui';
 import { Chip } from '../../components/common';
 import { useBenchStanding, useMatchesForConsultant } from './data';
+import { Icon } from '../../components/icons';
 
 export function BenchDetail({ c }: { c: Consultant }) {
   const { data: standing } = useBenchStanding(c.id);
@@ -68,7 +69,7 @@ export function BenchDetail({ c }: { c: Consultant }) {
             </div>
           </div>
         )) : (
-          <EmptyState icon="🔍"
+          <EmptyState icon={<Icon n="search" size="lg" />}
             msg="Nothing open matches them right now — retrain, redeploy internally, or release" />
         )}
       </Card>

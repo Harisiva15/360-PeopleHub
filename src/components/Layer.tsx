@@ -2,6 +2,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from 'react';
 import type { ReactNode } from 'react';
+import { Icon } from './icons';
 
 type Render = ReactNode | ((close: () => void) => ReactNode);
 
@@ -91,8 +92,7 @@ function Head({ layer, close }: { layer: LayerState; close: () => void }) {
         {layer.sub && <div className="sub">{layer.sub}</div>}
       </div>
       {layer.headExtra}
-      <button className="btn ghost icon no-print" onClick={close} aria-label="Close">
-        ✕
+      <button className="btn ghost icon no-print" onClick={close} aria-label="Close"><Icon n="close" size="lg" />
       </button>
     </div>
   );

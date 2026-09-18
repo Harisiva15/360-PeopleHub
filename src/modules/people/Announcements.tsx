@@ -24,6 +24,7 @@ import { Avatar, Badge, Card, EmptyState } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { can } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
+import { Icon } from '../../components/icons';
 
 /** A post is new for a week — long enough to be seen, short enough to mean it. */
 const NEW_DAYS = 7;
@@ -151,7 +152,7 @@ export function AnnouncementsView({
         </select>
         <div className="spacer" />
         {canPost && (
-          <button className="btn primary" onClick={onPost}>＋ New announcement</button>
+          <button className="btn primary" onClick={onPost}><Icon n="add" size="lg" /> New announcement</button>
         )}
       </div>
 
@@ -173,7 +174,7 @@ export function AnnouncementsView({
                       {a.title}
                     </button>
                     {age <= NEW_DAYS && <Badge kind="good">New</Badge>}
-                    {a.pin && <span title="Pinned">📌</span>}
+                    {a.pin && <span title="Pinned"><Icon n="flag" size="lg" /> </span>}
                   </div>
 
                   <div className={'ann-body' + (isOpen ? ' open' : '')}>{a.body}</div>
@@ -185,7 +186,7 @@ export function AnnouncementsView({
                       {fmtD(a.on)} · {a.dept === 'All' ? 'All employees' : deptOf(a.dept).name}
                     </span>
                     <button className="btn sm ghost" onClick={() => onAck(a)}>
-                      👍 {acks[a.id] ? 'Acknowledged' : 'Acknowledge'}
+                      <Icon n="applause" size="lg" /> {acks[a.id] ? 'Acknowledged' : 'Acknowledge'}
                     </button>
                     <span className="muted" style={{ fontSize: 11.5 }}>
                       {ackCount(a) + (acks[a.id] ? 1 : 0)} acknowledged
@@ -206,7 +207,7 @@ export function AnnouncementsView({
                 </div>
               </div>
             );
-          }) : <EmptyState msg="Nothing matches those filters" icon="📣" />}
+          }) : <EmptyState msg="Nothing matches those filters" icon={<Icon n="announcements" size="lg" />} />}
         </Card>
 
         <div className="stack">

@@ -29,6 +29,7 @@ import type { Employee } from '../../types/employee';
 import { sortBy } from '../../lib/collections';
 import { deptOf, siteOf } from '../../data/org';
 import { Avatar, Card, EmptyState } from '../../components/ui';
+import { Icon } from '../../components/icons';
 
 export interface OrgTree {
   e: Employee;
@@ -246,7 +247,7 @@ export function OrgTreeView({
 export function NoRoot() {
   return (
     <Card>
-      <EmptyState icon="☰"
+      <EmptyState icon={<Icon n="menu" size="lg" />}
         msg="Nobody sits at the top of the chart — every employee has a manager, so there is no root to draw from." />
     </Card>
   );

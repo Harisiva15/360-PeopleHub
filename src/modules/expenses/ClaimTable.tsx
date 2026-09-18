@@ -5,6 +5,7 @@ import type { Claim } from '../../services';
 import type { Directory } from '../../services/people';
 import { Badge, EmptyState, PersonCell } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
+import { Icon } from '../../components/icons';
 
 const CLAIM_TONE: Record<string, 'good' | 'info' | 'warn' | 'crit'> = {
   Reimbursed: 'good', Approved: 'info', Submitted: 'warn', Rejected: 'crit',
@@ -31,7 +32,7 @@ export function ClaimTable({
   onPay?: (c: Claim) => void;
 }) {
   const app = useApp();
-  if (!list.length) return <EmptyState msg="No claims here yet" icon="🧾" />;
+  if (!list.length) return <EmptyState msg="No claims here yet" icon={<Icon n="invoice" size="lg" />} />;
 
   return (
     <div className="tbl-wrap">

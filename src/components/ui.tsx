@@ -269,7 +269,7 @@ export function Badge({ kind = 'mute', children }: { kind?: BadgeKind; children:
 
 /* ---------- Empty state ---------- */
 
-export function EmptyState({ msg, icon }: { msg: ReactNode; icon?: string }) {
+export function EmptyState({ msg, icon }: { msg: ReactNode; icon?: ReactNode }) {
   return (
     <div className="empty">
       <span className="big">{icon || '◌'}</span>

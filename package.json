@@ -13,7 +13,7 @@
     "check:gate": "vite-node checks/auth-gate.tsx",
     "check:coverage": "vite-node checks/coverage.ts",
     "check:roles": "vite-node checks/roles.ts",
-    "check:all": "npm run check && npm run check:roles && npm run check:contrast && npm run check:joborders && npm run check:recruitment && npm run check:recruitment:screens && npm run check:coverage && npm run check:shape:contract && npm run check:payroll && npm run check:routes && npm run check:gate && npm run check:http && npm run check:intake && npm run check:people && npm run check:reachable",
+    "check:all": "npm run check && npm run check:roles && npm run check:contrast && npm run check:icons && npm run check:joborders && npm run check:recruitment && npm run check:recruitment:screens && npm run check:coverage && npm run check:shape:contract && npm run check:payroll && npm run check:routes && npm run check:gate && npm run check:http && npm run check:intake && npm run check:people && npm run check:reachable",
     "check:http": "vite-node checks/http-services.ts",
     "check:shape": "vite-node checks/api-shape.ts",
     "check:payroll": "vite-node checks/payroll-rules.ts",
@@ -24,11 +24,13 @@
     "check:contrast": "vite-node checks/contrast.ts",
     "check:joborders": "vite-node checks/joborders.ts",
     "check:recruitment": "vite-node checks/recruitment.ts",
-    "check:recruitment:screens": "vite-node checks/recruitment-screens.tsx"
+    "check:recruitment:screens": "vite-node checks/recruitment-screens.tsx",
+    "check:icons": "vite-node checks/icons.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
     "@supabase/supabase-js": "^2.115.0",
+    "lucide-react": "^1.47.0",
     "react": "^19.2.8",
     "react-router-dom": "^7.18.3"
   },

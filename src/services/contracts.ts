@@ -20,6 +20,7 @@
  */
 
 import type { AppRole, Employee } from '../types/employee';
+import type { IconName } from '../components/icons';
 import type { FbpPlan } from '../data/benefits';
 import type { LeaveBalance, LeaveRequest, LeaveStatus } from '../data/leave';
 import type { AttRecord } from '../data/attendance';
@@ -1309,7 +1310,8 @@ export interface OnboardingService {
 
 /** One queue waiting on the signed-in user. */
 export interface PendingItem {
-  ic: string;
+  /** Name in `src/components/icons.tsx`, not a glyph. */
+  ic: IconName;
   k: string;
   n: number;
   /** Route the row opens. */

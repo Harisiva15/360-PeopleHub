@@ -30,6 +30,8 @@ import { useAuth } from '../auth/AuthContext';
 import { useVisiblePeople } from '../services/people';
 import { Avatar } from '../components/ui';
 import { Menu } from '../components/Menu';
+import { Icon } from '../components/icons';
+import type { IconName } from '../components/icons';
 import { WorldClocks } from './WorldClocks';
 
 /* ---------------- what the header can reach ---------------- */
@@ -40,7 +42,7 @@ interface Dest {
   /** What to call it in a list: "Leave · Approvals". */
   label: string;
   href: string;
-  ic: string;
+  ic: IconName;
 }
 
 /**
@@ -86,13 +88,13 @@ function Crumbs({ route, search }: { route: string; search: string }) {
       <Link to="/dashboard">Home</Link>
       {g && (
         <>
-          <span aria-hidden="true">›</span>
+          <span aria-hidden="true"><Icon n="next" size="sm" /></span>
           {here ? <Link to={'/' + g.k}>{g.group}</Link> : <span>{g.group}</span>}
         </>
       )}
       {here && (
         <>
-          <span aria-hidden="true">›</span>
+          <span aria-hidden="true"><Icon n="next" size="sm" /></span>
           <span>{here.n}</span>
         </>
       )}
@@ -129,12 +131,12 @@ function GlobalSearch() {
     <div className="gsearch" onBlur={(e) => {
       if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false);
     }}>
-      <span className="gsearch-ic" aria-hidden="true">⌕</span>
+      <span className="gsearch-ic" aria-hidden="true"><Icon n="search" /></span>
       <input
         className="gsearch-in"
         type="search"
         value={q}
-        placeholder="Search people and pages…"
+        placeholder="Search people, policies, reports…"
         aria-label="Search people and pages"
         onFocus={() => setOpen(true)}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
@@ -170,7 +172,7 @@ function GlobalSearch() {
               <div className="gsearch-h">Pages</div>
               {pages.map((d) => (
                 <button key={d.href} className="gsearch-row" onClick={() => go(d.href)}>
-                  <span className="gs-ic" aria-hidden="true">{d.ic}</span>
+                  <span className="gs-ic" aria-hidden="true"><Icon n={d.ic} /></span>
                   <span className="gs-t"><b>{d.label}</b></span>
                 </button>
               ))}
@@ -217,7 +219,7 @@ export function TopBar({ mobile, onMenu, actionRef }: {
     <header className="topbar">
       {mobile && (
         <button className="btn ghost icon no-print" aria-label="Open the menu" onClick={onMenu}>
-          ☰
+          <Icon n="menu" size="lg" />
         </button>
       )}
 
@@ -236,13 +238,13 @@ export function TopBar({ mobile, onMenu, actionRef }: {
       <WorldClocks />
 
       <div className="topbar-acts no-print">
-        <Menu label="Quick actions" icon="＋" width={244}>
+        <Menu label="Quick actions" icon={<Icon n="add" size="lg" />} width={244}>
           {(close) => (
             <>
               <div className="menu-h">Quick actions</div>
               {quick.length ? quick.map((d) => (
                 <Link key={d.href} to={d.href} role="menuitem" className="menu-row" onClick={close}>
-                  <span className="gs-ic" aria-hidden="true">{d.ic}</span>
+                  <span className="gs-ic" aria-hidden="true"><Icon n={d.ic} /></span>
                   {d.label.split(' · ').pop()}
                 </Link>
               )) : <div className="menu-none">Nothing here is available to you.</div>}
@@ -250,13 +252,13 @@ export function TopBar({ mobile, onMenu, actionRef }: {
           )}
         </Menu>
 
-        <Menu label="Notifications" icon="◔" badge={waitingTotal} width={288}>
+        <Menu label="Notifications" icon={<Icon n="bell" size="lg" />} badge={waitingTotal} width={288}>
           {(close) => (
             <>
               <div className="menu-h">Waiting on you</div>
               {waiting.length ? waiting.map((d) => (
                 <Link key={d.k} to={d.href} role="menuitem" className="menu-row" onClick={close}>
-                  <span className="gs-ic" aria-hidden="true">{d.ic}</span>
+                  <span className="gs-ic" aria-hidden="true"><Icon n={d.ic} /></span>
                   <span style={{ flex: 1 }}>{d.label.split(' · ')[0]}</span>
                   <span className="menu-n">{d.n}</span>
                 </Link>
@@ -265,7 +267,7 @@ export function TopBar({ mobile, onMenu, actionRef }: {
           )}
         </Menu>
 
-        <Menu label="All modules" icon="⠿" width={310} className="appgrid-wrap">
+        <Menu label="All modules" icon={<Icon n="grid" size="lg" />} width={310} className="appgrid-wrap">
           {(close) => (
             <>
               <div className="menu-h">All modules</div>
@@ -273,7 +275,7 @@ export function TopBar({ mobile, onMenu, actionRef }: {
                 {groups.map((g) => (
                   <Link key={g.group} to={'/' + g.k} role="menuitem"
                     className="appgrid-i" onClick={close}>
-                    <span className="gs-ic" aria-hidden="true">{g.ic}</span>
+                    <span className="gs-ic" aria-hidden="true"><Icon n={g.ic} size="xl" /></span>
                     <span>{g.group}</span>
                   </Link>
                 ))}
@@ -303,11 +305,11 @@ export function TopBar({ mobile, onMenu, actionRef }: {
               </div>
 
               <Link to="/employees" role="menuitem" className="menu-row" onClick={close}>
-                <span className="gs-ic" aria-hidden="true">👤</span> My profile
+                <span className="gs-ic" aria-hidden="true"><Icon n="profile" /></span> My profile
               </Link>
               <button type="button" role="menuitem" className="menu-row"
                 onClick={() => { app.toggleTheme(); close(); }}>
-                <span className="gs-ic" aria-hidden="true">{app.theme === 'light' ? '☾' : '☀'}</span>
+                <span className="gs-ic" aria-hidden="true"><Icon n="sparkle" /></span>
                 {app.theme === 'light' ? 'Dark theme' : 'Light theme'}
               </button>
 
@@ -325,7 +327,7 @@ export function TopBar({ mobile, onMenu, actionRef }: {
                       className={'menu-row' + (app.role === a.role ? ' on' : '')}
                       onClick={() => { app.signInAs(a.role); close(); }}>
                       <span className="gs-ic" aria-hidden="true">
-                        {app.role === a.role ? '✓' : ' '}
+                        {app.role === a.role ? <Icon n="ok" /> : null}
                       </span>
                       {ROLE_LABEL[a.role]}
                     </button>
@@ -336,7 +338,7 @@ export function TopBar({ mobile, onMenu, actionRef }: {
                   <div className="menu-sep" />
                   <button type="button" role="menuitem" className="menu-row"
                     onClick={() => { close(); void auth.signOut(); }}>
-                    <span className="gs-ic" aria-hidden="true">⇥</span> Sign out
+                    <span className="gs-ic" aria-hidden="true"><Icon n="close" /></span> Sign out
                   </button>
                 </>
               )}

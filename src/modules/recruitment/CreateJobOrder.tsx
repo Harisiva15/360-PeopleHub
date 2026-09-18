@@ -27,6 +27,7 @@ import { Chip } from '../../components/common';
 import { useApp } from '../../state/AppContext';
 import { PageActions } from '../../shell/PageActions';
 import { useClients, useCreateJobOrder, useSows, useVendors, useVisiblePeople } from './data';
+import { Icon } from '../../components/icons';
 
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 const Req = () => <span className="req" aria-hidden="true">*</span>;
@@ -180,7 +181,7 @@ export function CreateJobOrder({ done }: { done: (id: string) => void }) {
         </button>
       </PageActions>
 
-      {err && <Banner kind="warn" icon="⚠" title="The job order was not created">{err}</Banner>}
+      {err && <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="The job order was not created">{err}</Banner>}
 
       <div className="grid g2">
         {/* ---- §4 ---- */}

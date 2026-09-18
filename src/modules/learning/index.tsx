@@ -18,6 +18,7 @@ import {
 } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 const COMPLIANCE_DEADLINE = '2026-09-30';
 
@@ -46,7 +47,7 @@ function Player({ en, close }: { en: Enrollment; close: () => void }) {
   const [progress, setProgress_] = useState(en.progress);
     return (
       <>
-        <Banner kind="info" icon="▶️">
+        <Banner kind="info" icon={<Icon n="next" size="lg" />}>
           You are {en.progress}% through this course.
         </Banner>
         <Divide />
@@ -102,7 +103,7 @@ function LnMy() {
   return (
     <div className="stack">
       {pending.length > 0 && (
-        <Banner kind="warn" icon="⚠️" title={`${pending.length} mandatory course(s) pending`}>
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title={`${pending.length} mandatory course(s) pending`}>
           Complete before 30 September — compliance training is tracked against your appraisal record.
         </Banner>
       )}
@@ -147,7 +148,7 @@ function LnMy() {
                 </div>
               </ListRow>
             );
-          }) : <EmptyState msg="Nothing enrolled yet — browse the catalogue" icon="🎓" />}
+          }) : <EmptyState msg="Nothing enrolled yet — browse the catalogue" icon={<Icon n="learning" size="lg" />} />}
         </Card>
 
         <div className="stack">
@@ -155,12 +156,12 @@ function LnMy() {
             <div style={{ maxHeight: 300, overflow: 'auto' }}>
               {done.length ? done.map((x) => (
                 <ListRow key={x.courseId} onClick={() => app.toast(`Certificate for "${courseOf(x.courseId).t}" downloaded`, 'ok')}>
-                  <span>🏅</span>
+                  <span><Icon n="award" size="lg" /> </span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 650, fontSize: 12.5 }}>{courseOf(x.courseId).t}</div>
                     <div className="muted" style={{ fontSize: 11 }}>Completed {fmtD(x.completedOn)}</div>
                   </div>
-                  <span className="muted">⤓</span>
+                  <span className="muted"><Icon n="download" size="lg" /> </span>
                 </ListRow>
               )) : <EmptyState msg="No certificates yet" />}
             </div>
@@ -289,7 +290,7 @@ function LnComp() {
 
       <div className="grid g-2-1">
         <Card title="Employees below 100%" sub={`${laggards.length} people`} flush
-          actions={<button className="btn sm" onClick={() => app.toast('Reminder emails sent to all employees below 100%', 'ok')}>📧 Send reminders</button>}>
+          actions={<button className="btn sm" onClick={() => app.toast('Reminder emails sent to all employees below 100%', 'ok')}><Icon n="mail" size="lg" /> Send reminders</button>}>
           <div style={{ maxHeight: 520, overflow: 'auto' }} className="tbl-wrap">
             <table className="tbl">
               <thead>
@@ -384,7 +385,7 @@ function LnTeam() {
                   return [e.code, e.name, c.t, c.cat, c.mandatory ? 'Yes' : 'No', x.status,
                     String(x.progress), x.completedOn || '', String(x.score ?? '')];
                 }),
-              ))}>⤓ Export</button>}>
+              ))}><Icon n="download" size="lg" /> Export</button>}>
           <div className="tbl-wrap" style={{ maxHeight: 520, overflow: 'auto' }}>
             <table className="tbl">
               <thead><tr><th>Employee</th><th className="num">Enrolled</th><th className="num">Completed</th><th className="num">Hours</th></tr></thead>

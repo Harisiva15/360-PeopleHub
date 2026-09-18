@@ -15,6 +15,7 @@ import { useAllEmployees, useEnpsHistory, useEnps, usePraise, useSurveys, useVis
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 const SCALE = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'];
 
@@ -85,7 +86,7 @@ function SurveyForm({ s, close }: { s: Survey; close: () => void }) {
         </>
       )}
 
-      <Banner kind="good" icon="🔒">
+      <Banner kind="good" icon={<Icon n="lock" size="lg" />}>
         {s.anonymous ? 'Your identity is not attached to this response.' : 'Your name is visible to HR for this survey.'}
       </Banner>
 
@@ -120,7 +121,7 @@ function EnOpen() {
 
   return (
     <div className="stack">
-      <Banner kind="info" icon="🔒" title="Your answers are anonymous">
+      <Banner kind="info" icon={<Icon n="lock" size="lg" />} title="Your answers are anonymous">
         Pulse and eNPS responses are aggregated — neither your manager nor HR can see individual answers. Results are
         only shown when at least 5 people in a group have responded.
       </Banner>
@@ -142,7 +143,7 @@ function EnOpen() {
         ))}
       </div>
 
-      {!live.length && <Card><EmptyState msg="No open surveys right now" icon="📋" /></Card>}
+      {!live.length && <Card><EmptyState msg="No open surveys right now" icon={<Icon n="goal" size="lg" />} /></Card>}
     </div>
   );
 }
@@ -158,7 +159,7 @@ function EnResults() {
   const enps = SURVEYS.find((s) => s.id === 'SV2');
 
   /* After every hook: the surveys arrive asynchronously. */
-  if (!pulse || !enps) return <EmptyState msg="Loading survey results…" icon="📊" />;
+  if (!pulse || !enps) return <EmptyState msg="Loading survey results…" icon={<Icon n="chart" size="lg" />} />;
 
   const score = enpsScore;
   const total = (enps.promoters ?? 0) + (enps.passives ?? 0) + (enps.detractors ?? 0);
@@ -168,14 +169,14 @@ function EnResults() {
   return (
     <div className="stack">
       <StatRow cols={4}>
-        <Tile icon="📊" label="Engagement score"
+        <Tile icon={<Icon n="chart" size="lg" />} label="Engagement score"
           value={pct(sum(questions, (q) => q.score), Math.max(1, questions.length) * 5) + '%'}
           foot={`${(sum(questions, (q) => q.score) / Math.max(1, questions.length)).toFixed(2)} out of 5`} />
-        <Tile icon="🏆" label="Total recognitions" value={praise.length}
+        <Tile icon={<Icon n="trophy" size="lg" />} label="Total recognitions" value={praise.length}
           foot="Given across the company" />
-        <Tile icon="🗳" label="Active polls" value={openSurveys.length}
+        <Tile icon={<Icon n="vote" size="lg" />} label="Active polls" value={openSurveys.length}
           foot="Open for responses" />
-        <Tile icon="👥" label="Participation rate" value={pct(pulse.responded, pulse.sent) + '%'}
+        <Tile icon={<Icon n="people" size="lg" />} label="Participation rate" value={pct(pulse.responded, pulse.sent) + '%'}
           foot={`${pulse.responded} of ${pulse.sent} responded`} />
       </StatRow>
 
@@ -295,7 +296,7 @@ function EnManage() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <button className="btn primary" onClick={newSurvey}>＋ New survey</button>
+        <button className="btn primary" onClick={newSurvey}><Icon n="add" size="lg" /> New survey</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12.5 }}>Surveys are sent by email and appear in employee self-service</span>
       </div>
@@ -345,7 +346,7 @@ function EnRecognition() {
   const { data: praise = [] } = usePraise();
   const dir = useVisiblePeople();
 
-  if (!praise.length) return <Card><EmptyState msg="No recognition given yet" icon="🏆" /></Card>;
+  if (!praise.length) return <Card><EmptyState msg="No recognition given yet" icon={<Icon n="trophy" size="lg" />} /></Card>;
 
   const byValue = [...new Set(praise.map((p) => p.value))].map((v, i) => ({
     k: v, c: PAL[i % PAL.length], v: praise.filter((x) => x.value === v).length,
@@ -354,10 +355,10 @@ function EnRecognition() {
   return (
     <div className="stack">
       <StatRow cols={3}>
-        <Tile icon="🏆" label="Recognitions" value={praise.length} foot="All time" />
-        <Tile icon="❤️" label="Likes" value={sum(praise, (p) => p.likes)}
+        <Tile icon={<Icon n="trophy" size="lg" />} label="Recognitions" value={praise.length} foot="All time" />
+        <Tile icon={<Icon n="applause" size="lg" />} label="Likes" value={sum(praise, (p) => p.likes)}
           foot="On recognition posts" />
-        <Tile icon="🙌" label="People recognised"
+        <Tile icon={<Icon n="applause" size="lg" />} label="People recognised"
           value={new Set(praise.map((p) => p.toId)).size} foot="Distinct recipients" />
       </StatRow>
 

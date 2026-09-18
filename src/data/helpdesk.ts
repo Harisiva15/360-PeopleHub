@@ -1,5 +1,6 @@
 /* Shares the RNG stream with benefits — this import fixes the draw order. */
 import './benefits';
+import type { IconName } from '../components/icons';
 
 import { addDays, TODAY, ymd } from '../lib/dates';
 import { chance, pick, ri } from '../lib/rng';
@@ -12,18 +13,19 @@ export interface TicketCat {
   /** Resolution SLA in hours. */
   sla: number;
   team: string;
-  ic: string;
+  /** Name in `src/components/icons.tsx`, not a glyph. */
+  ic: IconName;
 }
 
 export const TICKET_CATS: TicketCat[] = [
-  { id: 'PAY', n: 'Payroll & Salary', sla: 24, team: 'FIN', ic: '₹' },
-  { id: 'ATT', n: 'Attendance & Leave', sla: 24, team: 'HR', ic: '◉' },
-  { id: 'IT', n: 'IT & Systems', sla: 8, team: 'DEVOPS', ic: '💻' },
-  { id: 'DOC', n: 'Documents & Letters', sla: 48, team: 'HR', ic: '📄' },
-  { id: 'POL', n: 'Policy Clarification', sla: 48, team: 'HR', ic: '📘' },
-  { id: 'FAC', n: 'Facilities & Workplace', sla: 24, team: 'FIN', ic: '🏢' },
-  { id: 'BEN', n: 'Insurance & Benefits', sla: 48, team: 'HR', ic: '🏥' },
-  { id: 'ONB', n: 'Onboarding Support', sla: 12, team: 'HR', ic: '🚀' },
+  { id: 'PAY', n: 'Payroll & Salary', sla: 24, team: 'FIN', ic: 'rupee' },
+  { id: 'ATT', n: 'Attendance & Leave', sla: 24, team: 'HR', ic: 'attendance' },
+  { id: 'IT', n: 'IT & Systems', sla: 8, team: 'DEVOPS', ic: 'laptop' },
+  { id: 'DOC', n: 'Documents & Letters', sla: 48, team: 'HR', ic: 'document' },
+  { id: 'POL', n: 'Policy Clarification', sla: 48, team: 'HR', ic: 'policy' },
+  { id: 'FAC', n: 'Facilities & Workplace', sla: 24, team: 'FIN', ic: 'building' },
+  { id: 'BEN', n: 'Insurance & Benefits', sla: 48, team: 'HR', ic: 'health' },
+  { id: 'ONB', n: 'Onboarding Support', sla: 12, team: 'HR', ic: 'rocket' },
 ];
 
 export const tCat = (id: string): TicketCat => TICKET_CATS.find((c) => c.id === id) || TICKET_CATS[0];

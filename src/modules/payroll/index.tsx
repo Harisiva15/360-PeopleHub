@@ -25,6 +25,7 @@ import { TITLES } from '../titles';
 import type { Employee } from '../../types/employee';
 import type { SalaryStructure } from '../../services';
 import type { Grade } from '../../types/country';
+import { Icon } from '../../components/icons';
 
 const m = (e: Employee, a: number) => money(a, e.ccy);
 const mS = (e: Employee, a: number) => moneyShort(a, e.ccy);
@@ -41,7 +42,7 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
   const { data: cur } = usePayrollTotals(curRun?.mk ?? '');
   const processRun = useProcessRun();
   const { data: allTotals = {} } = usePayrollTotalsFor(runs.map((r) => r.mk));
-  if (!curRun || !cur) return <EmptyState msg="Loading payroll…" icon="₹" />;
+  if (!curRun || !cur) return <EmptyState msg="Loading payroll…" icon={<Icon n="rupee" size="lg" />} />;
   const CUR_RUN = curRun;
   const PAYRUNS = runs;
   const trend = runs.filter((r) => allTotals[r.mk]).map((r) => ({ mk: r.mk, t: allTotals[r.mk] }));
@@ -151,7 +152,7 @@ function PyRegister({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
   const { data: totals } = usePayrollTotals(mk);
   const slips = rows.map((r) => ({ e: r.employee, p: r.payslip }));
   const list = slips.map((x) => x.e);
-  if (!totals) return <EmptyState msg="Loading the register…" icon="₹" />;
+  if (!totals) return <EmptyState msg="Loading the register…" icon={<Icon n="rupee" size="lg" />} />;
   const t = totals;
 
   const shown = q
@@ -181,7 +182,7 @@ function PyRegister({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
         <input className="input" placeholder="Search employee…" style={{ width: 210 }} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="spacer" />
         <span className="muted mono">Net {inr(t.net)}</span>
-        <button className="btn" onClick={exportCsv}>⤓ Export register</button>
+        <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export register</button>
       </div>
 
       <Card title={'Salary register — ' + monthLabelLong(mk)} sub={`${list.length} employees`} flush>
@@ -259,7 +260,7 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
   const tot = (k: 'bonus' | 'arrears' | 'incentive' | 'other' | 'reimb') => sum(withInput, (e) => inputs[e.id][k] || 0);
   const totalEmi = sum(rows, (r) => r.loanEmi);
   const emiFor = (id: string) => rows.find((r) => r.employee.id === id)?.loanEmi ?? 0;
-  if (!run) return <EmptyState msg="Loading payroll inputs…" icon="₹" />;
+  if (!run) return <EmptyState msg="Loading payroll inputs…" icon={<Icon n="rupee" size="lg" />} />;
 
   return (
     <div className="stack">
@@ -275,16 +276,16 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
           downloadCSV(`payroll_input_template_${mk}.csv`,
             [['Emp Code', 'Name', 'Bonus', 'Arrears', 'Incentive', 'Overtime/Other', 'Reimbursement']].concat(
               list.map((e) => [e.code, e.name, '', '', '', '', '']),
-            ))}>⤓ Export template</button>
+            ))}><Icon n="download" size="lg" /> Export template</button>
       </div>
 
       {run.status === 'Paid' && (
-        <Banner kind="good" icon="🔒">
+        <Banner kind="good" icon={<Icon n="lock" size="lg" />}>
           {monthLabelLong(mk)} is locked. Corrections flow into the next cycle as arrears.
         </Banner>
       )}
 
-      <Banner kind="info" icon="➕" title="Inputs are entered outside the app for now">
+      <Banner kind="info" icon={<Icon n="add" size="lg" />} title="Inputs are entered outside the app for now">
         This is a read-only view of what payroll will pick up. Bonus, arrears and
         incentive rows are keyed straight into the pay run; entering or importing
         them here is not built yet, and the export below gives you the template in
@@ -327,7 +328,7 @@ function PyInputs({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
                     <td className="num strong">{inr(net)}</td>
                   </tr>
                 );
-              }) : <tr><td colSpan={9}><EmptyState msg="No additional inputs for this cycle" icon="➕" /></td></tr>}
+              }) : <tr><td colSpan={9}><EmptyState msg="No additional inputs for this cycle" icon={<Icon n="add" size="lg" />} /></td></tr>}
             </tbody>
             <tfoot>
               <tr style={{ background: 'var(--surface-2)', fontWeight: 700 }}>
@@ -395,14 +396,14 @@ function PyBank() {
   const batches = sortBy(rawBatches, (b) => b.mk, 'desc');
   const totalPaid = sum(batches.filter((b) => b.status === 'Paid'), (b) => b.amount);
   const byBank = BANKS.map((b, i) => ({ k: b, c: PAL[i], v: everyone.filter((e) => e.bank === b).length })).filter((r) => r.v);
-  if (!curRun || !curTotals) return <EmptyState msg="Loading disbursal…" icon="🏦" />;
+  if (!curRun || !curTotals) return <EmptyState msg="Loading disbursal…" icon={<Icon n="bank" size="lg" />} />;
   const CUR_RUN = curRun;
 
   return (
     <div className="stack">
       <Banner kind={CUR_RUN.status === 'Paid' ? 'good' : 'info'} icon={<span style={{ fontSize: 19 }}>🏦</span>}
         title={'Salary disbursal — ' + monthLabelLong(CUR_RUN.mk)}
-        actions={<button className="btn primary" onClick={() => app.toast('Bank advice generated', 'ok')}>⤓ Generate bank advice</button>}>
+        actions={<button className="btn primary" onClick={() => app.toast('Bank advice generated', 'ok')}><Icon n="download" size="lg" /> Generate bank advice</button>}>
         {CUR_RUN.status === 'Paid'
           ? `Bank advice uploaded to ${BANKS[0]} · ${curTotals.count} beneficiaries · ${inr(curTotals.net)} credited`
           : `Payroll is still in draft. Process the run to generate the NEFT advice file for ${curTotals.count} beneficiaries.`}
@@ -491,7 +492,7 @@ function PyComply() {
           downloadCSV('compliance_payments.csv',
             [['Period', 'Type', 'Name', 'Amount', 'Due', 'Authority', 'Status', 'Challan', 'Paid on']].concat(
               rows.map((c) => [c.mk, c.type, c.name, String(c.amount), c.dueDate, c.authority, c.status, c.challan || '', c.paidOn || '']),
-            ))}>⤓ Export</button>}>
+            ))}><Icon n="download" size="lg" /> Export</button>}>
         <div className="tbl-wrap" style={{ maxHeight: 600, overflow: 'auto' }}>
           <table className="tbl">
             <thead>
@@ -532,7 +533,7 @@ function PyStatutory({ mk, setMk }: { mk: string; setMk: (s: string) => void }) 
   const { data: decls = {} } = useDeclarations();
   const { data: runs = [] } = usePayRuns();
   const list = regRows.map((r) => r.employee);
-  if (!totals) return <EmptyState msg="Loading statutory summary…" icon="§" />;
+  if (!totals) return <EmptyState msg="Loading statutory summary…" icon={<Icon n="policy" size="lg" />} />;
   const t = totals;
   const esiEligible = regRows.filter((r) => r.payslip.gross <= 21000).map((r) => r.employee);
   const bySite = ['CHN', 'BLR', 'HYD', 'WFH']
@@ -768,7 +769,7 @@ function PyMyStructure() {
   const e = app.me;
   const { data: s } = useStructure(e.id);
   const ct = countryOf(e.country);
-  if (!s) return <EmptyState msg="Loading your salary structure…" icon="₹" />;
+  if (!s) return <EmptyState msg="Loading your salary structure…" icon={<Icon n="rupee" size="lg" />} />;
 
   return (
     <div className="stack">
@@ -856,12 +857,12 @@ function PyMe() {
           <Card title="Tax documents" sub={ORG.fy} flush>
             {docs.map(([t, sub]) => (
               <ListRow key={t} onClick={() => app.toast('Opening ' + t)}>
-                <span>📄</span>
+                <span><Icon n="document" size="lg" /> </span>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 650, fontSize: 12.5 }}>{t}</div>
                   <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>
                 </div>
-                <span className="muted">⤓</span>
+                <span className="muted"><Icon n="download" size="lg" /> </span>
               </ListRow>
             ))}
           </Card>
@@ -881,7 +882,7 @@ function PyTeamCost() {
   const team = dir.list.filter((e) => e.id !== app.meId);
   const ids = team.map((x) => x.id);
   const { data: recent = [] } = useTeamTimesheets(ids);
-  if (runs.length < 2) return <EmptyState msg="Loading team cost…" icon="₹" />;
+  if (runs.length < 2) return <EmptyState msg="Loading team cost…" icon={<Icon n="rupee" size="lg" />} />;
   const mk = runs[runs.length - 2].mk;
   const total = sum(team, (e) => e.ctc);
 
@@ -897,7 +898,7 @@ function PyTeamCost() {
 
   return (
     <div className="stack">
-      <Banner icon="🔒" title="Aggregate view only">
+      <Banner icon={<Icon n="lock" size="lg" />} title="Aggregate view only">
         Individual salary details are visible to HR administrators and the employee. Managers see team cost in aggregate
         for budget planning.
       </Banner>

@@ -31,6 +31,7 @@ import { Avatar, Badge, Card, EmptyState, Seg, StatRow, Tile } from '../../compo
 import { useApp } from '../../state/AppContext';
 import { visibleIds } from '../../state/rbac';
 import { useAllEmployees, useRoster, useSetShift, useShiftProfiles } from './data';
+import { Icon } from '../../components/icons';
 
 /** 12-hour clock, because a rota is read by people not machines. */
 function h12(t: string): string {
@@ -163,18 +164,18 @@ export function RosterView() {
         <div className="spacer" />
         <input className="input sm" style={{ width: 180 }} value={q}
           placeholder="Search employee…" onChange={(e) => setQ(e.target.value)} />
-        <button className="btn" onClick={exportCsv}>⤓ Export</button>
+        <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={4}>
-        <Tile icon="👥" label="On the rota" value={rows.length}
+        <Tile icon={<Icon n="people" size="lg" />} label="On the rota" value={rows.length}
           foot={`of ${people.length} people`} />
-        <Tile icon="📅" label="Covered today"
+        <Tile icon={<Icon n="calendar" size="lg" />} label="Covered today"
           value={working[dates.indexOf(ymd(TODAY))] ?? '—'}
           foot={dates.includes(ymd(TODAY)) ? 'Working today' : 'Today is outside this range'} />
-        <Tile icon="🌍" label="On another country's hours" value={awayHours}
+        <Tile icon={<Icon n="globe" size="lg" />} label="On another country's hours" value={awayHours}
           foot="Measured against a client's clock" />
-        <Tile icon="🛌" label="Days off" value={offDays} foot="Across the period shown" />
+        <Tile icon={<Icon n="rest" size="lg" />} label="Days off" value={offDays} foot="Across the period shown" />
       </StatRow>
 
       <Card title="Roster" sub={`${rows.length} people · ${fmtD(ws)} onwards`} flush>
@@ -249,7 +250,7 @@ export function RosterView() {
               </tbody>
             </table>
           </div>
-        ) : <EmptyState msg="Nobody matches those filters" icon="🗓" />}
+        ) : <EmptyState msg="Nobody matches those filters" icon={<Icon n="schedule" size="lg" />} />}
 
         <div className="row" style={{
           gap: 14, flexWrap: 'wrap', padding: '11px 14px', borderTop: '1px solid var(--line)',

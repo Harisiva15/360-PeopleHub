@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Icon } from '../../components/icons';
 
 /**
  * The header every report body opens with: name, scope line, and the two
@@ -12,8 +13,8 @@ export function RepHead({ title, sub, onExport }: { title: string; sub: ReactNod
         <div className="muted" style={{ fontSize: 12.5 }}>{sub}</div>
       </div>
       <div className="spacer" />
-      <button className="btn" onClick={onExport}>⤓ Export CSV</button>
-      <button className="btn" onClick={() => window.print()}>🖨 Print</button>
+      <button className="btn" onClick={onExport}><Icon n="download" size="lg" /> Export CSV</button>
+      <button className="btn" onClick={() => window.print()}><Icon n="print" size="lg" /> Print</button>
     </div>
   );
 }

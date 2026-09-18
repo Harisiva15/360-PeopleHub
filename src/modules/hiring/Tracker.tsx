@@ -29,6 +29,7 @@ import { StatusBadge } from '../../components/common';
 import { useApp } from '../../state/AppContext';
 import { isMyReport } from '../../state/rbac';
 import { useRecruiterTracker, useRequisitionTracker, useVisiblePeople } from './data';
+import { Icon } from '../../components/icons';
 
 /** A role is stalled when it still needs people and nothing has happened. */
 const STALL_DAYS = 21;
@@ -107,7 +108,7 @@ export function TrackerView() {
           { v: 'all', label: 'All job orders' },
         ]} />
         <div className="spacer" />
-        <button className="btn" onClick={exportCsv}>⤓ Export</button>
+        <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={4}>
@@ -123,7 +124,7 @@ export function TrackerView() {
       </StatRow>
 
       {stuck.length > 0 && (
-        <Banner kind="warn" icon="🐢"
+        <Banner kind="warn" icon={<Icon n="slow" size="lg" />}
           title={`${stuck.length} open ${stuck.length === 1 ? 'role has' : 'roles have'} gone quiet`}>
           No submission, interview or offer in {STALL_DAYS} days:{' '}
           {stuck.map((r) => r.title).join(', ')}.
@@ -202,7 +203,7 @@ export function TrackerView() {
             </table>
           </div>
         ) : (
-          <EmptyState icon="📋"
+          <EmptyState icon={<Icon n="goal" size="lg" />}
             msg={loading ? 'Loading the tracker…'
               : scope === 'open' ? 'No open job orders' : 'No job orders yet'} />
         )}
@@ -237,7 +238,7 @@ export function TrackerView() {
               </tbody>
             </table>
           </div>
-        ) : <EmptyState msg="No recruiter activity yet" icon="👥" />}
+        ) : <EmptyState msg="No recruiter activity yet" icon={<Icon n="people" size="lg" />} />}
       </Card>
     </div>
   );

@@ -9,6 +9,7 @@ import { deptOf, GRADES, ORG, siteOf } from '../../data/org';
 import { LETTER_TYPES } from '../../data/letters';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
+import { Icon } from '../../components/icons';
 
 const letterType = (id: string) => LETTER_TYPES.find((t) => t.id === id);
 
@@ -341,7 +342,7 @@ export function useShowLetter() {
           <button className="btn" onClick={() => { close(); app.toast('Letter emailed to ' + e.email, 'ok'); }}>
             ✉️ Email to employee
           </button>
-          <button className="btn primary" onClick={() => window.print()}>🖨 Print / Save PDF</button>
+          <button className="btn primary" onClick={() => window.print()}><Icon n="print" size="lg" /> Print / Save PDF</button>
         </>
       ),
     });

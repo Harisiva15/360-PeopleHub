@@ -6,6 +6,7 @@ import { useNavBadges } from './badges';
 import { ORG } from '../data/org';
 import { useApp } from '../state/AppContext';
 import { Avatar } from '../components/ui';
+import { Icon } from '../components/icons';
 import { TopBar } from './TopBar';
 import { PageActionsTarget } from './PageActions';
 import type { ReactNode } from 'react';
@@ -17,6 +18,17 @@ export function Shell({ children }: { children: ReactNode }) {
   const { pathname, search } = useLocation();
   const route = pathname.replace(/^\//, '') || 'dashboard';
   const [navOpen, setNavOpen] = useState(false);
+  /*
+   * Collapsed to a rail of icons. Remembered per browser, like the open
+   * sections are — somebody who works narrow wants it narrow tomorrow too.
+   */
+  const [tight, setTight] = useState<boolean>(() => {
+    try { return localStorage.getItem('nav.tight') === '1'; } catch { return false; }
+  });
+  const toggleTight = () => setTight((t) => {
+    try { localStorage.setItem('nav.tight', t ? '0' : '1'); } catch { /* fine */ }
+    return !t;
+  });
   /* Where a page's primary action lands. Held in state, not a ref, so the
      portal re-renders once the header's element actually exists. */
   const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null);
@@ -78,12 +90,23 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div id="app">
-      <aside className={'sidebar' + (navOpen ? ' open' : '')}>
+      <aside className={'sidebar' + (navOpen ? ' open' : '') + (tight && !mobile ? ' tight' : '')}>
         <div className="brand">
           <img src={logoFor(app.theme)} alt={ORG.name + ' — ' + ORG.tagline} />
           <span className="cap">
             {ORG.product} · {ORG.fy}
           </span>
+          {!mobile && (
+            <button
+              className="rail-tight"
+              onClick={toggleTight}
+              aria-label={tight ? 'Expand the menu' : 'Collapse the menu'}
+              aria-expanded={!tight}
+              title={tight ? 'Expand the menu' : 'Collapse the menu'}
+            >
+              <Icon n="next" size="sm" />
+            </button>
+          )}
         </div>
 
         {/*
@@ -91,7 +114,7 @@ export function Shell({ children }: { children: ReactNode }) {
           * views whose names match and opens them, so finding "disbursal"
           * does not require knowing it lives under Payroll.
           */}
-        <div className="nav-find">
+        <div className="nav-find" hidden={tight && !mobile}>
           <input
             id="nav-find"
             className="nav-find-in"
@@ -123,9 +146,11 @@ export function Shell({ children }: { children: ReactNode }) {
             if (!shown.length) {
               return (
                 <Link key={g.group} to={'/' + g.k}
-                  className={'nav-top' + (route === g.k ? ' on' : '')}>
-                  <span className="ic">{g.ic}</span>
-                  <span style={{ flex: 1 }}>{g.group}</span>
+                  className={'nav-top' + (route === g.k ? ' on' : '')}
+                  /* The label is the tooltip once it is no longer on screen. */
+                  title={tight ? g.group : undefined}>
+                  <span className="ic"><Icon n={g.ic} size="lg" /></span>
+                  <span className="nav-label">{g.group}</span>
                   {badge > 0 && <span className="pill">{badge}</span>}
                 </Link>
               );
@@ -140,16 +165,19 @@ export function Shell({ children }: { children: ReactNode }) {
               <div className={'nav-sec' + (open ? ' open' : '')} key={g.group}>
                 <button
                   className={'nav-top' + (here && !open ? ' here' : '')}
-                  onClick={() => toggle(g.group)}
+                  onClick={() => { if (tight && !mobile) toggleTight(); else toggle(g.group); }}
                   aria-expanded={open}
+                  title={tight ? g.group : undefined}
                 >
-                  <span className="ic">{g.ic}</span>
-                  <span style={{ flex: 1, textAlign: 'left' }}>{g.group}</span>
+                  <span className="ic"><Icon n={g.ic} size="lg" /></span>
+                  <span className="nav-label" style={{ textAlign: 'left' }}>{g.group}</span>
                   {!open && inside > 0 && <span className="pill">{inside}</span>}
-                  <span className="nav-caret" aria-hidden="true">›</span>
+                  <span className="nav-caret" aria-hidden="true">
+                    <Icon n="next" size="sm" />
+                  </span>
                 </button>
 
-                {open && (
+                {open && !(tight && !mobile) && (
                   <div className="nav-subs">
                     {shown.map((i) => {
                       const b = badges[i.k] || 0;
@@ -223,7 +251,7 @@ export function Shell({ children }: { children: ReactNode }) {
           const badge = badges[k] || 0;
           return (
             <Link key={k} to={'/' + k} className={route === k ? 'on' : ''}>
-              <span className="ic">{g?.ic ?? '•'}</span>
+              <span className="ic">{g ? <Icon n={g.ic} size="lg" /> : null}</span>
               {label.split(' ')[0]}
               {badge > 0 && <span className="pill">{badge}</span>}
             </Link>
@@ -234,8 +262,9 @@ export function Shell({ children }: { children: ReactNode }) {
       <div id="toasts">
         {app.toasts.map((t) => (
           <div key={t.id} className={'toast' + (t.kind ? ' ' + t.kind : '')}>
-            {t.kind === 'ok' ? '✓ ' : t.kind === 'err' ? '⚠ ' : ''}
-            {t.msg}
+            {t.kind === 'ok' && <Icon n="ok" />}
+            {t.kind === 'err' && <Icon n="warn" />}
+            <span>{t.msg}</span>
           </div>
         ))}
       </div>

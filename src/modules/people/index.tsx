@@ -25,6 +25,7 @@ import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 /* ============================================================
    Org chart
@@ -53,7 +54,7 @@ function OrgChart() {
   const root = dir.byId(rootId);
   const managers = sortBy(everyone.filter((e) => e.reports.length), (e) => e.name);
   const spans = managers.map((e) => ({ e, n: e.reports.length }));
-  if (!everyone.length) return <EmptyState msg="Loading the org chart…" icon="☰" />;
+  if (!everyone.length) return <EmptyState msg="Loading the org chart…" icon={<Icon n="menu" size="lg" />} />;
   if (!root) return <NoRoot />;
 
   return (
@@ -92,14 +93,14 @@ function OrgChart() {
         * has to agree with the directory beside it.
         */}
       <StatRow cols={4}>
-        <Tile icon="👥" label="Total employees" value={everyone.length}
+        <Tile icon={<Icon n="people" size="lg" />} label="Total employees" value={everyone.length}
           foot="On the roster today" />
-        <Tile icon="🏢" label="Departments"
+        <Tile icon={<Icon n="building" size="lg" />} label="Departments"
           value={DEPTS.filter((d) => everyone.some((e) => e.dept === d.id)).length}
           foot="With at least one person" />
-        <Tile icon="📍" label="Locations"
+        <Tile icon={<Icon n="location" size="lg" />} label="Locations"
           value={new Set(everyone.map((e) => e.site)).size} foot="Offices and remote" />
-        <Tile icon="💼" label="Open positions"
+        <Tile icon={<Icon n="briefcase" size="lg" />} label="Open positions"
           value={reqs.filter((r) => r.status === 'Open')
             .reduce((n, r) => n + Math.max(0, r.openings - r.filled), 0)}
           foot={`${reqs.filter((r) => r.status === 'Open').length} live requisitions`} />

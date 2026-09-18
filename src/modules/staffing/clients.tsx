@@ -15,6 +15,7 @@ import { BarChart, Donut, HBar, PAL } from '../../components/charts';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { monthlyUnits, Rate, TierBadge } from './shared';
+import { Icon } from '../../components/icons';
 
 /** Active placements are the ones that carry revenue. */
 const LIVE = ['Active', 'Ending Soon'];
@@ -33,7 +34,7 @@ function ClList() {
   const { data: CLIENTS = [] } = useClients();
   const { data: PLACEMENTS = [] } = usePlacements();
   const owners = useVisiblePeople();
-  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon={<Icon n="clock" size="lg" />} />;
   const act = CLIENTS.filter((c) => c.status === 'Active');
   const byCountry = COUNTRIES.map((c, i) => ({ k: c.name, c: PAL[i], v: CLIENTS.filter((x) => x.country === c.id).length })).filter((r) => r.v);
   const rev = CLIENTS.map((c) => ({ k: c.name, c: 'var(--s1)', v: monthlyRevenue(c.id, PLACEMENTS) })).filter((r) => r.v);
@@ -48,7 +49,7 @@ function ClList() {
             [['ID', 'Name', 'Country', 'Industry', 'Tier', 'Payment terms', 'Since', 'MSA expiry', 'Owner', 'Status']].concat(
               CLIENTS.map((c) => [c.id, c.name, c.country, c.industry, c.tier, String(c.paymentTerms),
                 c.since, c.msaExpiry, owners.name(c.ownerId), c.status]),
-            ))}>⤓ Export</button>
+            ))}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={5}>
@@ -152,7 +153,7 @@ function ClSow() {
             [['ID', 'Title', 'Client', 'Type', 'Start', 'End', 'Value', 'Burned', 'Headcount', 'Filled', 'PO', 'Status']].concat(
               SOWS.map((s) => [s.id, s.title, clientOf(s.clientId).name, s.type, s.start, s.end,
                 String(s.value), String(s.burned), String(s.headcount), String(s.filled), s.po, s.status]),
-            ))}>⤓ Export</button>}>
+            ))}><Icon n="download" size="lg" /> Export</button>}>
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
@@ -194,7 +195,7 @@ function ClSow() {
         </div>
       </Card>
 
-      <Banner kind="info" icon="📄" title="Renewal governance">
+      <Banner kind="info" icon={<Icon n="document" size="lg" />} title="Renewal governance">
         SOWs move to <b>Renewal Due</b> 60 days before expiry. The account owner and delivery head are notified at 90, 60
         and 30 days. Placements linked to an expired SOW are blocked from timesheet submission until a new SOW or
         amendment is attached.
@@ -261,7 +262,7 @@ function ClRates() {
         </div>
       </Card>
 
-      <Banner kind="warn" icon="⚠️" title="Margin floor enforcement">
+      <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Margin floor enforcement">
         A submission priced below the client margin floor cannot be sent without an explicit approval from the delivery
         head. Every override is recorded against the placement and reported in the margin exception report.
       </Banner>
@@ -276,7 +277,7 @@ function ClRev() {
   const { data: PLACEMENTS = [] } = usePlacements();
   const { data: INVOICES = [] } = useInvoices();
   const { data: k } = useKpi();
-  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon={<Icon n="clock" size="lg" />} />;
   const months: { k: string; l: string }[] = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1);

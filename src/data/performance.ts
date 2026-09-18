@@ -1,5 +1,6 @@
 /* Shares the RNG stream with announcements — this import fixes the draw order. */
 import './announcements';
+import type { IconName } from '../components/icons';
 
 import { sum } from '../lib/collections';
 import { addDays, TODAY, ymd } from '../lib/dates';
@@ -9,12 +10,12 @@ import { ACTIVE } from './employees';
 import { deptOf } from './org';
 
 /** Company values — used by praise and referenced in reviews. */
-export const VALUES = [
-  { k: 'Customer First', ic: '🎯', c: 'var(--s1)' },
-  { k: 'Ownership', ic: '🛠️', c: 'var(--s2)' },
-  { k: 'Craftsmanship', ic: '💎', c: 'var(--s3)' },
-  { k: 'One Team', ic: '🤝', c: 'var(--s7)' },
-  { k: 'Integrity', ic: '🧭', c: 'var(--s5)' },
+export const VALUES: { k: string; ic: IconName; c: string }[] = [
+  { k: 'Customer First', ic: 'target', c: 'var(--s1)' },
+  { k: 'Ownership', ic: 'tool', c: 'var(--s2)' },
+  { k: 'Craftsmanship', ic: 'star', c: 'var(--s3)' },
+  { k: 'One Team', ic: 'recruitment', c: 'var(--s7)' },
+  { k: 'Integrity', ic: 'hiring', c: 'var(--s5)' },
 ];
 
 export interface Rating {

@@ -13,6 +13,7 @@ import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { TierBadge } from './shared';
+import { Icon } from '../../components/icons';
 
 /** Scorecard weights, shown to vendors so the number is not a black box. */
 const SCORE_DIMS: [keyof NonNullable<Vendor['metrics']>, string, boolean][] = [
@@ -44,7 +45,7 @@ function VnList() {
             [['ID', 'Name', 'Country', 'Type', 'Tier', 'Contact', 'Email', 'Submissions', 'Placements', 'Score', 'Terms', 'Markup %', 'Status']].concat(
               VENDORS.map((v) => [v.id, v.name, v.country, v.type, v.tier, v.contact, v.email,
                 String(v.subs), String(v.placements), String(v.score ?? ''), String(v.paymentTerms), String(v.markup), v.status]),
-            ))}>⤓ Export</button>
+            ))}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={5}>
@@ -107,7 +108,7 @@ function VnScore() {
   const { data: VENDORS = [] } = useVendors();
   return (
     <div className="stack">
-      <Banner kind="info" icon="📊" title="How the vendor score is calculated">
+      <Banner kind="info" icon={<Icon n="chart" size="lg" />} title="How the vendor score is calculated">
         Submission quality 25% · closing rate 30% · speed 20% · placement stability 15% · compliance 10%. Vendors below
         50 move to <b>Watchlist</b> and stop receiving new requirements until they recover.
       </Banner>
@@ -170,7 +171,7 @@ function VnComp() {
   return (
     <div className="stack">
       <Card title="Vendor compliance" sub="Contract and insurance status" flush
-        actions={<button className="btn sm" onClick={() => app.toast('Chase emails sent to non-compliant vendors', 'ok')}>📧 Chase missing documents</button>}>
+        actions={<button className="btn sm" onClick={() => app.toast('Chase emails sent to non-compliant vendors', 'ok')}><Icon n="mail" size="lg" /> Chase missing documents</button>}>
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>
@@ -202,7 +203,7 @@ function VnComp() {
         </div>
       </Card>
 
-      <Banner kind="warn" icon="🚫" title="Automatic blocking">
+      <Banner kind="warn" icon={<Icon n="blocked" size="lg" />} title="Automatic blocking">
         A vendor with an expired certificate of insurance or a missing tax form cannot submit candidates. The block
         lifts automatically once the document is uploaded and verified.
       </Banner>

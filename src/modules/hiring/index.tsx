@@ -30,6 +30,7 @@ import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { AppRole } from '../../types/employee';
+import { Icon } from '../../components/icons';
 
 /** Managers see only requisitions they own or that sit under them. */
 export function reqScope(role: AppRole, meId: string, list: Requisition[]): Requisition[] {
@@ -113,13 +114,13 @@ function CandidateBody({ c }: { c: Candidate }) {
           ['Notice period', c.notice],
           ['Applied on', fmtD(c.appliedOn)],
           ['Skills', <>{c.skills.map((s) => <Chip key={s}>{s}</Chip>)}</>],
-          ['Resume', <a>📄 {c.resume}</a>],
+          ['Resume', <a><Icon n="document" size="lg" /> {c.resume}</a>],
         ]} />
       </div>
 
       {c.offer && (
         <div style={{ marginBottom: 16 }}>
-          <Banner kind="good" icon="📄" title={'Offer ' + c.offer.status.toLowerCase()}>
+          <Banner kind="good" icon={<Icon n="document" size="lg" />} title={'Offer ' + c.offer.status.toLowerCase()}>
             {inr(c.offer.ctc)} p.a. · {GRADES[c.offer.grade].label} · joining {fmtD(c.offer.doj)}
           </Banner>
         </div>
@@ -146,7 +147,7 @@ function CandidateBody({ c }: { c: Candidate }) {
       <Divide />
       {c.notes.map((n, i) => (
         <div key={i} style={{ marginBottom: 7 }}>
-          <Banner icon="💬" title={`${n.by} · ${n.on}`}>{n.text}</Banner>
+          <Banner icon={<Icon n="helpdesk" size="lg" />} title={`${n.by} · ${n.on}`}>{n.text}</Banner>
         </div>
       ))}
     </>
@@ -197,13 +198,13 @@ function useShowCandidate() {
         {!c.offer && (
           <button className="btn sm" onClick={() => open('Draft an offer',
             (x) => <MakeOfferForm close={x} cand={c} req={r} />)}>
-            📄 Offer
+            <Icon n="document" size="lg" /> Offer
           </button>
         )}
         {c.offer && c.offer.status !== 'Draft' && c.offer.status !== 'Accepted' && (
           <button className="btn sm" onClick={() => open('Record the answer',
             (x) => <OfferResponseForm close={x} cand={c} />)}>
-            ✓ Answer
+            <Icon n="ok" size="lg" /> Answer
           </button>
         )}
       </>
@@ -286,10 +287,10 @@ function HrPipeline() {
           size: 'wide',
           body: (close: () => void) => <NewCandidateForm close={close} reqs={REQS} />,
           footer: null,
-        })}>＋ Add candidate</button>
+        })}><Icon n="add" size="lg" /> Add candidate</button>
       </div>
 
-      <Banner kind="info" icon="🖱️">
+      <Banner kind="info" icon={<Icon n="idea" size="lg" />}>
         Drag a candidate card between columns to move them through the pipeline. Click a card to open the full profile,
         interview history and feedback.
       </Banner>
@@ -402,7 +403,7 @@ function HrReqs() {
     <div className="stack">
       <div className="toolbar">
         <div className="spacer" />
-        <button className="btn" onClick={exportCsv}>⤓ Export</button>
+        <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export</button>
         {canOpen && (
           <button className="btn primary" onClick={() => layer.modal({
             title: 'Open a requisition',
@@ -410,7 +411,7 @@ function HrReqs() {
             size: 'wide',
             body: (close: () => void) => <NewRequisitionForm close={close} people={people} />,
             footer: null,
-          })}>＋ Create requisition</button>
+          })}><Icon n="add" size="lg" /> Create requisition</button>
         )}
       </div>
 
@@ -532,7 +533,7 @@ function HrCands({ stage, onStage }: { stage: string; onStage: (s: string) => vo
           {recruiters.map((id) => <option key={id} value={id}>{dir.name(id)}</option>)}
         </select>
         <div className="spacer" />
-        <button className="btn" onClick={exportCsv}>⤓ Export</button>
+        <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <Card title="Candidates" sub={`${list.length} of ${CANDS.length}`} flush>
@@ -668,7 +669,7 @@ function HrIvs() {
               <tbody>{upcoming.map((i) => <Row key={i.id} i={i} showV={false} />)}</tbody>
             </table>
           </div>
-        ) : <EmptyState msg="No interviews scheduled" icon="🎯" />}
+        ) : <EmptyState msg="No interviews scheduled" icon={<Icon n="target" size="lg" />} />}
       </Card>
 
       <Card title="Interview history" sub={`${done.length} completed`} flush>
@@ -721,7 +722,7 @@ function HrOffers() {
               [['Candidate', 'Role', 'Grade', 'Offered CTC', 'Expected', 'Date of joining', 'Sent on', 'Status']].concat(
                 list.map((c) => [c.name, reqOf(c.reqId)?.title || '', c.offer!.grade,
                   String(c.offer!.ctc), String(c.ctcExp), c.offer!.doj, c.offer!.sentOn ?? '—', c.offer!.status]),
-              ))}>⤓ Export</button>}>
+              ))}><Icon n="download" size="lg" /> Export</button>}>
           <div className="tbl-wrap">
             <table className="tbl">
               <thead>

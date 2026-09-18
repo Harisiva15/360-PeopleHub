@@ -29,6 +29,7 @@ import {
 import { RequestAssetForm } from './RequestForm';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 const AssetBadge = ({ s }: { s: string }) => (
   <Badge kind={(ASSET_STATUS_BADGE[s] || 'mute') as 'good' | 'info' | 'warn' | 'crit' | 'mute'}>{s}</Badge>
@@ -51,7 +52,7 @@ function AsMine() {
           sub: 'Goes to your approver, then to IT',
           body: (close: () => void) => <RequestAssetForm close={close} me={app.me} />,
           footer: null,
-        })}>＋ Request equipment</button>
+        })}><Icon n="add" size="lg" /> Request equipment</button>
       </div>
 
       <StatRow cols={4}>
@@ -83,10 +84,10 @@ function AsMine() {
               </tbody>
             </table>
           </div>
-        ) : <EmptyState msg="No assets issued to you" icon="💻" />}
+        ) : <EmptyState msg="No assets issued to you" icon={<Icon n="laptop" size="lg" />} />}
       </Card>
 
-      <Banner kind="info" icon="ℹ">
+      <Banner kind="info" icon={<Icon n="info" size="lg" />}>
         Assets must be returned to IT on or before your last working day. Anything outstanding is recovered through the
         full and final settlement at written-down value.
       </Banner>
@@ -250,7 +251,7 @@ function AsRegister() {
   const [size, setSize] = useState(25);
 
   /* After every hook: the register health is computed by the service. */
-  if (!k) return <Card><EmptyState msg="Loading the asset register…" icon="💻" /></Card>;
+  if (!k) return <Card><EmptyState msg="Loading the asset register…" icon={<Icon n="laptop" size="lg" />} /></Card>;
 
   let list: Asset[] = ASSETS;
   if (fc) list = list.filter((a) => a.cat === fc);
@@ -286,25 +287,25 @@ function AsRegister() {
           sub: 'Laptops, monitors, phones and accessories',
           body: (close) => <AddAssetForm close={close} />,
           footer: null,
-        })}>＋ Add asset</button>
+        })}><Icon n="add" size="lg" /> Add asset</button>
         <button className="btn" onClick={() =>
           downloadCSV('asset_register.csv',
             [['ID', 'Tag', 'Type', 'Category', 'Serial', 'Holder', 'Location', 'Purchased', 'Cost', 'Book value', 'Warranty end', 'Condition', 'Status']].concat(
               ASSETS.map((a) => [a.id, a.tag || '', a.type, acatOf(a.cat).n, a.serial,
                 a.empId ? dir.name(a.empId) : '', siteOf(a.site || 'CHN').name, a.purchased || '',
                 String(a.cost ?? ''), String(bookValue(a)), a.warrantyEnd || '', a.condition || '', a.status]),
-            ))}>⤓ Export</button>
+            ))}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={5}>
-        <Tile icon="💻" label="Total assets" value={k.total} foot={mbS(k.net) + ' net book value'} />
-        <Tile icon="✅" label="In use" value={k.assigned}
+        <Tile icon={<Icon n="laptop" size="lg" />} label="Total assets" value={k.total} foot={mbS(k.net) + ' net book value'} />
+        <Tile icon={<Icon n="done" size="lg" />} label="In use" value={k.assigned}
           foot={pct(k.assigned, Math.max(1, k.total)) + '% of the fleet'} />
-        <Tile icon="📦" label="In stock" value={k.stock}
+        <Tile icon={<Icon n="box" size="lg" />} label="In stock" value={k.stock}
           foot={pct(k.stock, Math.max(1, k.total)) + '% available'} />
-        <Tile icon="🔧" label="Under repair" value={k.repair}
+        <Tile icon={<Icon n="tool" size="lg" />} label="Under repair" value={k.repair}
           foot={pct(k.repair, Math.max(1, k.total)) + '% out of service'} />
-        <Tile icon="🗑" label="Retired" value={k.retired}
+        <Tile icon={<Icon n="remove" size="lg" />} label="Retired" value={k.retired}
           foot={pct(k.retired, Math.max(1, k.total)) + '% written off'} />
       </StatRow>
 
@@ -344,7 +345,7 @@ function AsRegister() {
               </div>
               <span className="muted nowrap" style={{ fontSize: 11 }}>{since(m.at)}</span>
             </ListRow>
-          )) : <EmptyState msg="Nothing has moved yet" icon="📦" />}
+          )) : <EmptyState msg="Nothing has moved yet" icon={<Icon n="box" size="lg" />} />}
         </Card>
       </div>
 
@@ -494,7 +495,7 @@ function AsAlloc() {
                 </tbody>
               </table>
             </div>
-          ) : <EmptyState msg="Everyone has a laptop on the register" icon="✓" />}
+          ) : <EmptyState msg="Everyone has a laptop on the register" icon={<Icon n="ok" size="lg" />} />}
         </Card>
 
         <Card title="Recovery worklist" sub={`${rec.length} assets held by leavers`} flush>
@@ -518,7 +519,7 @@ function AsAlloc() {
                 </tbody>
               </table>
             </div>
-          ) : <EmptyState msg="Nothing outstanding from leavers" icon="✓" />}
+          ) : <EmptyState msg="Nothing outstanding from leavers" icon={<Icon n="ok" size="lg" />} />}
         </Card>
       </div>
 

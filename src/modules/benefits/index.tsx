@@ -20,6 +20,7 @@ import type { Directory } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { Grade } from '../../types/country';
+import { Icon } from '../../components/icons';
 
 const CLAIM_HOW: [string, string][] = [
   ['Cashless hospitalisation', 'Show your e-card at any network hospital. Pre-authorisation is done by the hospital desk — allow 4 hours for planned admissions.'],
@@ -52,14 +53,14 @@ function BnMine() {
           and stayed grey while every other row was tinted. */}
       <StatRow cols={4}>
         {INSURANCE.map((p) => (
-          <Tile key={p.id} icon={p.ic} label={p.n}
+          <Tile key={p.id} icon={<Icon n={p.ic} size="lg" />} label={p.n}
             value={lakh(p.sum[e.grade])} foot={p.insurer} />
         ))}
       </StatRow>
 
       <div className="grid g-2-1">
         <Card title="Insurance cover" sub={'Premium fully paid by ' + ORG.name} flush
-          actions={<button className="btn sm" onClick={() => app.toast('E-cards downloaded', 'ok')}>🪪 Download e-cards</button>}>
+          actions={<button className="btn sm" onClick={() => app.toast('E-cards downloaded', 'ok')}><Icon n="card" size="lg" /> Download e-cards</button>}>
           <div className="tbl-wrap">
             <table className="tbl">
               <thead>
@@ -68,7 +69,7 @@ function BnMine() {
               <tbody>
                 {INSURANCE.map((p) => (
                   <tr key={p.id}>
-                    <td><span style={{ marginRight: 7 }}>{p.ic}</span><b>{p.n}</b></td>
+                    <td><span style={{ marginRight: 7 }}><Icon n={p.ic} /></span><b>{p.n}</b></td>
                     <td>{p.insurer}</td>
                     <td>{p.covers}</td>
                     <td className="num strong">{inr(p.sum[e.grade])}</td>
@@ -79,7 +80,7 @@ function BnMine() {
             </table>
           </div>
           <div style={{ padding: '14px 16px' }}>
-            <Banner kind="info" icon="👨‍👩‍👧" title="Dependents on your policy">
+            <Banner kind="info" icon={<Icon n="people" size="lg" />} title="Dependents on your policy">
               Self · Spouse · 2 children · Parents (₹3,00,000 shared floater). Additions are allowed within 30 days of
               joining, marriage or childbirth — raise a Helpdesk ticket under Insurance &amp; Benefits.
             </Banner>
@@ -90,7 +91,7 @@ function BnMine() {
           <div style={{ maxHeight: 520, overflow: 'auto' }}>
             {PERKS.map((p) => (
               <ListRow key={p.n} style={{ alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 16 }}>{p.ic}</span>
+                <Icon n={p.ic} size="lg" />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 650, fontSize: 12.5 }}>{p.n}</div>
                   <div className="muted" style={{ fontSize: 11.5 }}>{p.d}</div>
@@ -127,7 +128,7 @@ function BnFbp() {
   const [draft, setDraft] = useState<Record<string, number> | null>(null);
 
   /* After every hook. */
-  if (!row) return <Card><EmptyState msg="Loading your benefit plan…" icon="🎁" /></Card>;
+  if (!row) return <Card><EmptyState msg="Loading your benefit plan…" icon={<Icon n="gift" size="lg" />} /></Card>;
 
   const f = row.plan;
   const alloc = draft ?? f.alloc;
@@ -180,7 +181,7 @@ function BnFbp() {
               <tbody>
                 {FBP_COMPONENTS.map((c) => (
                   <tr key={c.id}>
-                    <td><span style={{ marginRight: 7 }}>{c.ic}</span><b>{c.n}</b></td>
+                    <td><span style={{ marginRight: 7 }}><Icon n={c.ic} /></span><b>{c.n}</b></td>
                     <td className="num">{inr(c.cap)}</td>
                     <td className="num">
                       <input type="number" className="input" step={1200} min={0} max={c.cap}
@@ -213,7 +214,7 @@ function BnFbp() {
                   slices={allocated.map((c, i) => ({ k: c.n, v: alloc[c.id], c: PAL[i % 8] }))} />
                 <Legend items={allocated.map((c, i) => ({ k: c.n, v: alloc[c.id], c: PAL[i % 8] }))} fmt={(v) => inr(v as number)} />
               </>
-            ) : <EmptyState msg="Nothing allocated yet" icon="🧩" />}
+            ) : <EmptyState msg="Nothing allocated yet" icon={<Icon n="puzzle" size="lg" />} />}
           </Card>
 
           <Card title="How FBP works" sub="Quick guide">
@@ -238,7 +239,7 @@ function LoanTable(
   { list, dir, act, onApprove }:
   { list: Loan[]; dir: Directory; act: boolean; onApprove: (l: Loan) => void },
 ) {
-  if (!list.length) return <EmptyState msg="No loans on record" icon="🏦" />;
+  if (!list.length) return <EmptyState msg="No loans on record" icon={<Icon n="bank" size="lg" />} />;
   return (
     <div className="tbl-wrap">
       <table className="tbl">
@@ -310,7 +311,7 @@ function BnLoans() {
       </StatRow>
 
       <Card title="My loans & advances" sub={`${mine.length} records`} flush
-        actions={<button className="btn sm primary" onClick={() => app.toast('Loan application form is not wired in this build')}>＋ Apply for a loan</button>}>
+        actions={<button className="btn sm primary" onClick={() => app.toast('Loan application form is not wired in this build')}><Icon n="add" size="lg" /> Apply for a loan</button>}>
         <LoanTable list={mine} dir={dir} act={false} onApprove={approve} />
       </Card>
 
@@ -405,7 +406,7 @@ function BnAdmin() {
             [['Emp Code', 'Name', 'Grade', 'FBP pool', 'Allocated', 'Status']].concat(
               rows.map(({ employee: e, plan: f, allocated }) =>
                 [e.code, e.name, e.grade, String(f.pool), String(allocated), f.status]),
-            ))}>⤓ Export</button>}>
+            ))}><Icon n="download" size="lg" /> Export</button>}>
         <div className="tbl-wrap" style={{ maxHeight: 460, overflow: 'auto' }}>
           <table className="tbl">
             <thead>

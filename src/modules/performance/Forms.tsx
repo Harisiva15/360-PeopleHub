@@ -265,7 +265,7 @@ export function PraiseForm({ close, people, meId }: {
       <label className="fld">
         <span>Which value</span>
         <select className="input" value={value} onChange={(e) => setValue(e.target.value)}>
-          {VALUES.map((v) => <option key={v.k} value={v.k}>{v.ic} {v.k}</option>)}
+          {VALUES.map((v) => <option key={v.k} value={v.k}>{v.k}</option>)}
         </select>
       </label>
       <label className="fld">

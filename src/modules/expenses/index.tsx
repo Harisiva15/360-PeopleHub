@@ -21,6 +21,7 @@ import { ClaimBadge, ClaimTable } from './ClaimTable';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 /** Per-category guidance shown in the policy table. */
 const CAT_NOTES: Record<string, string> = {
@@ -114,7 +115,7 @@ function useShowClaim(dir: Directory, claims: Claim[]) {
           </div>
           {c.note && (
             <div style={{ marginBottom: 14 }}>
-              <Banner kind="warn" icon="⚠️">{c.note}</Banner>
+              <Banner kind="warn" icon={<Icon n="warn" size="lg" />}>{c.note}</Banner>
             </div>
           )}
           <div className="tbl-wrap">
@@ -126,14 +127,14 @@ function useShowClaim(dir: Directory, claims: Claim[]) {
                 {c.items.map((i: ExpItem) => (
                   <tr key={i.id}>
                     <td>
-                      {expCat(i.cat).ic} {expCat(i.cat).n}
+                      <Icon n={expCat(i.cat).ic} /> {expCat(i.cat).n}
                       {i.overLimit && <div><Badge kind="warn">Above limit {inr(expCat(i.cat).limit)}</Badge></div>}
                     </td>
                     <td className="nowrap">{fmtD(i.date)}</td>
                     <td>{i.merchant}</td>
                     <td>{i.project ? projOf(i.project).name : <span className="muted">—</span>}</td>
                     <td className="num strong">{inr(i.amount)}</td>
-                    <td>{i.receipt ? <a>📎 View</a> : <span className="muted">Not required</span>}</td>
+                    <td>{i.receipt ? <a><Icon n="attachment" size="sm" /> View</a> : <span className="muted">Not required</span>}</td>
                   </tr>
                 ))}
                 <tr style={{ background: 'var(--surface-2)', fontWeight: 700 }}>
@@ -187,7 +188,7 @@ function NewClaimForm({ close }: { close: () => void }) {
       <div className="grid g2" style={{ gap: '0 14px' }}>
         <div className="field"><label>Category</label>
           <select className="input" value={cat} onChange={(e) => setCat(e.target.value)}>
-            {EXP_CATS.map((c) => <option key={c.id} value={c.id}>{c.ic} {c.n} — limit {inr(c.limit)}</option>)}
+            {EXP_CATS.map((c) => <option key={c.id} value={c.id}>{c.n} — limit {inr(c.limit)}</option>)}
           </select>
         </div>
         <div className="field"><label>Expense date</label>
@@ -246,7 +247,7 @@ function NewAdvanceForm({ close }: { close: () => void }) {
       <div className="field"><label>Reason</label>
         <textarea className="input" placeholder="Client travel to Singapore…" value={reason} onChange={(e) => setReason(e.target.value)} />
       </div>
-      <Banner kind="info" icon="💳">
+      <Banner kind="info" icon={<Icon n="card" size="lg" />}>
         Paid within 2 working days of approval. Settle it with an expense claim within 15 days of returning.
       </Banner>
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
@@ -287,8 +288,8 @@ function ExMy() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <button className="btn primary" onClick={newClaim}>＋ New expense claim</button>
-        <button className="btn" onClick={newAdvance}>＋ Request travel advance</button>
+        <button className="btn primary" onClick={newClaim}><Icon n="add" size="lg" /> New expense claim</button>
+        <button className="btn" onClick={newAdvance}><Icon n="add" size="lg" /> Request travel advance</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12.5 }}>
           Approver: {self.name(app.me.managerId)} · reimbursed with the next payroll
@@ -304,7 +305,7 @@ function ExMy() {
 
       <div className="grid g-2-1">
         <Card title="My claims" sub={`${mine.length} total`} flush
-          actions={<button className="btn sm" onClick={() => exportClaims(mine, 'my_expense_claims.csv', self)}>⤓ Export</button>}>
+          actions={<button className="btn sm" onClick={() => exportClaims(mine, 'my_expense_claims.csv', self)}><Icon n="download" size="lg" /> Export</button>}>
           <ClaimTable list={mine} onOpen={(c) => show(c.id)} />
         </Card>
         <Card title="Spend by category" sub="All time">
@@ -350,7 +351,7 @@ function ExAppr() {
       </Card>
 
       {overLimit.length > 0 && (
-        <Banner kind="warn" icon="⚠️" title={`${overLimit.length} claim(s) exceed policy limits`}>
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title={`${overLimit.length} claim(s) exceed policy limits`}>
           Open the claim to see which line items are above limit. Approving them records an explicit override in the audit log.
         </Banner>
       )}
@@ -377,7 +378,7 @@ function ExAll() {
           {['Submitted', 'Approved', 'Reimbursed', 'Rejected'].map((s) => <option key={s}>{s}</option>)}
         </select>
         <div className="spacer" />
-        <button className="btn" onClick={() => exportClaims(list, 'expense_claims.csv', dir)}>⤓ Export</button>
+        <button className="btn" onClick={() => exportClaims(list, 'expense_claims.csv', dir)}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <Card title="All claims" sub={`${list.length} records · ${SCOPE[app.role].label}`} flush>
@@ -391,7 +392,7 @@ function ExAll() {
 /* ---------------- Travel advances ---------------- */
 
 function AdvTable({ list, act, dir, onApprove }: { list: Advance[]; act: boolean; dir?: Directory; onApprove: (a: Advance) => void }) {
-  if (!list.length) return <EmptyState msg="No advances" icon="💳" />;
+  if (!list.length) return <EmptyState msg="No advances" icon={<Icon n="card" size="lg" />} />;
   return (
     <div className="tbl-wrap">
       <table className="tbl">
@@ -444,13 +445,13 @@ function ExAdv() {
 
   return (
     <div className="stack">
-      <Banner kind="info" icon="💳" title="How travel advances work">
+      <Banner kind="info" icon={<Icon n="card" size="lg" />} title="How travel advances work">
         Request an advance before travel; it is paid within 2 working days. Submit the expense claim within 15 days of
         returning — the advance is adjusted against it and any balance is recovered from payroll.
       </Banner>
 
       <Card title="My advances" sub={`${mine.length} requests`} flush
-        actions={<button className="btn sm primary" onClick={newAdvance}>＋ Request advance</button>}>
+        actions={<button className="btn sm primary" onClick={newAdvance}><Icon n="add" size="lg" /> Request advance</button>}>
         <AdvTable list={mine} act={false} onApprove={approve} />
       </Card>
 
@@ -525,7 +526,7 @@ function ExPolicy() {
             <tbody>
               {EXP_CATS.map((c) => (
                 <tr key={c.id}>
-                  <td><span style={{ marginRight: 7 }}>{c.ic}</span><b>{c.n}</b></td>
+                  <td><span style={{ marginRight: 7 }}><Icon n={c.ic} /></span><b>{c.n}</b></td>
                   <td className="num">{inr(c.limit)}</td>
                   <td>{c.proof ? <Badge kind="warn">Mandatory</Badge> : <Badge>Not required</Badge>}</td>
                   <td className="muted">{CAT_NOTES[c.id]}</td>

@@ -23,6 +23,7 @@ import type { Directory } from './data';
 import { ExitInterviewForm, RaiseExitForm } from './Forms';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 const EXIT_TONE: Record<string, 'warn' | 'info' | 'good' | 'mute'> = {
   'Notice Period': 'warn', 'In Clearance': 'info', Settled: 'good',
@@ -109,11 +110,11 @@ function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
         {needsInterview && (
           <button className="btn" onClick={() =>
             interview(needsInterview.id, dir.name(needsInterview.empId))}>
-            ✎ Exit interview
+            <Icon n="note" size="lg" /> Exit interview
           </button>
         )}
         <button className="btn primary" onClick={() => raise(dir.list, app.meId)}>
-          ＋ Raise an exit
+          <Icon n="add" size="lg" /> Raise an exit
         </button>
       </div>
 
@@ -136,7 +137,7 @@ function XtBoard({ openFnf }: { openFnf: (id: string) => void }) {
                   const e = dir.byId(x.empId)!;
                   return [e.code, e.name, deptOf(e.dept).name, x.resignedOn, x.lwd, x.reason, x.destination, x.status];
                 }),
-              ))}>⤓ Export</button>}>
+              ))}><Icon n="download" size="lg" /> Export</button>}>
           <div className="tbl-wrap">
             <table className="tbl">
               <thead>
@@ -210,7 +211,7 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
   const { data: detail } = useExitDetail(picked?.id ?? '');
 
   if (!picked) return <Card><EmptyState msg="No exits to settle" /></Card>;
-  if (!detail) return <Card><EmptyState msg="Loading the settlement…" icon="↩" /></Card>;
+  if (!detail) return <Card><EmptyState msg="Loading the settlement…" icon={<Icon n="undo" size="lg" />} /></Card>;
 
   const x = detail.exit;
   const e = detail.employee;
@@ -247,7 +248,7 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
             sub={`${e.code} · ${e.designation} · LWD ${fmtD(x.lwd)}`} flush
             actions={
               <div className="row">
-                <button className="btn sm" onClick={() => window.print()}>🖨 Statement</button>
+                <button className="btn sm" onClick={() => window.print()}><Icon n="print" size="lg" /> Statement</button>
                 {app.role === 'admin' && x.status !== 'Settled' && (
                   <button className="btn sm primary" onClick={async () => {
                     try {
@@ -352,7 +353,7 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
             <Card title="Documents to issue" sub="On the last working day" flush>
               {['Relieving Letter', 'Experience Letter', 'Full & Final Statement', 'Form 16 (part year)', 'PF transfer / withdrawal form'].map((d) => (
                 <ListRow key={d}>
-                  <span>📄</span>
+                  <span><Icon n="document" size="lg" /> </span>
                   <div style={{ flex: 1, fontWeight: 650, fontSize: 12.5 }}>{d}</div>
                   <button className="btn sm" onClick={() => app.toast(d + ' generated', 'ok')}>Generate</button>
                 </ListRow>
@@ -411,7 +412,7 @@ function XtInterviews() {
               </div>
               <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>Moving to: {x.destination}</div>
             </div>
-          )) : <EmptyState msg="No exit interviews recorded yet" icon="👋" />}
+          )) : <EmptyState msg="No exit interviews recorded yet" icon={<Icon n="wave" size="lg" />} />}
         </Card>
 
         <Card title="Average scores" sub="Across all exit interviews">
@@ -421,7 +422,7 @@ function XtInterviews() {
               c: s.v >= 4 ? 'var(--s6)' : s.v >= 3.2 ? 'var(--s1)' : 'var(--s8)',
             }))} />
           <Divide />
-          <Banner kind="warn" icon="💡">
+          <Banner kind="warn" icon={<Icon n="idea" size="lg" />}>
             Anything below 3.2 is a systemic issue rather than an individual one — it should have a named owner in the
             engagement action tracker.
           </Banner>
@@ -481,7 +482,7 @@ function XtAna() {
       <Card title="Retention actions" sub="Derived from exit interviews and engagement data" flush>
         {RETENTION_ACTIONS.map(([a, why, status]) => (
           <ListRow key={a} style={{ alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 15 }}>🎯</span>
+            <span style={{ fontSize: 15 }}><Icon n="target" size="lg" /> </span>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 650, fontSize: 12.5 }}>{a}</div>
               <div className="muted" style={{ fontSize: 11.5 }}>{why}</div>
@@ -513,7 +514,7 @@ function XtMe() {
     return (
       <div className="stack">
         <Card title="Resignation" sub="Nothing in progress">
-          <Banner kind="info" icon="ℹ️" title="Thinking of moving on?">
+          <Banner kind="info" icon={<Icon n="info" size="lg" />} title="Thinking of moving on?">
             Before you resign, consider talking to your manager or HR — many concerns around role, compensation or
             workload can be addressed. If you do decide to leave, submitting here starts the formal notice period.
           </Banner>
@@ -540,7 +541,7 @@ function XtMe() {
     );
   }
 
-  if (!detail) return <Card><EmptyState msg="Loading your settlement…" icon="↩" /></Card>;
+  if (!detail) return <Card><EmptyState msg="Loading your settlement…" icon={<Icon n="undo" size="lg" />} /></Card>;
   const x = detail.exit;
   const f = detail.settlement;
   const done = x.clearance.filter((c) => c.done).length;

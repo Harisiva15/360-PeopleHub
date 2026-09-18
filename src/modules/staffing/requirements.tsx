@@ -16,6 +16,7 @@ import { useShowEmployee } from '../employees/Profile';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { Rate } from './shared';
+import { Icon } from '../../components/icons';
 
 /** Below this the deal desk flags the margin. */
 const MARGIN_FLOOR = 20;
@@ -29,7 +30,7 @@ function RqOpen() {
   const { data: REQUIREMENTS = [] } = useRequirements();
   const { data: SUBMISSIONS = [] } = useSubmissions();
   const list = sortBy(REQUIREMENTS.filter((r) => r.status === 'Open' && r.filled < r.positions), (r) => r.closeBy);
-  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon={<Icon n="clock" size="lg" />} />;
 
   return (
     <div className="stack">
@@ -41,7 +42,7 @@ function RqOpen() {
               REQUIREMENTS.map((r) => [r.id, r.title, clientOf(r.clientId).name, r.role, r.location,
                 String(r.billRate), r.unit, String(r.positions), String(r.filled), r.priority, r.source,
                 r.receivedOn, r.closeBy, r.status]),
-            ))}>⤓ Export</button>
+            ))}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <StatRow cols={5}>
@@ -124,7 +125,7 @@ function RqPipe() {
 
   return (
     <div className="stack">
-      <Banner kind="info" icon="🖱️">
+      <Banner kind="info" icon={<Icon n="idea" size="lg" />}>
         Drag a submission between columns to move it through the client process. Moving a card to <b>Placed</b> creates
         the placement, locks the rate and starts the billing clock.
       </Banner>
@@ -209,7 +210,7 @@ function RqSubs() {
                   String(s.billRate), String(s.payRate), String(s.margin), s.rtr.signed ? 'Signed' : 'Missing',
                   s.submittedOn, s.stage];
               }),
-            ))}>⤓ Export</button>
+            ))}><Icon n="download" size="lg" /> Export</button>
       </div>
 
       <Card title="Submissions" sub={`${list.length} records`} flush>
@@ -282,7 +283,7 @@ function RqAna() {
   const { data: SUBMISSIONS = [] } = useSubmissions();
   const { data: CLIENTS = [] } = useClients();
   const recruiters = useVisiblePeople();
-  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon={<Icon n="clock" size="lg" />} />;
 
   const funnel = [
     { k: 'Requirements received', c: 'var(--s1)', v: REQUIREMENTS.length },

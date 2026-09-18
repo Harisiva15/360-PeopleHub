@@ -15,6 +15,7 @@ import { BarChart, HBar, Legend, LineChart, PAL } from '../../components/charts'
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { monthlyUnits } from './shared';
+import { Icon } from '../../components/icons';
 
 /** Bench ageing bands — the colour escalates the longer someone sits idle. */
 const BANDS: { k: string; c: string; lo: number; hi: number }[] = [
@@ -37,7 +38,7 @@ function BnBench() {
   const { data: CONSULTANTS = [] } = useConsultants();
   const { data: k } = useKpi();
   const list = sortBy(bench, (c) => -benchDays(c));
-  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon={<Icon n="clock" size="lg" />} />;
 
   const bands = BANDS.map((b) => ({ k: b.k, c: b.c, v: list.filter((c) => bandOf(benchDays(c)).k === b.k).length }));
   const bySkill = uniq(list.flatMap((c) => c.skills))
@@ -201,7 +202,7 @@ function BnForecast() {
   const { data: PLACEMENTS = [] } = usePlacements();
   const { data: k } = useKpi();
   const list = bench;
-  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon={<Icon n="clock" size="lg" />} />;
 
   const months: { k: string; l: string }[] = [];
   for (let i = 0; i < 6; i++) {
@@ -327,7 +328,7 @@ function Placements() {
   const { data: PLACEMENTS = [] } = usePlacements();
   const { data: k } = useKpi();
   const list = sortBy(PLACEMENTS, (p) => p.start, 'desc');
-  if (!k) return <EmptyState msg="Loading the staffing book…" icon="◷" />;
+  if (!k) return <EmptyState msg="Loading the staffing book…" icon={<Icon n="clock" size="lg" />} />;
   const byClient = clientPlacementCounts(PLACEMENTS);
   const marginBands = MARGIN_BANDS.map(([label, lo, hi, c]) => ({
     k: label, c, v: PLACEMENTS.filter((p) => p.margin >= lo && p.margin < hi).length,
@@ -352,7 +353,7 @@ function Placements() {
               PLACEMENTS.map((p) => [p.id, conOf(p.consultantId)?.name || '', clientOf(p.clientId).name, p.role,
                 p.location, p.start, p.end, String(p.billRate), String(p.payRate), String(p.margin),
                 String(p.tsCompliance), p.poNumber, p.status]),
-            ))}>⤓ Export</button>}>
+            ))}><Icon n="download" size="lg" /> Export</button>}>
         <div className="tbl-wrap" style={{ maxHeight: 560, overflow: 'auto' }}>
           <table className="tbl">
             <thead>

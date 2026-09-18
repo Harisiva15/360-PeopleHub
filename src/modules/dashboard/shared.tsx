@@ -10,6 +10,7 @@ import { Avatar, Badge, EmptyState } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { Legend } from '../../components/charts';
 import { usePendingItems } from './data';
+import { Icon } from '../../components/icons';
 
 /**
  * The greeting band at the top of every dashboard.
@@ -73,7 +74,7 @@ export function ApprovalSummary() {
     <>
       {items.map((i) => (
         <ListRow key={i.k} to={'/' + i.r}>
-          <div style={{ fontSize: 16 }}>{i.ic}</div>
+          <div><Icon n={i.ic} size="lg" /></div>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 650, fontSize: 13 }}>{i.k}</div>
           </div>
@@ -95,7 +96,7 @@ export function CelebRows({ list, dir, onWish }: {
    */
   onWish?: (empId: string) => void;
 }) {
-  if (!list.length) return <EmptyState msg="Nothing coming up" icon="🎈" />;
+  if (!list.length) return <EmptyState msg="Nothing coming up" icon={<Icon n="balloon" size="lg" />} />;
   return (
     <>
       {list.map((c, i) => {

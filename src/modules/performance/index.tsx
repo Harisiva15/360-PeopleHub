@@ -23,6 +23,7 @@ import {
 } from './Forms';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 const GOAL_TONE: Record<string, 'good' | 'info' | 'warn' | 'crit'> = {
   Achieved: 'good', 'On Track': 'info', 'At Risk': 'warn', Behind: 'crit',
@@ -103,7 +104,7 @@ function PfGoals() {
   const { data: cycle } = useCurrentCycle();
 
   /* After every hook: the cycle arrives asynchronously. */
-  if (!cycle) return <Card><EmptyState msg="Loading your goals…" icon="🎯" /></Card>;
+  if (!cycle) return <Card><EmptyState msg="Loading your goals…" icon={<Icon n="target" size="lg" />} /></Card>;
 
   const goals = GOALS.filter((g) => g.empId === me.id && g.cycleId === cycle.id);
   const achv = sum(goals, (g) => g.progress * g.weight) / Math.max(1, sum(goals, (g) => g.weight));
@@ -135,7 +136,7 @@ function PfGoals() {
                 <CheckinForm close={close} empId={me.id} who={dir.name(me.managerId)} />
               ),
               footer: null,
-            })}>✎ Log a 1:1</button>
+            })}><Icon n="note" size="lg" /> Log a 1:1</button>
             <button className="btn sm primary" onClick={() => layer.modal({
               title: 'Set a goal',
               sub: cycle.name,
@@ -144,10 +145,10 @@ function PfGoals() {
                 <GoalForm close={close} empId={me.id} who="yourself" />
               ),
               footer: null,
-            })}>＋ Set a goal</button>
+            })}><Icon n="add" size="lg" /> Set a goal</button>
           </div>
           {goals.map((g) => <GoalCard key={g.id} g={g} editable />)}
-          {!goals.length && <Card><EmptyState msg="No goals set for this cycle yet" icon="🎯" /></Card>}
+          {!goals.length && <Card><EmptyState msg="No goals set for this cycle yet" icon={<Icon n="target" size="lg" />} /></Card>}
         </div>
 
         <div className="stack">
@@ -171,7 +172,7 @@ function PfGoals() {
                   <div style={{ fontSize: 12.5, marginTop: 3 }}><b>Blockers:</b> {c.blockers}</div>
                   <div style={{ fontSize: 12.5, marginTop: 3 }}><b>Next:</b> {c.next}</div>
                 </div>
-              )) : <EmptyState msg="No check-ins logged yet" icon="💬" />}
+              )) : <EmptyState msg="No check-ins logged yet" icon={<Icon n="helpdesk" size="lg" />} />}
             </div>
           </Card>
         </div>
@@ -192,7 +193,7 @@ function PfTeam({ openReview }: { openReview: (id: string) => void }) {
   const { data: everyone = [] } = useAllEmployees();
 
   /* After every hook. */
-  if (!cycle) return <Card><EmptyState msg="Loading the team's goals…" icon="🎯" /></Card>;
+  if (!cycle) return <Card><EmptyState msg="Loading the team's goals…" icon={<Icon n="target" size="lg" />} /></Card>;
 
   /* An admin sees the whole organisation, not only their own reports. */
   const team = app.role === 'admin'
@@ -231,7 +232,7 @@ function PfTeam({ openReview }: { openReview: (id: string) => void }) {
             downloadCSV('team_goals.csv',
               [['Emp Code', 'Name', 'Goals', 'Achievement %', 'At risk', 'Review status']].concat(
                 rows.map((r) => [r.e.code, r.e.name, String(r.g.length), String(r.achv), String(r.risk), r.rv?.status || '']),
-              ))}>⤓ Export</button>}>
+              ))}><Icon n="download" size="lg" /> Export</button>}>
           <div className="tbl-wrap" style={{ maxHeight: 560, overflow: 'auto' }}>
             <table className="tbl">
               <thead>
@@ -265,7 +266,7 @@ function PfTeam({ openReview }: { openReview: (id: string) => void }) {
         <Card title="Goal status mix" sub="Across the team">
           <HBar rows={dist} />
           <Divide />
-          <Banner kind="info" icon="💡">
+          <Banner kind="info" icon={<Icon n="idea" size="lg" />}>
             Goals at risk should be discussed in the next 1:1. Log the outcome as a check-in so it carries into the review.
           </Banner>
         </Card>
@@ -288,7 +289,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
 
   /* After every hook. */
   const e = dir.byId(target && app.role !== 'employee' ? target : me.id) ?? me;
-  if (!cycle) return <Card><EmptyState msg="Loading the review…" icon="📋" /></Card>;
+  if (!cycle) return <Card><EmptyState msg="Loading the review…" icon={<Icon n="goal" size="lg" />} /></Card>;
 
   const rv = findReview(REVIEWS, e.id, cycle.id);
   const goals = GOALS.filter((g) => g.empId === e.id && g.cycleId === cycle.id);
@@ -360,7 +361,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
                 <CheckinForm close={close} empId={e.id} who={e.name} />
               ),
               footer: null,
-            })}>✎ 1:1</button>
+            })}><Icon n="note" size="lg" /> 1:1</button>
           )}
           {!isSelf && (
             <button className="btn sm" onClick={() => layer.modal({
@@ -371,7 +372,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
                 <GoalForm close={close} empId={e.id} who={e.name} />
               ),
               footer: null,
-            })}>＋ Goal</button>
+            })}><Icon n="add" size="lg" /> Goal</button>
           )}
           <StatusBadge status={rv.status} />
         </div>
@@ -422,7 +423,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>{rv.self.comments}</div>
               </>
-            ) : <EmptyState msg={isSelf ? 'Your self appraisal is due by 10 September' : 'Employee has not submitted yet'} icon="✍️" />}
+            ) : <EmptyState msg={isSelf ? 'Your self appraisal is due by 10 September' : 'Employee has not submitted yet'} icon={<Icon n="note" size="lg" />} />}
           </Card>
 
           <Card title="Manager review" sub={'By ' + dir.name(e.managerId || '')}>
@@ -434,7 +435,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>{rv.manager.comments}</div>
               </>
-            ) : <EmptyState msg="Manager review pending" icon="📝" />}
+            ) : <EmptyState msg="Manager review pending" icon={<Icon n="note" size="lg" />} />}
           </Card>
 
           <Card title="360° peer feedback" sub={`${rv.peers.length} responses · shown anonymised to the employee`} flush>
@@ -457,7 +458,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>{p.comment}</div>
               </div>
-            )) : <EmptyState msg="Peer feedback not collected yet" icon="👥" />}
+            )) : <EmptyState msg="Peer feedback not collected yet" icon={<Icon n="people" size="lg" />} />}
           </Card>
         </div>
 
@@ -473,7 +474,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
                   : <span className="muted">Restricted</span>],
                 ['Promotion', rv.final.promoted ? <Badge kind="good">Recommended</Badge> : 'Not this cycle'],
               ]} />
-            ) : <EmptyState msg="Calibration happens 21–27 September" icon="⚖️" />}
+            ) : <EmptyState msg="Calibration happens 21–27 September" icon={<Icon n="policy" size="lg" />} />}
           </Card>
 
           <Card title="Rating scale" sub={`${ORG.name} performance framework`} flush>
@@ -489,7 +490,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
           </Card>
 
           {rv.pip && (
-            <Banner kind="warn" icon="⚠️" title="Performance improvement plan">
+            <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Performance improvement plan">
               A 60-day PIP has been initiated with weekly check-ins and a defined success measure.
             </Banner>
           )}
@@ -510,7 +511,7 @@ function PfCalib() {
   const { data: teamList = [] } = useTeam(app.meId);
 
   /* After every hook. */
-  if (!cycle) return <Card><EmptyState msg="Loading calibration…" icon="⚖️" /></Card>;
+  if (!cycle) return <Card><EmptyState msg="Loading calibration…" icon={<Icon n="policy" size="lg" />} /></Card>;
 
   const scope = app.role === 'admin' ? everyone : teamList;
   const rows = scope
@@ -659,7 +660,7 @@ function PfPraise() {
                     background: `color-mix(in srgb, ${v.c} 14%, transparent)`,
                     color: v.c,
                     borderColor: `color-mix(in srgb, ${v.c} 32%, transparent)`,
-                  }}>{v.ic} {v.k}</span>
+                  }}><Icon n={v.ic} size="sm" /> {v.k}</span>
                 </div>
                 <div style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>{p.text}</div>
                 <div className="row" style={{ marginTop: 10, gap: 8 }}>
@@ -694,7 +695,7 @@ function PfPraise() {
           <Card title="Our values" sub="What we recognise" flush>
             {VALUES.map((v) => (
               <ListRow key={v.k}>
-                <span style={{ fontSize: 16 }}>{v.ic}</span>
+                <Icon n={v.ic} size="lg" />
                 <div style={{ flex: 1, fontWeight: 650, fontSize: 12.5 }}>{v.k}</div>
                 <Dot color={v.c} />
               </ListRow>
@@ -715,7 +716,7 @@ function PfCycle() {
   const today = ymd(TODAY);
 
   /* After every hook. */
-  if (!cycle) return <Card><EmptyState msg="Loading the cycle…" icon="📅" /></Card>;
+  if (!cycle) return <Card><EmptyState msg="Loading the cycle…" icon={<Icon n="calendar" size="lg" />} /></Card>;
   return (
     <div className="stack">
       <div className="grid g2">
@@ -763,7 +764,7 @@ function PfCycle() {
         </div>
       </Card>
 
-      <Banner kind="info" icon="ℹ️" title="How ratings translate into increments">
+      <Banner kind="info" icon={<Icon n="info" size="lg" />} title="How ratings translate into increments">
         The board approves a company-wide increment pool ({cycle.hikePool}% this cycle). Managers rate against goals,
         calibration normalises ratings across departments, and the pool is distributed so that higher ratings receive a
         proportionally larger share. Letters are released on 1 October with effect from the same date.

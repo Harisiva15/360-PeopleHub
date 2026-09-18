@@ -26,6 +26,7 @@ import { addDays, daysBetween, DOW, fmtD, fmtDS, MONL, parseYmd, TODAY, ymd } fr
 import { deptOf, HOLIDAYS, ORG } from '../../data/org';
 import { Avatar, Badge, Card, EmptyState, StatRow, Tabs, Tile } from '../../components/ui';
 import { ListRow } from '../../components/common';
+import { Icon } from '../../components/icons';
 
 export type CelebKind = 'birthday' | 'anniversary' | 'joiner' | 'festival';
 
@@ -257,18 +258,18 @@ export function CelebrationsView({
           <p>Let&rsquo;s celebrate the efforts, milestones and moments that make this a good place to work.</p>
         </div>
         {canPost && (
-          <button className="btn solid celeb-add" onClick={onAdd}>＋ Add celebration</button>
+          <button className="btn solid celeb-add" onClick={onAdd}><Icon n="add" size="lg" /> Add celebration</button>
         )}
       </div>
 
       <StatRow cols={4}>
-        <Tile icon="🎂" label="Birthdays" value={inMonth('birthday')}
+        <Tile icon={<Icon n="cake" size="lg" />} label="Birthdays" value={inMonth('birthday')}
           foot={`In ${MONL[Number(monthKey.slice(5, 7)) - 1]}`} />
-        <Tile icon="🎉" label="Work anniversaries" value={inMonth('anniversary')}
+        <Tile icon={<Icon n="party" size="lg" />} label="Work anniversaries" value={inMonth('anniversary')}
           foot="Milestones this month" />
-        <Tile icon="👋" label="New joiners" value={inMonth('joiner')}
+        <Tile icon={<Icon n="wave" size="lg" />} label="New joiners" value={inMonth('joiner')}
           foot="Started this month" />
-        <Tile icon="⭐" label="Total occasions" value={monthOccasions.length}
+        <Tile icon={<Icon n="star" size="lg" />} label="Total occasions" value={monthOccasions.length}
           foot="Everything on the calendar" />
       </StatRow>
 
@@ -283,7 +284,7 @@ export function CelebrationsView({
               ))}
             </div>
           ) : (
-            <EmptyState icon="🎈"
+            <EmptyState icon={<Icon n="balloon" size="lg" />}
               msg={`Nothing falls today — the next is ${upcoming[0]
                 ? `${upcoming[0].label} on ${fmtD(upcoming[0].date)}`
                 : 'further out than three months'}.`} />
@@ -317,7 +318,7 @@ export function CelebrationsView({
                 </Badge>
               </ListRow>
             );
-          }) : <EmptyState msg="Nothing in the next 90 days" icon="🎈" />}
+          }) : <EmptyState msg="Nothing in the next 90 days" icon={<Icon n="balloon" size="lg" />} />}
         </Card>
 
         <CelebCalendar monthKey={monthKey} onMonth={setMonthKey} occasions={monthOccasions} />

@@ -19,6 +19,7 @@ import {
   useMyBalances, useMyLeave, usePeople, useRejectLeave, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
+import { Icon } from '../../components/icons';
 
 const exportLeaves = (list: LeaveRequest[], name: string, dir: Directory) =>
   downloadCSV(
@@ -116,7 +117,7 @@ function ApplyForm({ close }: { close: () => void }) {
       </div>
 
       {invalid ? (
-        <Banner kind="warn" icon="⚠️">End date must be on or after the start date.</Banner>
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />}>End date must be on or after the start date.</Banner>
       ) : (
         <Banner kind={enough ? 'info' : 'warn'} icon={enough ? 'ℹ️' : '⚠️'} title={`${days} day(s) will be deducted`}>
           {excluded > 0 && `${excluded} week-off/holiday day(s) excluded by the sandwich rule. `}
@@ -178,7 +179,7 @@ function LvMe() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <button className="btn primary" onClick={apply}>＋ Apply for leave</button>
+        <button className="btn primary" onClick={apply}><Icon n="add" size="lg" /> Apply for leave</button>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12.5 }}>Approver: {approver.name(me.managerId)}</span>
       </div>
@@ -202,7 +203,7 @@ function LvMe() {
 
       <div className="grid g-2-1">
         <Card title="My leave requests" sub={`${mine.length} total`} flush
-          actions={<button className="btn sm" onClick={() => exportLeaves(mine, 'my_leave.csv', approver)}>⤓ Export</button>}>
+          actions={<button className="btn sm" onClick={() => exportLeaves(mine, 'my_leave.csv', approver)}><Icon n="download" size="lg" /> Export</button>}>
           <div className="tbl-wrap" style={{ maxHeight: 460, overflow: 'auto' }}>
             <table className="tbl">
               <thead>
@@ -240,7 +241,7 @@ function LvMe() {
                 </div>
                 <StatusBadge status={l.status} />
               </ListRow>
-            )) : <EmptyState msg="Nothing planned" icon="🌴" />}
+            )) : <EmptyState msg="Nothing planned" icon={<Icon n="holiday" size="lg" />} />}
           </Card>
 
           <Card title="Balance breakdown" sub={ORG.fy}>
@@ -359,7 +360,7 @@ function LvAppr() {
                       </td>
                       <td>
                         {l.reason}
-                        {conflict > 0 && <div className="muted" style={{ fontSize: 11 }}>⚠ {conflict} teammate(s) also away</div>}
+                        {conflict > 0 && <div className="muted" style={{ fontSize: 11 }}><Icon n="warn" size="lg" /> {conflict} teammate(s) also away</div>}
                       </td>
                       <td className="nowrap">{fmtD(l.appliedOn)}</td>
                       <td className="right nowrap">
@@ -415,7 +416,7 @@ function LvTeam() {
 
       <div className="grid g-2-1">
         <Card title="All leave records" sub={`${list.length} requests`} flush
-          actions={<button className="btn sm" onClick={() => exportLeaves(list, 'team_leave.csv', dir)}>⤓ Export</button>}>
+          actions={<button className="btn sm" onClick={() => exportLeaves(list, 'team_leave.csv', dir)}><Icon n="download" size="lg" /> Export</button>}>
           <div className="tbl-wrap" style={{ maxHeight: 520, overflow: 'auto' }}>
             <table className="tbl">
               <thead>

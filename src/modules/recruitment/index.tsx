@@ -30,6 +30,7 @@ import { Filters, OrderTable, RecruitmentDashboard } from './Dashboard';
 import { CreateJobOrder } from './CreateJobOrder';
 import { JobOrderPage } from './JobOrder';
 import { useJobOrders, useMyJobs, useVisiblePeople } from './data';
+import { Icon } from '../../components/icons';
 
 /* ---------------- job requisitions ---------------- */
 
@@ -112,7 +113,7 @@ function MyAssignedJobs() {
       </StatRow>
 
       {late.length > 0 && (
-        <Banner kind="warn" icon="⚠" title={`${late.length} of your orders are behind`}>
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title={`${late.length} of your orders are behind`}>
           {late.map((x) => x.order.title).slice(0, 3).join(', ')}
           {late.length > 3 && ` and ${late.length - 3} more`}.
         </Banner>

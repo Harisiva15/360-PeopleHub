@@ -1,5 +1,6 @@
 /* Shares the RNG stream with engagement — this import fixes the draw order. */
 import './engagement';
+import type { IconName } from '../components/icons';
 
 import { sum } from '../lib/collections';
 import { addDays, MONL, monthKey, TODAY, ymd } from '../lib/dates';
@@ -12,22 +13,23 @@ export interface ExpCat {
   n: string;
   /** Per-claim policy cap; anything above is flagged. */
   limit: number;
-  ic: string;
+  /** Name in `src/components/icons.tsx`, not a glyph. */
+  ic: IconName;
   proof: boolean;
   c: string;
 }
 
 export const EXP_CATS: ExpCat[] = [
-  { id: 'AIR', n: 'Air Travel', limit: 25000, ic: '✈️', proof: true, c: 'var(--s1)' },
-  { id: 'HOTEL', n: 'Hotel / Stay', limit: 6000, ic: '🏨', proof: true, c: 'var(--s2)' },
-  { id: 'LOCAL', n: 'Local Travel / Cab', limit: 2500, ic: '🚕', proof: true, c: 'var(--s3)' },
-  { id: 'MEAL', n: 'Meals (per day)', limit: 800, ic: '🍽️', proof: false, c: 'var(--s4)' },
-  { id: 'CLIENT', n: 'Client Entertainment', limit: 10000, ic: '🤝', proof: true, c: 'var(--s5)' },
-  { id: 'NET', n: 'Broadband / Internet', limit: 1500, ic: '🌐', proof: true, c: 'var(--s7)' },
-  { id: 'MOB', n: 'Mobile Bill', limit: 1000, ic: '📱', proof: true, c: 'var(--s6)' },
-  { id: 'LEARN', n: 'Learning & Certification', limit: 40000, ic: '🎓', proof: true, c: 'var(--s8)' },
-  { id: 'RELOC', n: 'Relocation', limit: 75000, ic: '📦', proof: true, c: 'var(--s1)' },
-  { id: 'FUEL', n: 'Fuel & Mileage', limit: 6000, ic: '⛽', proof: true, c: 'var(--s2)' },
+  { id: 'AIR', n: 'Air Travel', limit: 25000, ic: 'travel', proof: true, c: 'var(--s1)' },
+  { id: 'HOTEL', n: 'Hotel / Stay', limit: 6000, ic: 'hotel', proof: true, c: 'var(--s2)' },
+  { id: 'LOCAL', n: 'Local Travel / Cab', limit: 2500, ic: 'travel', proof: true, c: 'var(--s3)' },
+  { id: 'MEAL', n: 'Meals (per day)', limit: 800, ic: 'meal', proof: false, c: 'var(--s4)' },
+  { id: 'CLIENT', n: 'Client Entertainment', limit: 10000, ic: 'recruitment', proof: true, c: 'var(--s5)' },
+  { id: 'NET', n: 'Broadband / Internet', limit: 1500, ic: 'globe', proof: true, c: 'var(--s7)' },
+  { id: 'MOB', n: 'Mobile Bill', limit: 1000, ic: 'phone', proof: true, c: 'var(--s6)' },
+  { id: 'LEARN', n: 'Learning & Certification', limit: 40000, ic: 'learning', proof: true, c: 'var(--s8)' },
+  { id: 'RELOC', n: 'Relocation', limit: 75000, ic: 'box', proof: true, c: 'var(--s1)' },
+  { id: 'FUEL', n: 'Fuel & Mileage', limit: 6000, ic: 'travel', proof: true, c: 'var(--s2)' },
 ];
 
 export const expCat = (id: string): ExpCat => EXP_CATS.find((c) => c.id === id) || EXP_CATS[0];

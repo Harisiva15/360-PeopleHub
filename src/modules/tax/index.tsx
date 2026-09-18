@@ -15,6 +15,7 @@ import {
 } from './data';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
+import { Icon } from '../../components/icons';
 
 /** Metro cities get a 50% HRA cap rather than 40%. */
 const METRO = ['CHN', 'BLR', 'HYD'];
@@ -73,7 +74,7 @@ function TaxMe() {
   const setItem = (k: string, v: number | string) => setItems((x) => ({ ...(x ?? {}), [k]: v }));
 
   /* After every hook: the tax position is computed by the service. */
-  if (!tax) return <Card><EmptyState msg="Loading your tax position…" icon="🧾" /></Card>;
+  if (!tax) return <Card><EmptyState msg="Loading your tax position…" icon={<Icon n="invoice" size="lg" />} /></Card>;
 
   const d = tax.declaration;
   const s = tax.salary;
@@ -114,7 +115,7 @@ function TaxMe() {
             ))}
           </div>
           <div style={{ marginTop: 14 }}>
-            <Banner kind="info" icon="📎">
+            <Banner kind="info" icon={<Icon n="attachment" size="lg" />}>
               Accepted formats: PDF, JPG, PNG up to 5 MB each. Finance verifies within 5 working days.
             </Banner>
           </div>
@@ -197,7 +198,7 @@ function TaxMe() {
           </div>
 
           {Number(draft.hra_rent) * 12 > 100000 && (
-            <Banner kind="warn" icon="⚠️" title="This claim needs your landlord's PAN">
+            <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="This claim needs your landlord's PAN">
               Above ₹1,00,000 of annual rent, Rule 26C requires it and this system
               does not hold it — tax identifiers are deliberately not stored here.
               Give it to finance directly; the exemption below is what you would get
@@ -205,7 +206,7 @@ function TaxMe() {
             </Banner>
           )}
 
-          <Banner kind="info" icon="🧮">
+          <Banner kind="info" icon={<Icon n="calculator" size="lg" />}>
             <b>HRA exemption: {inr(hx)}</b> — least of: actual HRA {inr(comp(s, 1))}, rent paid − 10% of basic{' '}
             {inr(Math.max(0, t.hra - 0.1 * comp(s, 0)))}, {METRO.includes(e.site) ? '50%' : '40%'} of basic{' '}
             {inr((METRO.includes(e.site) ? 0.5 : 0.4) * comp(s, 0))}
@@ -213,7 +214,7 @@ function TaxMe() {
 
           <Divide />
           <div className="row wrap" style={{ gap: 8 }}>
-            <button className="btn" onClick={uploadProofs}>📎 Upload proofs</button>
+            <button className="btn" onClick={uploadProofs}><Icon n="attachment" size="lg" /> Upload proofs</button>
             <span className="muted" style={{ fontSize: 12.5 }}>{d.proofs || 'No proofs uploaded yet'}</span>
           </div>
         </Card>
@@ -303,7 +304,7 @@ function TaxAll() {
           actions={
             <div className="row">
               <input className="input" placeholder="Search…" style={{ width: 180 }} value={q} onChange={(e) => setQ(e.target.value)} />
-              <button className="btn sm" onClick={exportCsv}>⤓</button>
+              <button className="btn sm" onClick={exportCsv}><Icon n="download" size="lg" /> </button>
             </div>
           }>
           <div className="tbl-wrap" style={{ maxHeight: 600, overflow: 'auto' }}>
@@ -351,7 +352,7 @@ function TaxAll() {
           <Donut size={160} center={list.length} centerSub="employees" slices={byStatus} />
           <Legend items={byStatus} />
           <Divide />
-          <Banner kind="warn" icon="⏰" title="Proof submission window">
+          <Banner kind="warn" icon={<Icon n="clock" size="lg" />} title="Proof submission window">
             Closes 31 January. Unverified declarations are dropped from February TDS.
           </Banner>
         </Card>

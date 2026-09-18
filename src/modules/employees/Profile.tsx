@@ -12,6 +12,7 @@ import { Avatar, Badge, Banner, KV } from '../../components/ui';
 import { Chip, ListRow, StatusBadge } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
+import { Icon } from '../../components/icons';
 
 function SectionHead({ children }: { children: React.ReactNode }) {
   return (
@@ -40,7 +41,7 @@ function ProfileBody({ id, jump }: { id: string; jump: (nextId: string) => void 
    * this deployment yet. Saying so beats a spinner that never resolves.
    */
   return (
-    <Banner kind="info" icon="👤" title="The full profile is not available yet">
+    <Banner kind="info" icon={<Icon n="person" size="lg" />} title="The full profile is not available yet">
       Salary, documents, learning and the lifecycle trail are assembled from
       services this deployment does not run yet. What is on file is in the
       module for it — attendance, leave, payroll and assets all work.
@@ -156,7 +157,7 @@ function ProfileView({ p, jump }: { p: EmployeeProfile; jump: (id: string) => vo
         </>
       ) : (
         <>
-          <Banner icon="🔒">Compensation details are visible to HR administrators and the employee only.</Banner>
+          <Banner icon={<Icon n="lock" size="lg" />}>Compensation details are visible to HR administrators and the employee only.</Banner>
           <div style={{ height: 16 }} />
         </>
       )}
@@ -234,7 +235,7 @@ function ProfileView({ p, jump }: { p: EmployeeProfile; jump: (id: string) => vo
           <div>
             {docs.map((d) => (
               <ListRow key={d.id} style={{ padding: '8px 0' }}>
-                <span>📄</span>
+                <span><Icon n="document" size="lg" /> </span>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 650, fontSize: 12.5 }}>{d.type}</div>
                   <div className="muted" style={{ fontSize: 11.5 }}>Uploaded {fmtD(d.on)}</div>

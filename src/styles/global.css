@@ -151,7 +151,11 @@
   --shadow-lg:0 4px 8px rgba(11,11,11,.05), 0 24px 64px rgba(11,11,11,.14);
 
   --r-sm:8px; --r:12px; --r-lg:14px; --r-xl:22px;
-  --nav-w:250px;
+  /* The rail at its two widths, and the header, all from tokens so the layout
+     and the transition agree about what "collapsed" means. */
+  --nav-w:230px;
+  --nav-w-tight:68px;
+  --topbar-h:72px;
 
   /*
    * Control heights, so a button beside an input beside a select line up
@@ -317,7 +321,43 @@ a{color:var(--brand);text-decoration:none}
  * tall, which is a header block rather than a strip, and that is what a
  * stacked mark is.
  */
-.brand{padding:16px var(--sp-3) 14px;border-bottom:1px solid var(--rail-line)}
+.brand{position:relative;padding:16px var(--sp-3) 14px;border-bottom:1px solid var(--rail-line)}
+
+/* ---------- the collapsed rail ---------- */
+
+/*
+ * Collapsing is a width change and nothing else: the same markup, the same
+ * order, the labels hidden. Rebuilding the rail as a second component for the
+ * narrow case is how the two drift apart.
+ */
+.sidebar{transition:width .2s cubic-bezier(.4,0,.2,1),flex-basis .2s cubic-bezier(.4,0,.2,1)}
+.sidebar.tight{width:var(--nav-w-tight);flex-basis:var(--nav-w-tight)}
+.sidebar.tight .brand{padding:14px 10px 12px}
+.sidebar.tight .brand img{max-width:44px;padding:5px}
+.sidebar.tight .brand .cap,
+.sidebar.tight .nav-label,
+.sidebar.tight .nav-caret,
+.sidebar.tight .rail-foot .nm,
+.sidebar.tight .rail-foot .mt{display:none}
+.sidebar.tight .nav-top{justify-content:center;padding:10px 0}
+.sidebar.tight .nav-top .pill{
+  position:absolute;top:3px;right:8px;margin:0;padding:0 4px;min-width:15px;
+}
+.sidebar.tight .nav-top{position:relative}
+.sidebar.tight .rail-foot .row{justify-content:center}
+.sidebar.tight .rail-foot .btn{display:none}
+
+/* The collapse control, on the brand block so it is always in the same place. */
+.rail-tight{
+  position:absolute;top:14px;right:8px;width:24px;height:24px;
+  display:grid;place-items:center;border-radius:7px;cursor:pointer;
+  border:1px solid var(--rail-line);background:var(--rail-2);color:var(--rail-ink);
+  transition:background .13s ease,color .13s ease,transform .2s ease;
+}
+.rail-tight:hover{background:var(--rail-on);color:#fff;border-color:transparent}
+/* The chevron points the way it will move the rail. */
+.sidebar:not(.tight) .rail-tight{transform:rotate(180deg)}
+.sidebar.tight .rail-tight{top:10px;right:calc(50% - 12px)}
 .brand img{display:block;width:100%;max-width:150px;height:auto;margin-inline:auto}
 
 /*
@@ -386,9 +426,20 @@ a{color:var(--brand);text-decoration:none}
 
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .topbar{
-  position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--surface) 88%,transparent);
+  position:sticky;top:0;z-index:30;min-height:var(--topbar-h);
+  background:color-mix(in srgb,var(--surface) 88%,transparent);
   backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line);
-  display:flex;align-items:center;gap:12px;padding:12px var(--sp-4);
+  display:flex;align-items:center;gap:12px;padding:0 var(--sp-4);
+}
+/*
+ * A hairline between the header's groups — the page's identity on the left,
+ * the tools that are the same everywhere on the right. One rule, drawn before
+ * the actions rather than between every control, because the point is to
+ * separate two regions and not to fence off each button.
+ */
+.topbar-acts::before{
+  content:'';align-self:center;width:1px;height:26px;
+  background:var(--line);margin-right:6px;
 }
 .topbar-t{min-width:0}
 /* The open page's primary action. Empty on pages that declare none. */
@@ -1828,11 +1879,29 @@ button.celeb-who:hover b{color:var(--brand)}
   transition: background .13s ease, color .13s ease;
 }
 .nav-top:hover { background: var(--rail-2); color: var(--rail-ink-hi); }
-.nav-top .ic { width: 18px; text-align: center; font-size: 15px; opacity: .85; }
+.nav-label { flex: 1; min-width: 0; }
+.nav-top .ic {
+  width: 20px; flex: 0 0 auto; display: grid; place-items: center; opacity: .8;
+  transition: opacity .13s ease;
+}
 .nav-top:hover .ic, .nav-top.on .ic { opacity: 1; }
+/*
+ * The selected item, with the cyan marker the brand asks for.
+ *
+ * The marker is a second signal rather than the only one: the filled pill
+ * already says "you are here", and the rule on its leading edge is what makes
+ * that readable at a glance down a column of sixteen. Drawn as a pseudo-
+ * element so it cannot push the label, and inset so it reads as part of the
+ * pill rather than a stray line beside it.
+ */
 .nav-top.on {
+  position: relative;
   background: var(--rail-on); color: #fff; font-weight: 600;
   box-shadow: 0 2px 8px color-mix(in srgb, var(--rail-on) 45%, transparent);
+}
+.nav-top.on::before {
+  content: ''; position: absolute; left: 0; top: 7px; bottom: 7px;
+  width: 3px; border-radius: 0 3px 3px 0; background: var(--cyan);
 }
 /* A shut section holding the current page says so, without claiming to be it. */
 .nav-top.here { color: var(--rail-ink-hi); background: var(--rail-2); }
@@ -1867,3 +1936,25 @@ button.celeb-who:hover b{color:var(--brand)}
   background: var(--crit-solid); color: #fff; font-size: 10px; font-weight: 700;
   padding: 1px 6px; border-radius: 20px;
 }
+
+/* ---------- icons ---------- */
+
+/*
+ * One family, drawn rather than typed. Every icon inherits its colour from the
+ * text beside it, which is the whole reason for the switch: an emoji is a
+ * bitmap in somebody else's palette and cannot take the theme's ink.
+ */
+.ic-svg{
+  flex:0 0 auto;
+  /* Optical alignment: a 16px glyph next to 13px text sits a hair high. */
+  vertical-align:-.14em;
+}
+/* Wherever an icon sits in a run of text, it should not stretch the line. */
+.menu-row .ic-svg,.gsearch-row .ic-svg,.crumbs .ic-svg{vertical-align:middle}
+.tile-ic .ic-svg,.empty .big .ic-svg{vertical-align:baseline}
+
+/* A toast's icon sits on its text baseline rather than floating above it. */
+#toasts .toast{display:flex;align-items:center;gap:8px}
+
+/* The caret is drawn now, so the rotation applies to the element not a glyph. */
+.nav-caret{display:grid;place-items:center;opacity:.55}

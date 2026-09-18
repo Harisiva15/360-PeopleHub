@@ -19,6 +19,7 @@ import { fmtD } from '../../lib/dates';
 import { Badge, Banner, EmptyState } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 import { useOfferLetter, useReleaseOffer } from './data';
+import { Icon } from '../../components/icons';
 
 export function OfferLetter({ c, onDone }: { c: Candidate; onDone?: () => void }) {
   const { data: body, loading, error } = useOfferLetter(c.id);
@@ -27,7 +28,7 @@ export function OfferLetter({ c, onDone }: { c: Candidate; onDone?: () => void }
   const [busy, setBusy] = useState(false);
 
   const offer = c.offer;
-  if (!offer) return <EmptyState msg="That candidate has no offer" icon="📄" />;
+  if (!offer) return <EmptyState msg="That candidate has no offer" icon={<Icon n="document" size="lg" />} />;
   const draft = offer.status === 'Draft';
 
   const send = async () => {
@@ -56,18 +57,18 @@ export function OfferLetter({ c, onDone }: { c: Candidate; onDone?: () => void }
       </div>
 
       {draft ? (
-        <Banner kind="warn" icon="✍️" title="Not yet released">
+        <Banner kind="warn" icon={<Icon n="note" size="lg" />} title="Not yet released">
           The candidate has not seen this. Read the figures back before sending —
           once released, the letter is frozen as it stands here.
         </Banner>
       ) : (
-        <Banner kind="info" icon="🔒" title="Released">
+        <Banner kind="info" icon={<Icon n="lock" size="lg" />} title="Released">
           This is the letter as it was sent. Later changes to the offer do not
           alter it.
         </Banner>
       )}
 
-      {error ? <EmptyState msg={error.message} icon="⚠️" />
+      {error ? <EmptyState msg={error.message} icon={<Icon n="warn" size="lg" />} />
         : loading && body === undefined ? <EmptyState msg="Loading the letter…" />
           : (
             <pre style={{

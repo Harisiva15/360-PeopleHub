@@ -24,6 +24,7 @@ import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { useDay, useLocationNotice, usePeople, usePunchIn, usePunchOut } from './data';
 import { LocationNoticeBody } from './LocationNotice';
+import { Icon } from '../../components/icons';
 
 /** Where the device thinks it is, or null if it will not say. */
 interface Fix { lat: number; lng: number; acc: number }
@@ -219,25 +220,24 @@ export function PunchWidget({ empId }: { empId: string }) {
         </div>
 
         {state === 'out' ? (
-          <button className="btn solid" onClick={() => doPunch('in')}>⏱ Punch In</button>
+          <button className="btn solid" onClick={() => doPunch('in')}><Icon n="timer" size="lg" /> Punch In</button>
         ) : state === 'in' ? (
-          <button className="btn solid" onClick={() => doPunch('out')}>⏹ Punch Out</button>
+          <button className="btn solid" onClick={() => doPunch('out')}><Icon n="stop" size="lg" /> Punch Out</button>
         ) : (
-          <span className="badge" style={{ background: 'rgba(255,255,255,.2)', color: '#fff', borderColor: 'rgba(255,255,255,.3)' }}>
-            ✓ Day completed
+          <span className="badge" style={{ background: 'rgba(255,255,255,.2)', color: '#fff', borderColor: 'rgba(255,255,255,.3)' }}><Icon n="ok" size="lg" /> Day completed
           </span>
         )}
       </div>
 
       {rec?.geoOk === false && (
         <div style={{ marginTop: 11, background: 'rgba(255,255,255,.16)', padding: '8px 11px', borderRadius: 9, fontSize: 12.5 }}>
-          ⚠ Today&rsquo;s punch was {rec.dist} m from {siteOf(rec.site).name} — outside the fence,
+          <Icon n="warn" size="lg" /> Today&rsquo;s punch was {rec.dist} m from {siteOf(rec.site).name} — outside the fence,
           flagged for your manager. You can raise a regularisation from the Regularisation tab.
         </div>
       )}
       {rec?.late && rec?.geoOk !== false && (
         <div style={{ marginTop: 11, background: 'rgba(255,255,255,.16)', padding: '8px 11px', borderRadius: 9, fontSize: 12.5 }}>
-          ⚠ Today&rsquo;s punch was after the shift grace period.
+          <Icon n="warn" size="lg" /> Today&rsquo;s punch was after the shift grace period.
         </div>
       )}
     </div>
