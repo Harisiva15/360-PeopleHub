@@ -932,3 +932,60 @@ select.rost:hover{border-color:var(--line-2);box-shadow:var(--shadow-sm)}
   border:1px solid var(--line-2);border-radius:20px;
 }
 .org-tog:hover{border-color:var(--brand);color:var(--brand)}
+
+/* ---------- Org structure: leadership band and department cards ---------- */
+.org-struct .org-card{padding:0;min-width:0;max-width:none;cursor:default}
+.org-person{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
+  background:transparent;border:0;padding:10px 13px;
+}
+.org-person:hover .org-n{color:var(--brand)}
+.org-card.org-lead{min-width:214px}
+/* The leadership band takes the tile tints, so the row reads as one group. */
+.org-card.org-lead.t-blue{background:var(--t-blue);border-color:color-mix(in srgb,var(--t-blue-ink) 22%,transparent)}
+.org-card.org-lead.t-green{background:var(--t-green);border-color:color-mix(in srgb,var(--t-green-ink) 22%,transparent)}
+.org-card.org-lead.t-amber{background:var(--t-amber);border-color:color-mix(in srgb,var(--t-amber-ink) 22%,transparent)}
+.org-card.org-lead.t-rose{background:var(--t-rose);border-color:color-mix(in srgb,var(--t-rose-ink) 22%,transparent)}
+.org-card.org-lead.t-violet{background:var(--t-violet);border-color:color-mix(in srgb,var(--t-violet-ink) 22%,transparent)}
+
+.org-dept{
+  width:212px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-lg);box-shadow:var(--shadow-sm);overflow:hidden;
+}
+/*
+ * The header carries the department's own colour as a wash, with the full
+ * strength kept for the dot — a whole card in a saturated hue would make eight
+ * of them shout at each other.
+ */
+.org-dept-h{
+  display:flex;align-items:center;gap:7px;padding:9px 12px;
+  font-weight:700;font-size:12.5px;
+  background:color-mix(in srgb,var(--dept) 13%,var(--surface));
+  border-bottom:1px solid color-mix(in srgb,var(--dept) 24%,transparent);
+}
+.org-dept-dot{width:9px;height:9px;border-radius:3px;background:var(--dept);flex:0 0 auto}
+.org-dept-nohead{padding:10px 13px;font-size:11.5px;color:var(--ink-3)}
+.org-dept-rows{padding:2px 0;border-top:1px solid var(--line)}
+.org-dept-row{
+  display:flex;justify-content:space-between;gap:10px;
+  padding:5px 12px;font-size:11.5px;color:var(--ink-2);
+}
+.org-dept-row b{color:var(--ink-1);font-variant-numeric:tabular-nums}
+.org-dept-total{
+  display:flex;justify-content:space-between;gap:10px;
+  padding:8px 12px;font-size:11.5px;font-weight:700;
+  border-top:1px solid var(--line);background:var(--surface-2);
+}
+.org-dept-total b{font-variant-numeric:tabular-nums}
+
+/* Eight department cards will not fit one screen; let the row wrap. */
+.orgtree ul.org-depts{flex-wrap:wrap;row-gap:26px}
+
+.org-foot{
+  display:flex;justify-content:center;gap:0;flex-wrap:wrap;margin-top:18px;
+}
+.org-foot span{
+  padding:8px 16px;font-size:12.5px;color:var(--ink-2);
+  border-right:1px solid var(--line);
+}
+.org-foot span:last-child{border-right:0}

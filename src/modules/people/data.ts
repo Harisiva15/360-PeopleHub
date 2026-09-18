@@ -12,3 +12,12 @@ export const useAllEmployees = () => useQuery((s) => s.employees.active(), []);
 export const useTeam = (managerId: string) => useQuery((s) => s.employees.team(managerId, true), [managerId]);
 export const useAnnouncements = () => useQuery((s) => s.noticeboard.announcements(), []);
 export const useCelebrations = (days: number) => useQuery((s) => s.noticeboard.celebrations(days), [days]);
+
+/**
+ * Open positions, for the chart's headline count.
+ *
+ * Requisitions are recruiter-and-above, so this returns an empty list for an
+ * employee and the tile reads zero — which is correct for them rather than a
+ * gap: it is not a number they are shown.
+ */
+export const useRequisitions = () => useQuery((s) => s.hiring.requisitions(), []);

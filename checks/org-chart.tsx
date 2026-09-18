@@ -19,6 +19,8 @@ import { AppProvider } from '../src/state/AppContext';
 import { AuthProvider } from '../src/auth/AuthContext';
 import { LayerProvider } from '../src/components/Layer';
 import { buildTree, OrgTreeView } from '../src/modules/people/OrgChart';
+import { OrgStructure, subTeams } from '../src/modules/people/OrgStructure';
+import { DEPTS } from '../src/data/org';
 import { getServices } from '../src/services';
 import type { Employee } from '../src/types/employee';
 
@@ -119,5 +121,80 @@ if (ceo) {
     real.total <= everyone.length - 1, true);
 }
 
+/* ---------- the department breakdown ---------- */
+
+/*
+ * The listed rows have to sum to the total underneath them. A top-few that
+ * silently drops the rest invites the reader to add up the column and reach a
+ * number that disagrees with the card's own total.
+ */
+const staff = (roles: string[]) => roles.map((r, i) =>
+  ({ ...emp('p' + i), designation: r } as Employee));
+
+const few = staff(['Engineer', 'Engineer', 'Tester']);
+check('a short list is shown as it is', subTeams(few), [
+  { name: 'Engineer', n: 2 }, { name: 'Tester', n: 1 },
+]);
+check('and still sums to the headcount',
+  subTeams(few).reduce((n, r) => n + r.n, 0), few.length);
+
+const many = staff([
+  ...Array(9).fill('Consultant'), ...Array(5).fill('Architect'),
+  ...Array(4).fill('Analyst'), ...Array(3).fill('Manager'),
+  'Scribe', 'Herald', 'Envoy',
+]);
+const folded = subTeams(many);
+check('a long list names the largest few', folded.slice(0, 4).map((r) => r.name),
+  ['Consultant', 'Architect', 'Analyst', 'Manager']);
+check('largest first', folded.map((r) => r.n).slice(0, 4), [9, 5, 4, 3]);
+check('the remainder is one line, not dropped',
+  folded[folded.length - 1], { name: 'Other roles', n: 3 });
+check('so the column sums to the headcount',
+  folded.reduce((n, r) => n + r.n, 0), many.length);
+check('exactly the named count needs no tail',
+  subTeams(staff(['A', 'B', 'C', 'D'])).some((r) => r.name === 'Other roles'), false);
+
+/* ---------- the structure view renders ---------- */
+
+if (ceo) {
+  const structure = renderToStaticMarkup(
+    <MemoryRouter><AuthProvider><AppProvider initialRole="admin">
+      <LayerProvider>
+        <OrgStructure everyone={everyone} requisitions={[]} onOpen={() => {}} q="" deptFilter="" />
+      </LayerProvider>
+    </AppProvider></AuthProvider></MemoryRouter>,
+  );
+  check('the structure view names the chief executive', structure.includes(ceo.name), true);
+
+  /* "DevOps & Cloud" is "DevOps &amp; Cloud" once rendered. */
+  const esc = (t: string) => t.replace(/&/g, '&amp;');
+  const shown = DEPTS.filter((d) => everyone.some((e) => e.dept === d.id));
+  check('every populated department gets a card',
+    shown.every((d) => structure.includes(esc(d.name))), true);
+  check('an empty department gets none',
+    DEPTS.filter((d) => !everyone.some((e) => e.dept === d.id))
+      .every((d) => !structure.includes(esc(d.name))), true);
+
+  /* Each card's total is the department's real headcount. */
+  const totals = shown.map((d) => everyone.filter((e) => e.dept === d.id).length);
+  check('each card carries its real headcount',
+    totals.every((n) => structure.includes('<b>' + n + '</b>')), true);
+  check('the department totals account for everyone',
+    totals.reduce((a, b) => a + b, 0), everyone.length);
+
+  const filtered = renderToStaticMarkup(
+    <MemoryRouter><AuthProvider><AppProvider initialRole="admin">
+      <LayerProvider>
+        <OrgStructure everyone={everyone} requisitions={[]} onOpen={() => {}}
+          q="" deptFilter={shown[0]!.id} />
+      </LayerProvider>
+    </AppProvider></AuthProvider></MemoryRouter>,
+  );
+  check('filtering to one department leaves the others out',
+    shown.slice(1).every((d) => !filtered.includes(esc(d.name))), true);
+  check('but keeps the one asked for', filtered.includes(esc(shown[0]!.name)), true);
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nthe org chart tree holds');
 process.exit(failed ? 1 : 0);
+

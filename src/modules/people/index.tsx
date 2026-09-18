@@ -8,11 +8,12 @@ import { daysBetween, DOW, fmtD, fmtDS, MON, nextOccur, parseYmd, TODAY, yearsSi
 import { downloadCSV } from '../../lib/csv';
 
 import type { Announcement } from '../../data/announcements';
-import { useAllEmployees, useAnnouncements, useCelebrations } from './data';
+import { useAllEmployees, useAnnouncements, useCelebrations, useRequisitions } from './data';
 import type { Directory } from './data';
 import { DEPTS, deptOf, HOLIDAYS, ORG, siteOf } from '../../data/org';
 import { Avatar, Badge, Card, EmptyState, PersonCell, Seg, StatRow, Tabs, Tile } from '../../components/ui';
 import { NoRoot, OrgTreeView } from './OrgChart';
+import { OrgStructure } from './OrgStructure';
 import { Dot, ListRow } from '../../components/common';
 import { HBar } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -39,7 +40,10 @@ function OrgChart() {
   const ceo = everyone.find((e) => !e.managerId);
   const [picked, setPicked] = useState('');
   const [q, setQ] = useState('');
-  const [asList, setAsList] = useState(false);
+  const [view, setView] = useState<'structure' | 'tree' | 'list'>('structure');
+  const [deptFilter, setDeptFilter] = useState('');
+  const { data: reqs = [] } = useRequisitions();
+  const asList = view === 'list';
   const rootId = picked || ceo?.id || '';
   const setRootId = setPicked;
   const root = dir.byId(rootId);
@@ -56,17 +60,24 @@ function OrgChart() {
           <input className="input" placeholder="Search by name or department…"
             value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <select className="input" style={{ width: 'auto' }} value={rootId}
-          onChange={(e) => setRootId(e.target.value)} title="Draw the chart from">
-          {ceo && <option value={ceo.id}>{ceo.name} — whole company</option>}
-          {managers.filter((m) => m.id !== ceo?.id).map((e) => (
-            <option key={e.id} value={e.id}>{e.name} — {e.designation}</option>
-          ))}
+        <select className="input" style={{ width: 'auto' }} value={deptFilter}
+          onChange={(e) => setDeptFilter(e.target.value)} title="Limit to one department">
+          <option value="">All departments</option>
+          {DEPTS.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
+        {view === 'tree' && (
+          <select className="input" style={{ width: 'auto' }} value={rootId}
+            onChange={(e) => setRootId(e.target.value)} title="Draw the tree from">
+            {ceo && <option value={ceo.id}>{ceo.name} — whole company</option>}
+            {managers.filter((m) => m.id !== ceo?.id).map((e) => (
+              <option key={e.id} value={e.id}>{e.name} — {e.designation}</option>
+            ))}
+          </select>
+        )}
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12.5 }}>{everyone.length} people</span>
-        <Seg value={asList ? 'list' : 'tree'} onChange={(v) => setAsList(v === 'list')} options={[
-          { v: 'tree', label: 'Tree' },
+        <Seg value={view} onChange={setView} options={[
+          { v: 'structure', label: 'Structure' },
+          { v: 'tree', label: 'Reporting tree' },
           { v: 'list', label: 'List' },
         ]} />
       </div>
@@ -76,18 +87,27 @@ function OrgChart() {
         * A chart is read to answer "how big is Engineering", and the answer
         * has to agree with the directory beside it.
         */}
-      <StatRow cols={5}>
-        {sortBy(DEPTS, (d) => -everyone.filter((e) => e.dept === d.id).length)
-          .slice(0, 5).map((d) => (
-            <Tile key={d.id} icon="🏢" label={d.name}
-              value={everyone.filter((e) => e.dept === d.id).length}
-              foot={dir.byId(d.head ?? '')?.name ?? 'No head named'} />
-          ))}
+      <StatRow cols={4}>
+        <Tile icon="👥" label="Total employees" value={everyone.length}
+          foot="On the roster today" />
+        <Tile icon="🏢" label="Departments"
+          value={DEPTS.filter((d) => everyone.some((e) => e.dept === d.id)).length}
+          foot="With at least one person" />
+        <Tile icon="📍" label="Locations"
+          value={new Set(everyone.map((e) => e.site)).size} foot="Offices and remote" />
+        <Tile icon="💼" label="Open positions"
+          value={reqs.filter((r) => r.status === 'Open')
+            .reduce((n, r) => n + Math.max(0, r.openings - r.filled), 0)}
+          foot={`${reqs.filter((r) => r.status === 'Open').length} live requisitions`} />
       </StatRow>
 
       <div className={asList ? 'grid g-2-1' : 'stack'}>
-        <Card title={asList ? 'Reporting lines' : root.name}
-          sub={asList ? `${everyone.length} people` : root.designation} flush={asList}>
+        <Card
+          title={asList ? 'Reporting lines' : view === 'structure' ? 'Our structure' : root.name}
+          sub={asList ? `${everyone.length} people`
+            : view === 'structure' ? 'Our people. Our structure. Our strength.'
+              : root.designation}
+          flush={asList}>
           {asList ? (
             <div className="tbl-wrap">
               <table className="tbl">
@@ -109,6 +129,9 @@ function OrgChart() {
                 </tbody>
               </table>
             </div>
+          ) : view === 'structure' ? (
+            <OrgStructure everyone={everyone} requisitions={reqs} onOpen={show}
+              q={q} deptFilter={deptFilter} />
           ) : (
             <OrgTreeView root={root} everyone={everyone} onOpen={show} q={q} />
           )}
