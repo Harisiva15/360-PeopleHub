@@ -11,12 +11,13 @@
     "check": "vite-node checks/services.ts",
     "check:routes": "vite-node checks/routes.tsx",
     "check:gate": "vite-node checks/auth-gate.tsx",
-    "check:all": "npm run check && npm run check:shape:contract && npm run check:payroll && npm run check:routes && npm run check:gate && npm run check:http && npm run check:intake",
+    "check:all": "npm run check && npm run check:shape:contract && npm run check:payroll && npm run check:routes && npm run check:gate && npm run check:http && npm run check:intake && npm run check:org",
     "check:http": "vite-node checks/http-services.ts",
     "check:shape": "vite-node checks/api-shape.ts",
     "check:payroll": "vite-node checks/payroll-rules.ts",
     "check:shape:contract": "vite-node checks/contract-shape.ts",
-    "check:intake": "vite-node checks/intake-screens.tsx"
+    "check:intake": "vite-node checks/intake-screens.tsx",
+    "check:org": "vite-node checks/org-chart.tsx"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",

@@ -8,12 +8,12 @@ import { daysBetween, DOW, fmtD, fmtDS, MON, nextOccur, parseYmd, TODAY, yearsSi
 import { downloadCSV } from '../../lib/csv';
 
 import type { Announcement } from '../../data/announcements';
-import { useAllEmployees, useAnnouncements, useCelebrations, useTeam } from './data';
+import { useAllEmployees, useAnnouncements, useCelebrations } from './data';
 import type { Directory } from './data';
-import type { Employee } from '../../types/employee';
 import { DEPTS, deptOf, HOLIDAYS, ORG, siteOf } from '../../data/org';
 import { Avatar, Badge, Card, EmptyState, PersonCell, Seg, StatRow, Tabs, Tile } from '../../components/ui';
-import { Chip, Dot, ListRow } from '../../components/common';
+import { NoRoot, OrgTreeView } from './OrgChart';
+import { Dot, ListRow } from '../../components/common';
 import { HBar } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
@@ -24,60 +24,6 @@ import { TITLES } from '../titles';
 /* ============================================================
    Org chart
    ============================================================ */
-
-function OrgNode({ e, depth, dir, onOpen, onExpand, maxDepth = 3 }: {
-  e: Employee;
-  depth: number;
-  dir: Directory;
-  onOpen: (id: string) => void;
-  onExpand: (id: string) => void;
-  /**
-   * How many levels to draw inline before offering to re-root. Controlled by
-   * the toolbar rather than fixed at three, which is what makes "expand all"
-   * and "collapse all" real rather than decorative.
-   */
-  maxDepth?: number;
-}) {
-  const kids = (e.reports || []).map((r) => dir.byId(r)).filter(Boolean) as Employee[];
-  return (
-    <div style={{
-      marginLeft: depth ? 22 : 0,
-      ...(depth ? { borderLeft: '1px solid var(--line)', paddingLeft: 14 } : {}),
-    }}>
-      <div className="card clickable" onClick={() => onOpen(e.id)} style={{ marginBottom: 8, display: 'inline-flex', minWidth: 290 }}>
-        <div className="card-b" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
-          <Avatar name={e.name} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 13 }}>{e.name}</div>
-            <div className="muted" style={{ fontSize: 11.5 }}>{e.designation}</div>
-          </div>
-          <div className="right">
-            <Chip>{siteOf(e.site).city === '—' ? 'Remote' : siteOf(e.site).city}</Chip>
-            {kids.length > 0 && (
-              <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>
-                {kids.length} report{kids.length > 1 ? 's' : ''}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* three levels are drawn inline; deeper branches re-root the tree */}
-      {kids.length > 0 && depth < maxDepth ? (
-        <div>
-          {sortBy(kids, (k) => k.name).map((k) => (
-            <OrgNode key={k.id} e={k} depth={depth + 1} dir={dir}
-              onOpen={onOpen} onExpand={onExpand} maxDepth={maxDepth} />
-          ))}
-        </div>
-      ) : kids.length > 0 ? (
-        <div style={{ marginLeft: 22, paddingLeft: 14, borderLeft: '1px solid var(--line)' }}>
-          <button className="btn sm" onClick={() => onExpand(e.id)}>Expand {kids.length} more ›</button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 function OrgChart() {
   const show = useShowEmployee();
@@ -93,15 +39,14 @@ function OrgChart() {
   const ceo = everyone.find((e) => !e.managerId);
   const [picked, setPicked] = useState('');
   const [q, setQ] = useState('');
-  const [depth, setDepth] = useState(3);
   const [asList, setAsList] = useState(false);
   const rootId = picked || ceo?.id || '';
   const setRootId = setPicked;
   const root = dir.byId(rootId);
-  const { data: tree = [] } = useTeam(rootId);
   const managers = sortBy(everyone.filter((e) => e.reports.length), (e) => e.name);
   const spans = managers.map((e) => ({ e, n: e.reports.length }));
-  if (!root) return <EmptyState msg="Loading the org chart…" icon="☰" />;
+  if (!everyone.length) return <EmptyState msg="Loading the org chart…" icon="☰" />;
+  if (!root) return <NoRoot />;
 
   return (
     <div className="stack">
@@ -111,13 +56,15 @@ function OrgChart() {
           <input className="input" placeholder="Search by name or department…"
             value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <select className="input" style={{ width: 'auto' }} value={rootId} onChange={(e) => setRootId(e.target.value)}>
-          {managers.map((e) => <option key={e.id} value={e.id}>{e.name} — {e.designation}</option>)}
+        <select className="input" style={{ width: 'auto' }} value={rootId}
+          onChange={(e) => setRootId(e.target.value)} title="Draw the chart from">
+          {ceo && <option value={ceo.id}>{ceo.name} — whole company</option>}
+          {managers.filter((m) => m.id !== ceo?.id).map((e) => (
+            <option key={e.id} value={e.id}>{e.name} — {e.designation}</option>
+          ))}
         </select>
-        <button className="btn sm" onClick={() => setDepth(99)}>Expand all</button>
-        <button className="btn sm" onClick={() => setDepth(1)}>Collapse all</button>
         <div className="spacer" />
-        <span className="muted" style={{ fontSize: 12.5 }}>{1 + tree.length} people in this tree</span>
+        <span className="muted" style={{ fontSize: 12.5 }}>{everyone.length} people</span>
         <Seg value={asList ? 'list' : 'tree'} onChange={(v) => setAsList(v === 'list')} options={[
           { v: 'tree', label: 'Tree' },
           { v: 'list', label: 'List' },
@@ -138,8 +85,9 @@ function OrgChart() {
           ))}
       </StatRow>
 
-      <div className="grid g-2-1">
-        <Card title={asList ? 'Reporting lines' : root.name} sub={asList ? `${everyone.length} people` : root.designation} flush={asList}>
+      <div className={asList ? 'grid g-2-1' : 'stack'}>
+        <Card title={asList ? 'Reporting lines' : root.name}
+          sub={asList ? `${everyone.length} people` : root.designation} flush={asList}>
           {asList ? (
             <div className="tbl-wrap">
               <table className="tbl">
@@ -162,9 +110,7 @@ function OrgChart() {
               </table>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <OrgNode e={root} depth={0} dir={dir} onOpen={show} onExpand={setRootId} maxDepth={depth} />
-            </div>
+            <OrgTreeView root={root} everyone={everyone} onOpen={show} q={q} />
           )}
         </Card>
 
