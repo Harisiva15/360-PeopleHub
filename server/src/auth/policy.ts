@@ -168,6 +168,11 @@ export const POLICY: Record<string, ModulePolicy> = {
    * offered these in the navigation and got a page of 403s — the navigation
    * was wrong, not the service.
    */
+  /* The recruitment desk. Same reasoning as the rest of the book: an order
+     carries its bill rate, its pay rate and its markup, which are commercial
+     terms. Approve is 'all' because assigning a recruiter and releasing one
+     are decisions, not edits. */
+  recruitment: rule(NO, NO, ['all', 'all', 'all']),
   clients: rule(NO, NO, ['all', 'all', 'none']),
   requirements: rule(NO, NO, ['all', 'all', 'none']),
   bench: rule(NO, NO, ['all', 'all', 'none']),

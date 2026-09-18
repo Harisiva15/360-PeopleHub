@@ -45,8 +45,9 @@ import type { Course, Enrollment } from '../data/learning';
 import type { Survey } from '../data/engagement';
 import type { Announcement, Celebration } from '../data/announcements';
 import type {
-  Client, Consultant, Invoice, Placement, RateCard, Sow, StaffingKPI, StaffingRequirement,
-  Submission, Vendor,
+  ActivityKind, AssignRole, Client, Consultant, EmploymentType, Invoice, JobActivity,
+  JobAssignment, JobPriority, JobStatus, JobType, Placement, RateCard, SlaStanding, Sow,
+  StaffingKPI, StaffingRequirement, Submission, Vendor, WorkMode,
 } from '../data/staffing';
 import type { MatchExplain } from '../data/matching';
 import type { AssetRequest } from '../data/assetWorkflow';
@@ -84,8 +85,9 @@ export type { Course } from '../data/learning';
 export type { Survey } from '../data/engagement';
 export type { Announcement, Celebration } from '../data/announcements';
 export type {
-  Client, Consultant, Invoice, Placement, RateCard, Sow, StaffingKPI, StaffingRequirement,
-  Submission, Vendor,
+  ActivityKind, AssignRole, Client, Consultant, EmploymentType, Invoice, JobActivity,
+  JobAssignment, JobPriority, JobStatus, JobType, Placement, RateCard, SlaStanding, SlaState,
+  Sow, StaffingKPI, StaffingRequirement, Submission, Vendor, WorkMode,
 } from '../data/staffing';
 export type { MatchExplain } from '../data/matching';
 export type { AssetRequest } from '../data/assetWorkflow';
@@ -907,6 +909,163 @@ export interface StaffingService {
   benchStanding(consultantId: string): Promise<{ days: number; cost: number }>;
 }
 
+/* ---------- recruitment ---------- */
+
+/** What a job order is created from. The rest is derived or defaulted. */
+export interface JobOrderDraft {
+  clientId: string;
+  sowId?: string;
+  title: string;
+  role: string;
+  jobType: JobType;
+  employmentType: EmploymentType;
+  priority: JobPriority;
+  positions: number;
+  location: string;
+  workMode: WorkMode;
+  billRate: number;
+  payRate?: number | null;
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+  skills?: string[];
+  preferredSkills?: string[];
+  primaryTech?: string;
+  description?: string;
+  expMin?: number;
+  expMax?: number;
+  education?: string;
+  certifications?: string[];
+  industry?: string;
+  workAuth?: string;
+  shift?: string;
+  startOn?: string;
+  endOn?: string | null;
+  duration?: string;
+  maxSubmissions?: number;
+  poNumber?: string | null;
+  vendorId?: string | null;
+  vms?: string | null;
+  accountManagerId?: string;
+  salesOwnerId?: string;
+  /** Days from opening to the fill target. The three targets derive from it. */
+  slaDays?: number;
+  /** A draft is written before it is worked; an open order is on a desk. */
+  status?: 'Draft' | 'Open';
+}
+
+/** One person on the desk, and what they were asked to deliver. */
+export interface AssignmentDraft {
+  recruiterId: string;
+  role: AssignRole;
+  targetSubmissions?: number | null;
+  targetInterviews?: number | null;
+  targetHires?: number | null;
+  dailySubmissions?: number | null;
+  weeklySubmissions?: number | null;
+  priority?: JobPriority;
+  notes?: string;
+}
+
+/**
+ * A job order with everything a desk reads about it in one call.
+ *
+ * The counts and the SLA are computed on the server rather than in the screen,
+ * for the same reason a timesheet's total is: two clients counting submissions
+ * their own way will eventually disagree, and the one the recruiter is
+ * measured against has to be the one the manager sees.
+ */
+/**
+ * A job order as a list renders it: the order, where it stands, and what has
+ * happened on it.
+ *
+ * The SLA travels with the row rather than being fetched alongside it. A list
+ * that asked for orders and standings in two calls would narrow them with two
+ * filters, and the day those two disagree is the day the table shows a green
+ * badge on an overdue order.
+ */
+export interface JobOrderRow {
+  order: StaffingRequirement;
+  sla: SlaStanding;
+  counts: { sourced: number; screened: number; submissions: number; interviews: number; offers: number; hires: number };
+}
+
+export interface JobOrderDetail {
+  order: StaffingRequirement;
+  assignments: JobAssignment[];
+  activity: JobActivity[];
+  sla: SlaStanding;
+  counts: { sourced: number; screened: number; submissions: number; interviews: number; offers: number; hires: number };
+}
+
+/** The funnel, stage by stage, over whatever was filtered. */
+export interface RecruitmentFunnel {
+  openRequirements: number;
+  sourced: number;
+  screened: number;
+  submitted: number;
+  clientReview: number;
+  interview: number;
+  offer: number;
+  hired: number;
+}
+
+/** What the dashboard's eight tiles show. */
+export interface RecruitmentKPI {
+  openJobs: number;
+  assignedJobs: number;
+  submissions: number;
+  interviews: number;
+  offers: number;
+  hires: number;
+  /** Open orders whose fill target falls within the next week. */
+  closingSoon: number;
+  /** Open orders already past a target. */
+  aging: number;
+}
+
+/**
+ * How a dashboard, funnel or list is narrowed.
+ *
+ * Every field is optional and they compose, so one filter object serves the
+ * tiles, the funnel and the table beneath them — which is what makes the
+ * three agree with each other.
+ */
+export interface RecruitmentFilter {
+  from?: string;
+  to?: string;
+  clientId?: string;
+  recruiterId?: string;
+  reqId?: string;
+  /** The client's industry, which is the closest thing a desk has to a department. */
+  industry?: string;
+  tech?: string;
+  location?: string;
+  status?: JobStatus;
+  priority?: JobPriority;
+}
+
+export interface RecruitmentService {
+  /** Job orders, newest first, narrowed by the filter, each with its standing. */
+  jobOrders(f?: RecruitmentFilter): Promise<JobOrderRow[]>;
+  /** One order with its desk, its history, its SLA and its counts. */
+  jobOrder(id: string): Promise<JobOrderDetail | null>;
+  createJobOrder(draft: JobOrderDraft): Promise<StaffingRequirement>;
+  updateJobOrder(id: string, patch: Partial<JobOrderDraft>): Promise<StaffingRequirement>;
+  /**
+   * Assign or replace a desk role. Replacing releases the incumbent rather
+   * than deleting them — who was on this order in March is a question a desk
+   * asks when a placement falls through.
+   */
+  assign(id: string, draft: AssignmentDraft): Promise<JobOrderDetail>;
+  release(id: string, assignmentId: string): Promise<JobOrderDetail>;
+  /** Add a line to the order's history. Append-only, as the table is. */
+  logActivity(id: string, kind: ActivityKind, summary: string, qty?: number): Promise<JobActivity>;
+  /** The orders one recruiter currently holds, whatever desk role they hold. */
+  myJobs(recruiterId: string): Promise<JobOrderRow[]>;
+  kpi(f?: RecruitmentFilter): Promise<RecruitmentKPI>;
+  funnel(f?: RecruitmentFilter): Promise<RecruitmentFunnel>;
+}
+
 /* ---------- documents ---------- */
 
 /**
@@ -1376,6 +1535,7 @@ export interface Services {
   noticeboard: NoticeboardService;
   exits: ExitService;
   staffing: StaffingService;
+  recruitment: RecruitmentService;
   documents: DocumentService;
   assets: AssetService;
   security: SecurityService;

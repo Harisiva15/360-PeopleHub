@@ -22,7 +22,8 @@ export const TITLES: Record<string, string> = {
 
   performance: 'Performance',
   learning: 'Learning & Certifications',
-  hiring: 'Hiring',
+  hiring: 'Internal Hiring',
+  recruitment: 'Recruitment',
   planner: 'Project Planner',
   onboarding: 'Onboarding',
   exit: 'Exit & Full-and-Final',

@@ -43,7 +43,8 @@ export const SUBTITLES: Record<string, (ctx: ModuleCtx) => string> = {
 
   performance: () => 'Goals, reviews, 9-box calibration and recognition',
   learning: () => 'Catalogue, certifications and compliance training tracked to completion',
-  hiring: () => 'Requisitions, pipeline, interviews and offers end to end',
+  hiring: () => 'Requisitions, pipeline, interviews and offers for our own roles',
+  recruitment: () => 'Manage open requirements, recruiter activity, candidate submissions and hiring progress',
   onboarding: () => 'Pre-boarding checklists from offer accepted to day one',
   exit: () => 'Notice periods, clearance and full-and-final settlement',
 

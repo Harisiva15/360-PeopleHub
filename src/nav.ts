@@ -48,7 +48,7 @@ export const NAV: NavGroup[] = [
   { group: 'Dashboard', ic: '⌂', k: 'dashboard', items: [] },
 
   {
-    group: 'Recruitment',
+    group: 'Internal hiring',
     ic: '◎',
     k: 'hiring',
     roles: ['manager', 'admin'],
@@ -178,15 +178,37 @@ export const NAV: NavGroup[] = [
   },
 
   {
-    group: 'Staffing',
+    /*
+     * Recruitment absorbed the staffing suite rather than sitting beside it.
+     * They were one domain wearing two names: a staffing requirement *is* a job
+     * order, a submission is a candidate submission, and a placement is a hire.
+     * Two sections meant two front doors onto the same tables, and a recruiter
+     * had to know which one a screen lived behind.
+     *
+     * The views the brief specifies point at the new module; the ones it names
+     * but has not specified point at the tab that says so and links onward.
+     * Clients, billing and vendors keep their own screens — they are the same
+     * book, and rebuilding working pages to move them was never the ask.
+     */
+    group: 'Recruitment',
     ic: '⬢',
-    k: 'clients',
-    roles: ['manager', 'admin'],
+    k: 'recruitment',
+    roles: ['admin'],
     items: [
-      { k: 'clients', n: 'Clients & SOW' },
-      { k: 'requirements', n: 'Requirements' },
+      { k: 'recruitment', n: 'Recruitment dashboard', to: '/recruitment?v=dash' },
+      { k: 'recruitment', n: 'Job requisitions', to: '/recruitment?v=reqs' },
+      { k: 'recruitment', n: 'My assigned jobs', to: '/recruitment?v=mine' },
+      { k: 'recruitment', n: 'Candidates', to: '/recruitment?v=cands' },
+      { k: 'recruitment', n: 'Candidate submissions', to: '/recruitment?v=subs' },
+      { k: 'recruitment', n: 'Interviews', to: '/recruitment?v=ivs' },
+      { k: 'recruitment', n: 'Offers', to: '/recruitment?v=offers' },
+      { k: 'placements', n: 'Placements / hires' },
+      { k: 'recruitment', n: 'Recruiter activity', to: '/recruitment?v=activity' },
+      { k: 'recruitment', n: 'Talent pool', to: '/recruitment?v=pool' },
+      { k: 'clients', n: 'Clients & accounts' },
+      { k: 'recruitment', n: 'Recruitment reports', to: '/recruitment?v=reports' },
+      { k: 'requirements', n: 'Requirements (legacy view)' },
       { k: 'bench', n: 'Bench & consultants' },
-      { k: 'placements', n: 'Placements' },
       { k: 'billing', n: 'Billing & AR' },
       { k: 'vendors', n: 'Vendors' },
     ],

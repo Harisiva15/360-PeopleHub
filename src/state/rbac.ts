@@ -74,7 +74,7 @@ export const PERMS: Record<AppRole, string[]> = {
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement',
     // The tenant.
     'settings', 'security', 'exec', 'billing',
-    'clients', 'requirements', 'bench', 'placements', 'vendors',
+    'clients', 'requirements', 'bench', 'placements', 'vendors', 'recruitment',
   ],
 };
 

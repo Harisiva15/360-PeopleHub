@@ -340,6 +340,33 @@ const LOC_BY_COUNTRY: Record<string, string[]> = {
 
 /* ---------------- requirements ---------------- */
 
+/** What kind of engagement is being sold. */
+export const JOB_TYPES = ['Contract', 'Contract to Hire', 'Full Time', 'Part Time'] as const;
+export type JobType = (typeof JOB_TYPES)[number];
+
+/**
+ * How the person is engaged and paid. On a US desk this is the single most
+ * load-bearing field on an order: it decides who may be submitted at all.
+ */
+export const EMPLOYMENT_TYPES = ['W2', 'C2C', '1099', 'Direct Hire'] as const;
+export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+
+export const WORK_MODES = ['Onsite', 'Hybrid', 'Remote'] as const;
+export type WorkMode = (typeof WORK_MODES)[number];
+
+export const JOB_PRIORITIES = ['Critical', 'High', 'Medium', 'Low'] as const;
+export type JobPriority = (typeof JOB_PRIORITIES)[number];
+
+export const JOB_STATUSES =
+  ['Draft', 'Open', 'On Hold', 'Filled', 'Closed', 'Lost', 'Cancelled'] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+export const EDUCATION_LEVELS = [
+  "Bachelor's degree", "Master's degree", 'Diploma', 'Doctorate', 'No formal requirement',
+];
+
+export const JOB_SHIFTS = ['Day', 'Night', 'Rotational', 'US EST', 'US PST', 'UK', 'APAC'];
+
 export interface StaffingRequirement {
   id: string;
   clientId: string;
@@ -355,15 +382,212 @@ export interface StaffingRequirement {
   maxSubmissions: number;
   positions: number;
   filled: number;
-  priority: string;
+  priority: JobPriority;
   receivedOn: string;
   closeBy: string;
   recruiterId: string;
   source: string;
   vms: string | null;
-  status: 'Open' | 'Filled' | 'Closed';
+  status: JobStatus;
   duration: string;
+
+  /* ---- the engagement ---- */
+  jobType: JobType;
+  employmentType: EmploymentType;
+  workMode: WorkMode;
+  /** Jurisdictional, so free text rather than a set — see 0029. */
+  workAuth: string;
+  shift: string;
+
+  /* ---- what the work is ---- */
+  description: string;
+  primaryTech: string;
+  preferredSkills: string[];
+  expMin: number;
+  expMax: number;
+  education: string;
+  certifications: string[];
+  industry: string;
+  startOn: string;
+  endOn: string | null;
+
+  /* ---- the commercials ---- */
+  /**
+   * Null on a permanent order, where there is no rate to quote and the band
+   * below is the commercial instead.
+   */
+  payRate: number | null;
+  /**
+   * Stored, not derived from the rates. The markup a desk quotes is a
+   * commercial decision that survives the rates moving underneath it.
+   */
+  markupPct: number | null;
+  salaryMin: number | null;
+  salaryMax: number | null;
+  poNumber: string | null;
+  vendorId: string | null;
+  accountManagerId: string;
+  salesOwnerId: string;
+
+  /* ---- the SLA ---- */
+  /**
+   * When the clock started, which is not when the order arrived: an order can
+   * sit as a draft before anybody is asked to work it, and holding the desk to
+   * the day it landed would measure the wrong thing.
+   */
+  openedOn: string;
+  targetSubmitOn: string;
+  targetInterviewOn: string;
+  targetFillOn: string;
+  slaDays: number;
 }
+
+/* ---------------- SLA ---------------- */
+
+export type SlaState = 'On Track' | 'Approaching' | 'Overdue' | 'Closed';
+
+export interface SlaStanding {
+  state: SlaState;
+  daysOpen: number;
+  daysRemaining: number;
+  /** Days past the fill target. Zero unless overdue. */
+  aging: number;
+  /** The stage that is behind, or null when nothing is. */
+  behind: 'submission' | 'interview' | 'fill' | null;
+}
+
+/** Statuses that stop the clock. A filled order is not overdue. */
+const SETTLED: JobStatus[] = ['Filled', 'Closed', 'Lost', 'Cancelled'];
+
+/**
+ * Where an order stands against its SLA.
+ *
+ * Deliberately not "days until `closeBy`". An order due in ten days with no
+ * submissions is in trouble and an order due tomorrow with three candidates at
+ * interview is not, so each target is measured against the work that target
+ * was for — and the *earliest* missed one is what the indicator reports, since
+ * that is the one the desk can still do something about.
+ *
+ * `asOf` is a parameter rather than TODAY so the same function serves a
+ * report about last quarter.
+ */
+export function slaOf(
+  r: StaffingRequirement,
+  counts: { submissions: number; interviews: number; hires: number },
+  asOf: string = ymd(TODAY),
+): SlaStanding {
+  const daysOpen = Math.max(0, daysBetween(r.openedOn, asOf));
+  const daysRemaining = daysBetween(asOf, r.targetFillOn);
+
+  if (SETTLED.includes(r.status)) {
+    return { state: 'Closed', daysOpen, daysRemaining, aging: 0, behind: null };
+  }
+
+  /* A target is missed only when its work has not happened. */
+  const missed = (target: string, done: boolean) => !done && asOf > target;
+  const behind: SlaStanding['behind'] =
+    missed(r.targetSubmitOn, counts.submissions > 0) ? 'submission'
+      : missed(r.targetInterviewOn, counts.interviews > 0) ? 'interview'
+        : missed(r.targetFillOn, counts.hires >= r.positions) ? 'fill'
+          : null;
+
+  if (behind) {
+    return {
+      state: 'Overdue',
+      daysOpen,
+      daysRemaining,
+      aging: Math.max(0, daysBetween(r.targetFillOn, asOf)),
+      behind,
+    };
+  }
+
+  /*
+   * "Approaching" is the last fifth of the SLA, floored at three days. A
+   * fixed warning window would fire on the day an eight-day order opened and
+   * never fire at all on a ninety-day one.
+   */
+  const warnWithin = Math.max(3, Math.round(r.slaDays / 5));
+  return {
+    state: daysRemaining <= warnWithin ? 'Approaching' : 'On Track',
+    daysOpen,
+    daysRemaining,
+    aging: 0,
+    behind: null,
+  };
+}
+
+/* ---------------- who is working it ---------------- */
+
+export const ASSIGN_ROLES = ['primary', 'backup', 'manager'] as const;
+export type AssignRole = (typeof ASSIGN_ROLES)[number];
+
+export interface JobAssignment {
+  id: string;
+  reqId: string;
+  recruiterId: string;
+  role: AssignRole;
+  assignedOn: string;
+  assignedById: string;
+  targetSubmissions: number | null;
+  targetInterviews: number | null;
+  targetHires: number | null;
+  dailySubmissions: number | null;
+  weeklySubmissions: number | null;
+  priority: JobPriority;
+  notes: string;
+  /**
+   * Set when the order is reassigned. The row is kept rather than deleted —
+   * who was on this order in March is a question a desk asks when a placement
+   * falls through.
+   */
+  releasedOn: string | null;
+}
+
+/* ---------------- what happened ---------------- */
+
+export const ACTIVITY_KINDS = [
+  'created', 'assigned', 'reassigned', 'reviewed', 'sourced', 'screened',
+  'submitted', 'client_review', 'interview_scheduled', 'interview_done',
+  'offer_released', 'offer_accepted', 'offer_declined', 'placed',
+  'status_changed', 'sla_changed', 'note', 'closed',
+] as const;
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+
+export interface JobActivity {
+  id: string;
+  reqId: string;
+  /** The instant, not the date — a desk's day is read in order. */
+  at: string;
+  actorId: string | null;
+  kind: ActivityKind;
+  summary: string;
+  /** Where a count is the point of it: "20 candidates sourced". */
+  qty: number | null;
+  /** The submission, interview or placement it refers to, when it refers to one. */
+  refId: string | null;
+}
+
+/** How each kind reads in a timeline, and what colour it carries. */
+export const ACTIVITY_META: Record<ActivityKind, { n: string; c: string }> = {
+  created: { n: 'Job created', c: 'var(--ink-3)' },
+  assigned: { n: 'Recruiter assigned', c: 'var(--s1)' },
+  reassigned: { n: 'Reassigned', c: 'var(--s4)' },
+  reviewed: { n: 'Job reviewed', c: 'var(--ink-3)' },
+  sourced: { n: 'Candidates sourced', c: 'var(--s1)' },
+  screened: { n: 'Candidates screened', c: 'var(--s7)' },
+  submitted: { n: 'Submitted to client', c: 'var(--s1)' },
+  client_review: { n: 'Client review', c: 'var(--s4)' },
+  interview_scheduled: { n: 'Interview scheduled', c: 'var(--s7)' },
+  interview_done: { n: 'Interview completed', c: 'var(--s7)' },
+  offer_released: { n: 'Offer released', c: 'var(--s6)' },
+  offer_accepted: { n: 'Offer accepted', c: 'var(--good)' },
+  offer_declined: { n: 'Offer declined', c: 'var(--crit)' },
+  placed: { n: 'Placed', c: 'var(--good)' },
+  status_changed: { n: 'Status changed', c: 'var(--s4)' },
+  sla_changed: { n: 'SLA revised', c: 'var(--s4)' },
+  note: { n: 'Note', c: 'var(--ink-3)' },
+  closed: { n: 'Closed', c: 'var(--ink-3)' },
+};
 
 export const REQUIREMENTS: StaffingRequirement[] = [];
 
@@ -383,6 +607,33 @@ export const REQUIREMENTS: StaffingRequirement[] = [];
       const age = chance(0.42) ? ri(1, 60) : ri(61, 430);
       const received = addDays(TODAY, -age);
       const pos = age > 120 ? ri(1, 3) : ri(1, 4);
+
+      /*
+       * The engagement decides the commercials. A direct hire is quoted as a
+       * salary band and has no rates at all; everything else is quoted as a
+       * rate pair, and the markup is what was agreed rather than what the two
+       * rates happen to imply.
+       */
+      const jobType: JobType = chance(0.62) ? 'Contract'
+        : chance(0.5) ? 'Contract to Hire'
+          : chance(0.75) ? 'Full Time' : 'Part Time';
+      const perm = jobType === 'Full Time' || jobType === 'Part Time';
+      const billRate = Math.round(rc.billRate * (0.92 + rnd() * 0.2));
+      const markupPct = 18 + ri(0, 22);
+      /* A permanent order is quoted as a band, and the band follows seniority. */
+      const senior = /Senior|Lead|Architect|Principal|Manager/i.test(role);
+      const band = bandFor(c.country, senior ? 'L4' : 'L3');
+
+      /*
+       * The SLA runs from the day the order opened, and the three targets are
+       * a sequence: submit first, interview after that, fill last.
+       */
+      const slaDays = ri(20, 60);
+      const expMin = ri(3, 8);
+      const opened = addDays(received, chance(0.7) ? 0 : ri(1, 3));
+      const submitBy = addDays(opened, Math.max(2, Math.round(slaDays * 0.18)));
+      const interviewBy = addDays(opened, Math.max(5, Math.round(slaDays * 0.5)));
+
       REQUIREMENTS.push({
         id: 'REQ-' + (3100 + REQUIREMENTS.length),
         clientId: c.id,
@@ -394,19 +645,60 @@ export const REQUIREMENTS: StaffingRequirement[] = [];
         skills: uniq([pick(SKILLS), pick(SKILLS), pick(SKILLS), pick(SKILLS)]),
         location: pick(LOC_BY_COUNTRY[c.country] || LOC_BY_COUNTRY.US),
         ccy: c.ccy,
-        billRate: Math.round(rc.billRate * (0.92 + rnd() * 0.2)),
+        billRate,
         unit: rc.unit,
         maxSubmissions: ri(4, 7),
         positions: pos,
         filled: 0,
-        priority: pick(['Critical', 'High', 'High', 'Medium']),
+        priority: pick([...JOB_PRIORITIES.slice(0, 3), 'High', 'Medium']) as JobPriority,
         receivedOn: ymd(received),
-        closeBy: ymd(addDays(received, ri(20, 60))),
+        closeBy: ymd(addDays(opened, slaDays)),
         recruiterId: pick(ACTIVE().filter((e) => e.dept === 'HR')).id,
         source: c.vms ? pick(['VMS', 'VMS', 'Direct']) : 'Direct',
         vms: c.vms,
         status: 'Open',
-        duration: pick(['6 months', '12 months', '12 months + extension', 'Contract to hire']),
+        duration: perm ? 'Permanent'
+          : pick(['6 months', '12 months', '12 months + extension', 'Contract to hire']),
+
+        jobType,
+        employmentType: perm ? 'Direct Hire'
+          : c.country === 'US' ? pick(['W2', 'C2C', 'W2', '1099']) as EmploymentType : 'W2',
+        workMode: pick(['Onsite', 'Hybrid', 'Hybrid', 'Remote']) as WorkMode,
+        workAuth: c.country === 'US'
+          ? pick(['Any work authorisation', 'US Citizen or Green Card', 'No sponsorship available',
+            'H1-B transfer considered'])
+          : 'Right to work in ' + countryOf(c.country).name,
+        shift: pick(JOB_SHIFTS),
+
+        description:
+          `${c.name} is building out ${pick(['a new platform team', 'an existing squad', 'a greenfield programme'])} `
+          + `and needs a ${role.toLowerCase()} to ${pick(['own delivery of', 'lead', 'contribute to'])} `
+          + `the ${pick(['integration', 'migration', 'modernisation', 'build-out'])} work.`,
+        primaryTech: pick(SKILLS),
+        preferredSkills: uniq([pick(SKILLS), pick(SKILLS)]),
+        expMin,
+        expMax: expMin + ri(2, 5),
+        education: pick(EDUCATION_LEVELS),
+        certifications: chance(0.35) ? [pick(['AWS Solutions Architect', 'Azure Administrator',
+          'CKA', 'PMP', 'Scrum Master', 'Databricks Data Engineer'])] : [],
+        industry: c.industry,
+        startOn: ymd(addDays(opened, ri(14, 45))),
+        endOn: perm ? null : ymd(addDays(opened, ri(180, 400))),
+
+        payRate: perm ? null : Math.round(billRate / (1 + markupPct / 100)),
+        markupPct: perm ? null : markupPct,
+        salaryMin: perm ? Math.round(band[0]) : null,
+        salaryMax: perm ? Math.round(band[1]) : null,
+        poNumber: chance(0.55) ? 'PO-' + ri(40000, 99999) : null,
+        vendorId: null,          /* wired below, once VENDORS exists */
+        accountManagerId: pick(ACTIVE().filter((e) => e.dept === 'Sales' || e.dept === 'HR')).id,
+        salesOwnerId: pick(ACTIVE().filter((e) => e.dept === 'Sales' || e.dept === 'HR')).id,
+
+        openedOn: ymd(opened),
+        targetSubmitOn: ymd(submitBy),
+        targetInterviewOn: ymd(interviewBy),
+        targetFillOn: ymd(addDays(opened, slaDays)),
+        slaDays,
       });
     }
   });
@@ -734,6 +1026,197 @@ export const PLACEMENTS: Placement[] = [];
 
 export const subOf = (id: string): Submission | undefined => SUBMISSIONS.find((s) => s.id === id);
 export const plOf = (id: string): Placement | undefined => PLACEMENTS.find((p) => p.id === id);
+
+/* ---------------- assignment & activity ---------------- */
+
+export const JOB_ASSIGNMENTS: JobAssignment[] = [];
+export const JOB_ACTIVITY: JobActivity[] = [];
+
+/*
+ * Every order gets a desk, and every order gets a history.
+ *
+ * The history is generated *from the pipeline that already exists* rather than
+ * invented alongside it — each submission, interview and placement produces
+ * the line it would have produced at the time. That is the only way the
+ * timeline and the funnel can agree, and a timeline that disagrees with the
+ * numbers beside it is worse than no timeline.
+ */
+(function genDesk() {
+  const recruiters = ACTIVE().filter((e) => e.dept === 'HR');
+  const leads = recruiters.filter((e) => ['L3', 'L4', 'L5'].includes(e.grade));
+  const managers = leads.length ? leads : recruiters;
+
+  /** An instant on a working day, in the order a desk actually works. */
+  const at = (date: string, hour: number, min: number) =>
+    `${date}T${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}:00`;
+
+  const log = (
+    r: StaffingRequirement,
+    kind: ActivityKind,
+    when: string,
+    summary: string,
+    extra: { qty?: number; actorId?: string | null; refId?: string } = {},
+  ) => {
+    JOB_ACTIVITY.push({
+      id: uid('ACT'),
+      reqId: r.id,
+      at: when,
+      actorId: extra.actorId === undefined ? r.recruiterId : extra.actorId,
+      kind,
+      summary,
+      qty: extra.qty ?? null,
+      refId: extra.refId ?? null,
+    });
+  };
+
+  REQUIREMENTS.forEach((r) => {
+    const primary = r.recruiterId;
+    const manager = pick(managers).id;
+    const others = recruiters.filter((e) => e.id !== primary);
+
+    JOB_ASSIGNMENTS.push({
+      id: uid('JA'),
+      reqId: r.id,
+      recruiterId: primary,
+      role: 'primary',
+      assignedOn: r.openedOn,
+      assignedById: manager,
+      /* Targets scale with the order: three profiles per position, capped by
+         what the client will actually look at. */
+      targetSubmissions: Math.min(r.maxSubmissions, r.positions * 3),
+      targetInterviews: Math.max(1, r.positions * 2),
+      targetHires: r.positions,
+      dailySubmissions: 1,
+      weeklySubmissions: ri(3, 5),
+      priority: r.priority,
+      notes: '',
+      releasedOn: null,
+    });
+
+    /* A busy order gets cover; a quiet one does not. */
+    if (others.length && (r.priority === 'Critical' || chance(0.35))) {
+      JOB_ASSIGNMENTS.push({
+        id: uid('JA'),
+        reqId: r.id,
+        recruiterId: pick(others).id,
+        role: 'backup',
+        assignedOn: r.openedOn,
+        assignedById: manager,
+        targetSubmissions: null,
+        targetInterviews: null,
+        targetHires: null,
+        dailySubmissions: null,
+        weeklySubmissions: null,
+        priority: r.priority,
+        notes: 'Covering while the primary is on another critical requirement.',
+        releasedOn: null,
+      });
+    }
+
+    JOB_ASSIGNMENTS.push({
+      id: uid('JA'),
+      reqId: r.id,
+      recruiterId: manager,
+      role: 'manager',
+      assignedOn: r.openedOn,
+      assignedById: manager,
+      targetSubmissions: null,
+      targetInterviews: null,
+      targetHires: null,
+      dailySubmissions: null,
+      weeklySubmissions: null,
+      priority: r.priority,
+      notes: '',
+      releasedOn: null,
+    });
+
+    /* ---- the history ---- */
+    const client = clientOf(r.clientId);
+    log(r, 'created', at(r.receivedOn, 9, ri(5, 55)),
+      `Job order received from ${client.name}`, { actorId: r.salesOwnerId });
+    log(r, 'assigned', at(r.openedOn, 9, 30),
+      'Recruiter assigned', { actorId: manager });
+    log(r, 'reviewed', at(r.openedOn, 10, ri(5, 45)),
+      'Job reviewed and sourcing strategy agreed');
+
+    const sourced = ri(12, 34);
+    log(r, 'sourced', at(r.openedOn, 11, ri(0, 50)),
+      `${sourced} candidates sourced`, { qty: sourced });
+    const screened = Math.max(3, Math.round(sourced * (0.25 + rnd() * 0.3)));
+    log(r, 'screened', at(addDays(parseYmd(r.openedOn), 1) && ymd(addDays(parseYmd(r.openedOn), 1)), 14, ri(0, 50)),
+      `${screened} candidates screened`, { qty: screened });
+
+    /* Every submission on this order writes its own line, in order. */
+    const subs = sortBy(SUBMISSIONS.filter((s) => s.reqId === r.id), (s) => s.submittedOn);
+    subs.forEach((s, i) => {
+      log(r, 'submitted', at(s.submittedOn, 10 + (i % 6), ri(0, 55)),
+        `Candidate submitted to ${client.name}`,
+        { refId: s.id, actorId: s.submittedById });
+
+      const past = SUB_STAGES.findIndex((x) => x.id === s.stage);
+      if (past >= 1) {
+        log(r, 'client_review', at(ymd(addDays(parseYmd(s.submittedOn), ri(1, 3))), 12, ri(0, 55)),
+          'Profile with the client for review', { refId: s.id });
+      }
+      if (s.interviewOn) {
+        /*
+         * The booking is the event, not the interview. Dating this two days
+         * before the interview put the line in the future whenever the
+         * interview itself was — and a timeline is a record of what has
+         * happened, so the date being booked belongs in the text instead.
+         */
+        const booked = ymd(addDays(parseYmd(s.submittedOn), ri(1, 4)));
+        log(r, 'interview_scheduled', at(booked, 15, ri(0, 55)),
+          `Client interview scheduled for ${s.interviewOn}`, { refId: s.id });
+        if (s.interviewOn <= ymd(TODAY)) {
+          log(r, 'interview_done', at(s.interviewOn, 16, ri(0, 55)),
+            'Client interview completed', { refId: s.id });
+        }
+      }
+      if (s.stage === 'selected' || s.stage === 'placed') {
+        const released = ymd(addDays(parseYmd(s.submittedOn), ri(8, 20)));
+        /* An offer that has not been released yet is not history. */
+        if (released <= ymd(TODAY)) {
+          log(r, 'offer_released', at(released, 11, ri(0, 55)), 'Offer released', { refId: s.id });
+        }
+      }
+      if (s.stage === 'rejected' && s.feedback) {
+        log(r, 'note', at(ymd(addDays(parseYmd(s.submittedOn), ri(2, 9))), 17, ri(0, 55)),
+          s.feedback, { refId: s.id });
+      }
+    });
+
+    PLACEMENTS.filter((p) => p.reqId === r.id).forEach((p) => {
+      const accepted = ymd(addDays(parseYmd(p.startOn), -7));
+      if (accepted <= ymd(TODAY)) {
+        log(r, 'offer_accepted', at(accepted, 10, ri(0, 55)), 'Offer accepted', { refId: p.id });
+      }
+      /* A consultant with a future start date has not started. */
+      if (p.startOn <= ymd(TODAY)) {
+        log(r, 'placed', at(p.startOn, 9, ri(0, 30)),
+          `Consultant started at ${client.name}`, { refId: p.id });
+      }
+    });
+
+    if (r.status !== 'Open' && r.closeBy <= ymd(TODAY)) {
+      log(r, 'closed', at(r.closeBy, 17, ri(0, 55)),
+        `Job order ${r.status.toLowerCase()}`, { actorId: manager });
+    }
+  });
+
+  /* Newest first is how a timeline is read, and how every screen wants it. */
+  JOB_ACTIVITY.sort((a, b) => b.at.localeCompare(a.at));
+})();
+
+export const assignmentsFor = (reqId: string): JobAssignment[] =>
+  JOB_ASSIGNMENTS.filter((a) => a.reqId === reqId && !a.releasedOn);
+
+export const activityFor = (reqId: string): JobActivity[] =>
+  JOB_ACTIVITY.filter((a) => a.reqId === reqId);
+
+/** The live holder of one desk role on an order. */
+export const holderOf = (reqId: string, role: AssignRole): JobAssignment | undefined =>
+  JOB_ASSIGNMENTS.find((a) => a.reqId === reqId && a.role === role && !a.releasedOn);
 
 /* ---------------- bench ---------------- */
 
