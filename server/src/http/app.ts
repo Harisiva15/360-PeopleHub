@@ -101,6 +101,7 @@ import {
 import {
   audit, auditCategories, controls, retention, SecurityError,
 } from '../modules/security/service.ts';
+import { modulesFor, POLICY, ROLE_SUMMARY } from '../auth/policy.ts';
 import { navBadges, pending, pendingCount } from '../modules/approvals/service.ts';
 import { approveLoan, listLoans, LoanError } from '../modules/loans/service.ts';
 import {
@@ -1055,6 +1056,28 @@ const routes: Route[] = [
   },
   { method: 'GET', pattern: '/security/controls', handler: (c) => controls(c) },
   { method: 'GET', pattern: '/security/retention', handler: (c) => retention(c) },
+
+  /*
+   * What the caller's own role may do.
+   *
+   * Served from the policy rather than the table: the policy is the definition
+   * and the table is seeded from it, so reading the table here would add a
+   * round trip to get the same answer one edit later. When a tenant customises
+   * its own rows this reads the table instead — and that is the change to
+   * make, not a second copy of the rules in the client.
+   */
+  {
+    method: 'GET',
+    pattern: '/me/permissions',
+    handler: async (c) => ({
+      role: c.role,
+      summary: ROLE_SUMMARY[c.role],
+      modules: modulesFor(c.role),
+      rules: Object.fromEntries(
+        modulesFor(c.role).map((m) => [m, POLICY[m]![c.role]]),
+      ),
+    }),
+  },
 
   /* ---- approvals: the caller is the scope, so nothing is passed ---- */
   { method: 'GET', pattern: '/approvals/pending', handler: (c) => pending(c) },

@@ -28,33 +28,53 @@ import type { AppRole, Employee } from '../types/employee';
  * since an announcement nobody can read is not an announcement. Say the word
  * and either comes out.
  */
+/**
+ * Which modules each role may open.
+ *
+ * A convenience — the services do the enforcing — but one that has to agree
+ * with them. `checks/roles.ts` compares this against
+ * `server/src/auth/policy.ts` and fails the build on either kind of
+ * disagreement: a screen offered to somebody the service will refuse, or one
+ * withheld from somebody entitled to it. Both were live before that check
+ * existed.
+ *
+ * The three lists are cumulative on purpose. An employee's modules are a
+ * manager's, and a manager's are an admin's, which is why each is written out
+ * in full rather than spread — the shape of the ladder should be visible.
+ */
 export const PERMS: Record<AppRole, string[]> = {
-  /* Self-service. The floor of the ladder. */
+  /* Self-service. Their own work, and what the company shares. */
   employee: [
-    'dashboard', 'attendance', 'timesheet', 'leave', 'payroll', 'org', 'employees',
-    'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
-    'expenses', 'learning', 'performance', 'tax', 'planner',
+    'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
+    'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
+    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner',
   ],
 
-  /* Everything above, plus the team. */
+  /* Everything above, plus their reporting line. */
   manager: [
-    'dashboard', 'attendance', 'timesheet', 'leave', 'payroll', 'org', 'employees',
-    'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
-    'expenses', 'learning', 'performance', 'tax', 'planner',
-    // The team-level additions.
-    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'shifts',
-    'clients', 'requirements', 'bench', 'placements', 'vendors',
+    'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
+    'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
+    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner',
+    // The line.
+    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement',
   ],
 
-  /* Everything above, plus the tenant. */
+  /*
+   * Everything above, plus the tenant.
+   *
+   * Staffing — clients, requirements, bench, placements, vendors — is here and
+   * nowhere else. Bill rates, credit limits and vendor markups are commercial
+   * terms, and the staffing service refuses anybody but an admin outright.
+   * Managers used to be offered all five and got a page of refusals on each.
+   */
   admin: [
-    'dashboard', 'attendance', 'timesheet', 'leave', 'payroll', 'org', 'employees',
-    'assets', 'announcements', 'celebrations', 'helpdesk', 'documents', 'benefits',
-    'expenses', 'learning', 'performance', 'tax', 'planner',
-    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'shifts',
+    'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
+    'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
+    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner',
+    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement',
+    // The tenant.
+    'settings', 'security', 'exec', 'billing',
     'clients', 'requirements', 'bench', 'placements', 'vendors',
-    // The tenant-level additions.
-    'settings', 'security', 'billing', 'exec',
   ],
 };
 

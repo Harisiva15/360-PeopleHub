@@ -17,6 +17,8 @@
 import pg from 'pg';
 import { loadEnv } from './env.mjs';
 import { sslConfig } from './ssl.mjs';
+/* The role policy, so the table is seeded from the definition rather than a copy. */
+import { POLICY } from '../src/auth/policy.ts';
 
 loadEnv();
 
@@ -357,21 +359,31 @@ try {
     + `${LETTER_TYPES.length} letter types, ${SECURITY_CONTROLS.length} security controls, `
     + `${COURSES.length} courses, ${FBP_COMPONENTS.length} benefit components`);
 
-  /* ---- permissions: admin sees everything, the rest is narrowed later ---- */
-  const MODULES = ['dashboard', 'employees', 'leave', 'attendance', 'timesheet', 'payroll',
-    'expenses', 'approvals', 'settings'];
-  for (const m of MODULES) {
-    for (const [role, read, write, approve] of [
-      ['admin', true, true, true],
-      ['manager', true, false, true],
-      ['employee', true, false, false],
-    ]) {
-      await q(`INSERT INTO role_permission (tenant_id, role, module, can_read, can_write, can_approve)
+  /*
+   * ---- permissions ----
+   *
+   * Seeded from src/auth/policy.ts rather than restated here, so the table and
+   * the definition cannot drift. It used to be nine modules with placeholder
+   * booleans — every role reading everything, managers writing nothing, which
+   * described no deployment that has ever existed.
+   *
+   * DO UPDATE rather than DO NOTHING: a tenant that already has rows should
+   * pick up a policy change, and anybody who has customised theirs is doing it
+   * in the table after the seed, not by expecting the seed to skip them.
+   */
+  for (const [module, byRole] of Object.entries(POLICY)) {
+    for (const [role, r] of Object.entries(byRole)) {
+      await q(`INSERT INTO role_permission
+                 (tenant_id, role, module, read_scope, write_scope, approve_scope)
                VALUES ($1,$2,$3,$4,$5,$6)
-               ON CONFLICT (tenant_id, role, module) DO NOTHING`,
-        [tenant, role, m, read, write, approve]);
+               ON CONFLICT (tenant_id, role, module)
+               DO UPDATE SET read_scope = EXCLUDED.read_scope,
+                             write_scope = EXCLUDED.write_scope,
+                             approve_scope = EXCLUDED.approve_scope`,
+        [tenant, role, module, r.read, r.write, r.approve]);
     }
   }
+  created.push(`${Object.keys(POLICY).length} modules x 3 roles of permissions`);
 
   /* ---- optional: an admin employee ---- */
   let employeeId = null;
