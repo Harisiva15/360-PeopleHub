@@ -7,19 +7,7 @@
  */
 
 import { useQuery } from '../../services/react';
-import { apiConfigured } from '../../services/http';
-import type { Services } from '../../services';
-
-/**
- * A panel whose service is not mapped to the API yet.
- *
- * In a configured build it returns nothing instead of the in-memory dataset's
- * invented rows. Empty is the true answer -- the system holds no helpdesk
- * tickets or performance goals, because those modules are not implemented --
- * and it is the only answer that cannot be acted on by mistake.
- */
-const unbacked = <T,>(run: (s: Services) => Promise<T>, empty: T) =>
-  (apiConfigured ? () => Promise.resolve(empty) : run);
+import { unbacked } from '../../services/unbacked';
 
 import { useCaller } from '../../services/people';
 
@@ -66,12 +54,19 @@ export const useAnnouncements = () => useQuery((s) => s.noticeboard.announcement
 export const useCelebrations = (days: number) => useQuery((s) => s.noticeboard.celebrations(days), [days]);
 export const useExits = () => useQuery((s) => s.exits.list(), []);
 
-/** The approval inbox, assembled and scoped by the service. */
+/**
+ * The approval inbox, assembled and scoped by the service.
+ *
+ * Still composed from the in-memory dataset rather than from the live queues,
+ * so a configured build shows an empty inbox instead of invented requests with
+ * real people's names on them. Empty is wrong but harmless; a fabricated leave
+ * request waiting on you is wrong and actionable.
+ */
 export const usePendingItems = () => {
   const caller = useCaller();
-  return useQuery((s) => s.approvals.pending(caller), [caller.role, caller.meId]);
+  return useQuery(unbacked((s) => s.approvals.pending(caller), []), [caller.role, caller.meId]);
 };
 export const usePendingCount = () => {
   const caller = useCaller();
-  return useQuery((s) => s.approvals.pendingCount(caller), [caller.role, caller.meId]);
+  return useQuery(unbacked((s) => s.approvals.pendingCount(caller), 0), [caller.role, caller.meId]);
 };

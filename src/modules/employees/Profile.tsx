@@ -32,9 +32,20 @@ function MiniTile({ label, value, foot }: { label: string; value: React.ReactNod
 }
 
 function ProfileBody({ id, jump }: { id: string; jump: (nextId: string) => void }) {
-  const { data: p } = useProfile(id);
-  if (!p) return <div className="muted">Loading profile…</div>;
-  return <ProfileView p={p} jump={jump} />;
+  const { data: p, loading } = useProfile(id);
+  if (p) return <ProfileView p={p} jump={jump} />;
+  if (loading) return <div className="muted">Loading profile…</div>;
+  /*
+   * Not an error, and not an empty result — the composite is not built against
+   * this deployment yet. Saying so beats a spinner that never resolves.
+   */
+  return (
+    <Banner kind="info" icon="👤" title="The full profile is not available yet">
+      Salary, documents, learning and the lifecycle trail are assembled from
+      services this deployment does not run yet. What is on file is in the
+      module for it — attendance, leave, payroll and assets all work.
+    </Banner>
+  );
 }
 
 function ProfileView({ p, jump }: { p: EmployeeProfile; jump: (id: string) => void }) {

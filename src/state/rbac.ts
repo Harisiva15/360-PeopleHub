@@ -93,11 +93,17 @@ export const SCOPE: Record<AppRole, ScopeInfo> = {
  *
  * A module joins this list when its service is mapped in
  * `src/services/http/index.ts`, not before.
+ *
+ * `checks/coverage.ts` derives this from what the API actually backs and fails
+ * on either mismatch, because both directions of drift have happened: three
+ * services went live and their screens stayed hidden, and a screen stayed
+ * listed after its panel was found to be running on the mock.
  */
 export const LIVE_MODULES = new Set([
-  'dashboard', 'attendance', 'timesheet', 'leave', 'employees', 'org',
-  'celebrations', 'announcements', 'payroll', 'hiring', 'onboarding',
+  'dashboard', 'attendance', 'timesheet', 'leave', 'employees', 'org', 'people',
+  'celebrations', 'announcements', 'payroll', 'hiring', 'onboarding', 'documents',
   'assets', 'expenses', 'helpdesk', 'performance', 'exit', 'planner', 'settings',
+  'shifts', 'tax',
 ]);
 
 /**
