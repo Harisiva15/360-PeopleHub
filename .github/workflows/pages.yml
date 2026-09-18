@@ -31,21 +31,19 @@ jobs:
       - run: npm ci
 
       # The same gates that run locally. A red build should not reach the URL.
+      #
+      # `check:all` rather than a list of its parts: the list had already
+      # drifted — it was missing the role, coverage and contrast checks, so
+      # three gates that fail locally would still have deployed.
       - name: Typecheck, lint and checks
         run: |
           npx tsc --noEmit -p tsconfig.app.json
           npx oxlint
-          npm run check
-          npm run check:shape:contract
-          npm run check:payroll
-          npm run check:routes
-          npm run check:http
-          npm run check:intake
-          npm run check:people
-          npm run check:reachable
+          npm run check:all
           # Proves the sign-in gate is closed. Needs a configured build, so it
           # runs with placeholder credentials — nothing connects to Supabase,
-          # because the render never gets that far.
+          # because the render never gets that far. This is the one check the
+          # local suite cannot make, which is why it is named separately.
           VITE_SUPABASE_URL=https://ci.invalid VITE_SUPABASE_PUBLISHABLE_KEY=ci npm run check:gate
 
       - name: Build

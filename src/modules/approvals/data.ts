@@ -59,9 +59,11 @@ export function useMyInterviews(panelId: string) {
 
 export const useApproveLeave = () => useMutation((s, id: string, by: string) => s.leave.approve(id, by));
 export const useRejectLeave = () => useMutation((s, id: string, by: string) => s.leave.reject(id, by));
-export const useApproveTimesheet = () => useMutation((s, id: string, by: string) => s.timesheet.approve(id, by));
+/* The approver is the session, so the three decisions share one call. */
+export const useApproveTimesheet = () =>
+  useMutation((s, id: string) => s.timesheet.decide(id, 'Approved'));
 export const useReturnTimesheet = () =>
-  useMutation((s, id: string, by: string, note: string) => s.timesheet.reject(id, by, note));
+  useMutation((s, id: string, note: string) => s.timesheet.decide(id, 'Returned', note));
 export const useActOnRegularisation = () =>
   useMutation((s, r: AttRecord, decision: 'Approved' | 'Rejected') =>
     s.attendance.actOnRegularisation(r.empId, r.date, decision));

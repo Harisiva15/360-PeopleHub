@@ -96,10 +96,10 @@ export const NAV: NavGroup[] = [
     ic: '▤',
     k: 'timesheet',
     items: [
-      { k: 'timesheet', n: 'My timesheet' },
-      { k: 'timesheet', n: 'Team timesheets', to: '/timesheet?v=team', roles: ['manager', 'admin'] },
-      { k: 'timesheet', n: 'Pending approval', to: '/timesheet?v=appr', roles: ['manager', 'admin'] },
-      { k: 'timesheet', n: 'Utilisation', to: '/timesheet?v=util', roles: ['manager', 'admin'] },
+      { k: 'timesheet', n: 'Timesheet entry', to: '/timesheet?v=entry' },
+      { k: 'timesheet', n: 'My timesheets', to: '/timesheet?v=mine' },
+      { k: 'timesheet', n: 'Approvals', to: '/timesheet?v=appr', roles: ['manager', 'admin'] },
+      { k: 'timesheet', n: 'Reports', to: '/timesheet?v=rep' },
     ],
   },
 
@@ -233,3 +233,20 @@ export const ALL_ROUTES: string[] = [
 
 /** Where an item points — the route itself unless it named a tab. */
 export const hrefOf = (i: NavItem): string => i.to ?? `/${i.k}`;
+
+/**
+ * The header's quick-action menu, named by the view each one opens.
+ *
+ * Names rather than URLs, resolved against `NAV` at render time: a hard-coded
+ * `?v=` in the header is a dead link the moment a tab is renamed, which is
+ * exactly how the timesheet's own menu entries went stale when its tabs were
+ * rebuilt. `checks/routes.tsx` asserts every name here still resolves, so a
+ * rename fails the build instead of quietly emptying the menu.
+ *
+ * Each is filtered by role at render time — this list is what the product
+ * offers, not what any one person gets.
+ */
+export const QUICK_ACTIONS = [
+  'My leave', 'Timesheet entry', 'My attendance', 'Expense & travel',
+  'My tickets', 'My payslips', 'Directory',
+] as const;

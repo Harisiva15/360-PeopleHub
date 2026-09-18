@@ -36,8 +36,9 @@ import {
   regularisableDays,
 } from '../modules/attendance/service.ts';
 import {
-  addRow, approveTimesheet, listTimesheets, recallTimesheet, rejectTimesheet,
-  removeRow, setEntryNote, setHours, setRow, submitTimesheet, TimesheetError, timesheetForWeek,
+  actOnTimesheet, addEntry, copyPreviousWeek, listTimesheets, recallTimesheet,
+  removeEntry, setComment, submitTimesheet, TimesheetError, timesheetForWeek,
+  updateEntry,
 } from '../modules/timesheet/service.ts';
 import {
   listAnnouncements, listCelebrations, NoticeboardError, postAnnouncement,
@@ -750,7 +751,7 @@ const routes: Route[] = [
         ...(ids ? { empIds: ids.split(',').filter(Boolean) } : {}),
         ...(p.get('weekStart') ? { weekStart: p.get('weekStart')! } : {}),
         ...(p.get('since') ? { since: p.get('since')! } : {}),
-        ...(p.get('status') ? { status: p.get('status') as 'Draft' } : {}),
+        ...(p.get('status') ? { status: p.get('status')! } : {}),
       });
     },
   },
@@ -761,36 +762,31 @@ const routes: Route[] = [
   },
   {
     method: 'POST',
-    pattern: '/timesheets/:id/rows',
-    handler: (c, _r, p, body) => {
-      const b = (body ?? {}) as { proj: string; task: string };
-      return addRow(c, p.id!, b.proj, b.task ?? '');
-    },
+    pattern: '/timesheets/:id/entries',
+    handler: (c, _r, p, body) =>
+      addEntry(c, p.id!, body as Parameters<typeof addEntry>[2]),
+  },
+  {
+    method: 'PUT',
+    pattern: '/timesheets/:id/entries/:entryId',
+    handler: (c, _r, p, body) =>
+      updateEntry(c, p.id!, p.entryId!, body as Parameters<typeof updateEntry>[3]),
   },
   {
     method: 'DELETE',
-    pattern: '/timesheets/:id/rows/:rowIndex',
-    handler: (c, _r, p) => removeRow(c, p.id!, Number(p.rowIndex)),
+    pattern: '/timesheets/:id/entries/:entryId',
+    handler: (c, _r, p) => removeEntry(c, p.id!, p.entryId!),
   },
   {
     method: 'PUT',
-    pattern: '/timesheets/:id/rows/:rowIndex',
+    pattern: '/timesheets/:id/comment',
     handler: (c, _r, p, body) =>
-      setRow(c, p.id!, Number(p.rowIndex), (body ?? {}) as { proj?: string; task?: string }),
+      setComment(c, p.id!, (body as { note?: string } | undefined)?.note ?? ''),
   },
   {
-    method: 'PUT',
-    pattern: '/timesheets/:id/rows/:rowIndex/days/:dayIndex',
-    handler: (c, _r, p, body) =>
-      setHours(c, p.id!, Number(p.rowIndex), Number(p.dayIndex),
-        Number((body as { hours: number }).hours)),
-  },
-  {
-    method: 'PUT',
-    pattern: '/timesheets/:id/rows/:rowIndex/days/:dayIndex/note',
-    handler: (c, _r, p, body) =>
-      setEntryNote(c, p.id!, Number(p.rowIndex), Number(p.dayIndex),
-        String((body as { note?: string }).note ?? '')),
+    method: 'POST',
+    pattern: '/timesheets/:id/copy-previous',
+    handler: (c, _r, p) => copyPreviousWeek(c, p.id!),
   },
   {
     method: 'POST',
@@ -803,15 +799,17 @@ const routes: Route[] = [
     handler: (c, _r, p) => recallTimesheet(c, p.id!),
   },
   {
+    /*
+     * One endpoint for the three decisions rather than three. They differ only
+     * in the word, and the approver and the guards are identical — three
+     * routes would be three places to forget the self-approval check.
+     */
     method: 'POST',
-    pattern: '/timesheets/:id/approve',
-    handler: (c, _r, p) => approveTimesheet(c, p.id!),
-  },
-  {
-    method: 'POST',
-    pattern: '/timesheets/:id/reject',
-    handler: (c, _r, p, body) =>
-      rejectTimesheet(c, p.id!, (body as { note?: string } | undefined)?.note ?? ''),
+    pattern: '/timesheets/:id/decide',
+    handler: (c, _r, p, body) => {
+      const b = body as { decision: 'approved' | 'returned' | 'rejected'; note?: string };
+      return actOnTimesheet(c, p.id!, b.decision, b.note);
+    },
   },
   {
     method: 'GET',

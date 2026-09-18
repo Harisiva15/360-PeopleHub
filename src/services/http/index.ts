@@ -333,22 +333,21 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         empIds: q.empIds?.join(','), weekStart: q.weekStart, since: q.since, status: q.status,
       })}`),
       forWeek: (empId, weekStart) => api.get(`/timesheets/${empId}/${weekStart}`),
-      addRow: (id, proj, task) => api.post(`/timesheets/${id}/rows`, { proj, task }),
-      removeRow: (id, rowIndex) => api.del(`/timesheets/${id}/rows/${rowIndex}`),
-      setRow: (id, rowIndex, patch) => api.put(`/timesheets/${id}/rows/${rowIndex}`, patch),
-      setHours: (id, rowIndex, dayIndex, hours) =>
-        api.put(`/timesheets/${id}/rows/${rowIndex}/days/${dayIndex}`, { hours }),
-      setEntryNote: (id, rowIndex, dayIndex, note) =>
-        api.put(`/timesheets/${id}/rows/${rowIndex}/days/${dayIndex}/note`, { note }),
+      addEntry: (id, draft) => api.post(`/timesheets/${id}/entries`, draft),
+      updateEntry: (id, entryId, patch) =>
+        api.put(`/timesheets/${id}/entries/${entryId}`, patch),
+      removeEntry: (id, entryId) => api.del(`/timesheets/${id}/entries/${entryId}`),
+      setComment: (id, note) => api.put(`/timesheets/${id}/comment`, { note }),
+      copyPreviousWeek: (id) => api.post(`/timesheets/${id}/copy-previous`),
       submit: (id) => api.post(`/timesheets/${id}/submit`),
       recall: (id) => api.post(`/timesheets/${id}/recall`),
       /*
-       * approverId is not sent. The server takes the approver from the session
-       * token, for the same reason `visible()` ignores its caller argument:
-       * an approver the client can name is an approver the client can forge.
+       * The approver is not sent. The server takes it from the session token,
+       * for the same reason `visible()` ignores its caller argument: an
+       * approver the client can name is an approver the client can forge.
        */
-      approve: (id) => api.post(`/timesheets/${id}/approve`),
-      reject: (id, _approverId, note) => api.post(`/timesheets/${id}/reject`, { note }),
+      decide: (id, decision, note) =>
+        api.post(`/timesheets/${id}/decide`, { decision: decision.toLowerCase(), note }),
     },
 
     joiners: {

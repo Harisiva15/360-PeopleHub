@@ -7,7 +7,7 @@ import { STAGES } from '../../data/ats';
 import { countryOf, money } from '../../data/countries';
 
 
-import { DEPTS, ltOf, ORG, PROJECTS, projOf, siteOf, SITES } from '../../data/org';
+import { DEPTS, ltOf, ORG, PROJECTS, siteOf, SITES } from '../../data/org';
 
 
 
@@ -310,7 +310,7 @@ function DashManager() {
     last4.push({
       label: 'W' + (4 - w),
       hours: sum(sheets, (s) => s.total),
-      billable: sum(sheets, (s) => sum(s.rows.filter((r) => projOf(r.proj).billable), (r) => sum(r.h))),
+      billable: sum(sheets, (s) => s.billable),
     });
   }
 
@@ -323,7 +323,7 @@ function DashManager() {
     k: p.name, c: p.color,
     v: sum(
       teamSheets.filter((t) => t.weekStart >= ymd(mondayOf(addDays(TODAY, -21)))),
-      (t) => sum(t.rows.filter((r) => r.proj === p.id), (r) => sum(r.h)),
+      (t) => sum(t.entries.filter((e) => e.proj === p.id), (e) => e.hours),
     ),
   })).filter((r) => r.v > 0);
 

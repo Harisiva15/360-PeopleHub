@@ -5,7 +5,7 @@ import { inr, lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { countryOf, mb, mbS, money, moneyShort, sumBase, toBase } from '../../data/countries';
 import { LOAN_TYPES } from '../../data/loans';
-import { BANKS, DEPTS, deptOf, GRADES, ORG, projOf, siteOf } from '../../data/org';
+import { BANKS, DEPTS, deptOf, GRADES, ORG, siteOf } from '../../data/org';
 import {
   useActiveLoans, useApprovedClaims, useBankBatches, useCompensation, useCompliancePayments,
   useCurrentRun, useDeclarations, usePayInputs, usePayRuns, usePayrollTotals,
@@ -891,7 +891,7 @@ function PyTeamCost() {
 
 
   const billableCoverage = pct(
-    sum(recent, (t) => sum(t.rows.filter((r) => projOf(r.proj).billable), (r) => sum(r.h))),
+    sum(recent, (t) => t.billable),
     Math.max(1, sum(recent, (t) => t.total)),
   );
 

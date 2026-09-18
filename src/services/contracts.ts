@@ -61,7 +61,7 @@ export type { Employee } from '../types/employee';
 export type { FbpComponent, FbpPlan } from '../data/benefits';
 export type { LeaveRequest, LeaveStatus } from '../data/leave';
 export type { AttRecord, AttStatus, Regularisation } from '../data/attendance';
-export type { Timesheet, TSRow, TSStatus } from '../data/timesheet';
+export type { Timesheet, TSEntry, TSStatus } from '../data/timesheet';
 export type { Advance, Claim, ClaimStatus, ExpItem } from '../data/expenses';
 export type { Asset } from '../types/asset';
 export type { EmpDoc } from '../data/announcements';
@@ -256,6 +256,18 @@ export interface TimesheetQuery {
   status?: TSStatus;
 }
 
+/** What one line on a timesheet says. */
+export interface EntryDraft {
+  /** The day the work happened, as `YYYY-MM-DD`. Must fall inside the week. */
+  date: string;
+  /** Project code. */
+  proj: string;
+  task: string;
+  billable?: boolean;
+  hours?: number;
+  remarks?: string;
+}
+
 export interface TimesheetService {
   list(q: TimesheetQuery): Promise<Timesheet[]>;
   /**
@@ -264,21 +276,35 @@ export interface TimesheetService {
    * used to conjure the row mid-render.
    */
   forWeek(empId: string, weekStart: string): Promise<Timesheet>;
-  addRow(id: string, proj: string, task: string): Promise<Timesheet>;
-  removeRow(id: string, rowIndex: number): Promise<Timesheet>;
-  /** Repoint a row at a different project or task. */
-  setRow(id: string, rowIndex: number, patch: { proj?: string; task?: string }): Promise<Timesheet>;
-  /** Sets one cell and returns the sheet with its total already recomputed. */
-  setHours(id: string, rowIndex: number, dayIndex: number, hours: number): Promise<Timesheet>;
   /**
-   * Say what one day's hours were for. Refused when that day has no hours —
-   * a note with nothing to annotate would create an empty line on the week.
+   * Add a line. A second line for the same project, task and day merges into
+   * the first — that combination is unique in the table, and it is the same
+   * work said twice.
    */
-  setEntryNote(id: string, rowIndex: number, dayIndex: number, note: string): Promise<Timesheet>;
+  addEntry(id: string, draft: EntryDraft): Promise<Timesheet>;
+  /** Change a line. Limits are measured without its old value, not on top. */
+  updateEntry(id: string, entryId: string, patch: Partial<EntryDraft>): Promise<Timesheet>;
+  removeEntry(id: string, entryId: string): Promise<Timesheet>;
+  /** The note to the manager. Kept apart from the lines and editable with them. */
+  setComment(id: string, note: string): Promise<Timesheet>;
+  /**
+   * Copy last week's lines onto this one, hours included. Refuses when this
+   * week already has any — somebody who has started typing and presses it
+   * meant to start over, and doubling their morning is the worse guess.
+   */
+  copyPreviousWeek(id: string): Promise<Timesheet>;
   submit(id: string): Promise<Timesheet>;
   recall(id: string): Promise<Timesheet>;
-  approve(id: string, approverId: string): Promise<Timesheet>;
-  reject(id: string, approverId: string, note: string): Promise<Timesheet>;
+  /**
+   * Approve, return for correction, or refuse. Returned goes back to the
+   * employee; rejected is terminal. Both need a reason, and neither can be
+   * applied to the caller's own week.
+   */
+  decide(
+    id: string,
+    decision: 'Approved' | 'Returned' | 'Rejected',
+    note?: string,
+  ): Promise<Timesheet>;
 }
 
 /* ---------- expenses ---------- */

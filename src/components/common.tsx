@@ -9,6 +9,8 @@ const STATUS_TONE: Record<string, BadgeKind> = {
   Accepted: 'good', Verified: 'good', Hired: 'good', Open: 'good',
   Pending: 'warn', Submitted: 'info', Draft: 'mute', 'In Progress': 'warn',
   'Pre-boarding': 'info', Negotiating: 'warn', Sent: 'info', Scheduled: 'info', 'On Hold': 'warn',
+  /* Returned is not a refusal — it is work handed back, and reads as amber. */
+  Returned: 'warn',
   Rejected: 'crit', Cancelled: 'mute', Missing: 'crit', Exited: 'mute', Absent: 'crit',
   Insufficiency: 'crit', 'No Show': 'crit', Closed: 'mute',
 };

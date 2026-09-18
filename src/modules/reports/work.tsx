@@ -3,7 +3,7 @@ import { addDays, daysBetween, fmtDS, mondayOf, TODAY, ymd } from '../../lib/dat
 import { lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { SOURCES, STAGES } from '../../data/ats';
-import { DEPTS, deptOf, PROJECTS, projOf } from '../../data/org';
+import { DEPTS, deptOf, PROJECTS } from '../../data/org';
 import { NINEBOX, POTENTIAL, RATINGS, VALUES } from '../../data/performance';
 import type { Timesheet } from '../../services';
 import { tCat, TICKET_CATS } from '../../data/helpdesk';
@@ -136,7 +136,7 @@ export function RepHiring() {
 /* ---------- Timesheet utilisation ---------- */
 
 const billableHours = (t: Timesheet) =>
-  sum(t.rows.filter((r) => projOf(r.proj).billable), (r) => sum(r.h));
+  t.billable;
 
 export function RepUtil() {
   const showEmp = useShowEmployee();
@@ -153,7 +153,7 @@ export function RepUtil() {
   const byProj: HBarRow[] = PROJECTS.map((p) => ({
     k: p.name,
     c: p.color,
-    v: sum(mine, (t) => sum(t.rows.filter((r) => r.proj === p.id), (r) => sum(r.h))),
+    v: sum(mine, (t) => sum(t.entries.filter((e) => e.proj === p.id), (e) => e.hours)),
   })).filter((r) => r.v);
 
   const perPerson = sortBy(

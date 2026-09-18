@@ -2,6 +2,12 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { apiConfigured } from './services/http/client';
+/*
+ * Inter, shipped with the application rather than fetched from a font host.
+ * The weight axis only — the optical-size and italic files would triple what
+ * the browser downloads for faces this interface never sets.
+ */
+import '@fontsource-variable/inter/wght.css';
 import './styles/global.css';
 
 /*

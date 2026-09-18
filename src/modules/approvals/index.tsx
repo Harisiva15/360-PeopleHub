@@ -67,14 +67,14 @@ function Approvals() {
 
   const approveTs = async (t: Timesheet) => {
     try {
-      await doApproveTs.mutate(t.id, app.meId);
+      await doApproveTs.mutate(t.id);
       app.toast('Approved ' + dir.name(t.empId) + "'s timesheet", 'ok');
     } catch (e) { fail(e); }
   };
 
   const returnTs = async (t: Timesheet) => {
     try {
-      await doReturnTs.mutate(t.id, app.meId, 'Please split the hours by task type and resubmit.');
+      await doReturnTs.mutate(t.id, 'Please split the hours by task type and resubmit.');
       app.toast('Timesheet returned', 'err');
     } catch (e) { fail(e); }
   };

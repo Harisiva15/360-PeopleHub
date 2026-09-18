@@ -142,6 +142,17 @@ export interface Account {
   label: string;
 }
 
+/**
+ * What to call a role in the interface. One place, because "employee",
+ * "Employee" and "Self-service" were being written out at each call site and
+ * had already drifted into three different words for the same thing.
+ */
+export const ROLE_LABEL: Record<AppRole, string> = {
+  admin: 'Administrator',
+  manager: 'Manager',
+  employee: 'Employee',
+};
+
 /** The three demo identities the topbar role-switcher signs in as. */
 export const ACCOUNTS = (): Account[] => [
   { role: 'admin', empId: HRHEAD.id, label: 'HR Administrator' },

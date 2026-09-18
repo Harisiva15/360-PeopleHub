@@ -96,23 +96,76 @@ const check = (label: string, got: unknown, want: unknown) => {
   check('a second decision is refused', regRefused, true);
 
   /* ---- timesheet ---- */
-  const week = '2026-10-05';
+  const week = '2026-10-05';                       /* a Monday */
+  const mon = '2026-10-05';
+  const tue = '2026-10-06';
   const sheet = await s.timesheet.forWeek(DEMO_EMP.id, week);
-  check('a new week starts as an empty draft', [sheet.status, sheet.rows.length, sheet.total], ['Draft', 0, 0]);
+  check('a new week starts as an empty draft',
+    [sheet.status, sheet.entries.length, sheet.total], ['Draft', 0, 0]);
 
   let noHours = false;
   try { await s.timesheet.submit(sheet.id); } catch { noHours = true; }
   check('an empty sheet cannot be submitted', noHours, true);
 
-  await s.timesheet.addRow(sheet.id, 'P-NBFC', 'Development');
-  const withHours = await s.timesheet.setHours(sheet.id, 0, 0, 8);
-  check('the total is derived by the service', withHours.total, 8);
+  const one = await s.timesheet.addEntry(sheet.id, {
+    date: mon, proj: 'P-NBFC', task: 'Development', billable: true, hours: 8,
+  });
+  check('totals are derived by the service',
+    [one.total, one.billable, one.nonBillable], [8, 8, 0]);
 
-  const more = await s.timesheet.setHours(sheet.id, 0, 1, 7.5);
-  check('the total tracks every cell', more.total, 15.5);
+  /* Billability is the entry's, not the project's — the same project can do both. */
+  const mixed = await s.timesheet.addEntry(sheet.id, {
+    date: mon, proj: 'P-NBFC', task: 'Sprint Planning', billable: false, hours: 1,
+  });
+  check('an entry may be non-billable on a billable project',
+    [mixed.total, mixed.billable, mixed.nonBillable], [9, 8, 1]);
+
+  /* Same project, task and day is the same work said twice. */
+  const merged = await s.timesheet.addEntry(sheet.id, {
+    date: mon, proj: 'P-NBFC', task: 'Development', billable: true, hours: 2,
+  });
+  check('a repeated project, task and day merges',
+    [merged.entries.length, merged.total], [2, 11]);
+
+  let offWeek = false;
+  try {
+    await s.timesheet.addEntry(sheet.id, {
+      date: '2026-10-13', proj: 'P-NBFC', task: 'Development', hours: 1,
+    });
+  } catch { offWeek = true; }
+  check('a day outside the week is refused', offWeek, true);
+
+  let overDay = false;
+  try {
+    await s.timesheet.addEntry(sheet.id, {
+      date: mon, proj: 'P-ATLAS', task: 'Documentation', hours: 20,
+    });
+  } catch { overDay = true; }
+  check('a day cannot exceed 24 hours in total', overDay, true);
+
+  /* The limit is measured without the line's own old value, not on top of it. */
+  const dev = merged.entries.find((e) => e.task === 'Development')!;
+  const widened = await s.timesheet.updateEntry(sheet.id, dev.id, { hours: 12 });
+  check('editing measures the limit without the old value', widened.total, 13);
+
+  const moved = await s.timesheet.updateEntry(sheet.id, dev.id, { date: tue });
+  check('moving a line keeps the total', moved.total, 13);
+
+  const noted = await s.timesheet.setComment(sheet.id, 'Release week — worked long days.');
+  check('the comment is kept apart from the lines', noted.note, 'Release week — worked long days.');
 
   const submitted = await s.timesheet.submit(sheet.id);
   check('submitting stamps the date', submitted.status, 'Submitted');
+
+  let lockedOut = false;
+  try {
+    await s.timesheet.addEntry(sheet.id, { date: tue, proj: 'P-INT', task: 'Training', hours: 1 });
+  } catch { lockedOut = true; }
+  check('a submitted sheet cannot be edited', lockedOut, true);
+
+  let selfDecide = false;
+  try { await s.timesheet.decide(sheet.id, 'Approved'); } catch { selfDecide = true; }
+  check('nobody decides their own week', selfDecide, true);
 
   const recalled = await s.timesheet.recall(sheet.id);
   check('recalling returns it to draft', [recalled.status, recalled.submittedOn], ['Draft', null]);
@@ -121,16 +174,46 @@ const check = (label: string, got: unknown, want: unknown) => {
   try { await s.timesheet.recall(sheet.id); } catch { recallRefused = true; }
   check('a draft cannot be recalled', recallRefused, true);
 
-  await s.timesheet.submit(sheet.id);
-  const approved = await s.timesheet.approve(sheet.id, DEMO_MGR.id);
-  check('approving records the approver', [approved.status, approved.approverId], ['Approved', DEMO_MGR.id]);
+  const dropped = await s.timesheet.removeEntry(sheet.id, dev.id);
+  check('removing a line recomputes the totals',
+    [dropped.entries.length, dropped.total, dropped.billable], [1, 1, 0]);
 
-  let dblApprove = false;
-  try { await s.timesheet.approve(sheet.id, DEMO_MGR.id); } catch { dblApprove = true; }
-  check('a second approval is refused', dblApprove, true);
+  /*
+   * The decision path runs on somebody else's week, because the service
+   * refuses to let the caller decide their own — which is the assertion above.
+   */
+  const other = DEMO_MGR.reports.find((id) => id !== DEMO_EMP.id)!;
+  const theirs = await s.timesheet.forWeek(other, week);
+  await s.timesheet.addEntry(theirs.id, {
+    date: mon, proj: 'P-RETAIL', task: 'Testing', billable: true, hours: 6,
+  });
+  await s.timesheet.submit(theirs.id);
 
-  const removed = await s.timesheet.removeRow(sheet.id, 0);
-  check('removing a row recomputes the total', removed.total, 0);
+  let silentReturn = false;
+  try { await s.timesheet.decide(theirs.id, 'Returned'); } catch { silentReturn = true; }
+  check('returning a sheet needs a reason', silentReturn, true);
+
+  const returned = await s.timesheet.decide(theirs.id, 'Returned', 'Split the hours by task.');
+  check('returning hands it back with the reason',
+    [returned.status, returned.note], ['Returned', 'Split the hours by task.']);
+
+  const editableAgain = await s.timesheet.addEntry(theirs.id, {
+    date: tue, proj: 'P-RETAIL', task: 'Code Review', billable: true, hours: 2,
+  });
+  check('a returned sheet is editable again', editableAgain.total, 8);
+
+  await s.timesheet.submit(theirs.id);
+  const approved = await s.timesheet.decide(theirs.id, 'Approved');
+  check('approving records the approver',
+    [approved.status, approved.approverId], ['Approved', EMAP[other].managerId]);
+
+  let dblDecide = false;
+  try { await s.timesheet.decide(theirs.id, 'Approved'); } catch { dblDecide = true; }
+  check('a second decision is refused', dblDecide, true);
+
+  let approvedLocked = false;
+  try { await s.timesheet.removeEntry(theirs.id, approved.entries[0].id); } catch { approvedLocked = true; }
+  check('an approved week is closed to edits', approvedLocked, true);
 
   /* ---- expenses ---- */
   const claim = await s.expenses.submitClaim({

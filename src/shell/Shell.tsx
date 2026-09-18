@@ -2,15 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { logoFor } from '../assets/logo';
 import { hrefOf, NAV, TABBAR } from '../nav';
-import { TITLES } from '../modules/titles';
-import { SUBTITLES } from '../modules/subtitles';
 import { useNavBadges } from './badges';
 import { ORG } from '../data/org';
-import { ACCOUNTS } from '../state/rbac';
 import { useApp } from '../state/AppContext';
-import { useAuth } from '../auth/AuthContext';
 import { Avatar } from '../components/ui';
-import { WorldClocks } from './WorldClocks';
+import { TopBar } from './TopBar';
+import { PageActionsTarget } from './PageActions';
 import type { ReactNode } from 'react';
 
 const isMobile = () => window.matchMedia('(max-width: 860px)').matches;
@@ -20,6 +17,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const { pathname, search } = useLocation();
   const route = pathname.replace(/^\//, '') || 'dashboard';
   const [navOpen, setNavOpen] = useState(false);
+  /* Where a page's primary action lands. Held in state, not a ref, so the
+     portal re-renders once the header's element actually exists. */
+  const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null);
 
   /*
    * Which sections are expanded. Remembered per browser so the sidebar is
@@ -74,9 +74,6 @@ export function Shell({ children }: { children: ReactNode }) {
     if (navOpen) setNavOpen(false);
   }
 
-  const accounts = ACCOUNTS();
-  const auth = useAuth();
-  const ctx = { role: app.role, meId: app.meId, me: app.me };
   const badges = useNavBadges();
 
   return (
@@ -181,21 +178,15 @@ export function Shell({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        <div style={{ padding: 11, borderTop: '1px solid var(--line)' }}>
+        <div className="rail-foot">
           <div className="row" style={{ gap: 9 }}>
             <Avatar name={app.me.name} />
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div
-                className="nm"
-                style={{ fontWeight: 650, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-              >
-                {app.me.name}
-              </div>
-              <div className="mt" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                {app.me.designation}
-              </div>
+              <div className="nm">{app.me.name}</div>
+              <div className="mt">{app.me.designation}</div>
             </div>
-            <button className="btn ghost icon sm" onClick={app.toggleTheme} title="Toggle theme">
+            <button className="btn ghost icon sm" onClick={app.toggleTheme}
+              title="Toggle theme" aria-label="Toggle theme">
               {app.theme === 'light' ? '☾' : '☀'}
             </button>
           </div>
@@ -205,49 +196,16 @@ export function Shell({ children }: { children: ReactNode }) {
       {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}
 
       <div className="main">
-        <header className="topbar">
-          {mobile && (
-            <button className="btn ghost icon no-print" onClick={() => setNavOpen((o) => !o)}>
-              ☰
-            </button>
-          )}
-          <div>
-            <h1>{TITLES[route] || '—'}</h1>
-            <div className="sub">{SUBTITLES[route]?.(ctx)}</div>
-          </div>
-          <div className="spacer" />
-          <WorldClocks />
-          {/*
-            * The role switcher exists only when there is no sign-in. It is the
-            * honest signal that a build is a demo — and it must never appear
-            * beside a real session, where changing your own role by clicking
-            * would be the whole authorisation model defeated.
-            */}
-          {!auth.configured ? (
-            <>
-              <span
-                className="demo-tag no-print"
-                title="Sample data, no sign-in — anyone can switch role. Not a live HR system."
-              >
-                Demo
-              </span>
-              <div className="seg" id="roleSeg" title="Switch the signed-in role">
-                {accounts.map((a) => (
-                  <button key={a.role} className={app.role === a.role ? 'on' : ''} onClick={() => app.signInAs(a.role)}>
-                    {a.role === 'admin' ? 'Admin' : a.role === 'manager' ? 'Manager' : 'Employee'}
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="row no-print" style={{ gap: 9 }}>
-              <span className="muted" style={{ fontSize: 12.5 }}>{auth.displayName}</span>
-              <button className="btn sm" onClick={() => void auth.signOut()}>Sign out</button>
-            </div>
-          )}
-        </header>
+        <TopBar mobile={mobile} onMenu={() => setNavOpen((o) => !o)} actionRef={setActionSlot} />
 
-        <main className="content">{children}</main>
+        {/*
+          * The page renders after the header, so the header's action element
+          * exists in the DOM by the time a `<PageActions>` inside `children`
+          * looks for it.
+          */}
+        <PageActionsTarget value={actionSlot}>
+          <main className="content">{children}</main>
+        </PageActionsTarget>
       </div>
 
       <nav className="tabbar">

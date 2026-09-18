@@ -492,13 +492,13 @@ export function OrgTab() {
             </thead>
             <tbody>
               {PROJECTS.map((p) => {
-                const ts = sheets.filter((t) => t.rows.some((r) => r.proj === p.id));
+                const ts = sheets.filter((t) => t.entries.some((e) => e.proj === p.id));
                 return (
                   <tr key={p.id}>
                     <td><Dot color={p.color} /> <b>{p.name}</b></td>
                     <td>{p.client}</td>
                     <td><Badge kind={p.billable ? 'good' : 'mute'}>{p.billable ? 'Billable' : 'Internal'}</Badge></td>
-                    <td className="num">{sum(ts, (t) => sum(t.rows.filter((r) => r.proj === p.id), (r) => sum(r.h)))}</td>
+                    <td className="num">{sum(ts, (t) => sum(t.entries.filter((e) => e.proj === p.id), (e) => e.hours))}</td>
                     <td className="num">{uniq(ts.map((t) => t.empId)).length}</td>
                   </tr>
                 );
