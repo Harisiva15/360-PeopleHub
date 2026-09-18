@@ -7,6 +7,8 @@ import { countryOf, mb, mbS, money, toBase } from '../../data/countries';
 import { benchCost, benchDays, clientOf, conOf, vendorOf } from '../../data/staffing';
 import type { Consultant, Placement } from '../../services';
 import { useBench, useConsultants, useKpi, usePlacements } from './data';
+import { useLayer } from '../../components/Layer';
+import { BenchDetail } from './BenchDetail';
 import { Avatar, Badge, Card, EmptyState, Tabs, Tile, StatRow } from '../../components/ui';
 import { Chip, Divide } from '../../components/common';
 import { BarChart, HBar, Legend, LineChart, PAL } from '../../components/charts';
@@ -30,6 +32,7 @@ const supplierOf = (c: Consultant) => (c.external ? vendorOf(c.vendorId || '')?.
 /* ---------------- Bench ---------------- */
 
 function BnBench() {
+  const layer = useLayer();
   const { data: bench = [] } = useBench();
   const { data: CONSULTANTS = [] } = useConsultants();
   const { data: k } = useKpi();
@@ -75,7 +78,11 @@ function BnBench() {
                 const d = benchDays(c);
                 const b = bandOf(d);
                 return (
-                  <tr key={c.id}>
+                  <tr key={c.id} className="clickable" onClick={() => layer.drawer({
+                    title: c.name,
+                    sub: `${c.role} · on the bench ${d} days`,
+                    body: <BenchDetail c={c} />,
+                  })}>
                     <td>
                       <div className="person">
                         <Avatar name={c.name} size="sm" />

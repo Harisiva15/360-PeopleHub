@@ -6,14 +6,14 @@ import { downloadCSV } from '../../lib/csv';
 import { COUNTRIES, countryOf, mb, money } from '../../data/countries';
 import { deptOf, ORG } from '../../data/org';
 import {
-  WA_ACCOUNT, WA_CAT_BADGE, WA_RULES, WA_STATUS_BADGE, waRender, waTpl,
+  WA_ACCOUNT, WA_CAT_BADGE, WA_STATUS_BADGE, waRender, waTpl,
 } from '../../data/whatsapp';
 import type { WaTemplate } from '../../services';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { BarChart, HBar, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
 import {
-  useConsent, useConsentRows, useCurrentRun, useLog, usePayslip, useSetConsent,
+  useConsent, useConsentRows, useCurrentRun, useLog, usePayslip, useRules, useSetConsent,
   usePendingCount, useSetRuleEnabled, useSetTemplateEnabled, useTemplates, useVisiblePeople,
   useWaStats,
 } from './data';
@@ -260,6 +260,7 @@ function WaRules() {
   const setRule = useSetRuleEnabled();
   const { data: WA_TEMPLATES = [] } = useTemplates();
   const { data: WA_LOG = [] } = useLog();
+  const { data: WA_RULES = [] } = useRules();
   return (
     <div className="stack">
       <Card title="Routing rules" sub={`${WA_RULES.filter((r) => r.on).length} of ${WA_RULES.length} rules active`} flush

@@ -162,6 +162,62 @@ const LEAVE_TYPES = [
  * law allows tax-free against bills, not a company policy, so they are seeded
  * rather than left for somebody to invent.
  */
+/*
+ * WhatsApp templates, and the rules that fire them.
+ *
+ * Seeded as drafts, not approved. Meta approves template wording, not this
+ * system, so seeding them approved would assert something only Meta can say —
+ * and the row's own CHECK then refuses to enable them, which is the schema
+ * agreeing. Somebody submits these through the Business Manager and marks
+ * them approved here once Meta has said so.
+ *
+ * Categories matter for cost and for policy: utility is transactional and tied
+ * to something the person did, marketing needs separate consent, and
+ * authentication is one-time codes only.
+ */
+const WA_TEMPLATES = [
+  ['payslip_ready', 'Payslip ready', 'utility', 'On payroll publish', 'Everyone in the run',
+    'Hi {{name}}, your payslip for {{month}} is ready. Net pay {{net}} credited to the account ending {{last4}}.', 'View payslip'],
+  ['leave_decision', 'Leave decision', 'utility', 'On approval or rejection', 'The requester',
+    'Hi {{name}}, your {{type}} leave from {{from}} to {{to}} has been {{decision}} by {{approver}}.', 'Open leave'],
+  ['approval_pending', 'Approvals waiting', 'utility', 'Daily digest', 'Approvers with open items',
+    'Hi {{name}}, you have {{count}} item(s) waiting for your approval.', 'Open approvals'],
+  ['birthday', 'Birthday wish', 'marketing', 'On the day', 'The employee',
+    'Happy birthday {{name}}! Wishing you a great year ahead from everyone at {{company}}.', null],
+  ['anniversary', 'Work anniversary', 'marketing', 'On the day', 'The employee',
+    'Congratulations {{name}} on {{years}} year(s) with {{company}}!', null],
+  ['interview_invite', 'Interview invitation', 'utility', 'On scheduling', 'The candidate',
+    'Hi {{name}}, your interview for {{role}} is scheduled for {{when}}. Joining link: {{link}}.', 'Confirm'],
+  ['offer_released', 'Offer released', 'utility', 'On offer release', 'The candidate',
+    'Hi {{name}}, your offer for {{role}} at {{company}} has been sent to {{email}}. Please respond by {{by}}.', 'View offer'],
+  ['onboarding_task', 'Onboarding reminder', 'utility', 'Before the due date', 'The new joiner',
+    'Hi {{name}}, a reminder that {{task}} is due on {{due}}.', 'Open checklist'],
+  ['attendance_missing', 'Missing punch', 'utility', 'Weekday mid-morning', 'Employees with no punch',
+    'Hi {{name}}, we have no check-in recorded for you today. Please punch in or raise a regularisation.', 'Punch in'],
+  ['timesheet_due', 'Timesheet due', 'utility', 'End of week', 'Open timesheets',
+    'Hi {{name}}, your timesheet for the week of {{week}} is still open. Please submit it.', 'Open timesheet'],
+  ['asset_return', 'Asset return', 'utility', 'Before the last working day', 'The leaver',
+    'Hi {{name}}, please return {{asset}} before your last working day on {{lwd}}.', null],
+  ['otp', 'Sign-in code', 'authentication', 'On two-factor sign-in', 'The signing-in user',
+    '{{code}} is your {{company}} verification code. It expires in 10 minutes. Do not share it.', null],
+];
+
+/* code, template code, when it fires, who it goes to, held to working hours */
+const WA_RULES = [
+  ['R1', 'payslip_ready', 'On payroll publish', 'All employees in the run', true],
+  ['R2', 'leave_decision', 'Immediately on decision', 'The requester', false],
+  ['R3', 'approval_pending', 'Daily at 10:00 local', 'Approvers with pending items', true],
+  ['R4', 'birthday', '09:00 local on the day', 'The employee', true],
+  ['R5', 'anniversary', '09:00 local on the day', 'The employee', true],
+  ['R6', 'interview_invite', 'On schedule and 2 hours before', 'The candidate', false],
+  ['R7', 'offer_released', 'On offer release', 'The candidate', false],
+  ['R8', 'onboarding_task', 'Two days before the due date', 'The new joiner', true],
+  ['R9', 'attendance_missing', 'Weekdays at 11:00 local', 'Employees with no punch', true],
+  ['R10', 'timesheet_due', 'Friday at 16:00 local', 'Employees with an open timesheet', true],
+  ['R11', 'asset_return', 'Three days before the last working day', 'The leaver', true],
+  ['R12', 'otp', 'On every two-factor sign-in', 'The signing-in user', false],
+];
+
 const FBP_COMPONENTS = [
   ['fuel', 'Fuel & Vehicle Maintenance', 28800, 'Tax-free against bills, 2,400 per month', '⛽'],
   ['meal', 'Meal Card', 26400, '50 per meal, 2 meals x 22 days — fully tax-free', '🍱'],
@@ -313,6 +369,32 @@ try {
              ON CONFLICT (tenant_id, code) DO UPDATE SET label = EXCLUDED.label`,
       [tenant, code, label, rank, min, max]);
   }
+  for (const [code, name, cat, trigger, audience, body, cta] of WA_TEMPLATES) {
+    await q(`INSERT INTO message_template (tenant_id, channel, code, name, category, body,
+                                          cta_label, trigger_event, audience)
+             VALUES ($1,'whatsapp',$2,$3,$4,$5,$6,$7,$8)
+             ON CONFLICT (tenant_id, channel, code)
+             DO UPDATE SET name = EXCLUDED.name, body = EXCLUDED.body,
+                           category = EXCLUDED.category, cta_label = EXCLUDED.cta_label,
+                           trigger_event = EXCLUDED.trigger_event, audience = EXCLUDED.audience`,
+      [tenant, code, name, cat, body, cta, trigger, audience]);
+  }
+  /*
+   * Rules start disabled. 0026's trigger refuses to enable one whose template
+   * Meta has not approved, and none of these has been submitted yet — so
+   * seeding them on would fail, correctly.
+   */
+  for (const [code, tpl, when, to, quiet] of WA_RULES) {
+    await q(`INSERT INTO message_rule (tenant_id, code, template_id, fires_when, audience,
+                                      quiet_hours, enabled)
+             SELECT $1,$2,t.id,$3,$4,$5,false
+               FROM message_template t
+              WHERE t.tenant_id = $1 AND t.channel = 'whatsapp' AND t.code = $6
+             ON CONFLICT (tenant_id, code)
+             DO UPDATE SET fires_when = EXCLUDED.fires_when, audience = EXCLUDED.audience,
+                           quiet_hours = EXCLUDED.quiet_hours`,
+      [tenant, code, when, to, quiet, tpl]);
+  }
   for (const [code, name, cap, note, icon] of FBP_COMPONENTS) {
     await q(`INSERT INTO fbp_component (tenant_id, code, name, annual_cap, note, icon)
              VALUES ($1,$2,$3,$4,$5,$6)
@@ -355,7 +437,8 @@ try {
   created.push(`${DEPARTMENTS.length} departments, ${SITES.length} sites, ${PROJECTS.length} projects, ${ASSET_CATEGORIES.length} asset categories, ${EXPENSE_CATEGORIES.length} expense categories, ${TICKET_CATEGORIES.length} ticket categories, `
     + `${GRADES.length} grades, ${LEAVE_TYPES.length} leave types, ${SHIFTS.length} shifts, `
     + `${LETTER_TYPES.length} letter types, ${SECURITY_CONTROLS.length} security controls, `
-    + `${COURSES.length} courses, ${FBP_COMPONENTS.length} benefit components`);
+    + `${COURSES.length} courses, ${FBP_COMPONENTS.length} benefit components, `
+    + `${WA_TEMPLATES.length} message templates, ${WA_RULES.length} rules`);
 
   /* ---- permissions: admin sees everything, the rest is narrowed later ---- */
   const MODULES = ['dashboard', 'employees', 'leave', 'attendance', 'timesheet', 'payroll',

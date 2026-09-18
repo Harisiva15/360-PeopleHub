@@ -1147,8 +1147,28 @@ export interface WaConsentRow {
   consent: WaConsent;
 }
 
+/** One automation rule: a template, a trigger, an audience. */
+export interface WaRule {
+  id: string;
+  /** The template code it fires. */
+  tpl: string;
+  when: string;
+  to: string;
+  /** Held back until local working hours. */
+  quiet: boolean;
+  on: boolean;
+}
+
 export interface WhatsAppService {
   templates(): Promise<WaTemplate[]>;
+  /**
+   * The automation rules — what fires a template, and at whom.
+   *
+   * Added alongside `setRuleEnabled`, which had nothing to list against it:
+   * the screens were rendering rules from a constant and offering a toggle
+   * that went nowhere. Storage arrived in migration 0026.
+   */
+  rules(): Promise<WaRule[]>;
   /** The send log, newest first, optionally narrowed to one person. */
   log(empId?: string): Promise<WaLogEntry[]>;
   stats(): Promise<WaStats>;

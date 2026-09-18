@@ -8,6 +8,12 @@ export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
 
 export const useTemplates = () => useQuery((s) => s.whatsapp.templates(), []);
+/*
+ * The rules were read from a constant in `src/data` while the toggle beside
+ * them called a service — so the list and the switch were describing different
+ * things. Both go through the service now; storage arrived in 0026.
+ */
+export const useRules = () => useQuery((s) => s.whatsapp.rules(), []);
 export const useLog = (empId?: string) => useQuery((s) => s.whatsapp.log(empId), [empId ?? 'all']);
 export const useWaStats = () => useQuery((s) => s.whatsapp.stats(), []);
 export const useConsent = (empId: string) => useQuery((s) => s.whatsapp.consent(empId), [empId]);

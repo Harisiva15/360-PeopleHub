@@ -104,7 +104,7 @@ export const LIVE_MODULES = new Set([
   'celebrations', 'announcements', 'payroll', 'hiring', 'onboarding', 'documents',
   'assets', 'expenses', 'helpdesk', 'performance', 'exit', 'planner', 'settings',
   'shifts', 'tax', 'approvals', 'security', 'learning', 'engagement', 'benefits', 'reports', 'staffing', 'exec',
-  'clients', 'requirements', 'bench', 'placements', 'vendors', 'billing',
+  'clients', 'requirements', 'bench', 'placements', 'vendors', 'billing', 'whatsapp',
 ]);
 
 /**

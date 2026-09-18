@@ -17,6 +17,16 @@ export const useClients = () => useQuery((s) => s.staffing.clients(), []);
 export const useRequirements = () => useQuery((s) => s.staffing.requirements(), []);
 export const useConsultants = () => useQuery((s) => s.staffing.consultants(), []);
 export const useBench = () => useQuery((s) => s.staffing.bench(), []);
+/*
+ * Days on the bench and what that has cost, for one person. Computed by the
+ * service from `bench_since` rather than in the screen: the answer changes
+ * every day, and two places computing it is two places to get it wrong.
+ */
+export const useBenchStanding = (consultantId: string) =>
+  useQuery((s) => s.staffing.benchStanding(consultantId), [consultantId]);
+/** Open requirements this person could be put forward for, best first. */
+export const useMatchesForConsultant = (consultantId: string) =>
+  useQuery((s) => s.staffing.matchesForConsultant(consultantId), [consultantId]);
 export const usePlacements = () => useQuery((s) => s.staffing.placements(), []);
 export const useSubmissions = () => useQuery((s) => s.staffing.submissions(), []);
 export const useInvoices = () => useQuery((s) => s.staffing.invoices(), []);

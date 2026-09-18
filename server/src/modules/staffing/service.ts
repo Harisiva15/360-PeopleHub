@@ -493,112 +493,156 @@ export async function kpi(caller: Caller): Promise<StaffingKPI> {
 
 /* ---------------- matching ---------------- */
 
-export interface MatchRow {
-  requirementId: string;
-  consultantId: string;
-  score: number;
-  /** Why it scored what it did, in the order the reasons were applied. */
-  reasons: string[];
-  /** Margin at the requirement's bill rate and this consultant's cost. */
-  margin: number;
+export interface MatchPart {
+  k: string;
+  v: number;
+  max: number;
+  d: string;
 }
+
+/**
+ * Why a match scored what it did.
+ *
+ * Every component is returned with the score it earned and the score it could
+ * have earned, so a recruiter reads "skills 45 of 60" rather than a single
+ * number they have to trust. A match nobody can account for is one that gets
+ * ignored, and an ignored match is worse than none — it trains people to skip
+ * the screen.
+ */
+export interface MatchExplain {
+  total: number;
+  parts: MatchPart[];
+  /** Multiplier applied for weak work authorisation. 1 when it is fine. */
+  gate: number;
+  eligible: boolean;
+  offshore: boolean;
+  remoteOk: boolean;
+  margin: number;
+  cost: number;
+  bill: number;
+}
+
+export interface MatchRow {
+  consultant: Consultant;
+  requirement: StaffingRequirement;
+  explain: MatchExplain;
+}
+
+/** Work authorisations that let somebody take a role in that country outright. */
+const CLEAR_AUTH = ['citizen', 'permanent resident', 'green card', 'pr', 'opt', 'h1b', 'work permit'];
 
 /**
  * Score one consultant against one requirement.
  *
- * Deliberately explainable rather than clever: a recruiter has to be able to
- * say why somebody was put forward, and a score nobody can account for is one
- * that gets ignored. Skills dominate because they are what the client screens
- * on; everything else adjusts around them.
+ * Skills dominate because they are what the client screens on; availability
+ * and margin adjust around them. The work-authorisation gate is a multiplier
+ * rather than a component: somebody who cannot legally take the role is not a
+ * weaker match, they are not a match, and adding a penalty would let a strong
+ * skills score outvote the law.
  */
-function score(
+function explainMatch(
   req: Record<string, unknown>,
   con: Record<string, unknown>,
-): { score: number; reasons: string[]; margin: number } {
-  const reasons: string[] = [];
-  const wanted = ((req.skills as string[] | null) ?? []).map((s) => s.toLowerCase());
-  const has = ((con.skills as string[] | null) ?? []).map((s) => s.toLowerCase());
+): MatchExplain {
+  const parts: MatchPart[] = [];
 
-  const hits = wanted.filter((s) => has.includes(s));
-  const skillPct = wanted.length ? hits.length / wanted.length : 0;
-  let total = skillPct * 60;
-  reasons.push(wanted.length
-    ? `${hits.length} of ${wanted.length} skills`
-    : 'no skills specified on the requirement');
+  const wanted = ((req.skills as string[] | null) ?? []).map((x) => x.toLowerCase());
+  const has = ((con.skills as string[] | null) ?? []).map((x) => x.toLowerCase());
+  const hits = wanted.filter((x) => has.includes(x));
+  const skill = Math.round((wanted.length ? hits.length / wanted.length : 0) * 60);
+  parts.push({
+    k: 'Skills',
+    v: skill,
+    max: 60,
+    d: wanted.length ? `${hits.length} of ${wanted.length} matched` : 'none specified',
+  });
 
-  /* Same role title is worth something, but less than the skills behind it. */
-  if (String(con.role ?? '').toLowerCase() === String(req.role ?? '').toLowerCase()) {
-    total += 10;
-    reasons.push('same role');
-  }
+  const sameRole = String(con.role ?? '').toLowerCase() === String(req.role ?? '').toLowerCase();
+  parts.push({
+    k: 'Role',
+    v: sameRole ? 10 : 0,
+    max: 10,
+    d: sameRole ? 'same title' : `${con.role ?? '—'} against ${req.role ?? '—'}`,
+  });
 
-  /* Availability. Somebody on the bench can start; somebody placed cannot. */
-  if (con.status === 'bench') {
-    total += 15;
-    reasons.push('on the bench');
-  } else if (con.status === 'internal') {
-    total += 5;
-    reasons.push('internal, would need releasing');
-  } else {
-    reasons.push('currently engaged');
-  }
+  const status = String(con.status ?? '');
+  const availability = status === 'bench' ? 15 : status === 'internal' ? 5 : 0;
+  parts.push({
+    k: 'Availability',
+    v: availability,
+    max: 15,
+    d: status === 'bench' ? 'on the bench'
+      : status === 'internal' ? 'internal, would need releasing' : 'currently engaged',
+  });
 
-  /* Location. A country match matters for work authorisation and timezone. */
-  if (con.country && req.location
-      && String(req.location).toLowerCase().includes(String(con.country).toLowerCase())) {
-    total += 5;
-    reasons.push('same country');
-  }
+  const country = String(con.country ?? '').toLowerCase();
+  const location = String(req.location ?? '').toLowerCase();
+  const sameCountry = Boolean(country) && location.includes(country);
+  parts.push({
+    k: 'Location',
+    v: sameCountry ? 5 : 0,
+    max: 5,
+    d: sameCountry ? 'same country' : 'different country',
+  });
 
-  /* Margin at the asking rate. Below the floor it is not a match worth making. */
+  /* Per-day, so an hourly requirement compares against a daily cost. */
   const bill = Number(req.bill_rate ?? 0) * (req.unit === 'per_hour' ? 8 : 1);
   const cost = Number(con.cost_per_day ?? 0);
   const margin = bill > 0 ? Math.round(((bill - cost) / bill) * 100) : 0;
-  if (margin >= MIN_MARGIN) {
-    total += 10;
-    reasons.push(`${margin}% margin`);
-  } else {
-    total -= 15;
-    reasons.push(`${margin}% margin, under the ${MIN_MARGIN}% floor`);
-  }
+  const marginScore = margin >= MIN_MARGIN ? 10 : 0;
+  parts.push({
+    k: 'Margin',
+    v: marginScore,
+    max: 10,
+    d: `${margin}% against a ${MIN_MARGIN}% floor`,
+  });
 
-  return { score: Math.max(0, Math.min(100, Math.round(total))), reasons, margin };
+  const auth = String(con.work_authorisation ?? '').toLowerCase();
+  const eligible = !sameCountry ? true : CLEAR_AUTH.some((a) => auth.includes(a)) || auth === '';
+  /*
+   * A gate, not a penalty. Somebody who cannot take the role is not a weaker
+   * match — halving is enough to sink them below the threshold without
+   * pretending the skills did not match.
+   */
+  const gate = eligible ? 1 : 0.5;
+
+  const raw = parts.reduce((n, x) => n + x.v, 0);
+  return {
+    total: Math.max(0, Math.min(100, Math.round(raw * gate))),
+    parts,
+    gate,
+    eligible,
+    /* Offshore: working for a client in a country they are not in. */
+    offshore: Boolean(country) && Boolean(location) && !sameCountry,
+    remoteOk: location.includes('remote'),
+    margin,
+    cost,
+    bill,
+  };
 }
 
-/**
- * Both sides of the cross, each with its own parameters.
- *
- * They were sharing one array, which meant the side that did not reference
- * $1 was still handed it — "bind message supplies 1 parameters, but prepared
- * statement requires 0" — and every match query was a 500. A filter and its
- * parameters travel together.
- */
 interface Side { where: string; params: unknown[] }
 
 async function matchRows(db: TenantClient, req: Side, con: Side): Promise<MatchRow[]> {
   const reqs = await db.query(
-    `SELECT id, role, skills, location, bill_rate, unit FROM staffing_requirement
-      WHERE ${req.where}`, req.params);
+    `SELECT * FROM staffing_requirement WHERE ${req.where}`, req.params);
   const cons = await db.query(
-    `SELECT id, role, skills, country, cost_per_day, status FROM consultant
-      WHERE ${con.where}`, con.params);
+    `SELECT * FROM consultant WHERE ${con.where}`, con.params);
 
   const out: MatchRow[] = [];
   for (const r of reqs.rows) {
     for (const c of cons.rows) {
-      const s = score(r, c);
+      const explain = explainMatch(r, c);
       /* Below 40 is noise — it puts a name in front of somebody for no reason. */
-      if (s.score < 40) continue;
+      if (explain.total < 40) continue;
       out.push({
-        requirementId: r.id as string,
-        consultantId: c.id as string,
-        score: s.score,
-        reasons: s.reasons,
-        margin: s.margin,
+        consultant: toConsultant(c),
+        requirement: toRequirement(r),
+        explain,
       });
     }
   }
-  return out.sort((a, b) => b.score - a.score);
+  return out.sort((a, b) => b.explain.total - a.explain.total);
 }
 
 export async function matchesForConsultant(
@@ -625,20 +669,33 @@ export async function matchesForRequirement(
   ));
 }
 
+export interface PlanRow {
+  consultant: Consultant;
+  requirement: StaffingRequirement;
+  score: number;
+  margin: number;
+  benchDays: number;
+}
+
 export interface RedeploymentPlan {
-  /** Bench people with at least one match worth making. */
-  placeable: { consultantId: string; best: MatchRow }[];
-  /** Bench people with none, and what it is costing to hold them. */
-  stuck: { consultantId: string; days: number; cost: number }[];
-  benchCostMonthly: number;
+  picks: PlanRow[];
+  /** Monthly bench cost the plan would recover. */
+  recovered: number;
+  /** Monthly revenue it would unlock, at client bill rates. */
+  revenue: number;
+  benchTotal: number;
+  availableCount: number;
+  openRequirementCount: number;
 }
 
 /**
- * Who on the bench can be moved, and who cannot.
+ * Who on the bench to move where, best first.
  *
- * The useful half is `stuck`: a consultant with no match at all is a decision
- * somebody has to make — retrain, redeploy internally, or release — and the
- * cost of not making it is the number beside them.
+ * A greedy sweep: take the strongest match, commit both sides, move on. Greedy
+ * rather than optimal on purpose — the optimum assumes every pick lands, and a
+ * plan somebody works down in order and abandons halfway is better served by
+ * having its best moves first than by a global arrangement that falls apart
+ * when the second pick declines.
  */
 export async function redeploymentPlan(caller: Caller): Promise<RedeploymentPlan> {
   assertStaffing(caller);
@@ -649,35 +706,55 @@ export async function redeploymentPlan(caller: Caller): Promise<RedeploymentPlan
       { where: "status = 'bench'", params: [] },
     );
 
-    const best = new Map<string, MatchRow>();
-    for (const m of all) {
-      if (!best.has(m.consultantId)) best.set(m.consultantId, m);
-    }
+    const takenCon = new Set<string>();
+    const seats = new Map<string, number>();
+    const picks: PlanRow[] = [];
+    let revenue = 0;
+    let recovered = 0;
 
-    const { rows } = await db.query(
+    const { rows: benchRows } = await db.query(
       `SELECT id, COALESCE(cost_per_day, 0) AS cost_per_day,
               COALESCE((CURRENT_DATE - bench_since)::int, 0) AS days
          FROM consultant WHERE status = 'bench'`);
+    const benchById = new Map(benchRows.map((b) => [b.id as string, b]));
 
-    const placeable: RedeploymentPlan['placeable'] = [];
-    const stuck: RedeploymentPlan['stuck'] = [];
-    let benchCost = 0;
+    for (const m of all) {
+      const conId = m.consultant.id;
+      const reqId = m.requirement.id;
+      if (takenCon.has(conId)) continue;
 
-    for (const c of rows) {
-      const id = c.id as string;
-      benchCost += Number(c.cost_per_day) * WORKING_DAYS;
-      const match = best.get(id);
-      if (match) { placeable.push({ consultantId: id, best: match }); continue; }
-      const days = Number(c.days);
-      stuck.push({
-        consultantId: id,
-        days,
-        cost: Math.round(Math.round((days / 7) * 5) * Number(c.cost_per_day)),
+      const left = seats.get(reqId) ?? (m.requirement.positions - m.requirement.filled);
+      if (left <= 0) continue;
+
+      takenCon.add(conId);
+      seats.set(reqId, left - 1);
+
+      const b = benchById.get(conId);
+      picks.push({
+        consultant: m.consultant,
+        requirement: m.requirement,
+        score: m.explain.total,
+        margin: m.explain.margin,
+        benchDays: b ? Number(b.days) : 0,
       });
+      revenue += m.explain.bill * WORKING_DAYS;
+      recovered += Number(b?.cost_per_day ?? 0) * WORKING_DAYS;
     }
 
-    stuck.sort((a, b) => b.days - a.days);
-    return { placeable, stuck, benchCostMonthly: Math.round(benchCost) };
+    const benchTotal = benchRows.reduce(
+      (n, b) => n + Number(b.cost_per_day) * WORKING_DAYS, 0);
+    const { rows: [open] } = await db.query(
+      `SELECT count(*)::int AS n FROM staffing_requirement
+        WHERE status = 'open' AND filled < positions`);
+
+    return {
+      picks,
+      recovered: Math.round(recovered),
+      revenue: Math.round(revenue),
+      benchTotal: Math.round(benchTotal),
+      availableCount: benchRows.length,
+      openRequirementCount: Number(open!.n),
+    };
   });
 }
 

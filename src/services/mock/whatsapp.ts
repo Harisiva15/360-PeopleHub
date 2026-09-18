@@ -19,6 +19,10 @@ export const whatsappService: WhatsAppService = {
     return ok(WA_TEMPLATES.slice());
   },
 
+  rules() {
+    return ok(WA_RULES.slice());
+  },
+
   log(empId) {
     return ok(empId ? WA_LOG.filter((l) => l.empId === empId) : WA_LOG.slice());
   },
