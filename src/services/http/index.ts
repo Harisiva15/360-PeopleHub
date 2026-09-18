@@ -201,6 +201,27 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       navBadges: () => api.get('/approvals/badges'),
     },
 
+    staffing: {
+      kpi: () => api.get('/staffing/kpi'),
+      clients: () => api.get('/staffing/clients'),
+      sows: () => api.get('/staffing/sows'),
+      rateCards: () => api.get('/staffing/rate-cards'),
+      consultants: () => api.get('/staffing/consultants'),
+      bench: () => api.get('/staffing/bench'),
+      vendors: () => api.get('/staffing/vendors'),
+      invoices: () => api.get('/staffing/invoices'),
+      placements: () => api.get('/staffing/placements'),
+      submissions: () => api.get('/staffing/submissions'),
+      requirements: () => api.get('/staffing/requirements'),
+      openRequirements: () => api.get('/staffing/requirements/open'),
+      moveSubmission: (id, stage) =>
+        api.put(`/staffing/submissions/${id}/stage`, { stage }),
+      matchesForConsultant: (id) => api.get(`/staffing/consultants/${id}/matches`),
+      matchesForRequirement: (id) => api.get(`/staffing/requirements/${id}/matches`),
+      redeploymentPlan: () => api.get('/staffing/redeployment'),
+      benchStanding: (id) => api.get(`/staffing/consultants/${id}/bench-standing`),
+    },
+
     benefits: {
       fbpTotals: (empIds) =>
         (empIds.length ? api.get(`/fbp/totals${qs({ empIds: empIds.join(',') })}`)

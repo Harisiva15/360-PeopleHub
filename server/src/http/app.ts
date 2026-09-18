@@ -112,6 +112,11 @@ import {
 import {
   BenefitsError, declareFbp, fbpPlan, fbpRows, fbpTotals, insuranceCover,
 } from '../modules/benefits/service.ts';
+import {
+  bench, benchStanding, clients, consultants, invoices, kpi, matchesForConsultant,
+  matchesForRequirement, moveSubmission, openRequirements, placements, rateCards,
+  redeploymentPlan, requirements, sows, StaffingError, submissions, vendors,
+} from '../modules/staffing/service.ts';
 
 type Handler = (
   caller: Caller,
@@ -1121,6 +1126,47 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       declareFbp(c, p.empId!, (body as { alloc: Record<string, unknown> }).alloc ?? {}),
   },
+
+  /* ---- staffing ---- */
+  { method: 'GET', pattern: '/staffing/kpi', handler: (c) => kpi(c) },
+  { method: 'GET', pattern: '/staffing/clients', handler: (c) => clients(c) },
+  { method: 'GET', pattern: '/staffing/sows', handler: (c) => sows(c) },
+  { method: 'GET', pattern: '/staffing/rate-cards', handler: (c) => rateCards(c) },
+  { method: 'GET', pattern: '/staffing/consultants', handler: (c) => consultants(c) },
+  { method: 'GET', pattern: '/staffing/bench', handler: (c) => bench(c) },
+  { method: 'GET', pattern: '/staffing/vendors', handler: (c) => vendors(c) },
+  { method: 'GET', pattern: '/staffing/invoices', handler: (c) => invoices(c) },
+  { method: 'GET', pattern: '/staffing/placements', handler: (c) => placements(c) },
+  { method: 'GET', pattern: '/staffing/submissions', handler: (c) => submissions(c) },
+  { method: 'GET', pattern: '/staffing/redeployment', handler: (c) => redeploymentPlan(c) },
+  {
+    /* Literals first — 'open' would otherwise read as a requirement id. */
+    method: 'GET',
+    pattern: '/staffing/requirements/open',
+    handler: (c) => openRequirements(c),
+  },
+  { method: 'GET', pattern: '/staffing/requirements', handler: (c) => requirements(c) },
+  {
+    method: 'GET',
+    pattern: '/staffing/requirements/:id/matches',
+    handler: (c, _r, p) => matchesForRequirement(c, p.id!),
+  },
+  {
+    method: 'GET',
+    pattern: '/staffing/consultants/:id/matches',
+    handler: (c, _r, p) => matchesForConsultant(c, p.id!),
+  },
+  {
+    method: 'GET',
+    pattern: '/staffing/consultants/:id/bench-standing',
+    handler: (c, _r, p) => benchStanding(c, p.id!),
+  },
+  {
+    method: 'PUT',
+    pattern: '/staffing/submissions/:id/stage',
+    handler: (c, _r, p, body) =>
+      moveSubmission(c, p.id!, (body as { stage: string }).stage),
+  },
 ];
 
 export class NotFound extends Error {}
@@ -1236,6 +1282,12 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof HiringError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof StaffingError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
