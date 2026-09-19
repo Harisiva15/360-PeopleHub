@@ -150,11 +150,20 @@ check('no activity is dated in the future',
  * is the assertion that would catch a timeline drifting away from the funnel
  * on the same screen.
  */
+/*
+ * Counted against submissions that have actually been made. The generated book
+ * carries a handful dated slightly ahead of today — an artefact of the pipeline
+ * being built from requirement dates — and a candidate cannot have been put
+ * forward tomorrow, so the timeline is right to stay silent about them.
+ */
 const submissionLines = REQUIREMENTS.filter((r) => {
   const logged = activityFor(r.id).filter((a) => a.kind === 'submitted').length;
-  return logged !== SUBMISSIONS.filter((s) => s.reqId === r.id).length;
+  const made = SUBMISSIONS.filter((s) => s.reqId === r.id && s.submittedOn <= ymd(TODAY)).length;
+  return logged !== made;
 });
-check('the timeline logs exactly one line per submission', submissionLines.length, 0);
+check('the timeline logs one line per submission that has been made', submissionLines.length, 0);
+check('no submission is dated in the future on a line that was logged',
+  JOB_ACTIVITY.filter((a) => a.kind === 'submitted' && a.at.slice(0, 10) > ymd(TODAY)).length, 0);
 
 /*
  * Placements that have not started yet are not on the timeline — a consultant

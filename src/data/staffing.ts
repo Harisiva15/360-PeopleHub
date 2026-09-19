@@ -1057,6 +1057,16 @@ export const JOB_ACTIVITY: JobActivity[] = [];
     summary: string,
     extra: { qty?: number; actorId?: string | null; refId?: string } = {},
   ) => {
+    /*
+     * A timeline records what has happened, so nothing lands on it with a
+     * future date. Enforced here rather than at each call site: three of them
+     * derive a date by adding a few days to a submission, and a submission
+     * from yesterday plus four days is next week. Two of those were guarded
+     * and the third was not, which is precisely the kind of omission a shared
+     * guard exists to make impossible.
+     */
+    if (when.slice(0, 10) > ymd(TODAY)) return;
+
     JOB_ACTIVITY.push({
       id: uid('ACT'),
       reqId: r.id,

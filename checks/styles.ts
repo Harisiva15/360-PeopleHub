@@ -92,6 +92,83 @@ ok(
   `off the scale: ${[...new Set(offScale)].join(', ')}`,
 );
 
+/* ---------------- the flyout's geometry is stated twice ---------------- */
+
+/*
+ * `NavFlyout.tsx` places the panel before it paints, from constants that have
+ * to match the stylesheet. Nothing warns you when one moves and the other does
+ * not — the panel just opens a few pixels off, which nobody reports and nobody
+ * can find. So the two are compared here, and the brief's own numbers are
+ * asserted alongside them so a later tidy cannot quietly undo them.
+ */
+const fly = readFileSync(join(root, 'src/shell/NavFlyout.tsx'), 'utf8');
+
+const constOf = (name: string): number =>
+  Number(new RegExp(`const ${name} = ([0-9.]+)`).exec(fly)?.[1]);
+
+const ruleOf = (sel: string): string =>
+  new RegExp(`\\${sel}\\{[^}]*\\}`).exec(css)?.[0] ?? '';
+
+const pxIn = (rule: string, prop: string): number =>
+  Number(new RegExp(`${prop}:\\s*(\\d+)px`).exec(rule)?.[1]);
+
+const header = ruleOf('.nav-fly-h');
+const body = ruleOf('.nav-fly-b');
+const item = ruleOf('.nav-fly-i');
+
+const cssHeader = pxIn(header, 'min-height');
+const cssItem = pxIn(item, 'min-height');
+const cssGap = pxIn(body, 'gap');
+const cssPadY = pxIn(body, 'padding');
+
+const agrees = (label: string, inCode: number, inCss: number) =>
+  ok(`flyout ${label} agrees between component and stylesheet`, inCode === inCss,
+    `component ${inCode}, stylesheet ${inCss}`);
+
+agrees('heading height', constOf('HEADER_H'), cssHeader);
+agrees('item height', constOf('ITEM_H'), cssItem);
+agrees('item gap', constOf('ITEM_GAP'), cssGap);
+agrees('body padding', constOf('BODY_PAD'), cssPadY * 2);
+
+ok(`flyout items stand 40-42px (${cssItem})`, cssItem >= 40 && cssItem <= 42);
+ok(`flyout gap is 2-4px (${cssGap})`, cssGap >= 2 && cssGap <= 4);
+ok(`flyout padding is 18-20px (${cssPadY})`, cssPadY >= 18 && cssPadY <= 20);
+ok(`flyout heading is about 44px (${cssHeader})`, cssHeader >= 42 && cssHeader <= 46);
+ok('flyout is sized by its contents, not the viewport',
+  !/\.nav-fly\{[^}]*height:\s*(100%|100vh)/.test(css));
+ok('flyout scrolls internally past its cap',
+  /\.nav-fly-b\{[^}]*overflow-y:\s*auto/.test(css));
+ok('flyout heading stays put while the body scrolls',
+  /\.nav-fly-h\{[^}]*position:\s*sticky/.test(css));
+
+/* ---------------- where the panel lands ---------------- */
+
+/*
+ * The placement is arithmetic, so it can simply be run. What matters is that a
+ * short section opens level with the item that opened it, and a long one stops
+ * before it runs off the bottom of the screen — which is the whole reason the
+ * height is derived rather than left to the browser.
+ */
+const { placeFlyout, MAX_VH } = await import('../src/shell/NavFlyout');
+
+const VP = 900;
+const EDGE = 12;
+
+const shortAt = placeFlyout({ top: 300 } as DOMRect, 3, VP);
+ok('a short section opens level with the item that opened it', shortAt === 300, String(shortAt));
+
+const nearBottom = placeFlyout({ top: 860 } as DOMRect, 3, VP);
+ok('a section near the bottom is pulled back inside the screen',
+  nearBottom < 860 && nearBottom >= EDGE, String(nearBottom));
+
+const tall = placeFlyout({ top: 700 } as DOMRect, 40, VP);
+ok('a long section is capped rather than running off the screen',
+  tall + VP * MAX_VH <= VP - EDGE + 1, `top ${tall}, cap ${Math.round(VP * MAX_VH)}`);
+
+ok('nothing is ever placed above the top edge',
+  placeFlyout({ top: 0 } as DOMRect, 40, VP) >= EDGE);
+ok('the cap is the 70-75vh the brief asks for', MAX_VH >= 0.70 && MAX_VH <= 0.75, String(MAX_VH));
+
 /* ---------------- the spread, as information ---------------- */
 
 const spread = (label: string, re: RegExp) => {
@@ -115,7 +192,7 @@ const ratchet = (label: string, got: number, cap: number) =>
 
 ratchet('font-size', sizes, 31);
 ratchet('gap', gaps, 28);
-ratchet('padding', pads, 102);
+ratchet('padding', pads, 104);
 
 console.log();
 if (failed) {

@@ -1869,3 +1869,75 @@ button.celeb-who:hover b{color:var(--brand)}
 
 /* The caret is drawn now, so the rotation applies to the element not a glyph. */
 .nav-caret{display:grid;place-items:center;opacity:.55}
+
+/* ---------- the collapsed rail's flyout ---------- */
+
+/*
+ * A section's views, beside the rail rather than inside it.
+ *
+ * Height comes from the contents: `height: auto` with a cap, so three views
+ * make a short panel instead of a tall one with a blank bottom. The heading is
+ * sticky, which only matters once the cap is reached and the body scrolls —
+ * and that is exactly when knowing which section you are in stops being
+ * obvious.
+ *
+ * The numbers here are mirrored in `src/shell/NavFlyout.tsx`, which places the
+ * panel before it paints rather than measuring it afterwards. `checks/styles.ts`
+ * asserts the two agree.
+ */
+.nav-fly{
+  position:fixed;left:var(--nav-w-tight);margin-left:9px;
+  width:238px;z-index:130;
+  display:flex;flex-direction:column;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  box-shadow:var(--shadow-lg);
+  /* So the radius clips the scrolling body rather than being drawn over. */
+  overflow:hidden;
+  animation:flyin .16s cubic-bezier(.4,0,.2,1);
+}
+.nav-fly:focus{outline:none}
+
+@keyframes flyin{from{transform:translateX(-6px);opacity:0}to{transform:none;opacity:1}}
+
+.nav-fly-h{
+  flex:0 0 auto;position:sticky;top:0;z-index:1;
+  display:flex;align-items:center;gap:10px;
+  min-height:44px;padding:0 8px 0 16px;
+  background:var(--surface);border-bottom:1px solid var(--line);
+  font-size:13px;font-weight:700;color:var(--ink);letter-spacing:-.15px;
+}
+.nav-fly-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-fly-x{
+  flex:0 0 auto;width:28px;height:28px;display:grid;place-items:center;
+  border:0;background:none;border-radius:var(--r-xs);cursor:pointer;color:var(--ink-3);
+  transition:background .13s ease,color .13s ease;
+}
+.nav-fly-x:hover{background:var(--surface-3);color:var(--ink)}
+
+.nav-fly-b{
+  overflow-y:auto;
+  padding:18px 16px;
+  display:flex;flex-direction:column;gap:3px;
+}
+
+.nav-fly-i{
+  display:flex;align-items:center;gap:10px;
+  min-height:40px;padding:0 10px;
+  border-radius:var(--r-sm);
+  color:var(--ink-2);font-size:13px;font-weight:500;text-decoration:none;
+  transition:background .13s ease,color .13s ease;
+}
+.nav-fly-i:hover{background:var(--brand-wash);color:var(--brand-ink)}
+.nav-fly-i.on{background:var(--brand);color:#fff;font-weight:600}
+.nav-fly-i.on .nav-dot{opacity:1}
+.nav-fly-n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-fly-i .pill{
+  flex:0 0 auto;background:var(--crit-solid);color:#fff;
+  font-size:10px;font-weight:700;padding:1px 6px;border-radius:var(--r-pill);
+}
+
+/* The rail is an overlay at full width on a phone; there is no collapsed rail
+   to fly out from. */
+@media (max-width:860px){ .nav-fly{display:none} }

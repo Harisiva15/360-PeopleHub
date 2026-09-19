@@ -9,6 +9,8 @@ import { Avatar } from '../components/ui';
 import { Icon } from '../components/icons';
 import { TopBar } from './TopBar';
 import { PageActionsTarget } from './PageActions';
+import { NavFlyout, placeFlyout } from './NavFlyout';
+import type { FlyoutState } from './NavFlyout';
 import type { ReactNode } from 'react';
 
 const isMobile = () => window.matchMedia('(max-width: 860px)').matches;
@@ -25,8 +27,16 @@ export function Shell({ children }: { children: ReactNode }) {
   const [tight, setTight] = useState<boolean>(() => {
     try { return localStorage.getItem('nav.tight') === '1'; } catch { return false; }
   });
+  /*
+   * The section whose views are open beside the collapsed rail. Only ever set
+   * while the rail is collapsed — expanded, the views open inline where there
+   * is room for them.
+   */
+  const [flyout, setFlyout] = useState<FlyoutState | null>(null);
+
   const toggleTight = () => setTight((t) => {
     try { localStorage.setItem('nav.tight', t ? '0' : '1'); } catch { /* fine */ }
+    setFlyout(null);
     return !t;
   });
   /* Where a page's primary action lands. Held in state, not a ref, so the
@@ -84,6 +94,7 @@ export function Shell({ children }: { children: ReactNode }) {
   if (shownPath !== pathname) {
     setShownPath(pathname);
     if (navOpen) setNavOpen(false);
+    if (flyout) setFlyout(null);
   }
 
   const badges = useNavBadges();
@@ -163,7 +174,20 @@ export function Shell({ children }: { children: ReactNode }) {
               <div className={'nav-sec' + (open ? ' open' : '')} key={g.group}>
                 <button
                   className={'nav-top' + (here && !open ? ' here' : '')}
-                  onClick={() => { if (tight && !mobile) toggleTight(); else toggle(g.group); }}
+                  onClick={(e) => {
+                    if (!(tight && !mobile)) { toggle(g.group); return; }
+                    /* Clicking the open section again closes it. */
+                    if (flyout?.group.group === g.group) { setFlyout(null); return; }
+                    setFlyout({
+                      group: g,
+                      items: shown,
+                      top: placeFlyout(
+                        e.currentTarget.getBoundingClientRect(),
+                        shown.length,
+                        window.innerHeight,
+                      ),
+                    });
+                  }}
                   aria-expanded={open}
                   title={tight ? g.group : undefined}
                 >
@@ -218,6 +242,15 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </aside>
+
+      {flyout && tight && !mobile && (
+        <NavFlyout
+          state={flyout}
+          badges={badges}
+          isCurrent={(i) => (i.to ? hrefOf(i) === pathname + search : route === i.k && !search)}
+          onClose={() => setFlyout(null)}
+        />
+      )}
 
       {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}
 
