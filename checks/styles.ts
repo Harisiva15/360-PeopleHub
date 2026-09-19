@@ -106,8 +106,15 @@ const fly = readFileSync(join(root, 'src/shell/NavFlyout.tsx'), 'utf8');
 const constOf = (name: string): number =>
   Number(new RegExp(`const ${name} = ([0-9.]+)`).exec(fly)?.[1]);
 
+/**
+ * One rule's body, by selector.
+ *
+ * The stylesheet is written both ways — `.nav-fly{` and `.nav-top {` — so the
+ * space before the brace is optional here. It was not, and the rail's own
+ * metrics silently read as NaN rather than failing on their values.
+ */
 const ruleOf = (sel: string): string =>
-  new RegExp(`\\${sel}\\{[^}]*\\}`).exec(css)?.[0] ?? '';
+  new RegExp(`\\${sel}\\s*\\{[^}]*\\}`).exec(css)?.[0] ?? '';
 
 const pxIn = (rule: string, prop: string): number =>
   Number(new RegExp(`${prop}:\\s*(\\d+)px`).exec(rule)?.[1]);
@@ -130,10 +137,34 @@ agrees('item height', constOf('ITEM_H'), cssItem);
 agrees('item gap', constOf('ITEM_GAP'), cssGap);
 agrees('body padding', constOf('BODY_PAD'), cssPadY * 2);
 
-ok(`flyout items stand 40-42px (${cssItem})`, cssItem >= 40 && cssItem <= 42);
 ok(`flyout gap is 2-4px (${cssGap})`, cssGap >= 2 && cssGap <= 4);
-ok(`flyout padding is 18-20px (${cssPadY})`, cssPadY >= 18 && cssPadY <= 20);
-ok(`flyout heading is about 44px (${cssHeader})`, cssHeader >= 42 && cssHeader <= 46);
+
+/*
+ * The brief's own dimensions for the panel and the rail, asserted so a later
+ * tidy cannot quietly undo them.
+ */
+const flyRule = ruleOf('.nav-fly');
+const flyWidth = pxIn(flyRule, 'width');
+ok(`flyout is 300-360px wide (${flyWidth})`, flyWidth >= 300 && flyWidth <= 360);
+ok('flyout uses the 14-16px radius', /\.nav-fly\{[^}]*border-radius:var\(--r-lg\)/.test(css));
+
+/* The rail's own items — §15. */
+const navTop = ruleOf('.nav-top');
+const topH = pxIn(navTop, 'min-height');
+const topSize = pxIn(navTop, 'font-size');
+ok(`rail items stand 42-46px (${topH})`, topH >= 42 && topH <= 46);
+ok(`rail item text is 14px (${topSize})`, topSize === 14);
+ok('rail items sit 2-4px apart',
+  (() => { const m = /margin-bottom:\s*(\d+)px/.exec(navTop); return m ? +m[1] >= 2 && +m[1] <= 4 : false; })());
+
+/*
+ * The whole point of the redesign: no section expands inside the rail, so the
+ * sidebar never changes height and nothing below an open section moves.
+ */
+ok('no accordion survives in the rail', !/\.nav-subs?\s*\{/.test(css));
+ok('the rail is one fixed width', !/\.sidebar\.tight\s*\{/.test(css));
+ok('the flyout floats rather than sitting in the layout',
+  /\.nav-fly\{[^}]*position:fixed/.test(css));
 ok('flyout is sized by its contents, not the viewport',
   !/\.nav-fly\{[^}]*height:\s*(100%|100vh)/.test(css));
 ok('flyout scrolls internally past its cap',
@@ -192,7 +223,7 @@ const ratchet = (label: string, got: number, cap: number) =>
 
 ratchet('font-size', sizes, 31);
 ratchet('gap', gaps, 28);
-ratchet('padding', pads, 104);
+ratchet('padding', pads, 106);
 
 console.log();
 if (failed) {

@@ -346,33 +346,14 @@ a{color:var(--brand);text-decoration:none}
  * narrow case is how the two drift apart.
  */
 .sidebar{transition:width .2s cubic-bezier(.4,0,.2,1),flex-basis .2s cubic-bezier(.4,0,.2,1)}
-.sidebar.tight{width:var(--nav-w-tight);flex-basis:var(--nav-w-tight)}
-.sidebar.tight .brand{padding:14px 10px 12px}
-.sidebar.tight .brand img{max-width:44px}
-.sidebar.tight .brand .cap,
-.sidebar.tight .nav-label,
-.sidebar.tight .nav-caret,
-.sidebar.tight .rail-foot .nm,
-.sidebar.tight .rail-foot .mt{display:none}
-.sidebar.tight .nav-top{justify-content:center;padding:10px 0}
-.sidebar.tight .nav-top .pill{
-  position:absolute;top:3px;right:8px;margin:0;padding:0 4px;min-width:15px;
-}
-.sidebar.tight .nav-top{position:relative}
-.sidebar.tight .rail-foot .row{justify-content:center}
-.sidebar.tight .rail-foot .btn{display:none}
-
-/* The collapse control, on the brand block so it is always in the same place. */
-.rail-tight{
-  position:absolute;top:14px;right:8px;width:24px;height:24px;
-  display:grid;place-items:center;border-radius:var(--r-xs);cursor:pointer;
-  border:1px solid var(--rail-line);background:var(--rail-2);color:var(--rail-ink);
-  transition:background .13s ease,color .13s ease,transform .2s ease;
-}
-.rail-tight:hover{background:var(--rail-on);color:#fff;border-color:transparent}
-/* The chevron points the way it will move the rail. */
-.sidebar:not(.tight) .rail-tight{transform:rotate(180deg)}
-.sidebar.tight .rail-tight{top:10px;right:calc(50% - 12px)}
+/*
+ * The rail no longer collapses.
+ *
+ * Collapsing existed so a section's views had somewhere to go that was not
+ * inside the rail. Now they always open beside it, so the rail is one width,
+ * and the control that shrank it — along with every rule for the narrow
+ * variant — has nothing left to do.
+ */
 .brand img{display:block;width:100%;max-width:150px;height:auto;margin-inline:auto}
 
 /*
@@ -1781,14 +1762,27 @@ button.celeb-who:hover b{color:var(--brand)}
    ground instead of staying black-on-navy. */
 .nav-find-in::-webkit-search-cancel-button { filter: invert(1); opacity: .55; }
 
+/*
+ * A top-level item. One height for every one of them, whether it is a plain
+ * link or a section that opens a panel — a rail where some rows are taller
+ * than others reads as a mistake before it reads as a hierarchy.
+ */
 .nav-top {
   display: flex; align-items: center; gap: 11px; width: 100%;
-  padding: 9px 12px; margin-bottom: 2px; border: 0; border-radius:var(--r-md);
+  min-height: 44px; padding: 0 14px; margin-bottom: 3px;
+  border: 0; border-radius:var(--r-md);
   background: transparent; color: var(--rail-ink);
-  font: inherit; font-size: 13.5px; font-weight: 500;
+  font: inherit; font-size: 14px; font-weight: 500;
   cursor: pointer; text-align: left;
-  transition: background .13s ease, color .13s ease;
+  transition: background .15s ease, color .15s ease;
 }
+/* The chevron leans into the direction the panel will open. */
+.nav-top .nav-caret{transition:transform .15s ease,opacity .15s ease}
+.nav-top:hover .nav-caret{transform:translateX(2px);opacity:.85}
+.nav-top.open .nav-caret{transform:translateX(3px);opacity:1}
+.nav-top:hover .ic,.nav-top.open .ic{opacity:1}
+/* Inside this section, but not on the section itself. */
+.nav-top.open{background:var(--rail-2);color:var(--rail-ink-hi)}
 .nav-top:hover { background: var(--rail-2); color: var(--rail-ink-hi); }
 .nav-label { flex: 1; min-width: 0; }
 .nav-top .ic {
@@ -1821,32 +1815,12 @@ button.celeb-who:hover b{color:var(--brand)}
   padding: 1px 6px; border-radius:var(--r-pill);
 }
 .nav-caret { font-size: 14px; opacity: .5; transition: transform .15s ease; }
-.nav-sec.open .nav-caret { transform: rotate(90deg); }
-.nav-sec.open > .nav-top { color: var(--rail-ink-hi); }
-
-.nav-subs {
-  background: var(--rail-sunk);
-  border-radius:var(--r-md);
-  padding: 5px;
-  margin: 0 0 6px;
-}
-.nav-sub {
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 10px; border-radius:var(--r-sm);
-  color: var(--rail-ink-dim); font-size: 12.5px; font-weight: 500;
-  transition: background .13s ease, color .13s ease;
-}
-.nav-sub:hover { background: var(--rail-2); color: var(--rail-ink-hi); }
-.nav-sub.on { background: var(--rail-on); color: #fff; font-weight: 600; }
-.nav-dot {
-  width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto;
-  background: currentColor; opacity: .5;
-}
-.nav-sub.on .nav-dot { opacity: 1; }
-.nav-sub .pill {
-  background: var(--crit-solid); color: #fff; font-size: 10px; font-weight: 700;
-  padding: 1px 6px; border-radius:var(--r-pill);
-}
+/*
+ * The accordion is gone. Sections opened inside the rail, which made the
+ * sidebar taller as you used it and slid everything below an open section down
+ * the screen — so the item somebody was reaching for moved while they reached.
+ * Views open in .nav-fly beside the rail now.
+ */
 
 /* ---------- icons ---------- */
 
@@ -1886,29 +1860,42 @@ button.celeb-who:hover b{color:var(--brand)}
  * asserts the two agree.
  */
 .nav-fly{
-  position:fixed;left:var(--nav-w-tight);margin-left:9px;
-  width:238px;z-index:130;
+  position:fixed;left:var(--nav-w);margin-left:10px;
+  width:330px;z-index:130;
   display:flex;flex-direction:column;
   background:var(--surface);
   border:1px solid var(--line);
-  border-radius:var(--r);
+  border-radius:var(--r-lg);
   box-shadow:var(--shadow-lg);
   /* So the radius clips the scrolling body rather than being drawn over. */
   overflow:hidden;
-  animation:flyin .16s cubic-bezier(.4,0,.2,1);
+  animation:flyin .17s cubic-bezier(.4,0,.2,1);
 }
 .nav-fly:focus{outline:none}
 
-@keyframes flyin{from{transform:translateX(-6px);opacity:0}to{transform:none;opacity:1}}
+@keyframes flyin{from{transform:translateX(-8px);opacity:0}to{transform:none;opacity:1}}
 
+/*
+ * The heading names the section and says what it is for. Sticky, which only
+ * matters once the body scrolls — and that is exactly when knowing which
+ * section you are inside stops being obvious.
+ */
 .nav-fly-h{
   flex:0 0 auto;position:sticky;top:0;z-index:1;
-  display:flex;align-items:center;gap:10px;
-  min-height:44px;padding:0 8px 0 16px;
+  display:flex;align-items:flex-start;gap:11px;
+  min-height:76px;padding:16px 10px 14px 18px;
   background:var(--surface);border-bottom:1px solid var(--line);
-  font-size:13px;font-weight:700;color:var(--ink);letter-spacing:-.15px;
 }
-.nav-fly-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-fly-ic{
+  flex:0 0 auto;width:34px;height:34px;display:grid;place-items:center;
+  border-radius:var(--r-sm);background:var(--brand-wash);color:var(--brand-ink);
+}
+.nav-fly-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.nav-fly-t b{
+  font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);
+}
+.nav-fly-t i{font-size:12.5px;font-style:normal;color:var(--ink-2);line-height:1.4}
 .nav-fly-x{
   flex:0 0 auto;width:28px;height:28px;display:grid;place-items:center;
   border:0;background:none;border-radius:var(--r-xs);cursor:pointer;color:var(--ink-3);
@@ -1918,29 +1905,55 @@ button.celeb-who:hover b{color:var(--brand)}
 
 .nav-fly-b{
   overflow-y:auto;
-  padding:18px 16px;
-  display:flex;flex-direction:column;gap:3px;
+  padding:10px;
+  display:flex;flex-direction:column;gap:2px;
 }
 
+/*
+ * A navigation card rather than a bullet: icon, title, and one line saying
+ * what the view is for. The line is the reason this is not a list — somebody
+ * who does not already know the product cannot tell "Calibration" from
+ * "Review cycle" by name alone.
+ */
 .nav-fly-i{
-  display:flex;align-items:center;gap:10px;
-  min-height:40px;padding:0 10px;
+  display:flex;align-items:flex-start;gap:11px;
+  min-height:52px;padding:8px 10px;
   border-radius:var(--r-sm);
-  color:var(--ink-2);font-size:13px;font-weight:500;text-decoration:none;
-  transition:background .13s ease,color .13s ease;
+  color:var(--ink);text-decoration:none;
+  transition:background .15s ease,color .15s ease;
 }
-.nav-fly-i:hover{background:var(--brand-wash);color:var(--brand-ink)}
-.nav-fly-i.on{background:var(--brand);color:#fff;font-weight:600}
-.nav-fly-i.on .nav-dot{opacity:1}
-.nav-fly-n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-fly-i-ic{
+  flex:0 0 auto;width:26px;height:26px;display:grid;place-items:center;
+  margin-top:1px;border-radius:var(--r-xs);
+  color:var(--ink-3);transition:color .15s ease,background .15s ease;
+}
+.nav-fly-i-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.nav-fly-i-t b{font-size:13px;font-weight:600;letter-spacing:-.1px}
+.nav-fly-i-t i{font-size:11.5px;font-style:normal;color:var(--ink-3);line-height:1.35}
+
+.nav-fly-i:hover{background:var(--surface-2)}
+.nav-fly-i:hover .nav-fly-i-ic{color:var(--brand)}
+.nav-fly-i.on{background:var(--brand-wash)}
+.nav-fly-i.on .nav-fly-i-t b{color:var(--brand-ink)}
+.nav-fly-i.on .nav-fly-i-ic{color:var(--brand);background:var(--surface)}
+
 .nav-fly-i .pill{
-  flex:0 0 auto;background:var(--crit-solid);color:#fff;
+  flex:0 0 auto;margin-top:2px;background:var(--crit-solid);color:#fff;
   font-size:10px;font-weight:700;padding:1px 6px;border-radius:var(--r-pill);
 }
 
-/* The rail is an overlay at full width on a phone; there is no collapsed rail
-   to fly out from. */
-@media (max-width:860px){ .nav-fly{display:none} }
+/*
+ * On a phone the panel is a full-height sheet from the right, not a floating
+ * card beside a rail that is itself an overlay. Desktop dimensions on a 390px
+ * screen would leave a panel wider than the screen it floats over.
+ */
+.nav-fly-scrim{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:125;animation:fade .16s}
+.nav-fly.sheet{
+  left:auto;right:0;top:0;bottom:0;margin:0;
+  width:min(360px,100%);max-height:none;border-radius:0;border-right:0;
+  animation:slidein .18s;
+}
+
 
 /* ---------- user administration ---------- */
 
@@ -1960,3 +1973,62 @@ button.celeb-who:hover b{color:var(--brand)}
 
 /* A table row's checkbox column, which should not stretch with the content. */
 .tbl input[type=checkbox]{width:15px;height:15px;accent-color:var(--brand);cursor:pointer}
+
+/* ---------- search results and favourites in the rail ---------- */
+
+/*
+ * While searching, the rail lists views rather than sections — somebody
+ * searching "disbursal" has already failed to know it lives under Payroll,
+ * which is why they are searching.
+ */
+.nav-hit{
+  display:flex;align-items:center;gap:11px;width:100%;
+  padding:8px 12px;margin-bottom:2px;border-radius:var(--r-md);
+  color:var(--rail-ink);text-decoration:none;
+  transition:background .13s ease,color .13s ease;
+}
+.nav-hit:hover{background:var(--rail-2);color:var(--rail-ink-hi)}
+.nav-hit.on{background:var(--rail-on);color:#fff}
+.nav-hit .ic{width:20px;flex:0 0 auto;display:grid;place-items:center;opacity:.8}
+.nav-hit-t{display:flex;flex-direction:column;min-width:0;gap:1px}
+.nav-hit-t b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-hit-t i{font-size:11px;font-style:normal;opacity:.7}
+.nav-none{padding:14px 12px;font-size:12.5px;color:var(--rail-ink-dim)}
+
+/*
+ * Pinned views. Small on purpose: at more than a handful this stops being
+ * faster than the menu it shortcuts.
+ */
+.nav-fav{padding:8px 10px 4px;border-top:1px solid var(--rail-line)}
+.nav-fav-h{
+  font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--rail-ink-dim);padding:0 2px 6px;
+}
+.nav-fav-i{
+  display:flex;align-items:center;gap:8px;
+  padding:6px 8px;border-radius:var(--r-xs);
+  color:var(--rail-ink-dim);font-size:12.5px;text-decoration:none;
+  transition:background .13s ease,color .13s ease;
+}
+.nav-fav-i:hover{background:var(--rail-2);color:var(--rail-ink-hi)}
+.nav-fav-i.on{color:var(--rail-ink-hi)}
+.nav-fav-i>span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-fav-x{
+  flex:0 0 auto;width:20px;height:20px;display:grid;place-items:center;
+  border:0;background:none;color:inherit;opacity:0;cursor:pointer;border-radius:var(--r-xs);
+}
+.nav-fav-i:hover .nav-fav-x{opacity:.65}
+.nav-fav-x:hover{opacity:1!important;background:var(--rail-sunk)}
+
+/* The star that pins the page you are on. In the content, because it is
+   about this page rather than about the menu. */
+.fav-pin{
+  display:inline-flex;align-items:center;gap:6px;
+  margin-bottom:12px;padding:5px 11px;
+  border:1px solid var(--line);border-radius:var(--r-pill);
+  background:var(--surface);color:var(--ink-3);
+  font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;
+  transition:background .14s ease,color .14s ease,border-color .14s ease;
+}
+.fav-pin:hover{border-color:var(--line-2);color:var(--ink-2)}
+.fav-pin.on{background:var(--brand-wash);border-color:color-mix(in srgb,var(--brand) 30%,transparent);color:var(--brand-ink)}

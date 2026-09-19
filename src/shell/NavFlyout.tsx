@@ -1,22 +1,25 @@
 /**
- * A section's views, opened beside the collapsed rail.
+ * A section's views, opened beside the rail.
  *
- * With the rail at 68px there is nowhere to put a sub-item, so the rail used
- * to answer a click on a section by expanding itself back to 230px. That works
- * but it is the wrong trade: somebody who collapsed the rail wants the space,
- * and taking it back every time they navigate means they collapse it again a
- * moment later.
+ * This is the only way a submenu appears. The rail used to expand sections
+ * inside itself, which cost twice: the sidebar grew taller as you opened
+ * things, and everything below the open section slid down the screen — so the
+ * item somebody was reaching for moved while they reached for it.
+ *
+ * **It floats.** Fixed position, above the content, which therefore does not
+ * shift by a pixel when one opens. The rail does not widen either. Both of
+ * those were the point of moving away from the accordion.
  *
  * **It is sized by its contents.** Height comes from the items, so a section
- * with three views is a short panel rather than a tall one with a blank
- * bottom. Only past `MAX_VH` does it stop growing and scroll, and only then
- * does the heading need to be sticky — which it is, so the section you are
- * inside stays named while you scroll its views.
+ * with four views is a short panel rather than a tall one with a blank bottom.
+ * Past `MAX_VH` it stops growing and scrolls, and only then does the sticky
+ * heading earn its keep — which is exactly when knowing which section you are
+ * inside stops being obvious.
  *
  * **Positioned before it paints, not after.** The top is computed from the
- * trigger's own rectangle and clamped to the viewport in the click handler, so
- * the panel appears where it belongs. Measuring after mount and correcting
- * would show one frame in the wrong place, which reads as a flicker.
+ * trigger's own rectangle and clamped to the viewport in the click handler.
+ * Measuring after mount and correcting would show one frame in the wrong
+ * place, which reads as a flicker.
  */
 
 import { useEffect, useRef } from 'react';
@@ -29,11 +32,11 @@ import { Icon } from '../components/icons';
 export const MAX_VH = 0.72;
 
 /** Matches the CSS, and used to place the panel before it renders. */
-const HEADER_H = 44;
-const ITEM_H = 40;
-const ITEM_GAP = 3;
-const BODY_PAD = 36;      /* 18 top + 18 bottom */
-const EDGE = 12;          /* breathing room against the viewport edge */
+const HEADER_H = 76;
+const ITEM_H = 52;
+const ITEM_GAP = 2;
+const BODY_PAD = 20;
+const EDGE = 16;
 
 /**
  * Where to put a panel opened from `trigger`, given how many views it holds.
@@ -56,12 +59,14 @@ export interface FlyoutState {
 }
 
 export function NavFlyout({
-  state, badges, isCurrent, onClose,
+  state, badges, isCurrent, onClose, mobile,
 }: {
   state: FlyoutState;
   badges: Record<string, number>;
   isCurrent: (i: NavItem) => boolean;
   onClose: () => void;
+  /** On a phone the panel is a full-height drawer, not a floating card. */
+  mobile: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
 
@@ -74,7 +79,7 @@ export function NavFlyout({
       const t = e.target as Node;
       /*
        * A click on the rail closes it too — including on another section,
-       * whose own handler then opens the next panel.
+       * whose own handler then opens the next panel. Only one is ever open.
        */
       if (!panel.current?.contains(t)) onClose();
     };
@@ -88,40 +93,53 @@ export function NavFlyout({
   }, [onClose]);
 
   return (
-    <div
-      className="nav-fly"
-      style={{ top: state.top, maxHeight: `${MAX_VH * 100}vh` }}
-      ref={panel}
-      tabIndex={-1}
-      role="menu"
-      aria-label={state.group.group}
-    >
-      <div className="nav-fly-h">
-        <Icon n={state.group.ic} size="lg" />
-        <span className="nav-fly-t">{state.group.group}</span>
-        <button type="button" className="nav-fly-x" onClick={onClose} aria-label="Close">
-          <Icon n="close" size="sm" />
-        </button>
-      </div>
+    <>
+      {mobile && <div className="nav-fly-scrim" onClick={onClose} />}
+      <div
+        className={'nav-fly' + (mobile ? ' sheet' : '')}
+        style={mobile ? undefined : { top: state.top, maxHeight: `${MAX_VH * 100}vh` }}
+        ref={panel}
+        tabIndex={-1}
+        role="menu"
+        aria-label={state.group.group}
+      >
+        <div className="nav-fly-h">
+          <span className="nav-fly-ic" aria-hidden="true">
+            <Icon n={state.group.ic} size="lg" />
+          </span>
+          <span className="nav-fly-t">
+            <b>{state.group.group}</b>
+            {state.group.desc && <i>{state.group.desc}</i>}
+          </span>
+          <button type="button" className="nav-fly-x" onClick={onClose} aria-label="Close">
+            <Icon n="close" size="sm" />
+          </button>
+        </div>
 
-      <div className="nav-fly-b">
-        {state.items.map((i) => {
-          const b = badges[i.k] || 0;
-          return (
-            <Link
-              key={hrefOf(i)}
-              to={hrefOf(i)}
-              role="menuitem"
-              className={'nav-fly-i' + (isCurrent(i) ? ' on' : '')}
-              onClick={onClose}
-            >
-              <i className="nav-dot" aria-hidden="true" />
-              <span className="nav-fly-n">{i.n}</span>
-              {b > 0 && <span className="pill">{b}</span>}
-            </Link>
-          );
-        })}
+        <div className="nav-fly-b">
+          {state.items.map((i) => {
+            const b = badges[i.k] || 0;
+            return (
+              <Link
+                key={hrefOf(i)}
+                to={hrefOf(i)}
+                role="menuitem"
+                className={'nav-fly-i' + (isCurrent(i) ? ' on' : '')}
+                onClick={onClose}
+              >
+                <span className="nav-fly-i-ic" aria-hidden="true">
+                  <Icon n={i.ic ?? 'next'} size="lg" />
+                </span>
+                <span className="nav-fly-i-t">
+                  <b>{i.n}</b>
+                  {i.d && <i>{i.d}</i>}
+                </span>
+                {b > 0 && <span className="pill">{b}</span>}
+              </Link>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
