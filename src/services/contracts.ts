@@ -1538,6 +1538,7 @@ export interface Services {
   exits: ExitService;
   staffing: StaffingService;
   users: UserService;
+  jobTitles: JobTitleService;
   recruitment: RecruitmentService;
   documents: DocumentService;
   assets: AssetService;
@@ -1638,4 +1639,68 @@ export interface UserService {
   bulkUpdate(c: Caller, ids: string[], patch: UserPatch): Promise<UserAccount[]>;
   /** Records a sign-in. Present so `lastLogin` is a fact rather than a fixture. */
   lastLoginNow(c: Caller, id: string): Promise<UserAccount>;
+}
+
+/* ---------- job titles ---------- */
+
+export type { JobTitle, JobTitleStatus, JobLevel } from '../data/jobtitles';
+export { JOB_LEVELS, JOB_FAMILIES, JOB_EMP_TYPES, JOB_TITLE_STATUSES, levelOf } from '../data/jobtitles';
+export type { AuditRecord } from '../data/audit';
+import type { JobTitle, JobTitleStatus, JobLevel } from '../data/jobtitles';
+import type { AuditRecord } from '../data/audit';
+
+/** What a job title is created from. */
+export interface JobTitleDraft {
+  n: string;
+  code: string;
+  dept: string;
+  level: JobLevel;
+  family?: string;
+  empType?: string;
+  desc?: string;
+  responsibilities?: string[];
+  required?: string[];
+  preferred?: string[];
+  status?: JobTitleStatus;
+}
+
+export interface JobTitleFilter {
+  q?: string;
+  dept?: string;
+  family?: string;
+  level?: JobLevel;
+  empType?: string;
+  status?: JobTitleStatus;
+}
+
+/**
+ * A title with the two counts the catalogue exists to answer.
+ *
+ * Computed by the service rather than the screen: "how many people hold this"
+ * is the question a catalogue is for, and two screens counting it their own
+ * way will eventually disagree.
+ */
+export interface JobTitleRow {
+  title: JobTitle;
+  employees: number;
+  openPositions: number;
+}
+
+export interface JobTitleDetail extends JobTitleRow {
+  /** Scoped: an admin sees every holder, a manager sees their own line's. */
+  holders: Employee[];
+  history: AuditRecord[];
+}
+
+export interface JobTitleService {
+  list(c: Caller, f?: JobTitleFilter): Promise<JobTitleRow[]>;
+  get(c: Caller, id: string): Promise<JobTitleDetail | null>;
+  /** The one title the caller holds, without needing to know its id. */
+  mine(c: Caller): Promise<JobTitleRow | null>;
+  create(c: Caller, draft: JobTitleDraft): Promise<JobTitle>;
+  update(c: Caller, id: string, patch: Partial<JobTitleDraft>): Promise<JobTitle>;
+  /** Retiring refuses while anybody still holds it. */
+  setStatus(c: Caller, id: string, status: JobTitleStatus): Promise<JobTitle>;
+  remove(c: Caller, id: string): Promise<JobTitle>;
+  meta(): Promise<{ departments: string[] }>;
 }

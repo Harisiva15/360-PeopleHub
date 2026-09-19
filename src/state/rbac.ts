@@ -47,14 +47,14 @@ export const PERMS: Record<AppRole, string[]> = {
   employee: [
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
-    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner',
+    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles',
   ],
 
   /* Everything above, plus their reporting line. */
   manager: [
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
-    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner',
+    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles',
     // The line.
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users',
   ],
@@ -70,7 +70,7 @@ export const PERMS: Record<AppRole, string[]> = {
   admin: [
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
-    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner',
+    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles',
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users',
     // The tenant.
     'settings', 'security', 'exec', 'billing',

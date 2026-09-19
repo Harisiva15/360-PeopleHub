@@ -44,6 +44,7 @@ const LOADERS: Record<string, () => Promise<unknown>> = {
   hiring: () => import('./hiring'),
   recruitment: () => import('./recruitment'),
   users: () => import('./users'),
+  jobtitles: () => import('./jobtitles'),
   planner: () => import('./planner'),
   onboarding: () => import('./onboarding'),
   exit: () => import('./exit'),

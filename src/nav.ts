@@ -67,6 +67,7 @@ export const NAV: NavGroup[] = [
     items: [
       { k: 'employees', n: 'Employee directory', ic: 'people', d: 'Find and contact colleagues.' },
       { k: 'org', n: 'Organisation chart', ic: 'projects', d: 'See who reports to whom.' },
+      { k: 'jobtitles', n: 'Job titles', ic: 'briefcase', d: 'Titles, levels and who holds them.' },
       { k: 'documents', n: 'Documents & letters', ic: 'document', d: 'Issue and track employee paperwork.' },
       { k: 'onboarding', n: 'Onboarding', ic: 'joiner', d: 'Bring new joiners through their first weeks.', roles: ['manager', 'admin'] },
       { k: 'exit', n: 'Exit & final settlement', ic: 'undo', d: 'Offboard leavers and settle their dues.', roles: ['manager', 'admin'] },

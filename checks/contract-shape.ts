@@ -33,6 +33,7 @@ const CREATES: Record<string, string> = {
   hiring: 'openRequisition',
   recruitment: 'createJobOrder',
   users: 'create',
+  jobTitles: 'create',
   learning: 'enrol',
   helpdesk: 'raise',
   noticeboard: 'post',

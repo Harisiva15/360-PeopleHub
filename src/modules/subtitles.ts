@@ -46,6 +46,7 @@ export const SUBTITLES: Record<string, (ctx: ModuleCtx) => string> = {
   hiring: () => 'Requisitions, pipeline, interviews and offers for our own roles',
   recruitment: () => 'Manage open requirements, recruiter activity, candidate submissions and hiring progress',
   users: () => 'Create, manage and control user accounts across 360 People Hub',
+  jobtitles: () => 'Manage job titles, roles, levels and organisational positions',
   onboarding: () => 'Pre-boarding checklists from offer accepted to day one',
   exit: () => 'Notice periods, clearance and full-and-final settlement',
 

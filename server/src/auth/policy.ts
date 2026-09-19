@@ -178,6 +178,10 @@ export const POLICY: Record<string, ModulePolicy> = {
    * joiners and offboard leavers — and everything sharper than that is
    * bounded act by act in ACTION_SCOPE below, not here.
    */
+  /* The catalogue is configuration, so only an admin writes it. Everybody
+     reads — an employee reads exactly one record, their own, which the
+     service enforces rather than the scope. */
+  jobtitles: rule(['own', 'none', 'none'], ['all', 'none', 'none'], ['all', 'all', 'none']),
   users: rule(NO, ['team', 'team', 'none'], ['all', 'all', 'all']),
   clients: rule(NO, NO, ['all', 'all', 'none']),
   requirements: rule(NO, NO, ['all', 'all', 'none']),
