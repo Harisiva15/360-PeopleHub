@@ -161,6 +161,21 @@ ok('rail items sit 2-4px apart',
  * The whole point of the redesign: no section expands inside the rail, so the
  * sidebar never changes height and nothing below an open section moves.
  */
+/*
+ * Hover previews the panel after a pause, and the pause is the feature: with
+ * no delay a panel opens every time a pointer crosses the rail on its way
+ * somewhere else, which is worse than no hover at all.
+ */
+const shell = readFileSync(join(root, 'src/shell/Shell.tsx'), 'utf8');
+const hoverDelay = Number(/const HOVER_DELAY = (\d+)/.exec(shell)?.[1]);
+ok(`hover previews after 250-300ms (${hoverDelay})`,
+  hoverDelay >= 250 && hoverDelay <= 300);
+ok('a pointer leaving cancels a pending preview rather than closing an open panel',
+  /onPointerLeave=\{cancelPreview\}/.test(shell)
+  && !/onPointerLeave=\{\(\)\s*=>\s*setFlyout\(null\)\}/.test(shell));
+ok('touch does not trigger the hover preview',
+  /pointerType\s*!==\s*'mouse'/.test(shell));
+
 ok('no accordion survives in the rail', !/\.nav-subs?\s*\{/.test(css));
 ok('the rail is one fixed width', !/\.sidebar\.tight\s*\{/.test(css));
 ok('the flyout floats rather than sitting in the layout',

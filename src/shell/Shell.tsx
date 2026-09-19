@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { LOGO_ON_RAIL } from '../assets/logo';
 import { ALL_VIEWS, hrefOf, NAV, TABBAR } from '../nav';
@@ -16,6 +16,14 @@ import { useFavourites } from './favourites';
 import type { ReactNode } from 'react';
 
 const isMobile = () => window.matchMedia('(max-width: 860px)').matches;
+
+/**
+ * How long the pointer has to rest on a section before its panel previews.
+ *
+ * Long enough that crossing the rail on the way somewhere else does not open
+ * anything; short enough that stopping on an item feels like it responded.
+ */
+const HOVER_DELAY = 275;
 
 /**
  * The application shell.
@@ -40,6 +48,17 @@ export function Shell({ children }: { children: ReactNode }) {
 
   /** The one section whose views are open. Only ever one. */
   const [flyout, setFlyout] = useState<FlyoutState | null>(null);
+
+  /* A hover preview that has not fired yet. Cancelled by leaving, or clicking. */
+  const hoverTimer = useRef<number | null>(null);
+  const cancelPreview = useCallback(() => {
+    if (hoverTimer.current !== null) {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  }, []);
+  /* A pending preview must not fire into an unmounted shell. */
+  useEffect(() => cancelPreview, [cancelPreview]);
 
   const [mobile, setMobile] = useState(isMobile);
   useEffect(() => {
@@ -91,21 +110,51 @@ export function Shell({ children }: { children: ReactNode }) {
     }).slice(0, 12)
     : [];
 
+  /** Build the panel state for a section opened from `at`. */
+  const stateFor = (at: DOMRect, g: (typeof sections)[number]): FlyoutState => ({
+    group: g.g,
+    items: g.items,
+    top: placeFlyout(at, g.items.length, window.innerHeight),
+  });
+
   const openSection = (
     e: React.MouseEvent<HTMLButtonElement>,
     g: (typeof sections)[number],
   ) => {
+    cancelPreview();
     /* Clicking the open section again closes it. */
     if (flyout?.group.group === g.g.group) { setFlyout(null); return; }
-    setFlyout({
-      group: g.g,
-      items: g.items,
-      top: placeFlyout(
-        e.currentTarget.getBoundingClientRect(),
-        g.items.length,
-        window.innerHeight,
-      ),
-    });
+    setFlyout(stateFor(e.currentTarget.getBoundingClientRect(), g));
+  };
+
+  /*
+   * Hover previews the panel after a pause.
+   *
+   * The pause is the whole feature. Opening on hover with no delay means a
+   * panel every time somebody's pointer crosses the rail on its way somewhere
+   * else, which is worse than no hover at all. 275ms is long enough that
+   * passing through does not trigger it and short enough that deliberately
+   * resting on an item feels immediate.
+   *
+   * Leaving cancels a pending preview but never closes an open panel — the
+   * brief is explicit, and it is right: a panel that vanished because the
+   * pointer drifted two pixels would be unusable for the thing it is for.
+   */
+  const previewSection = (
+    e: React.PointerEvent<HTMLButtonElement>,
+    g: (typeof sections)[number],
+  ) => {
+    /* Touch has no hover. A synthesised one here would open on every tap. */
+    if (e.pointerType !== 'mouse') return;
+    if (flyout?.group.group === g.g.group) return;
+
+    /* Captured now: the event's target is gone by the time this fires. */
+    const at = e.currentTarget.getBoundingClientRect();
+    cancelPreview();
+    hoverTimer.current = window.setTimeout(() => {
+      hoverTimer.current = null;
+      setFlyout(stateFor(at, g));
+    }, HOVER_DELAY);
   };
 
   return (
@@ -179,6 +228,11 @@ export function Shell({ children }: { children: ReactNode }) {
                   aria-haspopup="menu"
                   aria-expanded={open}
                   onClick={(e) => openSection(e, { g, items })}
+                  onPointerEnter={(e) => previewSection(e, { g, items })}
+                  /* Leaving cancels a preview that has not opened. It never
+                     closes one that has — see previewSection. */
+                  onPointerLeave={cancelPreview}
+                  onFocus={cancelPreview}
                 >
                   <span className="ic"><Icon n={g.ic} size="lg" /></span>
                   <span className="nav-label">{g.group}</span>
