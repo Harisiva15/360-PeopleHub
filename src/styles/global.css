@@ -1941,3 +1941,22 @@ button.celeb-who:hover b{color:var(--brand)}
 /* The rail is an overlay at full width on a phone; there is no collapsed rail
    to fly out from. */
 @media (max-width:860px){ .nav-fly{display:none} }
+
+/* ---------- user administration ---------- */
+
+/*
+ * The bar that appears when rows are selected. Sticky, because a selection
+ * made at the top of a long table is acted on wherever you have scrolled to,
+ * and a toolbar that scrolled away would mean scrolling back to use it.
+ */
+.bulkbar{
+  position:sticky;top:calc(var(--topbar-h) + 8px);z-index:20;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:10px 14px;border-radius:var(--r);
+  background:var(--brand-wash);border:1px solid color-mix(in srgb,var(--brand) 28%,transparent);
+  font-size:13px;color:var(--brand-ink);
+}
+.bulkbar b{font-weight:700}
+
+/* A table row's checkbox column, which should not stretch with the content. */
+.tbl input[type=checkbox]{width:15px;height:15px;accent-color:var(--brand);cursor:pointer}

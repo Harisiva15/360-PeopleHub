@@ -56,7 +56,7 @@ export const PERMS: Record<AppRole, string[]> = {
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
     'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner',
     // The line.
-    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement',
+    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users',
   ],
 
   /*
@@ -71,7 +71,7 @@ export const PERMS: Record<AppRole, string[]> = {
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
     'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner',
-    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement',
+    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users',
     // The tenant.
     'settings', 'security', 'exec', 'billing',
     'clients', 'requirements', 'bench', 'placements', 'vendors', 'recruitment',
@@ -175,3 +175,61 @@ export function visibleEmps(role: AppRole, meId: string): Employee[] {
 export const isMyReport = (meId: string, id: string): boolean => teamOf(meId, true).includes(id);
 
 export const meOf = (meId: string): Employee => EMAP[meId];
+
+/* ---------------- user administration ---------------- */
+
+/**
+ * The individual acts of administering an account.
+ *
+ * Mirrors `UserAction` in `server/src/auth/policy.ts`. Mirrored rather than
+ * imported because the frontend does not depend on server code — it ships to a
+ * browser, and the boundary is the point. `checks/roles.ts` compares the two
+ * tables and fails the build on any disagreement, which is the same
+ * arrangement `PERMS` has had with the module policy since it was written.
+ *
+ * What these are for: hiding a button somebody may not use. They are not the
+ * enforcement — the service refuses the call regardless, and a screen that
+ * relies on a hidden button is a screen somebody reaches with a URL.
+ */
+export type UserAction =
+  | 'user.view' | 'user.create' | 'user.edit' | 'user.delete'
+  | 'user.activate' | 'user.deactivate' | 'user.suspend' | 'user.approve'
+  | 'user.reset_password' | 'user.resend_invite'
+  | 'user.bulk_import' | 'user.bulk_update' | 'user.export'
+  | 'role.assign' | 'role.assign_admin' | 'permission.manage';
+
+export type Scope = 'none' | 'own' | 'team' | 'all';
+
+const ACTION_SCOPE: Record<UserAction, Record<AppRole, Scope>> = {
+  'user.view': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.create': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.edit': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.delete': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.activate': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.deactivate': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.suspend': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.approve': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.reset_password': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.resend_invite': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.bulk_import': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.bulk_update': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.export': { employee: 'none', manager: 'team', admin: 'all' },
+  'role.assign': { employee: 'none', manager: 'team', admin: 'all' },
+  'role.assign_admin': { employee: 'none', manager: 'none', admin: 'all' },
+  'permission.manage': { employee: 'none', manager: 'none', admin: 'all' },
+};
+
+export const actionScope = (role: AppRole, action: UserAction): Scope =>
+  ACTION_SCOPE[action]?.[role] ?? 'none';
+
+/** Whether this role may perform this act at all. */
+export const may = (role: AppRole, action: UserAction): boolean =>
+  actionScope(role, action) !== 'none';
+
+/** Whether this role may hand out that role. Only an admin makes an admin. */
+export const mayAssignRole = (role: AppRole, granted: AppRole): boolean => {
+  if (!may(role, 'role.assign')) return false;
+  return granted === 'admin' ? may(role, 'role.assign_admin') : true;
+};
+
+export const USER_ACTIONS = Object.keys(ACTION_SCOPE) as UserAction[];

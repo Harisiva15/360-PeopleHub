@@ -6,7 +6,7 @@
  * module side-effect-imports its predecessor to pin that order; importing the
  * last one here pulls the entire chain in, in sequence.
  */
-import './security';
+import './users';
 
 export * from './countries';
 export * from './org';
@@ -35,3 +35,4 @@ export * from './staffing';
 export * from './assets';
 export * from './assetWorkflow';
 export * from './security';
+export * from './users';

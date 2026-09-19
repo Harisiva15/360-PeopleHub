@@ -32,6 +32,7 @@ const CREATES: Record<string, string> = {
   shifts: 'raiseOvertime',
   hiring: 'openRequisition',
   recruitment: 'createJobOrder',
+  users: 'create',
   learning: 'enrol',
   helpdesk: 'raise',
   noticeboard: 'post',

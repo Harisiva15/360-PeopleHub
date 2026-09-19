@@ -1537,6 +1537,7 @@ export interface Services {
   noticeboard: NoticeboardService;
   exits: ExitService;
   staffing: StaffingService;
+  users: UserService;
   recruitment: RecruitmentService;
   documents: DocumentService;
   assets: AssetService;
@@ -1547,4 +1548,94 @@ export interface Services {
   approvals: ApprovalsService;
   joiners: JoinersService;
   planner: PlannerService;
+}
+
+/* ---------- user administration ---------- */
+
+export type { UserAccount, UserStatus } from '../data/users';
+export { USER_STATUSES } from '../data/users';
+import type { UserAccount, UserStatus } from '../data/users';
+
+/** What a new account is created from. */
+export interface UserDraft {
+  name: string;
+  email: string;
+  phone?: string;
+  /** Left blank to have one generated — see `nextEmployeeCode`. */
+  code?: string;
+  dept: string;
+  designation: string;
+  site: string;
+  managerId?: string | null;
+  role: AppRole;
+  empType?: string;
+  joinedOn?: string;
+  /** The employee record this login acts as, when there is one. */
+  empId?: string | null;
+  /**
+   * False sets a password directly and marks it for change at next sign-in.
+   * True, or absent, sends an invitation instead.
+   */
+  sendInvitation?: boolean;
+}
+
+export type UserPatch = Partial<Omit<UserDraft, 'sendInvitation'>>;
+
+/** How the list is narrowed. Everything optional, and they compose. */
+export interface UserFilter {
+  q?: string;
+  status?: UserStatus;
+  role?: AppRole;
+  dept?: string;
+  site?: string;
+  managerId?: string;
+  empType?: string;
+  joinedFrom?: string;
+  joinedTo?: string;
+}
+
+/** The five figures above the table. */
+export interface UserStats {
+  total: number;
+  active: number;
+  pendingApproval: number;
+  inactive: number;
+  invitationPending: number;
+}
+
+/**
+ * Administering accounts.
+ *
+ * Every method takes the caller, and every method checks it. Not as a
+ * convenience for the screen — the screen hides what it must, but a hidden
+ * button is not a permission — but because this is the one module where the
+ * failure mode is somebody acting on an account they should not have been able
+ * to see. The scopes are `ACTION_SCOPE` in `src/state/rbac.ts`, which
+ * `checks/roles.ts` holds to the server's policy cell by cell.
+ */
+export interface UserService {
+  list(c: Caller, f?: UserFilter): Promise<UserAccount[]>;
+  get(c: Caller, id: string): Promise<UserAccount | null>;
+  stats(c: Caller): Promise<UserStats>;
+  /** The next free employee code, for the auto-generate option. */
+  nextEmployeeCode(c: Caller): Promise<string>;
+  /**
+   * Create an account. A manager's creation lands as Pending Approval and an
+   * administrator's does not — decided server-side, because a client that
+   * chooses its own status can skip the approval it was meant to wait for.
+   */
+  create(c: Caller, draft: UserDraft): Promise<UserAccount>;
+  update(c: Caller, id: string, patch: UserPatch): Promise<UserAccount>;
+  /** Activate, deactivate or suspend. Each is a separately-permitted act. */
+  setStatus(c: Caller, id: string, status: UserStatus, reason?: string): Promise<UserAccount>;
+  /** Soft delete. `typed` must be the word DELETE, checked here and not only in the dialog. */
+  remove(c: Caller, id: string, typed: string): Promise<UserAccount>;
+  decide(
+    c: Caller, id: string, decision: 'Approved' | 'Rejected', note?: string,
+  ): Promise<UserAccount>;
+  resendInvitation(c: Caller, id: string): Promise<UserAccount>;
+  resetPassword(c: Caller, id: string, forceChange?: boolean): Promise<UserAccount>;
+  bulkUpdate(c: Caller, ids: string[], patch: UserPatch): Promise<UserAccount[]>;
+  /** Records a sign-in. Present so `lastLogin` is a fact rather than a fixture. */
+  lastLoginNow(c: Caller, id: string): Promise<UserAccount>;
 }

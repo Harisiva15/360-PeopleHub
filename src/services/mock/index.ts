@@ -15,6 +15,7 @@ import { payrollService } from './payroll';
 import { configService } from './config';
 import { assetService, documentService, exitService, onboardingService, securityService } from './records';
 import { staffingService } from './staffing';
+import { userService } from './users';
 import { recruitmentService } from './recruitment';
 import {
   benefitsService, engagementService, helpdeskService, learningService,
@@ -44,6 +45,7 @@ export const mockServices: Services = {
   noticeboard: noticeboardService,
   exits: exitService,
   staffing: staffingService,
+  users: userService,
   recruitment: recruitmentService,
   documents: documentService,
   assets: assetService,

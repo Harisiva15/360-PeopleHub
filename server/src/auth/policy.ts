@@ -173,6 +173,12 @@ export const POLICY: Record<string, ModulePolicy> = {
      terms. Approve is 'all' because assigning a recruiter and releasing one
      are decisions, not edits. */
   recruitment: rule(NO, NO, ['all', 'all', 'all']),
+  /*
+   * User administration. A manager reaches their own line — they raise
+   * joiners and offboard leavers — and everything sharper than that is
+   * bounded act by act in ACTION_SCOPE below, not here.
+   */
+  users: rule(NO, ['team', 'team', 'none'], ['all', 'all', 'all']),
   clients: rule(NO, NO, ['all', 'all', 'none']),
   requirements: rule(NO, NO, ['all', 'all', 'none']),
   bench: rule(NO, NO, ['all', 'all', 'none']),
@@ -219,3 +225,98 @@ export const ROLE_SUMMARY: Record<Role, { title: string; blurb: string }> = {
       + 'the commercial book. Still cannot approve their own requests.',
   },
 };
+
+/* ---------------- user administration ---------------- */
+
+/**
+ * The individual acts of administering an account.
+ *
+ * A module-level rule answers "may this role open user management". It cannot
+ * answer "may a manager delete somebody", which is the question that matters
+ * here — the module is one screen and the twelve things it does carry twelve
+ * different risks. So administration is described act by act, each with the
+ * reach that act is allowed, and the service asks about the act rather than
+ * the screen.
+ */
+export type UserAction =
+  | 'user.view'
+  | 'user.create'
+  | 'user.edit'
+  | 'user.delete'
+  | 'user.activate'
+  | 'user.deactivate'
+  | 'user.suspend'
+  | 'user.approve'
+  | 'user.reset_password'
+  | 'user.resend_invite'
+  | 'user.bulk_import'
+  | 'user.bulk_update'
+  | 'user.export'
+  | 'role.assign'
+  | 'role.assign_admin'
+  | 'permission.manage';
+
+/**
+ * How far each role may reach with each act.
+ *
+ * Three of these are deliberately narrower than the module rule would suggest,
+ * and each is a decision rather than an oversight:
+ *
+ * **A manager may deactivate but not activate.** Deactivating somebody in your
+ * own line is ordinary offboarding. Re-activating is not its mirror: the
+ * account may have been held by an administrator for a reason the manager
+ * cannot see, and letting them undo that turns a sanction into an
+ * inconvenience.
+ *
+ * **A manager may not reset a password.** Password reset is account recovery,
+ * and recovery is the standard route to taking over an account. A manager who
+ * can reset their report's password can read their mail.
+ *
+ * **A manager may not approve.** They raise the request; somebody else decides
+ * it. A workflow where the proposer is also the approver is not a workflow.
+ */
+const ACTION_SCOPE: Record<UserAction, Record<Role, Scope>> = {
+  'user.view': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.create': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.edit': { employee: 'none', manager: 'team', admin: 'all' },
+  /* Removing an account is irreversible in a way the rest of this is not. */
+  'user.delete': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.activate': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.deactivate': { employee: 'none', manager: 'team', admin: 'all' },
+  /* A sanction, not an administrative state. */
+  'user.suspend': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.approve': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.reset_password': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.resend_invite': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.bulk_import': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.bulk_update': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.export': { employee: 'none', manager: 'team', admin: 'all' },
+  /* Assigning a role at all — bounded further by the next line. */
+  'role.assign': { employee: 'none', manager: 'team', admin: 'all' },
+  /* The one that cannot be delegated: only an administrator makes one. */
+  'role.assign_admin': { employee: 'none', manager: 'none', admin: 'all' },
+  'permission.manage': { employee: 'none', manager: 'none', admin: 'all' },
+};
+
+/** How far this role may reach performing this act. `none` means not at all. */
+export const actionScope = (role: Role, action: UserAction): Scope =>
+  ACTION_SCOPE[action]?.[role] ?? 'none';
+
+/** Whether this role may perform this act at all, anywhere. */
+export const may = (role: Role, action: UserAction): boolean =>
+  actionScope(role, action) !== 'none';
+
+/**
+ * Whether `role` may hand out `granted`.
+ *
+ * Separate from `role.assign` because the restriction is on the *value*, not
+ * on the act: a manager assigns roles to their line every time they raise a
+ * joiner, and the one thing they may not do is make another administrator.
+ */
+export const mayAssignRole = (role: Role, granted: Role): boolean => {
+  if (!may(role, 'role.assign')) return false;
+  return granted === 'admin' ? may(role, 'role.assign_admin') : true;
+};
+
+/** Every act, for a screen that wants to show what a role can do. */
+export const USER_ACTIONS = Object.keys(ACTION_SCOPE) as UserAction[];

@@ -17,9 +17,23 @@
  * Nothing more, nothing less.
  */
 
-import { PERMS } from '../src/state/rbac';
-import { POLICY, ROLES, modulesFor } from '../server/src/auth/policy';
-import type { Role } from '../server/src/auth/policy';
+import {
+  PERMS,
+  USER_ACTIONS as CLIENT_ACTIONS,
+  actionScope as clientScope,
+  mayAssignRole as clientMayAssign,
+} from '../src/state/rbac';
+import {
+  POLICY, ROLES, modulesFor,
+  USER_ACTIONS as SERVER_ACTIONS,
+  actionScope as serverScope,
+  mayAssignRole as serverMayAssign,
+} from '../server/src/auth/policy';
+import type { Role, Scope, UserAction } from '../server/src/auth/policy';
+
+/** Typed once here so both loops below agree about what they are iterating. */
+const SERVER_SIDE_ACTIONS: UserAction[] = SERVER_ACTIONS;
+const RANK: Record<Scope, number> = { none: 0, own: 1, team: 2, all: 3 };
 
 let failed = 0;
 const fail = (msg: string) => { failed += 1; console.error(`  FAIL  ${msg}`); };
@@ -99,6 +113,64 @@ for (const role of ROLES) {
   } else {
     ok('every navigable module has a policy');
   }
+}
+
+/* ---- the two action tables say the same thing ---- */
+
+/*
+ * The frontend mirrors the server's user-administration policy rather than
+ * importing it, because it ships to a browser and the boundary is the point.
+ * A mirror that drifts is worse than no mirror: it hides a button somebody may
+ * press, or offers one the service will refuse. So the tables are compared
+ * cell by cell.
+ */
+{
+  const serverActions = new Set(SERVER_ACTIONS as readonly string[]);
+  const clientActions = new Set(CLIENT_ACTIONS as readonly string[]);
+
+  const onlyServer = [...serverActions].filter((a) => !clientActions.has(a));
+  const onlyClient = [...clientActions].filter((a) => !serverActions.has(a));
+  if (onlyServer.length || onlyClient.length) {
+    fail(`the action lists differ — server only: [${onlyServer.join(', ')}], `
+      + `client only: [${onlyClient.join(', ')}]`);
+  } else {
+    ok(`both sides name the same ${serverActions.size} administrative acts`);
+  }
+
+  let drift = 0;
+  for (const action of SERVER_SIDE_ACTIONS) {
+    for (const role of ROLES) {
+      const server = serverScope(role as Role, action);
+      const client = clientScope(role as Role, action);
+      if (server !== client) {
+        drift++;
+        fail(`${action} for ${role}: server says ${server}, the screens say ${client}`);
+      }
+    }
+  }
+  if (!drift) ok('every act reaches exactly as far on both sides');
+
+  /* The one rule the whole module rests on. */
+  const managerMakesAdmin = serverMayAssign('manager', 'admin') || clientMayAssign('manager', 'admin');
+  if (managerMakesAdmin) fail('a manager can make an administrator');
+  else ok('only an administrator can make an administrator');
+
+  const adminMakesAdmin = serverMayAssign('admin', 'admin') && clientMayAssign('admin', 'admin');
+  if (!adminMakesAdmin) fail('an administrator cannot make an administrator');
+  else ok('an administrator can');
+
+  /* Nobody administers accounts without being able to see them. */
+  for (const role of ROLES) {
+    for (const action of SERVER_SIDE_ACTIONS) {
+      if (action === 'user.view') continue;
+      const acts = serverScope(role as Role, action);
+      const sees = serverScope(role as Role, 'user.view');
+      if (acts !== 'none' && RANK[sees] < RANK[acts]) {
+        fail(`${role} may ${action} further (${acts}) than it may see (${sees})`);
+      }
+    }
+  }
+  ok('nobody may act on an account further than they may see one');
 }
 
 console.log(`\n${Object.keys(POLICY).length} modules x ${ROLES.length} roles defined`);
