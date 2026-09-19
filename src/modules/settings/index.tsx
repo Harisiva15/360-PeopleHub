@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { Tabs } from '../../components/ui';
 import { registerModule } from '../registry';
+import { useTabFromUrl } from '../tabParam';
 import { TITLES } from '../titles';
 import { RbacTab, UsersTab } from './access';
 import { CompanyTab, ConfigAuditTab, LeavePolicyTab, LocationsTab, OrgTab, PayConfigTab } from './config';
@@ -19,7 +19,9 @@ const TABS: { v: Tab; label: string }[] = [
 ];
 
 function SettingsView() {
-  const [tab, setTab] = useState<Tab>('rbac');
+  /* From the URL, so the menu can link straight to a tab. It was local state,
+     which silently landed every deep link on Access Control. */
+  const [tab, setTab] = useTabFromUrl<Tab>('rbac', TABS.map((t) => t.v));
   return (
     <>
       <Tabs value={tab} options={TABS} onChange={setTab} />

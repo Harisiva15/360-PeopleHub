@@ -28,6 +28,7 @@ import {
 } from './data';
 import { RequestAssetForm } from './RequestForm';
 import { registerModule } from '../registry';
+import { useTabFromUrl } from '../tabParam';
 import { TITLES } from '../titles';
 import { Icon } from '../../components/icons';
 
@@ -571,7 +572,8 @@ const TABS: { v: Tab; label: string }[] = [
 
 function Assets() {
   const app = useApp();
-  const [tab, setTab] = useState<Tab>('reg');
+  /* From the URL, so the menu can link straight to a tab. */
+  const [tab, setTab] = useTabFromUrl<Tab>('reg', ['reg', 'alloc']);
 
   /* An employee sees the kit issued to them, and that is the whole screen. */
   if (app.role === 'employee') return <AsMine />;

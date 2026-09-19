@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import type { ComponentType } from 'react';
 import type { IconName } from '../../components/icons';
 import { Card, EmptyState } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
+import { useTabFromUrl } from '../tabParam';
 import { TITLES } from '../titles';
 import type { AppRole } from '../../types/employee';
 import { RepAttendance, RepAttrition, RepHeadcount, RepLeave } from './people';
@@ -41,10 +41,18 @@ const REPORTS: ReportDef[] = [
 
 const availableTo = (role: AppRole) => REPORTS.filter((r) => r.roles.includes(role));
 
+/** Every report id, so a link can name one. */
+const REPORT_IDS = REPORTS.map((r) => r.id);
+
 function ReportsView() {
   const app = useApp();
   const avail = availableTo(app.role);
-  const [sel, setSel] = useState(avail[0]?.id);
+  /*
+   * Which report, from the URL. It was local state, which meant the menu could
+   * only ever link to the catalogue and leave somebody to find the report they
+   * asked for — so "Reports, then Attendance" was two clicks and a scan.
+   */
+  const [sel, setSel] = useTabFromUrl(avail[0]?.id ?? REPORT_IDS[0], REPORT_IDS);
 
   if (!avail.length) return <EmptyState msg="No reports are available for your role." icon={<Icon n="chart" size="lg" />} />;
 
