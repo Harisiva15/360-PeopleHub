@@ -1539,6 +1539,13 @@ export interface Services {
   staffing: StaffingService;
   users: UserService;
   jobTitles: JobTitleService;
+  lifecycle: LifecycleService;
+  software: SoftwareService;
+  devPlans: DevPlanService;
+  events: EventService;
+  exports: ExportService;
+  reports: ReportService;
+  integrations: IntegrationService;
   recruitment: RecruitmentService;
   documents: DocumentService;
   assets: AssetService;
@@ -1638,7 +1645,9 @@ export interface UserService {
   resetPassword(c: Caller, id: string, forceChange?: boolean): Promise<UserAccount>;
   bulkUpdate(c: Caller, ids: string[], patch: UserPatch): Promise<UserAccount[]>;
   /** Records a sign-in. Present so `lastLogin` is a fact rather than a fixture. */
-  lastLoginNow(c: Caller, id: string): Promise<UserAccount>;
+  /** Stamps the caller's own last sign-in. Takes no id: there is no row to
+      name but your own. */
+  lastLoginNow(c: Caller): Promise<UserAccount | null>;
 }
 
 /* ---------- job titles ---------- */
@@ -1702,5 +1711,658 @@ export interface JobTitleService {
   /** Retiring refuses while anybody still holds it. */
   setStatus(c: Caller, id: string, status: JobTitleStatus): Promise<JobTitle>;
   remove(c: Caller, id: string): Promise<JobTitle>;
-  meta(): Promise<{ departments: string[] }>;
+}
+
+/* ---------- employee lifecycle ---------- */
+
+export type { LifecycleStage, LifecycleTask, LifecycleSubject, Standing } from '../data/lifecycleStages';
+export { LIFECYCLE_STAGES, CORE_PATH } from '../data/lifecycleStages';
+import type {
+  LifecycleStage, LifecycleSubject, LifecycleTask, Standing,
+} from '../data/lifecycleStages';
+
+/** One person, where they are, and what is outstanding. */
+export interface LifecycleRow {
+  subject: LifecycleSubject;
+  standing: Standing;
+  openTasks: number;
+}
+
+export interface LifecycleDetail extends LifecycleRow {
+  /** The employment record's own history. Candidates have none yet. */
+  events: LifecycleEvent[];
+  tasks: LifecycleTask[];
+}
+
+export interface LifecycleFilter {
+  q?: string;
+  stage?: LifecycleStage;
+  dept?: string;
+  managerId?: string;
+  site?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface LifecycleStats {
+  newJoiners: number;
+  preboarding: number;
+  onboarding: number;
+  probation: number;
+  promotions: number;
+  transfers: number;
+  onLeave: number;
+  exits: number;
+  offboarding: number;
+}
+
+export interface LifecycleTaskDraft {
+  n: string;
+  due: string;
+  owner?: string;
+  assigneeId?: string | null;
+  note?: string;
+}
+
+/**
+ * The employment journey.
+ *
+ * There is deliberately no `setStage`. The stage is derived from the records
+ * that already exist, so moving somebody means changing those records —
+ * completing their onboarding, settling their exit — and a dropdown here would
+ * put the summary and its sources into disagreement.
+ */
+export interface LifecycleService {
+  list(c: Caller, f?: LifecycleFilter): Promise<LifecycleRow[]>;
+  get(c: Caller, id: string): Promise<LifecycleDetail | null>;
+  stats(c: Caller): Promise<LifecycleStats>;
+  addTask(c: Caller, empId: string, draft: LifecycleTaskDraft): Promise<LifecycleTask>;
+  /** An employee may complete a task assigned to them, and nothing else. */
+  setTaskDone(c: Caller, taskId: string, done: boolean): Promise<LifecycleTask>;
+  removeTask(c: Caller, taskId: string): Promise<LifecycleTask>;
+}
+
+/* ---------------- software estate ---------------- */
+
+export type {
+  Billing, SoftwareCat, SoftwareProduct, SoftwareSeat, SoftwareStatus,
+} from '../data/software';
+export { DORMANT_DAYS, RENEWAL_WINDOW, SOFTWARE_CATS } from '../data/software';
+import type {
+  Billing, SoftwareCat, SoftwareProduct, SoftwareSeat, SoftwareStatus,
+} from '../data/software';
+
+/** A product with the figures a register is read for, all derived from seats. */
+export interface SoftwareRow {
+  product: SoftwareProduct;
+  assigned: number;
+  free: number;
+  dormant: number;
+  annualCost: number;
+  /** What the idle seats cost a year — unassigned and unopened together. */
+  wastedCost: number;
+  renewsInDays: number;
+  overAllocated: boolean;
+}
+
+export interface SoftwareSeatRow {
+  seat: SoftwareSeat;
+  name: string;
+  dept: string;
+  dormant: boolean;
+  /** Null where the seat has never been opened. */
+  daysIdle: number | null;
+}
+
+export interface SoftwareDetail extends SoftwareRow {
+  seats: SoftwareSeatRow[];
+  history: AuditRecord[];
+}
+
+export interface MySoftware {
+  seat: SoftwareSeat;
+  product: SoftwareProduct;
+  dormant: boolean;
+}
+
+export interface SoftwareFilter {
+  q?: string;
+  cat?: SoftwareCat;
+  vendor?: string;
+  status?: SoftwareStatus;
+  ownerId?: string;
+  /** Only products renewing within this many days, from today. */
+  renewingWithin?: number;
+  hasDormant?: boolean;
+}
+
+export interface SoftwareDraft {
+  n: string;
+  vendor: string;
+  cat: SoftwareCat;
+  plan?: string;
+  seats: number;
+  unitCost: number;
+  billing?: Billing;
+  renewsOn: string;
+  ownerId?: string | null;
+  status?: SoftwareStatus;
+  sso?: boolean;
+  holdsPersonalData?: boolean;
+  notes?: string;
+}
+
+export interface SoftwareStats {
+  products: number;
+  seatsPurchased: number;
+  seatsAssigned: number;
+  dormantSeats: number;
+  annualSpend: number;
+  wastedSpend: number;
+  renewingSoon: number;
+  overdue: number;
+  overAllocated: number;
+  noSso: number;
+}
+
+export interface SoftwareRenewal {
+  product: SoftwareProduct;
+  inDays: number;
+}
+
+/**
+ * Subscriptions and the seats on them.
+ *
+ * A product is a contract and a seat is an access grant, which is why they
+ * have different rules: only an administrator changes a contract, but a
+ * manager can take a seat back from their own line.
+ */
+export interface SoftwareService {
+  list(c: Caller, f?: SoftwareFilter): Promise<SoftwareRow[]>;
+  get(c: Caller, id: string): Promise<SoftwareDetail | null>;
+  /** What the signed-in person holds — the employee's whole view. */
+  mine(c: Caller): Promise<MySoftware[]>;
+  stats(c: Caller): Promise<SoftwareStats>;
+  renewals(c: Caller, withinDays?: number): Promise<SoftwareRenewal[]>;
+  create(c: Caller, draft: SoftwareDraft): Promise<SoftwareProduct>;
+  update(c: Caller, id: string, patch: Partial<SoftwareDraft>): Promise<SoftwareProduct>;
+  remove(c: Caller, id: string): Promise<SoftwareProduct>;
+  assignSeat(c: Caller, productId: string, empId: string): Promise<SoftwareSeat>;
+  revokeSeat(c: Caller, seatId: string): Promise<SoftwareSeat>;
+}
+
+/* ---------------- development plans ---------------- */
+
+export type {
+  ActionKind, DevAction, DevArea, DevPlan, Horizon, PlanStatus,
+} from '../data/devplans';
+export { ACTION_KINDS, DEV_AREAS, HORIZONS, PLAN_STATUSES } from '../data/devplans';
+import type {
+  ActionKind, DevAction, DevArea, DevPlan, Horizon, PlanStatus,
+} from '../data/devplans';
+
+/** One action, with its progress resolved — from the enrolment where it names a course. */
+export interface DevActionRow {
+  action: DevAction;
+  progress: number;
+  done: boolean;
+  overdue: boolean;
+  /** True where the figure came from the learning module rather than a tick here. */
+  fromEnrolment: boolean;
+  courseTitle: string | null;
+}
+
+export interface DevPlanRow {
+  plan: DevPlan;
+  name: string;
+  dept: string;
+  designation: string;
+  managerId: string | null;
+  progress: number;
+  actions: number;
+  done: number;
+  overdue: number;
+  endorsed: boolean;
+  reviewDue: boolean;
+}
+
+export interface DevPlanDetail extends DevPlanRow {
+  items: DevActionRow[];
+  history: AuditRecord[];
+}
+
+export interface DevPlanFilter {
+  q?: string;
+  status?: PlanStatus;
+  dept?: string;
+  managerId?: string;
+  mentorId?: string;
+  area?: DevArea;
+  endorsed?: boolean;
+  reviewDue?: boolean;
+  overdueOnly?: boolean;
+}
+
+export interface DevPlanDraft {
+  /** Defaults to the caller; only an administrator may raise one for somebody else. */
+  empId?: string;
+  aspiration: string;
+  targetLevel?: JobLevel | null;
+  horizonMonths: Horizon;
+  focus: DevArea[];
+  mentorId?: string | null;
+  strengths?: string;
+  reviewOn?: string;
+  notes?: string;
+}
+
+export interface DevActionDraft {
+  kind: ActionKind;
+  area: DevArea;
+  n: string;
+  due: string;
+  /** Names a course in the learning catalogue; its progress is read from there. */
+  courseId?: string | null;
+  note?: string;
+}
+
+export interface DevPlanStats {
+  plans: number;
+  active: number;
+  drafts: number;
+  completed: number;
+  endorsed: number;
+  reviewsDue: number;
+  actions: number;
+  actionsDone: number;
+  overdue: number;
+  withMentor: number;
+  /** The share of active employees with a live, endorsed plan. */
+  coverage: number;
+}
+
+export interface DevFocusRow {
+  area: DevArea;
+  plans: number;
+}
+
+export interface MentorLoad {
+  mentorId: string;
+  name: string;
+  mentees: number;
+}
+
+export interface MentorOption {
+  id: string;
+  name: string;
+  designation: string;
+  mentees: number;
+}
+
+/**
+ * The plan somebody is working to, and what it will take.
+ *
+ * The rules here are not the usual ladder: the employee writes and owns the
+ * plan, and the manager's part is to endorse it. A manager cannot rewrite
+ * somebody's aspiration, and nobody can endorse their own.
+ */
+export interface DevPlanService {
+  list(c: Caller, f?: DevPlanFilter): Promise<DevPlanRow[]>;
+  get(c: Caller, id: string): Promise<DevPlanDetail | null>;
+  /** The caller's own plan — the whole of an employee's screen. */
+  mine(c: Caller): Promise<DevPlanDetail | null>;
+  stats(c: Caller): Promise<DevPlanStats>;
+  focus(c: Caller): Promise<DevFocusRow[]>;
+  mentors(c: Caller): Promise<MentorLoad[]>;
+  mentorOptions(c: Caller): Promise<MentorOption[]>;
+  create(c: Caller, draft: DevPlanDraft): Promise<DevPlan>;
+  update(c: Caller, id: string, patch: Partial<DevPlanDraft>): Promise<DevPlan>;
+  /** The manager's say. Withdrawn automatically when the plan changes materially. */
+  endorse(c: Caller, id: string): Promise<DevPlan>;
+  setStatus(c: Caller, id: string, status: PlanStatus): Promise<DevPlan>;
+  setReview(c: Caller, id: string, on: string): Promise<DevPlan>;
+  addAction(c: Caller, planId: string, draft: DevActionDraft): Promise<DevAction>;
+  /** Refused for an action that names a course — that state lives in Learning. */
+  setActionDone(c: Caller, actionId: string, done: boolean): Promise<DevAction>;
+  removeAction(c: Caller, actionId: string): Promise<DevAction>;
+}
+
+/* ---------------- company events ---------------- */
+
+export type {
+  CompanyEvent, EventStatus, EventType, Rsvp, RsvpChoice, RsvpResponse,
+} from '../data/events';
+export { EVENT_STATUSES, EVENT_TYPES, RSVP_CHOICES } from '../data/events';
+import type {
+  CompanyEvent, EventStatus, EventType, Rsvp, RsvpChoice, RsvpResponse,
+} from '../data/events';
+
+/** An event with everything the list needs, including where the caller stands. */
+export interface EventRow {
+  event: CompanyEvent;
+  organiser: string;
+  audience: number;
+  going: number;
+  maybe: number;
+  waitlisted: number;
+  /** Null where there is no capacity. */
+  seatsLeft: number | null;
+  full: boolean;
+  past: boolean;
+  /** The list has closed, so the buttons are off. */
+  closed: boolean;
+  /** Null until the register is marked — not zero, which would read as nobody came. */
+  attendance: number | null;
+  myResponse: RsvpResponse | null;
+  invited: boolean;
+}
+
+export interface RsvpRow {
+  rsvp: Rsvp;
+  name: string;
+  dept: string;
+}
+
+export interface EventDetail extends EventRow {
+  attendees: RsvpRow[];
+  /** True where the caller gets counts but not names. */
+  namesHidden: boolean;
+  canManage: boolean;
+  history: AuditRecord[];
+}
+
+export interface EventFilter {
+  q?: string;
+  type?: EventType;
+  status?: EventStatus;
+  site?: string;
+  organiserId?: string;
+  when?: 'upcoming' | 'past';
+  /** Only events the caller has answered. */
+  mineOnly?: boolean;
+  from?: string;
+  to?: string;
+}
+
+export interface EventDraft {
+  title: string;
+  type: EventType;
+  desc?: string;
+  on: string;
+  endsOn?: string;
+  startAt?: string;
+  endAt?: string;
+  allDay?: boolean;
+  site?: string;
+  venue?: string;
+  online?: boolean;
+  capacity?: number | null;
+  /** Only an administrator may hand an event to somebody else to run. */
+  organiserId?: string;
+  forSites?: string[];
+  forDepts?: string[];
+  rsvpBy?: string | null;
+}
+
+export interface EventStats {
+  upcoming: number;
+  thisMonth: number;
+  drafts: number;
+  cancelled: number;
+  going: number;
+  waitlisted: number;
+  full: number;
+  past: number;
+  /** The mean across events, not across people. Null where nothing is marked. */
+  attendance: number | null;
+  unmarked: number;
+}
+
+/**
+ * Events, and who is coming to them.
+ *
+ * A full event waitlists rather than refusing, and a withdrawal promotes the
+ * person who has waited longest — automatically, because a waitlist somebody
+ * has to work by hand never moves.
+ */
+export interface EventService {
+  list(c: Caller, f?: EventFilter): Promise<EventRow[]>;
+  get(c: Caller, id: string): Promise<EventDetail | null>;
+  /** What the caller has said yes or maybe to. */
+  mine(c: Caller): Promise<EventRow[]>;
+  stats(c: Caller): Promise<EventStats>;
+  create(c: Caller, draft: EventDraft): Promise<CompanyEvent>;
+  update(c: Caller, id: string, patch: Partial<EventDraft>): Promise<CompanyEvent>;
+  publish(c: Caller, id: string): Promise<CompanyEvent>;
+  /** Needs a reason: the people who signed up will read it. */
+  cancel(c: Caller, id: string, reason: string): Promise<CompanyEvent>;
+  remove(c: Caller, id: string): Promise<CompanyEvent>;
+  /** Only the three answers a person may give — Waitlisted is assigned, never chosen. */
+  rsvp(c: Caller, eventId: string, choice: RsvpChoice): Promise<Rsvp>;
+  withdraw(c: Caller, eventId: string): Promise<Rsvp>;
+  /** Refused before the event has happened. */
+  markAttendance(c: Caller, eventId: string, empId: string, attended: boolean): Promise<Rsvp>;
+}
+
+/* ---------------- export centre ---------------- */
+
+export type {
+  Dataset, DatasetColumn, DatasetScope, ExportOutcome, ExportRun,
+} from '../data/exports';
+export { DATASETS } from '../data/exports';
+import type { Dataset, ExportOutcome, ExportRun } from '../data/exports';
+
+export interface ExportFilter {
+  q?: string;
+  datasetId?: string;
+  byId?: string;
+  outcome?: ExportOutcome;
+  /** Only exports that took personal data. */
+  personalOnly?: boolean;
+  from?: string;
+  to?: string;
+}
+
+export interface ExportRequest {
+  datasetId: string;
+  /** Column keys to keep. Empty or absent means every column in the dataset. */
+  columns?: string[];
+  from?: string;
+  to?: string;
+}
+
+/** One line of the register, with its dataset resolved where it still exists. */
+export interface ExportRunRow {
+  run: ExportRun;
+  dataset: Dataset | null;
+}
+
+/**
+ * A finished export.
+ *
+ * The rows come back to the caller and are written to a file by the screen.
+ * They are deliberately not kept anywhere: see the note at the top of
+ * `src/data/exports.ts`.
+ */
+export interface ExportResult {
+  run: ExportRun;
+  dataset: Dataset;
+  filename: string;
+  header: string[];
+  rows: (string | number | null)[][];
+}
+
+export interface ExportStats {
+  runs: number;
+  thisMonth: number;
+  rows: number;
+  personal: number;
+  refused: number;
+  people: number;
+  datasets: number;
+}
+
+/**
+ * Taking data out, and the record of having done so.
+ *
+ * Every dataset is either built through a service that takes the caller — so
+ * the export sees exactly what the screen would — or restricted to
+ * administrators. Refused attempts are recorded alongside the successful ones.
+ */
+export interface ExportService {
+  /** Only the datasets this caller could actually run. */
+  datasets(c: Caller): Promise<Dataset[]>;
+  /** The register. Everybody sees their own; an administrator sees all of it. */
+  history(c: Caller, f?: ExportFilter): Promise<ExportRunRow[]>;
+  stats(c: Caller): Promise<ExportStats>;
+  run(c: Caller, req: ExportRequest): Promise<ExportResult>;
+}
+
+/* ---------------- custom reports ---------------- */
+
+export type {
+  Aggregation, ReportDef, ReportFilterClause, ReportMeasure,
+} from '../data/reportdefs';
+export { AGGREGATIONS } from '../data/reportdefs';
+import type {
+  ReportDef, ReportFilterClause, ReportMeasure,
+} from '../data/reportdefs';
+
+export interface ReportRow {
+  report: ReportDef;
+  /** Null where the dataset it asks for has since been retired. */
+  dataset: Dataset | null;
+  owner: string;
+  mine: boolean;
+  /** False where this caller's role could not run the underlying dataset. */
+  runnable: boolean;
+}
+
+export interface ReportResult {
+  report: ReportDef;
+  dataset: Dataset;
+  header: string[];
+  rows: (string | number | null)[][];
+  grouped: boolean;
+  /** Rows before grouping — the answer to "out of how many". */
+  total: number;
+}
+
+export interface ReportDraft {
+  n: string;
+  desc?: string;
+  datasetId: string;
+  columns?: string[];
+  groupBy?: string | null;
+  measures?: ReportMeasure[];
+  filters?: ReportFilterClause[];
+  sort?: { col: string; dir: 'asc' | 'desc' } | null;
+  shared?: boolean;
+}
+
+/**
+ * Reports somebody wrote, rather than the eleven the product ships.
+ *
+ * A report stores its definition and never its results: running one asks the
+ * export centre as *the person running it*, so a report shared by an
+ * administrator and opened by a manager returns the manager's rows.
+ */
+export interface ReportService {
+  list(c: Caller): Promise<ReportRow[]>;
+  /** What a report can be built on — the export catalogue, filtered by role. */
+  datasets(c: Caller): Promise<Dataset[]>;
+  run(c: Caller, id: string): Promise<ReportResult>;
+  create(c: Caller, draft: ReportDraft): Promise<ReportDef>;
+  update(c: Caller, id: string, patch: Partial<ReportDraft>): Promise<ReportDef>;
+  remove(c: Caller, id: string): Promise<ReportDef>;
+  /** Copy somebody else's as a private starting point. */
+  duplicate(c: Caller, id: string): Promise<ReportDef>;
+}
+
+/* ---------------- integration settings ---------------- */
+
+export type {
+  ApiKey, Integration, IntegrationKind, IntegrationState, Webhook, WebhookEvent,
+} from '../data/integrations';
+export { API_SCOPES, WEBHOOK_EVENTS } from '../data/integrations';
+import type { ApiKey, Integration, IntegrationState, Webhook } from '../data/integrations';
+
+/**
+ * One connection, with its state worked out rather than looked up.
+ *
+ * `detail` says *why* it is in that state, and is shown next to it: a green
+ * tick nobody can falsify is the thing this module exists not to be.
+ */
+export interface IntegrationRow {
+  integration: Integration;
+  state: IntegrationState;
+  detail: string;
+}
+
+export interface WebhookRow {
+  webhook: Webhook;
+  createdBy: string;
+  unhealthy: boolean;
+  failureRate: number;
+}
+
+export interface WebhookDraft {
+  n: string;
+  /** https only — a webhook carries employee data across the internet. */
+  url: string;
+  events: string[];
+  active?: boolean;
+}
+
+export interface ApiKeyRow {
+  key: ApiKey;
+  createdBy: string;
+  revoked: boolean;
+  expiringSoon: boolean;
+  expired: boolean;
+}
+
+export interface ApiKeyDraft {
+  n: string;
+  scopes: string[];
+  expiresInDays?: number;
+}
+
+/** The secret, returned once and never stored. */
+export interface NewApiKey {
+  key: ApiKey;
+  secret: string;
+}
+
+export interface IntegrationStats {
+  connected: number;
+  available: number;
+  webhooks: number;
+  unhealthy: number;
+  keys: number;
+  expiringSoon: number;
+  /** True where this build has no API and is reading the demo dataset. */
+  demoMode: boolean;
+}
+
+/**
+ * What this tenant is connected to.
+ *
+ * Connection state is derived from the configuration the app is running with,
+ * never from a stored flag — so the screen cannot claim a connection that does
+ * not exist. Webhooks and keys are real records and are managed here.
+ */
+export interface IntegrationService {
+  list(c: Caller): Promise<IntegrationRow[]>;
+  stats(c: Caller): Promise<IntegrationStats>;
+  webhooks(c: Caller): Promise<WebhookRow[]>;
+  createWebhook(c: Caller, draft: WebhookDraft): Promise<Webhook>;
+  setWebhookActive(c: Caller, id: string, active: boolean): Promise<Webhook>;
+  removeWebhook(c: Caller, id: string): Promise<Webhook>;
+  apiKeys(c: Caller): Promise<ApiKeyRow[]>;
+  scopes(c: Caller): Promise<string[]>;
+  /** Returns the secret once; only its last four characters are kept. */
+  createApiKey(c: Caller, draft: ApiKeyDraft): Promise<NewApiKey>;
+  /** Revoked, never deleted — the key is part of the access record. */
+  revokeApiKey(c: Caller, id: string): Promise<ApiKey>;
 }

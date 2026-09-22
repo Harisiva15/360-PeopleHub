@@ -47,9 +47,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setReady(true);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
       setReady(true);
+
+      /*
+       * Record the sign-in, once.
+       *
+       * Only on SIGNED_IN — not on TOKEN_REFRESHED, which fires every hour,
+       * and not on the initial getSession above, which fires on every tab and
+       * every reload. Either would turn "last signed in" into "last opened a
+       * tab", and that figure is what an administrator uses to decide an
+       * account is dormant.
+       *
+       * Deliberately not awaited and deliberately swallowed: nobody should be
+       * held out of the app because a timestamp did not write.
+       */
+      if (event === 'SIGNED_IN') {
+        void import('../services').then(({ getServices }) =>
+          getServices().users.lastLoginNow({
+            role: 'employee', meId: next?.user?.id ?? '',
+          }).catch(() => {}));
+      }
     });
 
     return () => {

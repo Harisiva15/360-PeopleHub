@@ -297,6 +297,14 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
     },
 
     documents: {
+      /*
+       * `letterContext` is deliberately NOT here. It carries the salary
+       * structure a letter quotes, which is payroll data this deployment does
+       * not hold — the same reason `employees.profile` stays on the mock. A
+       * partial response would typecheck and print a letter with blank pay.
+       */
+      documents: (empIds) => api.get(`/documents${qs({ empIds: empIds?.join(',') })}`),
+      documentTypes: () => api.get('/documents/types'),
       requests: (q = {}) => api.get(`/documents/requests${qs(q)}`),
       collectionSummary: (q = {}) => api.get(`/documents/summary${qs(q)}`),
       requestChecklist: (journeyId, due) =>
@@ -423,6 +431,216 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       request: (draft) => api.post('/letters', draft),
       issue: (id) => api.post(`/letters/${id}/issue`),
       reject: (id, reason) => api.post(`/letters/${id}/reject`, { reason }),
+    },
+    /*
+     * The five modules the 0032-0036 migrations brought with them.
+     *
+     * Every method here ignores its `caller` argument, as the rest of this
+     * file does: the server derives the caller from the session token, and
+     * sending scope from the client would make it a suggestion rather than a
+     * boundary.
+     */
+    jobTitles: {
+      list: (_c, f = {}) => api.get(`/job-titles${qs({
+        q: f.q, dept: f.dept, family: f.family, level: f.level,
+        empType: f.empType, status: f.status,
+      })}`),
+      get: (_c, id) => api.get(`/job-titles/${id}`),
+      mine: () => api.get('/job-titles/mine'),
+      create: (_c, draft) => api.post('/job-titles', draft),
+      update: (_c, id, patch) => api.patch(`/job-titles/${id}`, patch),
+      setStatus: (_c, id, status) => api.put(`/job-titles/${id}/status`, { status }),
+      remove: (_c, id) => api.del(`/job-titles/${id}`),
+    },
+
+    lifecycle: {
+      list: (_c, f = {}) => api.get(`/lifecycle${qs({
+        q: f.q, stage: f.stage, dept: f.dept, managerId: f.managerId,
+        site: f.site, from: f.from, to: f.to,
+      })}`),
+      get: (_c, id) => api.get(`/lifecycle/${id}`),
+      stats: () => api.get('/lifecycle/stats'),
+      addTask: (_c, empId, draft) => api.post(`/lifecycle/${empId}/tasks`, draft),
+      setTaskDone: (_c, taskId, done) =>
+        api.put(`/lifecycle/tasks/${taskId}/done`, { done }),
+      removeTask: (_c, taskId) => api.del(`/lifecycle/tasks/${taskId}`),
+    },
+
+    software: {
+      list: (_c, f = {}) => api.get(`/software${qs({
+        q: f.q, cat: f.cat, vendor: f.vendor, status: f.status, ownerId: f.ownerId,
+        renewingWithin: f.renewingWithin,
+        hasDormant: f.hasDormant ? 'true' : undefined,
+      })}`),
+      get: (_c, id) => api.get(`/software/${id}`),
+      mine: () => api.get('/software/mine'),
+      stats: () => api.get('/software/stats'),
+      renewals: (_c, withinDays) => api.get(`/software/renewals${qs({ within: withinDays })}`),
+      create: (_c, draft) => api.post('/software', draft),
+      update: (_c, id, patch) => api.patch(`/software/${id}`, patch),
+      remove: (_c, id) => api.del(`/software/${id}`),
+      assignSeat: (_c, productId, empId) =>
+        api.post(`/software/${productId}/seats`, { empId }),
+      revokeSeat: (_c, seatId) => api.del(`/software/seats/${seatId}`),
+    },
+
+    devPlans: {
+      list: (_c, f = {}) => api.get(`/dev-plans${qs({
+        q: f.q, status: f.status, dept: f.dept, managerId: f.managerId,
+        mentorId: f.mentorId, area: f.area,
+        endorsed: f.endorsed === undefined ? undefined : String(f.endorsed),
+        reviewDue: f.reviewDue ? 'true' : undefined,
+        overdueOnly: f.overdueOnly ? 'true' : undefined,
+      })}`),
+      get: (_c, id) => api.get(`/dev-plans/${id}`),
+      mine: () => api.get('/dev-plans/mine'),
+      stats: () => api.get('/dev-plans/stats'),
+      focus: () => api.get('/dev-plans/focus'),
+      mentors: () => api.get('/dev-plans/mentors'),
+      mentorOptions: () => api.get('/dev-plans/mentor-options'),
+      create: (_c, draft) => api.post('/dev-plans', draft),
+      update: (_c, id, patch) => api.patch(`/dev-plans/${id}`, patch),
+      endorse: (_c, id) => api.post(`/dev-plans/${id}/endorse`),
+      setStatus: (_c, id, status) => api.put(`/dev-plans/${id}/status`, { status }),
+      setReview: (_c, id, on) => api.put(`/dev-plans/${id}/review`, { on }),
+      addAction: (_c, planId, draft) => api.post(`/dev-plans/${planId}/actions`, draft),
+      setActionDone: (_c, actionId, done) =>
+        api.put(`/dev-plans/actions/${actionId}/done`, { done }),
+      removeAction: (_c, actionId) => api.del(`/dev-plans/actions/${actionId}`),
+    },
+
+    events: {
+      list: (_c, f = {}) => api.get(`/events${qs({
+        q: f.q, type: f.type, status: f.status, site: f.site,
+        organiserId: f.organiserId, when: f.when,
+        mineOnly: f.mineOnly ? 'true' : undefined,
+        from: f.from, to: f.to,
+      })}`),
+      get: (_c, id) => api.get(`/events/${id}`),
+      mine: () => api.get('/events/mine'),
+      stats: () => api.get('/events/stats'),
+      create: (_c, draft) => api.post('/events', draft),
+      update: (_c, id, patch) => api.patch(`/events/${id}`, patch),
+      publish: (_c, id) => api.post(`/events/${id}/publish`),
+      cancel: (_c, id, reason) => api.post(`/events/${id}/cancel`, { reason }),
+      remove: (_c, id) => api.del(`/events/${id}`),
+      rsvp: (_c, eventId, choice) => api.post(`/events/${eventId}/rsvp`, { choice }),
+      withdraw: (_c, eventId) => api.del(`/events/${eventId}/rsvp`),
+      markAttendance: (_c, eventId, empId, attended) =>
+        api.put(`/events/${eventId}/attendance`, { empId, attended }),
+    },
+
+    /*
+     * The recruitment desk and user administration.
+     *
+     * Both had tables (0029, 0030) and no service, so the screens ran on the
+     * demo dataset against a live schema — the worst of the two, because the
+     * data looked real. `kpi` and `funnel` take a filter the server reads
+     * from the query string; the rest is ordinary REST.
+     */
+    recruitment: {
+      jobOrders: (f = {}) => api.get(`/recruitment/job-orders${qs({
+        from: f.from, to: f.to, clientId: f.clientId, recruiterId: f.recruiterId,
+        reqId: f.reqId, industry: f.industry, tech: f.tech, location: f.location,
+        status: f.status, priority: f.priority,
+      })}`),
+      jobOrder: (id) => api.get(`/recruitment/job-orders/${id}`),
+      createJobOrder: (draft) => api.post('/recruitment/job-orders', draft),
+      updateJobOrder: (id, patch) => api.patch(`/recruitment/job-orders/${id}`, patch),
+      assign: (id, draft) => api.post(`/recruitment/job-orders/${id}/assign`, draft),
+      release: (id, assignmentId) =>
+        api.post(`/recruitment/job-orders/${id}/release`, { assignmentId }),
+      logActivity: (id, kind, summary, qty) =>
+        api.post(`/recruitment/job-orders/${id}/activity`, { kind, summary, qty }),
+      myJobs: (recruiterId) => api.get(`/recruitment/my-jobs/${recruiterId}`),
+      kpi: (f = {}) => api.get(`/recruitment/kpi${qs({
+        from: f.from, to: f.to, clientId: f.clientId, recruiterId: f.recruiterId,
+        status: f.status, priority: f.priority,
+      })}`),
+      funnel: (f = {}) => api.get(`/recruitment/funnel${qs({
+        from: f.from, to: f.to, clientId: f.clientId, recruiterId: f.recruiterId,
+        status: f.status, priority: f.priority,
+      })}`),
+    },
+
+    users: {
+      list: (_c, f = {}) => api.get(`/users${qs({
+        q: f.q, status: f.status, role: f.role, dept: f.dept, site: f.site,
+        managerId: f.managerId, empType: f.empType,
+        joinedFrom: f.joinedFrom, joinedTo: f.joinedTo,
+      })}`),
+      get: (_c, id) => api.get(`/users/${id}`),
+      stats: () => api.get('/users/stats'),
+      nextEmployeeCode: () => api.get('/users/next-code'),
+      create: (_c, draft) => api.post('/users', draft),
+      update: (_c, id, patch) => api.patch(`/users/${id}`, patch),
+      setStatus: (_c, id, status, reason) =>
+        api.put(`/users/${id}/status`, { status, reason }),
+      /* A POST, because it carries the typed confirmation in a body. */
+      remove: (_c, id, typed) => api.post(`/users/${id}/delete`, { typed }),
+      decide: (_c, id, decision, note) =>
+        api.post(`/users/${id}/decide`, { decision, note }),
+      resendInvitation: (_c, id) => api.post(`/users/${id}/resend-invitation`),
+      resetPassword: (_c, id, forceChange) =>
+        api.post(`/users/${id}/reset-password`, { forceChange }),
+      bulkUpdate: (_c, ids, patch) => api.post('/users/bulk-update', { ids, patch }),
+      lastLoginNow: () => api.post('/users/me/last-login'),
+    },
+
+    /*
+     * Saved reports and integration settings.
+     *
+     * `run` is a POST although it reads: it bumps the run counters and, because
+     * it goes through the export path, writes a row to the export register. A
+     * GET that leaves an audit record is what a prefetch turns into a false one.
+     */
+    reports: {
+      list: () => api.get('/reports/saved'),
+      datasets: () => api.get('/reports/saved/datasets'),
+      run: (_c, id) => api.post(`/reports/saved/${id}/run`),
+      create: (_c, draft) => api.post('/reports/saved', draft),
+      update: (_c, id, patch) => api.patch(`/reports/saved/${id}`, patch),
+      remove: (_c, id) => api.del(`/reports/saved/${id}`),
+      duplicate: (_c, id) => api.post(`/reports/saved/${id}/duplicate`),
+    },
+
+    integrations: {
+      list: () => api.get('/integrations'),
+      stats: () => api.get('/integrations/stats'),
+      webhooks: () => api.get('/integrations/webhooks'),
+      createWebhook: (_c, draft) => api.post('/integrations/webhooks', draft),
+      setWebhookActive: (_c, id, active) =>
+        api.put(`/integrations/webhooks/${id}/active`, { active }),
+      removeWebhook: (_c, id) => api.del(`/integrations/webhooks/${id}`),
+      apiKeys: () => api.get('/integrations/keys'),
+      scopes: () => api.get('/integrations/scopes'),
+      createApiKey: (_c, draft) => api.post('/integrations/keys', draft),
+      revokeApiKey: (_c, id) => api.post(`/integrations/keys/${id}/revoke`),
+    },
+
+    /*
+     * The export centre.
+     *
+     * The server offers a shorter catalogue than the mock does — three
+     * datasets against eight — because the other five have no tables yet.
+     * That is deliberate and visible: `datasets` comes from the server, so
+     * against a real API the screen lists what can actually be built rather
+     * than offering a dataset that would download an empty file.
+     *
+     * `run` is a POST although it reads, because it writes the register
+     * entry. A GET that leaves a row in an audit log is what a retry, a
+     * prefetch or a link preview turns into a false record of somebody
+     * taking data out.
+     */
+    exports: {
+      datasets: () => api.get('/exports/datasets'),
+      history: (_c, f = {}) => api.get(`/exports/history${qs({
+        q: f.q, datasetId: f.datasetId, byId: f.byId, outcome: f.outcome,
+        personalOnly: f.personalOnly ? 'true' : undefined,
+        from: f.from, to: f.to,
+      })}`),
+      stats: () => api.get('/exports/stats'),
+      run: (_c, req) => api.post('/exports/run', req),
     },
   };
 }

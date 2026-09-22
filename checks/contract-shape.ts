@@ -33,6 +33,21 @@ const CREATES: Record<string, string> = {
   hiring: 'openRequisition',
   recruitment: 'createJobOrder',
   users: 'create',
+  software: 'create',
+  devPlans: 'create',
+  events: 'create',
+  reports: 'create',
+  // The only records the lifecycle owns are tasks. The stage is derived and
+  // the people come from onboarding, the ATS and the payroll — which is the
+  // point of the module, so there is nothing else here to create.
+  lifecycle: 'addTask',
+  // An export creates a register entry, not a dataset. `run` is the only
+  // thing in the service that writes anything at all.
+  exports: 'run',
+  // The catalogue is a description of the product and is not created. What
+  // this service does own is endpoints and keys, and an endpoint is the one
+  // a screen adds first.
+  integrations: 'createWebhook',
   jobTitles: 'create',
   learning: 'enrol',
   helpdesk: 'raise',

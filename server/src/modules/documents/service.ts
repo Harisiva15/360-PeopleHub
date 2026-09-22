@@ -18,6 +18,7 @@
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
+import { employeeScope } from '../../tenancy/scope.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
 export class DocumentError extends Error {
@@ -295,4 +296,66 @@ export async function collectionSummary(
     mandatoryOutstanding: rows.filter(
       (r) => r.mandatory && ['pending', 'rejected'].includes(r.status)).length,
   };
+}
+
+/**
+ * The documents a person has on file.
+ *
+ * `document` has existed since 0005 and nothing read it — the screen listed
+ * fabricated rows against a real table, which is the worst arrangement
+ * available: it looks like the record and is not.
+ *
+ * **Only the metadata.** The storage key, checksum and byte size stay
+ * server-side. A screen listing what somebody has on file needs the kind and
+ * the date; the key is how you fetch the file, and handing it to every caller
+ * of a list endpoint is how a document store becomes public.
+ *
+ * `verified` is derived: a document that is on file and not purged is
+ * verified, because being there is what verification produced. There is no
+ * separate flag to disagree with it.
+ */
+export async function listDocuments(
+  caller: Caller,
+  empIds?: string[],
+): Promise<{ id: string; empId: string; type: string; on: string; verified: boolean }[]> {
+  const params: unknown[] = [];
+  const where: string[] = ['d.purged_at IS NULL'];
+  /*
+   * Scoped like everything else: an employee sees their own file, a manager
+   * their line. Somebody else's identity documents are not a manager's
+   * business by default and certainly not an employee's.
+   */
+  where.push(employeeScope(caller, 'd.employee_id', params));
+  if (empIds?.length) {
+    params.push(empIds);
+    where.push(`d.employee_id = ANY($${params.length})`);
+  }
+
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query<{
+      id: string; employee_id: string; kind: string; uploaded_at: string;
+    }>(
+      `SELECT d.id, d.employee_id, d.kind, d.uploaded_at::text
+         FROM document d
+        WHERE ${where.join(' AND ')}
+        ORDER BY d.uploaded_at DESC`,
+      params,
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      empId: r.employee_id,
+      type: r.kind,
+      on: r.uploaded_at.slice(0, 10),
+      verified: true,
+    }));
+  });
+}
+
+/** The kinds on file, read from what exists rather than a hard-coded list. */
+export async function documentTypes(caller: Caller): Promise<string[]> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query<{ kind: string }>(
+      'SELECT DISTINCT kind FROM document WHERE purged_at IS NULL ORDER BY kind');
+    return rows.map((r) => r.kind);
+  });
 }

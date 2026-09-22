@@ -248,6 +248,83 @@ await app.query('SELECT set_config($1, $2, true)', ['app.tenant_id', tenantA]);
 }
 await app.query('ROLLBACK');
 
+/* ---- the export register, through the view ------------------------------ */
+
+/*
+ * A view is the classic way a tenant boundary is lost. Postgres evaluates one
+ * as its *owner* unless it says security_invoker, and the owner here is the
+ * migration role, which is not subject to the policy. The schema checker
+ * asserts the flag is written; only this can prove the database honours it.
+ *
+ * So: write an export audit row as tenant A, then read the view as tenant B
+ * and confirm it is not there.
+ */
+await app.query('BEGIN');
+await app.query('SELECT set_config($1, $2, true)', ['app.tenant_id', tenantA]);
+await app.query(
+  `INSERT INTO audit_log (category, action, actor_label, subject_table, detail)
+   VALUES ('export', 'export_run', 'Isolation Check', 'dataset',
+           jsonb_build_object(
+             'datasetId', 'employees', 'datasetName', 'Employee directory',
+             'byRole', 'admin', 'rows', 4242, 'columns', 9,
+             'filters', 'Everything visible', 'personal', true,
+             'outcome', 'Completed', 'note', ''))`);
+
+{
+  const { rows } = await app.query(
+    "SELECT rows FROM export_run WHERE by_name = 'Isolation Check'");
+  check('tenant A can read its own export through the view',
+    rows.length === 1 && Number(rows[0].rows) === 4242,
+    `saw ${rows.length} row(s)`);
+}
+
+await app.query('SELECT set_config($1, $2, true)', ['app.tenant_id', tenantB]);
+{
+  const { rows } = await app.query(
+    "SELECT rows FROM export_run WHERE by_name = 'Isolation Check'");
+  check("tenant B cannot see tenant A's export through the view",
+    rows.length === 0,
+    `LEAK: tenant B saw ${rows.length} of tenant A's export records`);
+}
+{
+  /* And not in aggregate either — a count leaks the fact of an export. */
+  const { rows } = await app.query('SELECT count(*)::int AS n FROM export_run');
+  check('nor count them', Number(rows[0].n) === 0, `counted ${rows[0].n}`);
+}
+await app.query('ROLLBACK');
+
+/* ---- the export register refuses to carry exported data ------------------ */
+
+await app.query('BEGIN');
+await app.query('SELECT set_config($1, $2, true)', ['app.tenant_id', tenantA]);
+
+await refuses(
+  'an export audit row carrying a payload is refused', app,
+  `INSERT INTO audit_log (category, action, actor_label, detail)
+   VALUES ('export', 'export_run', 'Isolation Check',
+           jsonb_build_object(
+             'datasetId','employees','datasetName','D','rows',2,'columns',2,
+             'personal',false,'outcome','Completed',
+             'data', jsonb_build_array('a row of employee data')))`);
+
+await refuses(
+  'a refused export claiming a row count is refused', app,
+  `INSERT INTO audit_log (category, action, actor_label, detail)
+   VALUES ('export', 'export_refused', 'Isolation Check',
+           jsonb_build_object(
+             'datasetId','employees','datasetName','D','rows',500,'columns',2,
+             'personal',false,'outcome','Refused'))`);
+
+await refuses(
+  'an export row missing its row count is refused', app,
+  `INSERT INTO audit_log (category, action, actor_label, detail)
+   VALUES ('export', 'export_run', 'Isolation Check',
+           jsonb_build_object(
+             'datasetId','employees','datasetName','D','columns',2,
+             'personal',false,'outcome','Completed'))`);
+
+await app.query('ROLLBACK');
+
 await app.end();
 
 /* ---- clean up ----------------------------------------------------------- */

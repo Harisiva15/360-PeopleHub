@@ -15,7 +15,8 @@
 
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
-import { ACTIVE, EMAP } from '../../data/employees';
+import { uid } from '../../lib/rng';
+import { EMAP } from '../../data/employees';
 import { JOB_TITLES, holdersOf, jobTitleOf, levelOf } from '../../data/jobtitles';
 import type { JobTitle, JobTitleStatus } from '../../data/jobtitles';
 import { REQS } from '../../data/ats';
@@ -126,7 +127,7 @@ export const jobTitleService: JobTitleService = {
     if (bad) return refuse(bad);
 
     const t: JobTitle = {
-      id: `JT-${Date.now().toString(36)}`,
+      id: uid('JT'),
       code: draft.code.trim().toUpperCase(),
       n: draft.n.trim(),
       dept: draft.dept,
@@ -216,11 +217,4 @@ export const jobTitleService: JobTitleService = {
     return ok(t);
   },
 
-  /** The families and levels a form offers, so the screen invents neither. */
-  meta() {
-    return ok({
-      departments: ACTIVE().reduce<string[]>(
-        (acc, e) => (acc.includes(e.dept) ? acc : [...acc, e.dept]), []),
-    });
-  },
 };

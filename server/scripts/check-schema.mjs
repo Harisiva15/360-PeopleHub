@@ -152,6 +152,7 @@ if (!files.length) {
 
 const tables = new Map();
 const indexes = [];
+const views = [];
 let statements = 0;
 
 for (const file of files) {
@@ -173,6 +174,18 @@ for (const file of files) {
       tables.set(t.name, t);
     } else if (stmt.AlterTableStmt) {
       applyAlterTable(stmt.AlterTableStmt, tables);
+    } else if (stmt.ViewStmt) {
+      views.push({
+        file,
+        name: stmt.ViewStmt.view?.relname,
+        /* WITH (...) lands in `options` as DefElem nodes. */
+        options: (stmt.ViewStmt.options ?? []).map((o) => ({
+          name: o.DefElem?.defname,
+          value: o.DefElem?.arg?.Boolean?.boolval
+            ?? o.DefElem?.arg?.String?.sval
+            ?? o.DefElem?.arg?.Integer?.ival,
+        })),
+      });
     } else if (stmt.IndexStmt) {
       indexes.push({
         table: stmt.IndexStmt.relation.relname,
@@ -253,10 +266,30 @@ for (const [name, t] of tables) {
   }
 }
 
+/* ---- invariant 5: a view runs as its caller, or it is a hole in the RLS --- */
+/*
+ * A Postgres view is evaluated as its *owner* unless it says otherwise. The
+ * owner here is the migration role, which is not subject to the tenant policy
+ * — so a view without security_invoker reads every tenant's rows and hands
+ * them to whoever queries it, with no error and nothing in a log. It is the
+ * commonest way a Postgres tenant boundary is lost, and it cannot be caught by
+ * reading the view definition, because the definition looks correct.
+ */
+for (const v of views) {
+  const invoker = v.options.find((o) => o.name === 'security_invoker');
+  if (!invoker) {
+    fail(v.file, `view ${v.name} does not set security_invoker — it would run as `
+      + 'its owner and read every tenant');
+  } else if (invoker.value !== true && invoker.value !== 'true' && invoker.value !== 'on') {
+    fail(v.file, `view ${v.name} sets security_invoker = ${invoker.value}`);
+  }
+}
+
 /* ---- report -------------------------------------------------------------- */
 const scoped = [...tables.keys()].filter(isScoped).length;
 console.log(`${files.length} migrations, ${statements} statements, ${tables.size} tables `
-  + `(${scoped} tenant-scoped, ${tables.size - scoped} global or platform)`);
+  + `(${scoped} tenant-scoped, ${tables.size - scoped} global or platform)`
+  + (views.length ? `, ${views.length} view(s)` : ''));
 
 if (problems.length) {
   console.error(`\n${problems.length} problem(s):`);

@@ -73,6 +73,16 @@ export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
+  /*
+   * PATCH, not PUT, for a partial update.
+   *
+   * The distinction is load-bearing here rather than pedantic: every `update`
+   * in these contracts takes a `Partial<Draft>`, and a PUT is defined as
+   * replacing the whole resource. A server that treated one as the other would
+   * blank every field the screen did not send — which is exactly what an edit
+   * form that only shows half the record would do.
+   */
+  patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
 };
 

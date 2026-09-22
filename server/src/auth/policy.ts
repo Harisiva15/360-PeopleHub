@@ -182,6 +182,28 @@ export const POLICY: Record<string, ModulePolicy> = {
      reads — an employee reads exactly one record, their own, which the
      service enforces rather than the scope. */
   jobtitles: rule(['own', 'none', 'none'], ['all', 'none', 'none'], ['all', 'all', 'none']),
+  /* The journey is about you, so you see your own and may tick off a task
+     assigned to you. Nothing here writes a stage — see the service. */
+  lifecycle: rule(['own', 'own', 'none'], ['team', 'team', 'none'], ['all', 'all', 'all']),
+  /* A contract is procurement and a seat is an access grant, so they part
+     ways: a manager reads the estate and revokes on their own line, and only
+     an administrator signs for anything. */
+  software: rule(['own', 'none', 'none'], ['all', 'team', 'none'], ['all', 'all', 'all']),
+  /* The one module where an employee genuinely writes. The plan is theirs —
+     they author it and tick it off — and the manager's say is the endorsement,
+     which is the approve column rather than the write one. */
+  devplans: rule(['own', 'own', 'none'], ['team', 'own', 'team'], ['all', 'all', 'all']),
+  /* Everyone reads what is on and answers for themselves; anybody who runs a
+     team can run an event, and the organiser is recorded on it. */
+  events: rule(['all', 'own', 'none'], ['all', 'team', 'team'], ['all', 'all', 'all']),
+  /* Everybody can take out what they can already see, and read their own
+     record of having done it. The whole register is an administrator's. */
+  exports: rule(NO, ['team', 'own', 'none'], ['all', 'all', 'none']),
+  /* A report is a saved question. Writing one is writing your own; the rows it
+     returns are whatever the reader could already see. */
+  customreports: rule(NO, ['team', 'own', 'none'], ['all', 'all', 'none']),
+  /* How the tenant connects to anything is a tenant-level decision. */
+  integrations: rule(NO, NO, ['all', 'all', 'all']),
   users: rule(NO, ['team', 'team', 'none'], ['all', 'all', 'all']),
   clients: rule(NO, NO, ['all', 'all', 'none']),
   requirements: rule(NO, NO, ['all', 'all', 'none']),

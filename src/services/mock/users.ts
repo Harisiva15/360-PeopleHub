@@ -389,9 +389,19 @@ export const userService: UserService = {
     return ok(touched);
   },
 
-  lastLoginNow(_c, id) {
-    const u = userOf(id);
-    if (!u) return refuse('No such user');
+  /**
+   * Stamp the caller's own last sign-in.
+   *
+   * It took an id once, and updated that row without checking whose it was —
+   * so anybody signed in could stamp anybody else's account. Only a timestamp,
+   * but "who last signed in" is what an administrator uses to decide an
+   * account is dormant, and an unguarded write is an unguarded write.
+   *
+   * Taking no id removes the hole rather than guarding it.
+   */
+  lastLoginNow(c) {
+    const u = USERS.find((x) => x.empId === c.meId);
+    if (!u) return ok(null);
     u.lastLoginAt = now();
     return ok(u);
   },

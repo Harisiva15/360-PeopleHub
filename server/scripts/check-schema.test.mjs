@@ -114,6 +114,26 @@ CREATE TABLE employee (
     sql: BASE + `CREATE TABEL wrong (id uuid);`,
     expect: /does not parse/,
   },
+  {
+    name: 'rejects a view that would run as its owner',
+    sql: BASE + `
+CREATE VIEW employee_summary AS SELECT id, tenant_id FROM employee;`,
+    expect: /does not set security_invoker/,
+  },
+  {
+    name: 'rejects a view that switches security_invoker off',
+    sql: BASE + `
+CREATE VIEW employee_summary WITH (security_invoker = false) AS
+  SELECT id, tenant_id FROM employee;`,
+    expect: /security_invoker = false/,
+  },
+  {
+    name: 'accepts a view that runs as its caller',
+    sql: BASE + `
+CREATE VIEW employee_summary WITH (security_invoker = true) AS
+  SELECT id, tenant_id FROM employee;`,
+    expect: 'pass',
+  },
 ];
 
 let failed = 0;

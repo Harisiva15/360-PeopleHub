@@ -60,5 +60,29 @@ const [referenceEmployee] = await mockServices.employees.active();
 await compare('/employees', referenceEmployee, 'GET /employees');
 await compare('/employees/active', referenceEmployee, 'GET /employees/active');
 
+/*
+ * The export centre.
+ *
+ * Its register is the screen where a shape mismatch is both silent and
+ * serious: a missing row count or outcome renders as a blank cell in what
+ * somebody will hand to a data-protection review, rather than as an error
+ * anybody sees. The catalogue is compared too, because the server deliberately
+ * offers fewer datasets than the mock — fewer is expected, differently shaped
+ * is not.
+ */
+const ADMIN = { role: 'admin' as const, meId: referenceEmployee.id };
+
+const [referenceDataset] = await mockServices.exports.datasets(ADMIN);
+if (referenceDataset) {
+  await compare('/exports/datasets', referenceDataset, 'GET /exports/datasets');
+}
+
+const [referenceRun] = await mockServices.exports.history(ADMIN, {});
+if (referenceRun) {
+  await compare('/exports/history', referenceRun, 'GET /exports/history');
+}
+
+await compare('/exports/stats', await mockServices.exports.stats(ADMIN), 'GET /exports/stats');
+
 console.log(failed ? `\n${failed} shape mismatch(es)` : '\napi shape matches the contract');
 process.exit(failed ? 1 : 0);

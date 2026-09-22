@@ -54,6 +54,13 @@ walk('src/modules');
  * that as built-and-unreachable while it was rendering on every route change.
  */
 walk('src/shell');
+/*
+ * And the auth layer. Signing in is not a screen and it does call a service:
+ * AuthContext stamps the last sign-in when Supabase reports SIGNED_IN, and
+ * leaving it out reported that method as built-and-unreachable while it was
+ * running on every login.
+ */
+walk('src/auth');
 const src = files.map((f) => readFileSync(f, 'utf8')).join('\n');
 
 const mock = mockServices as unknown as Record<string, Record<string, unknown>>;

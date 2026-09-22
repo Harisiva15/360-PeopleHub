@@ -47,14 +47,14 @@ export const PERMS: Record<AppRole, string[]> = {
   employee: [
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
-    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles',
+    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events',
   ],
 
   /* Everything above, plus their reporting line. */
   manager: [
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
-    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles',
+    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events', 'exports', 'customreports',
     // The line.
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users',
   ],
@@ -70,7 +70,7 @@ export const PERMS: Record<AppRole, string[]> = {
   admin: [
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
-    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles',
+    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events', 'exports', 'customreports', 'integrations',
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users',
     // The tenant.
     'settings', 'security', 'exec', 'billing',
@@ -125,6 +125,11 @@ export const LIVE_MODULES = new Set([
   'assets', 'expenses', 'helpdesk', 'performance', 'exit', 'planner', 'settings',
   'shifts', 'tax', 'approvals', 'security', 'learning', 'engagement', 'benefits', 'reports', 'staffing', 'exec',
   'clients', 'requirements', 'bench', 'placements', 'vendors', 'billing',
+  /* Added with the 0031-0037 schema and their services. Until these were
+     listed they were hidden in any configured build — the backends existed
+     and nobody could reach them, which checks/coverage.ts caught. */
+  'users', 'recruitment', 'jobtitles', 'lifecycle', 'software', 'devplans',
+  'events', 'exports', 'customreports', 'integrations',
 ]);
 
 /**

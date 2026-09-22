@@ -86,6 +86,7 @@ import {
 import {
   collectionSummary, DocumentError, listRequests as listDocRequests, requestDocument,
   requestJoinerDocuments, setRequestStatus,
+  listDocuments, documentTypes,
 } from '../modules/documents/service.ts';
 import {
   actOnOvertime, listOvertime, listShifts, raiseOvertime, rosterFor,
@@ -102,6 +103,53 @@ import {
 import {
   audit, auditCategories, controls, retention, SecurityError,
 } from '../modules/security/service.ts';
+import {
+  datasets as exportDatasets, history as exportHistory, run as runExport,
+  stats as exportStats, ExportError,
+} from '../modules/exports/service.ts';
+import {
+  listJobTitles, getJobTitle, mineJobTitle, createJobTitle,
+  updateJobTitle, setJobTitleStatus, removeJobTitle, JobTitleError,
+} from '../modules/jobtitles/service.ts';
+import {
+  listLifecycle, getLifecycle, lifecycleStats, addLifecycleTask,
+  setLifecycleTaskDone, removeLifecycleTask, LifecycleError,
+} from '../modules/lifecycle/service.ts';
+import {
+  listSoftware, getSoftware, mySoftware, softwareStats, softwareRenewals,
+  createSoftware, updateSoftware, removeSoftware, assignSeat, revokeSeat, SoftwareError,
+} from '../modules/software/service.ts';
+import {
+  listDevPlans, getDevPlan, myDevPlan, devPlanStats, devFocus, mentorLoad,
+  mentorOptions, createDevPlan, updateDevPlan, endorseDevPlan, setDevPlanStatus,
+  setDevPlanReview, addDevAction, setDevActionDone, removeDevAction, DevPlanError,
+} from '../modules/devplans/service.ts';
+import {
+  listEvents, getEvent, myEvents, eventStats, createEvent, updateEvent,
+  publishEvent, cancelEvent, removeEvent, rsvp, withdrawRsvp, markAttendance, EventError,
+} from '../modules/events/service.ts';
+import {
+  listReports, reportDatasets, runReport, createReport,
+  updateReport, removeReport, duplicateReport, ReportError,
+} from '../modules/reports/service.ts';
+import {
+  listIntegrations, integrationStats, listWebhooks, createWebhook,
+  setWebhookActive, removeWebhook, listApiKeys, apiScopes, createApiKey,
+  revokeApiKey, IntegrationError,
+} from '../modules/integrations/service.ts';
+import {
+  jobOrders, jobOrder, myJobs, createJobOrder, updateJobOrder, assign, release,
+  logActivity, kpi as recruitmentKpi, funnel as recruitmentFunnel,
+  unassignedJobs, recruiterPerformance, jobAging, RecruitmentError,
+} from '../modules/recruitment/service.ts';
+import {
+  listUsers, getUser, userStats, nextEmployeeCode, createUser, updateUser,
+  setUserStatus, removeUser, decideUser, resendInvitation, resetPassword,
+  bulkUpdateUsers, lastLoginNow, UserError,
+} from '../modules/users/service.ts';
+import {
+  previewImport, commitImport, importHistory,
+} from '../modules/users/import.ts';
 import { modulesFor, POLICY, ROLE_SUMMARY } from '../auth/policy.ts';
 import { navBadges, pending, pendingCount } from '../modules/approvals/service.ts';
 import { approveLoan, listLoans, LoanError } from '../modules/loans/service.ts';
@@ -1055,6 +1103,447 @@ const routes: Route[] = [
   { method: 'GET', pattern: '/security/controls', handler: (c) => controls(c) },
   { method: 'GET', pattern: '/security/retention', handler: (c) => retention(c) },
 
+
+  /* ---- the job title catalogue ---- */
+  {
+    method: 'GET',
+    pattern: '/job-titles',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return listJobTitles(c, {
+        q: q.get('q') ?? undefined, dept: q.get('dept') ?? undefined, family: q.get('family') ?? undefined,
+        level: q.get('level') ?? undefined, empType: q.get('empType') ?? undefined, status: q.get('status') ?? undefined,
+      });
+    },
+  },
+  { method: 'GET', pattern: '/job-titles/mine', handler: (c) => mineJobTitle(c) },
+  { method: 'GET', pattern: '/job-titles/:id', handler: (c, _r, p) => getJobTitle(c, p.id!) },
+  { method: 'POST', pattern: '/job-titles', handler: (c, _r, _p, b) => createJobTitle(c, b as never) },
+  {
+    method: 'PATCH',
+    pattern: '/job-titles/:id',
+    handler: (c, _r, p, b) => updateJobTitle(c, p.id!, b as never),
+  },
+  {
+    method: 'PUT',
+    pattern: '/job-titles/:id/status',
+    handler: (c, _r, p, b) => setJobTitleStatus(c, p.id!, (b as { status: string }).status),
+  },
+  { method: 'DELETE', pattern: '/job-titles/:id', handler: (c, _r, p) => removeJobTitle(c, p.id!) },
+
+  /* ---- the employment lifecycle ---- */
+  {
+    method: 'GET',
+    pattern: '/lifecycle',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return listLifecycle(c, {
+        q: q.get('q') ?? undefined, stage: q.get('stage') ?? undefined, dept: q.get('dept') ?? undefined,
+        managerId: q.get('managerId') ?? undefined, site: q.get('site') ?? undefined,
+        from: q.get('from') ?? undefined, to: q.get('to') ?? undefined,
+      });
+    },
+  },
+  { method: 'GET', pattern: '/lifecycle/stats', handler: (c) => lifecycleStats(c) },
+  { method: 'GET', pattern: '/lifecycle/:id', handler: (c, _r, p) => getLifecycle(c, p.id!) },
+  {
+    method: 'POST',
+    pattern: '/lifecycle/:id/tasks',
+    handler: (c, _r, p, b) => addLifecycleTask(c, p.id!, b as never),
+  },
+  {
+    method: 'PUT',
+    pattern: '/lifecycle/tasks/:taskId/done',
+    handler: (c, _r, p, b) => setLifecycleTaskDone(c, p.taskId!, (b as { done: boolean }).done),
+  },
+  {
+    method: 'DELETE',
+    pattern: '/lifecycle/tasks/:taskId',
+    handler: (c, _r, p) => removeLifecycleTask(c, p.taskId!),
+  },
+
+  /* ---- the software estate ---- */
+  {
+    method: 'GET',
+    pattern: '/software',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return listSoftware(c, {
+        q: q.get('q') ?? undefined, cat: q.get('cat') ?? undefined, vendor: q.get('vendor') ?? undefined,
+        status: q.get('status') ?? undefined, ownerId: q.get('ownerId') ?? undefined,
+        renewingWithin: q.get('renewingWithin') ? Number(q.get('renewingWithin')) : undefined,
+        hasDormant: q.get('hasDormant') === 'true' || undefined,
+      });
+    },
+  },
+  { method: 'GET', pattern: '/software/mine', handler: (c) => mySoftware(c) },
+  { method: 'GET', pattern: '/software/stats', handler: (c) => softwareStats(c) },
+  {
+    method: 'GET',
+    pattern: '/software/renewals',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return softwareRenewals(c, q.get('within') ? Number(q.get('within')) : undefined);
+    },
+  },
+  { method: 'GET', pattern: '/software/:id', handler: (c, _r, p) => getSoftware(c, p.id!) },
+  { method: 'POST', pattern: '/software', handler: (c, _r, _p, b) => createSoftware(c, b as never) },
+  {
+    method: 'PATCH',
+    pattern: '/software/:id',
+    handler: (c, _r, p, b) => updateSoftware(c, p.id!, b as never),
+  },
+  { method: 'DELETE', pattern: '/software/:id', handler: (c, _r, p) => removeSoftware(c, p.id!) },
+  {
+    method: 'POST',
+    pattern: '/software/:id/seats',
+    handler: (c, _r, p, b) => assignSeat(c, p.id!, (b as { empId: string }).empId),
+  },
+  {
+    method: 'DELETE',
+    pattern: '/software/seats/:seatId',
+    handler: (c, _r, p) => revokeSeat(c, p.seatId!),
+  },
+
+  /* ---- development plans ---- */
+  {
+    method: 'GET',
+    pattern: '/dev-plans',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return listDevPlans(c, {
+        q: q.get('q') ?? undefined, status: q.get('status') ?? undefined, dept: q.get('dept') ?? undefined,
+        managerId: q.get('managerId') ?? undefined, mentorId: q.get('mentorId') ?? undefined, area: q.get('area') ?? undefined,
+        endorsed: q.get('endorsed') === null ? undefined : q.get('endorsed') === 'true',
+        reviewDue: q.get('reviewDue') === 'true' || undefined,
+        overdueOnly: q.get('overdueOnly') === 'true' || undefined,
+      });
+    },
+  },
+  { method: 'GET', pattern: '/dev-plans/mine', handler: (c) => myDevPlan(c) },
+  { method: 'GET', pattern: '/dev-plans/stats', handler: (c) => devPlanStats(c) },
+  { method: 'GET', pattern: '/dev-plans/focus', handler: (c) => devFocus(c) },
+  { method: 'GET', pattern: '/dev-plans/mentors', handler: (c) => mentorLoad(c) },
+  { method: 'GET', pattern: '/dev-plans/mentor-options', handler: (c) => mentorOptions(c) },
+  { method: 'GET', pattern: '/dev-plans/:id', handler: (c, _r, p) => getDevPlan(c, p.id!) },
+  { method: 'POST', pattern: '/dev-plans', handler: (c, _r, _p, b) => createDevPlan(c, b as never) },
+  {
+    method: 'PATCH',
+    pattern: '/dev-plans/:id',
+    handler: (c, _r, p, b) => updateDevPlan(c, p.id!, b as never),
+  },
+  { method: 'POST', pattern: '/dev-plans/:id/endorse', handler: (c, _r, p) => endorseDevPlan(c, p.id!) },
+  {
+    method: 'PUT',
+    pattern: '/dev-plans/:id/status',
+    handler: (c, _r, p, b) => setDevPlanStatus(c, p.id!, (b as { status: string }).status),
+  },
+  {
+    method: 'PUT',
+    pattern: '/dev-plans/:id/review',
+    handler: (c, _r, p, b) => setDevPlanReview(c, p.id!, (b as { on: string }).on),
+  },
+  {
+    method: 'POST',
+    pattern: '/dev-plans/:id/actions',
+    handler: (c, _r, p, b) => addDevAction(c, p.id!, b as never),
+  },
+  {
+    method: 'PUT',
+    pattern: '/dev-plans/actions/:actionId/done',
+    handler: (c, _r, p, b) => setDevActionDone(c, p.actionId!, (b as { done: boolean }).done),
+  },
+  {
+    method: 'DELETE',
+    pattern: '/dev-plans/actions/:actionId',
+    handler: (c, _r, p) => removeDevAction(c, p.actionId!),
+  },
+
+  /* ---- company events ---- */
+  {
+    method: 'GET',
+    pattern: '/events',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return listEvents(c, {
+        q: q.get('q') ?? undefined, type: q.get('type') ?? undefined, status: q.get('status') ?? undefined,
+        site: q.get('site') ?? undefined, organiserId: q.get('organiserId') ?? undefined,
+        when: (q.get('when') as 'upcoming' | 'past' | null) ?? undefined,
+        mineOnly: q.get('mineOnly') === 'true' || undefined,
+        from: q.get('from') ?? undefined, to: q.get('to') ?? undefined,
+      });
+    },
+  },
+  { method: 'GET', pattern: '/events/mine', handler: (c) => myEvents(c) },
+  { method: 'GET', pattern: '/events/stats', handler: (c) => eventStats(c) },
+  { method: 'GET', pattern: '/events/:id', handler: (c, _r, p) => getEvent(c, p.id!) },
+  { method: 'POST', pattern: '/events', handler: (c, _r, _p, b) => createEvent(c, b as never) },
+  {
+    method: 'PATCH',
+    pattern: '/events/:id',
+    handler: (c, _r, p, b) => updateEvent(c, p.id!, b as never),
+  },
+  { method: 'POST', pattern: '/events/:id/publish', handler: (c, _r, p) => publishEvent(c, p.id!) },
+  {
+    method: 'POST',
+    pattern: '/events/:id/cancel',
+    handler: (c, _r, p, b) => cancelEvent(c, p.id!, (b as { reason: string }).reason),
+  },
+  { method: 'DELETE', pattern: '/events/:id', handler: (c, _r, p) => removeEvent(c, p.id!) },
+  {
+    method: 'POST',
+    pattern: '/events/:id/rsvp',
+    handler: (c, _r, p, b) => rsvp(c, p.id!, (b as { choice: string }).choice),
+  },
+  { method: 'DELETE', pattern: '/events/:id/rsvp', handler: (c, _r, p) => withdrawRsvp(c, p.id!) },
+  {
+    method: 'PUT',
+    pattern: '/events/:id/attendance',
+    handler: (c, _r, p, b) => markAttendance(
+      c, p.id!, (b as { empId: string }).empId, (b as { attended: boolean }).attended),
+  },
+
+
+
+  /* ---- employee documents ---- */
+  {
+    method: 'GET',
+    pattern: '/documents',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      const ids = q.get('empIds');
+      return listDocuments(c, ids ? ids.split(',') : undefined);
+    },
+  },
+  { method: 'GET', pattern: '/documents/types', handler: (c) => documentTypes(c) },
+
+  /* ---- the recruitment desk ---- */
+  {
+    method: 'GET',
+    pattern: '/recruitment/job-orders',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return jobOrders(c, {
+        from: q.get('from') ?? undefined, to: q.get('to') ?? undefined, clientId: q.get('clientId') ?? undefined,
+        recruiterId: q.get('recruiterId') ?? undefined, reqId: q.get('reqId') ?? undefined,
+        industry: q.get('industry') ?? undefined, tech: q.get('tech') ?? undefined, location: q.get('location') ?? undefined,
+        status: q.get('status') ?? undefined, priority: q.get('priority') ?? undefined,
+      });
+    },
+  },
+  { method: 'GET', pattern: '/recruitment/kpi', handler: (c) => recruitmentKpi(c) },
+  { method: 'GET', pattern: '/recruitment/funnel', handler: (c) => recruitmentFunnel(c) },
+  { method: 'GET', pattern: '/recruitment/unassigned', handler: (c) => unassignedJobs(c) },
+  { method: 'GET', pattern: '/recruitment/recruiters', handler: (c) => recruiterPerformance(c) },
+  { method: 'GET', pattern: '/recruitment/aging', handler: (c) => jobAging(c) },
+  {
+    method: 'GET',
+    pattern: '/recruitment/my-jobs/:recruiterId',
+    handler: (c, _r, p) => myJobs(c, p.recruiterId!),
+  },
+  {
+    method: 'GET',
+    pattern: '/recruitment/job-orders/:id',
+    handler: (c, _r, p) => jobOrder(c, p.id!),
+  },
+  {
+    method: 'POST',
+    pattern: '/recruitment/job-orders',
+    handler: (c, _r, _p, b) => createJobOrder(c, b as never),
+  },
+  {
+    method: 'PATCH',
+    pattern: '/recruitment/job-orders/:id',
+    handler: (c, _r, p, b) => updateJobOrder(c, p.id!, b as never),
+  },
+  {
+    method: 'POST',
+    pattern: '/recruitment/job-orders/:id/assign',
+    handler: (c, _r, p, b) => assign(c, p.id!, b as never),
+  },
+  {
+    method: 'POST',
+    pattern: '/recruitment/job-orders/:id/release',
+    handler: (c, _r, p, b) => release(c, p.id!, (b as { assignmentId: string }).assignmentId),
+  },
+  {
+    method: 'POST',
+    pattern: '/recruitment/job-orders/:id/activity',
+    handler: (c, _r, p, b) => {
+      const d = b as { kind: string; summary: string; qty?: number };
+      return logActivity(c, p.id!, d.kind, d.summary, d.qty);
+    },
+  },
+
+  /* ---- user accounts ---- */
+  {
+    method: 'GET',
+    pattern: '/users',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return listUsers(c, {
+        q: q.get('q') ?? undefined, status: q.get('status') ?? undefined, role: q.get('role') ?? undefined, dept: q.get('dept') ?? undefined,
+        site: q.get('site') ?? undefined, managerId: q.get('managerId') ?? undefined, empType: q.get('empType') ?? undefined,
+        joinedFrom: q.get('joinedFrom') ?? undefined, joinedTo: q.get('joinedTo') ?? undefined,
+      });
+    },
+  },
+  { method: 'GET', pattern: '/users/stats', handler: (c) => userStats(c) },
+  { method: 'GET', pattern: '/users/next-code', handler: (c) => nextEmployeeCode(c) },
+  { method: 'GET', pattern: '/users/:id', handler: (c, _r, p) => getUser(c, p.id!) },
+  { method: 'POST', pattern: '/users', handler: (c, _r, _p, b) => createUser(c, b as never) },
+  {
+    method: 'PATCH',
+    pattern: '/users/:id',
+    handler: (c, _r, p, b) => updateUser(c, p.id!, b as never),
+  },
+  {
+    method: 'PUT',
+    pattern: '/users/:id/status',
+    handler: (c, _r, p, b) => {
+      const d = b as { status: string; reason?: string };
+      return setUserStatus(c, p.id!, d.status, d.reason);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/users/:id/delete',
+    handler: (c, _r, p, b) => removeUser(c, p.id!, (b as { typed: string }).typed),
+  },
+  {
+    method: 'POST',
+    pattern: '/users/:id/decide',
+    handler: (c, _r, p, b) => {
+      const d = b as { decision: 'Approved' | 'Rejected'; note?: string };
+      return decideUser(c, p.id!, d.decision, d.note);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/users/:id/resend-invitation',
+    handler: (c, _r, p) => resendInvitation(c, p.id!),
+  },
+  {
+    method: 'POST',
+    pattern: '/users/:id/reset-password',
+    handler: (c, _r, p, b) =>
+      resetPassword(c, p.id!, (b as { forceChange?: boolean }).forceChange ?? true),
+  },
+  /* No id: it stamps the caller's own row and nobody else's. */
+  { method: 'POST', pattern: '/users/me/last-login', handler: (c) => lastLoginNow(c) },
+  {
+    method: 'POST',
+    pattern: '/users/bulk-update',
+    handler: (c, _r, _p, b) => {
+      const d = b as { ids: string[]; patch: Record<string, unknown> };
+      return bulkUpdateUsers(c, d.ids, d.patch as never);
+    },
+  },
+
+  /* ---- bulk import ---- */
+  /*
+   * Preview and commit are separate calls on purpose. Nothing is written
+   * until somebody has seen the per-row verdict — a one-call import leaves a
+   * half-loaded tenant behind the first bad row.
+   */
+  {
+    method: 'POST',
+    pattern: '/users/import/preview',
+    handler: (c, _r, _p, b) => {
+      const d = b as { fileName: string; text: string };
+      return previewImport(c, d.fileName, d.text);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/users/import/commit',
+    handler: (c, _r, _p, b) => {
+      const d = b as { fileName: string; text: string };
+      return commitImport(c, d.fileName, d.text);
+    },
+  },
+  { method: 'GET', pattern: '/users/import/history', handler: (c) => importHistory(c) },
+
+  /* ---- saved reports ---- */
+  { method: 'GET', pattern: '/reports/saved', handler: (c) => listReports(c) },
+  { method: 'GET', pattern: '/reports/saved/datasets', handler: (c) => reportDatasets(c) },
+  /* A POST, because running one bumps the counters and writes an export record. */
+  { method: 'POST', pattern: '/reports/saved/:id/run', handler: (c, _r, p) => runReport(c, p.id!) },
+  { method: 'POST', pattern: '/reports/saved', handler: (c, _r, _p, b) => createReport(c, b as never) },
+  {
+    method: 'PATCH',
+    pattern: '/reports/saved/:id',
+    handler: (c, _r, p, b) => updateReport(c, p.id!, b as never),
+  },
+  { method: 'DELETE', pattern: '/reports/saved/:id', handler: (c, _r, p) => removeReport(c, p.id!) },
+  {
+    method: 'POST',
+    pattern: '/reports/saved/:id/duplicate',
+    handler: (c, _r, p) => duplicateReport(c, p.id!),
+  },
+
+  /* ---- integrations ---- */
+  { method: 'GET', pattern: '/integrations', handler: (c) => listIntegrations(c) },
+  { method: 'GET', pattern: '/integrations/stats', handler: (c) => integrationStats(c) },
+  { method: 'GET', pattern: '/integrations/webhooks', handler: (c) => listWebhooks(c) },
+  { method: 'GET', pattern: '/integrations/scopes', handler: () => apiScopes() },
+  { method: 'GET', pattern: '/integrations/keys', handler: (c) => listApiKeys(c) },
+  {
+    method: 'POST',
+    pattern: '/integrations/webhooks',
+    handler: (c, _r, _p, b) => createWebhook(c, b as never),
+  },
+  {
+    method: 'PUT',
+    pattern: '/integrations/webhooks/:id/active',
+    handler: (c, _r, p, b) => setWebhookActive(c, p.id!, (b as { active: boolean }).active),
+  },
+  {
+    method: 'DELETE',
+    pattern: '/integrations/webhooks/:id',
+    handler: (c, _r, p) => removeWebhook(c, p.id!),
+  },
+  {
+    method: 'POST',
+    pattern: '/integrations/keys',
+    handler: (c, _r, _p, b) => createApiKey(c, b as never),
+  },
+  {
+    method: 'POST',
+    pattern: '/integrations/keys/:id/revoke',
+    handler: (c, _r, p) => revokeApiKey(c, p.id!),
+  },
+
+  /* ---- the export centre ---- */
+  { method: 'GET', pattern: '/exports/datasets', handler: (c) => exportDatasets(c) },
+  {
+    method: 'GET',
+    pattern: '/exports/history',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return exportHistory(c, {
+        q: q.get('q') ?? undefined,
+        datasetId: q.get('datasetId') ?? undefined,
+        byId: q.get('byId') ?? undefined,
+        outcome: (q.get('outcome') as 'Completed' | 'Refused' | null) ?? undefined,
+        personalOnly: q.get('personalOnly') === 'true' || undefined,
+        from: q.get('from') ?? undefined,
+        to: q.get('to') ?? undefined,
+      });
+    },
+  },
+  { method: 'GET', pattern: '/exports/stats', handler: (c) => exportStats(c) },
+  /*
+   * A POST, although it reads. It writes the register entry, and a GET that
+   * leaves a row in an audit log is the kind of thing a retry, a prefetch or a
+   * link preview turns into a false record of somebody taking data out.
+   */
+  {
+    method: 'POST',
+    pattern: '/exports/run',
+    handler: (c, _r, _p, body) => runExport(c, body as never),
+  },
+
   /*
    * What the caller's own role may do.
    *
@@ -1292,6 +1781,31 @@ function statusFor(error: unknown): { status: number; message: string } {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+
+  /*
+   * The five modules added with the 0032-0036 schema. They share a code
+   * vocabulary deliberately — forbidden / not_found / invalid / in_use — so
+   * the mapping is one table rather than five near-identical blocks, and a
+   * sixth module cannot invent a fifth status quietly.
+   */
+  if (error instanceof RecruitmentError || error instanceof UserError
+    || error instanceof ReportError || error instanceof IntegrationError
+    || error instanceof JobTitleError || error instanceof LifecycleError
+    || error instanceof SoftwareError || error instanceof DevPlanError
+    || error instanceof EventError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400
+          : error.code === 'closed' ? 409
+            : error.code === 'duplicate' ? 409
+              : error.code === 'in_use' ? 409 : 400;
+    return { status, message: error.message };
+  }
+  if (error instanceof ExportError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'unknown_dataset' ? 404 : 400;
     return { status, message: error.message };
   }
   if (error instanceof ProvisionError) {

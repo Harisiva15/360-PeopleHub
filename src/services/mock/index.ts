@@ -17,6 +17,13 @@ import { assetService, documentService, exitService, onboardingService, security
 import { staffingService } from './staffing';
 import { userService } from './users';
 import { jobTitleService } from './jobtitles';
+import { lifecycleService } from './lifecycle';
+import { softwareService } from './software';
+import { devPlanService } from './devplans';
+import { eventService } from './events';
+import { makeExportService } from './exports';
+import { makeReportService } from './reports';
+import { integrationService } from './integrations';
 import { recruitmentService } from './recruitment';
 import {
   benefitsService, engagementService, helpdeskService, learningService,
@@ -48,6 +55,16 @@ export const mockServices: Services = {
   staffing: staffingService,
   users: userService,
   jobTitles: jobTitleService,
+  lifecycle: lifecycleService,
+  software: softwareService,
+  devPlans: devPlanService,
+  events: eventService,
+  /* Reads through the other services, so an export can never see more than the
+     screen would. The closure is lazy because it names the object it is in. */
+  exports: makeExportService(() => mockServices),
+  /* Runs through the export centre, so a report cannot outrun its reader. */
+  reports: makeReportService(() => mockServices),
+  integrations: integrationService,
   recruitment: recruitmentService,
   documents: documentService,
   assets: assetService,

@@ -1022,6 +1022,56 @@ export const PLACEMENTS: Placement[] = [];
       p.endOn = p.end;
       p.status = 'Ending Soon';
     });
+
+  /*
+   * Put one order deterministically into each SLA state.
+   *
+   * The targets above are drawn relative to the day the order was received, so
+   * which band each one lands in depends on what today is. That is realistic
+   * and it means the *coverage* drifts: three days after this was last run,
+   * "Approaching" had emptied out and no order was behind on fill alone, so
+   * two branches of `slaOf` were live code nothing exercised.
+   *
+   * These two are pinned instead. Pinning the data is the right half of the
+   * fix — loosening the check so it tolerates an empty band would remove the
+   * only thing that notices.
+   */
+  const live = REQUIREMENTS.filter((r) => !SETTLED.includes(r.status));
+
+  /* Approaching: inside the last stretch of the SLA, with nothing missed. */
+  const approaching = live.find((r) => SUBMISSIONS.some((s) => s.reqId === r.id));
+  if (approaching) {
+    /* An order is received before it is opened, never after. */
+    approaching.receivedOn = ymd(addDays(TODAY, -22));
+    approaching.openedOn = ymd(addDays(TODAY, -20));
+    approaching.targetSubmitOn = ymd(addDays(TODAY, -15));
+    approaching.targetInterviewOn = ymd(addDays(TODAY, -8));
+    approaching.targetFillOn = ymd(addDays(TODAY, 2));
+    approaching.slaDays = 22;
+    /* Both earlier targets have work against them, so neither is "missed". */
+    const sub = SUBMISSIONS.find((s) => s.reqId === approaching.id)!;
+    sub.interviewOn = sub.interviewOn ?? ymd(addDays(TODAY, -9));
+  }
+
+  /*
+   * Behind on fill alone: submitted and interviewed on time, the fill date
+   * passed, no placement. This is the case the three separate targets exist
+   * to distinguish — an order in trouble at the end rather than the start.
+   */
+  const lateFill = live.find((r) =>
+    r.id !== approaching?.id
+    && SUBMISSIONS.some((s) => s.reqId === r.id)
+    && !PLACEMENTS.some((p) => p.reqId === r.id));
+  if (lateFill) {
+    lateFill.receivedOn = ymd(addDays(TODAY, -63));
+    lateFill.openedOn = ymd(addDays(TODAY, -60));
+    lateFill.targetSubmitOn = ymd(addDays(TODAY, -50));
+    lateFill.targetInterviewOn = ymd(addDays(TODAY, -35));
+    lateFill.targetFillOn = ymd(addDays(TODAY, -6));
+    lateFill.slaDays = 54;
+    const sub = SUBMISSIONS.find((s) => s.reqId === lateFill.id)!;
+    sub.interviewOn = sub.interviewOn ?? ymd(addDays(TODAY, -36));
+  }
 })();
 
 export const subOf = (id: string): Submission | undefined => SUBMISSIONS.find((s) => s.id === id);

@@ -47,6 +47,13 @@ export const SUBTITLES: Record<string, (ctx: ModuleCtx) => string> = {
   recruitment: () => 'Manage open requirements, recruiter activity, candidate submissions and hiring progress',
   users: () => 'Create, manage and control user accounts across 360 People Hub',
   jobtitles: () => 'Manage job titles, roles, levels and organisational positions',
+  lifecycle: () => 'Track every employment journey from offer through to alumni',
+  software: () => 'Licences, seats, renewals and what the idle ones cost',
+  devplans: () => 'Where people are heading, and what will get them there',
+  events: () => 'What is on, who is coming, and how many seats are left',
+  exports: () => 'Take data out, and the record of who took what',
+  customreports: () => 'Questions somebody saved — each one answered for whoever asks it',
+  integrations: () => 'What this tenant is connected to, and what it is not',
   onboarding: () => 'Pre-boarding checklists from offer accepted to day one',
   exit: () => 'Notice periods, clearance and full-and-final settlement',
 
