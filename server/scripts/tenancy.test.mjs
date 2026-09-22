@@ -114,5 +114,50 @@ ok('context.ts joins an existing transaction in withTenant',
 ok('withTenantReadOnly joins without demoting the transaction',
   /Inside an existing transaction, join it and do \*not\* mark it read only/.test(src));
 
+console.log('\nnothing reaches the database outside the tenant context\n');
+
+/*
+ * The joining fix only covers queries that go through withTenant. A module
+ * taking its own connection from the pool would sit outside it entirely: no
+ * ambient transaction to join, no app.tenant_id, and every row-level policy
+ * raising instead of filtering — or a read-back that silently sees nothing,
+ * which is exactly the bug that was just fixed wearing a different hat.
+ *
+ * Nothing does that today. This is here so it stays true, because the symptom
+ * would be identical and the cause would be somewhere nobody thought to look.
+ */
+const { readdirSync, statSync, readFileSync } = await import('node:fs');
+const { join, dirname } = await import('node:path');
+const { fileURLToPath } = await import('node:url');
+
+const srcRoot = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
+const sources = [];
+const walk = (d) => {
+  for (const e of readdirSync(d)) {
+    const p = join(d, e);
+    if (statSync(p).isDirectory()) walk(p);
+    else if (e.endsWith('.ts')) sources.push(p);
+  }
+};
+walk(srcRoot);
+
+const norm = (p) => p.replace(/\\/g, '/');
+
+ok(`${sources.length} source files scanned`, sources.length >= 40,
+  'Far fewer than expected — the walk is not reaching the modules.');
+
+const rogueConnect = sources.filter((p) =>
+  !norm(p).endsWith('tenancy/context.ts')
+  && /pool\.connect\(/.test(readFileSync(p, 'utf8')));
+ok('only tenancy/context.ts takes a connection from the pool',
+  rogueConnect.length === 0,
+  rogueConnect.map((p) => norm(p).replace(/.*\/src\//, 'src/')).join(', '));
+
+const rogueImport = sources.filter((p) =>
+  norm(p).includes('/modules/') && /from '[^']*db\/pool/.test(readFileSync(p, 'utf8')));
+ok('no service module imports the pool directly',
+  rogueImport.length === 0,
+  rogueImport.map((p) => norm(p).replace(/.*\/src\//, 'src/')).join(', '));
+
 console.log(`\n${failed ? `${failed} FAILED` : 'nested transactions join the right tenant'}\n`);
 process.exit(failed ? 1 : 0);
