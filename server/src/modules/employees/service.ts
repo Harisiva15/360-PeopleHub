@@ -13,6 +13,20 @@
  * serialisation bug.
  */
 
+/**
+ * Refusals this module makes, typed so the HTTP layer can tell them apart.
+ *
+ * They were plain Errors, which statusFor does not recognise — so every one of
+ * them left as a 500. Two are authorisation refusals, which meant the product
+ * answered "internal error" to "you are not allowed to do that": still refused,
+ * but reported as our fault and giving the caller nothing to act on.
+ */
+export class EmployeeError extends Error {
+  constructor(message: string, readonly code: 'forbidden' | 'not_found' | 'invalid' = 'invalid') {
+    super(message);
+  }
+}
+
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { EMPLOYEE_PROJECTION, scopeClause } from './queries.ts';
@@ -151,12 +165,16 @@ export async function setEmployeeRole(
   id: string,
   role: Employee['role'],
 ): Promise<Employee> {
-  if (caller.role !== 'admin') throw new Error('only an admin may change roles');
-  if (id === caller.employeeId) throw new Error('you cannot change your own role');
+  if (caller.role !== 'admin') {
+    throw new EmployeeError('only an administrator may change roles', 'forbidden');
+  }
+  if (id === caller.employeeId) {
+    throw new EmployeeError('you cannot change your own role', 'forbidden');
+  }
 
   return withTenant(caller, async (db) => {
     const updated = await db.query('UPDATE employee SET app_role = $1 WHERE id = $2', [role, id]);
-    if (updated.rowCount === 0) throw new Error('no such employee');
+    if (updated.rowCount === 0) throw new EmployeeError('no such employee', 'not_found');
 
     // tenant_membership sits outside the isolation policy, so it is filtered
     // by tenant explicitly here.
@@ -174,7 +192,7 @@ export async function setEmployeeRole(
       [caller.employeeId, id, role]);
 
     const after = await getEmployee(caller, id);
-    if (!after) throw new Error('no such employee');
+    if (!after) throw new EmployeeError('no such employee', 'not_found');
     return after;
   });
 }

@@ -521,7 +521,13 @@ export async function raiseRegularisation(
   if (empId !== caller.employeeId && caller.role !== 'admin') {
     throw new AttendanceError('you can only regularise your own attendance', 'forbidden');
   }
-  if (!reason.trim()) throw new AttendanceError('say why the day needs correcting', 'invalid');
+  // `reason` is whatever the body carried, which may be nothing at all — a
+  // request without it used to reach .trim() on undefined and crash the
+  // handler, so a missing field answered 500 instead of saying what was
+  // missing.
+  if (typeof reason !== 'string' || !reason.trim()) {
+    throw new AttendanceError('say why the day needs correcting', 'invalid');
+  }
 
   return withTenant(caller, async (db) => {
     const att = await db.query(

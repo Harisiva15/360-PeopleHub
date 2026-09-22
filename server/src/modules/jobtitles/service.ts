@@ -215,9 +215,20 @@ const validate = (d: Partial<JobTitleDraft>) => {
 export async function createJobTitle(caller: Caller, d: JobTitleDraft): Promise<JobTitle> {
   mayWrite(caller);
   validate(d);
+  /*
+   * `validate` is shared with the update path, where an absent field means
+   * "leave it alone" — so it only checks what is present. On create, absent
+   * means missing, and the two fields the INSERT calls .trim() on have to
+   * exist. Without this a body omitting either reached that line and crashed
+   * the handler, which the caller saw as 500 rather than as the one word they
+   * had forgotten.
+   */
+  if (!d.n?.trim()) throw new JobTitleError('Give the title a name', 'invalid');
+  if (!d.code?.trim()) throw new JobTitleError('Give the title a code', 'invalid');
+  if (!d.level) throw new JobTitleError('Choose a level from L1 to L8', 'invalid');
   if (!d.dept) throw new JobTitleError('Choose a department', 'invalid');
 
-  return withTenant(caller, async (db) => {
+  const id = await withTenant(caller, async (db) => {
     const { rows: dept } = await db.query<{ id: string }>(
       'SELECT id FROM department WHERE code = $1', [d.dept]);
     if (!dept[0]) throw new JobTitleError('No such department', 'invalid');
@@ -244,10 +255,23 @@ export async function createJobTitle(caller: Caller, d: JobTitleDraft): Promise<
     });
 
     await audit(db, caller, 'job_title.created', rows[0]!.id, `${d.n.trim()} · ${d.code.trim()}`);
-    const made = await getJobTitle(caller, rows[0]!.id);
-    if (!made) throw new JobTitleError('The title was not created', 'invalid');
-    return made.title;
+    return rows[0]!.id;
   });
+
+  /*
+   * Read back *after* the transaction, not inside it.
+   *
+   * withTenant takes its own connection from the pool and there is no ambient
+   * transaction, so getJobTitle — which opens withTenantReadOnly — ran on a
+   * different connection and could not see the row this function had just
+   * inserted but not yet committed. It returned null, this threw, and the
+   * throw rolled the insert back. Creating a job title failed every single
+   * time, and typechecking could not see it because both halves are correct
+   * on their own.
+   */
+  const made = await getJobTitle(caller, id);
+  if (!made) throw new JobTitleError('The title was not created', 'invalid');
+  return made.title;
 }
 
 export async function updateJobTitle(

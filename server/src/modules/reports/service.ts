@@ -299,9 +299,10 @@ async function validate(caller: Caller, d: Partial<ReportDraft>, existing?: Repo
 }
 
 export async function createReport(caller: Caller, d: ReportDraft): Promise<ReportDef> {
+  /* See the note on the read-back below. */
   mayBuild(caller);
   await validate(caller, d);
-  return withTenant(caller, async (db) => {
+  const id = await withTenant(caller, async (db) => {
     const { rows } = await db.query<{ id: string }>(
       `INSERT INTO saved_report
          (name, description, dataset_id, columns, group_by, measures, filters,
@@ -313,10 +314,18 @@ export async function createReport(caller: Caller, d: ReportDraft): Promise<Repo
         JSON.stringify(d.filters ?? []), d.sort ? JSON.stringify(d.sort) : null,
         caller.employeeId, d.shared ?? false],
     );
-    const made = await getReport(caller, rows[0]!.id);
-    if (!made) throw new ReportError('The report was not created', 'invalid');
-    return made.report;
+    /*
+     * The id only. getReport opens its own read-only transaction on another
+     * pool connection, which cannot see this insert before it commits — the
+     * same defect that made creating a job title fail every time. The read-back
+     * happens after this block returns.
+     */
+    return rows[0]!.id;
   });
+
+  const made = await getReport(caller, id);
+  if (!made) throw new ReportError('The report was not created', 'invalid');
+  return made.report;
 }
 
 const mayEdit = (caller: Caller, ownerId: string) =>

@@ -19,6 +19,7 @@ import { LeaveError } from '../modules/leave/service.ts';
 import {
   getEmployee, getEmployeeProfile, getEmployeesByIds, getTeam,
   listActiveEmployees, listExitedEmployees, listVisibleEmployees, setEmployeeRole,
+  EmployeeError,
 } from '../modules/employees/service.ts';
 import {
   applyForLeave, approveLeave, balanceFor, balancesFor, balancesForMany,
@@ -1868,6 +1869,11 @@ function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof PermissionError) {
     return { status: error.kind === 'forbidden' ? 403 : 400, message: error.message };
   }
+  if (error instanceof EmployeeError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404 : 400;
+    return { status, message: error.message };
+  }
   if (error instanceof NotFound) return { status: 404, message: error.message };
   if (error instanceof BadRequest) return { status: 400, message: error.message };
   if (error instanceof AttendanceError) {
@@ -2050,6 +2056,39 @@ function statusFor(error: unknown): { status: number; message: string } {
         : 409;
     return { status, message: error.message };
   }
+  /*
+   * PostgreSQL's own refusals, mapped before the catch-all.
+   *
+   * A malformed date or an id that references nothing is the caller's mistake,
+   * and answering 500 says it was ours. Worse, it tells them nothing: the
+   * sweep that found this got four identical "internal error" bodies for four
+   * unrelated causes.
+   *
+   * These are a safety net and not a substitute for validating input at the
+   * edge — the route should reject a date that is not a date before it reaches
+   * SQL. What this guarantees is that when a route forgets, the answer is
+   * still honest about whose fault it is.
+   *
+   * The message is deliberately generic per class rather than Postgres's own
+   * text, which names tables, columns and constraints.
+   */
+  const pg = error as { code?: string; constraint?: string };
+  switch (pg?.code) {
+    case '22007':
+    case '22008':
+      return { status: 400, message: 'a date in this request is not a valid date' };
+    case '22P02':
+      return { status: 400, message: 'a value in this request is the wrong type' };
+    case '23503':
+      return { status: 404, message: 'this request refers to something that does not exist' };
+    case '23505':
+      return { status: 409, message: 'that already exists' };
+    case '23514':
+      return { status: 400, message: 'this request breaks a rule the data must follow' };
+    default:
+      break;
+  }
+
   return { status: 500, message: 'internal error' };
 }
 
