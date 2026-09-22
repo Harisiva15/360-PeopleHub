@@ -204,6 +204,16 @@ export const POLICY: Record<string, ModulePolicy> = {
   customreports: rule(NO, ['team', 'own', 'none'], ['all', 'all', 'none']),
   /* How the tenant connects to anything is a tenant-level decision. */
   integrations: rule(NO, NO, ['all', 'all', 'all']),
+  /*
+   * Your own account, and only ever your own.
+   *
+   * 'own' for every role including admin — deliberately. This module is the
+   * control that lets somebody notice a session they did not start, and it
+   * only works if it is the *person's* view. Reading somebody else's is
+   * user administration and belongs in `users`, where it is scoped.
+   */
+  account: rule(['own', 'own', 'none'], ['own', 'own', 'none'], ['own', 'own', 'none']),
+
   users: rule(NO, ['team', 'team', 'none'], ['all', 'all', 'all']),
   clients: rule(NO, NO, ['all', 'all', 'none']),
   requirements: rule(NO, NO, ['all', 'all', 'none']),
@@ -346,3 +356,66 @@ export const mayAssignRole = (role: Role, granted: Role): boolean => {
 
 /** Every act, for a screen that wants to show what a role can do. */
 export const USER_ACTIONS = Object.keys(ACTION_SCOPE) as UserAction[];
+
+/* ---------------------------------------------------------------------------
+ * Per-tenant narrowing
+ *
+ * `role_permission` has been seeded from this file since the seed script was
+ * written, and read by nothing. The gap it leaves is real: one tenant wants
+ * managers kept out of team cost, another does not, and today that is a code
+ * change for everybody.
+ *
+ * **Overrides may only narrow.** The table cannot grant anything POLICY does
+ * not already grant. That one rule is what makes the feature safe to have:
+ *
+ *   A write to `role_permission` — by a misconfigured screen, a migration, or
+ *   somebody with direct database access — cannot escalate privilege. The
+ *   worst it can do is take access away, which is visible and complained
+ *   about, rather than quietly handing an employee the payroll register.
+ *
+ *   `checks/roles.ts` keeps working. It holds this file to the frontend mirror
+ *   cell by cell across every module and role; if the database could widen a
+ *   cell, that check would be comparing two ceilings while the real answer
+ *   came from a third place nobody was looking at.
+ *
+ *   A missing row means "no narrowing", not "no access". A tenant seeded
+ *   before a module existed must not lose it the day the module ships, and an
+ *   empty table must not lock everybody out of everything.
+ * ------------------------------------------------------------------------- */
+
+/** One tenant's overrides: module -> role -> rule. Absent means no narrowing. */
+export type Overrides = Record<string, Partial<Record<Role, Partial<ModuleRule>>>>;
+
+/** The tighter of two scopes. */
+export const narrower = (a: Scope, b: Scope): Scope => (RANK[a] <= RANK[b] ? a : b);
+
+/**
+ * What this role may actually do, after the tenant's own restrictions.
+ *
+ * Every field is the narrower of the code's grant and the tenant's, so the
+ * result can never exceed `ruleFor`. That is asserted exhaustively in
+ * scripts/policy.test.mjs rather than left to the reader to verify.
+ */
+export function effectiveRule(
+  role: Role,
+  module: string,
+  overrides: Overrides | null | undefined,
+): ModuleRule {
+  const base = ruleFor(role, module);
+  const o = overrides?.[module]?.[role];
+  if (!o) return base;
+  return {
+    read: narrower(base.read, o.read ?? base.read),
+    write: narrower(base.write, o.write ?? base.write),
+    approve: narrower(base.approve, o.approve ?? base.approve),
+  };
+}
+
+/** The modules a role may open at all, once narrowing is applied. */
+export const effectiveModulesFor = (
+  role: Role,
+  overrides: Overrides | null | undefined,
+): string[] =>
+  Object.keys(POLICY)
+    .filter((m) => effectiveRule(role, m, overrides).read !== 'none')
+    .sort();

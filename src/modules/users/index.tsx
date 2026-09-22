@@ -34,10 +34,13 @@ import { useTabFromUrl } from '../tabParam';
 import {
   useBulkUpdate, useDecideUser, useDeleteUser, useResendInvitation, useResetPassword,
   useSetUserStatus, useUserStats, useUsers, useVisiblePeople,
+  useTenantLoginHistory,
+  useSetMfaRequired,
 } from './data';
 import {
   DeactivateConfirmation, DeleteConfirmation, UserForm, UserProfile,
 } from './Drawers';
+import { SignInTable } from './SignIns';
 import { PermissionGuard, RoleBadge, UserStatusBadge, useMay, whenOf } from './shared';
 
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
@@ -116,14 +119,21 @@ function Filters({
 
 /* ---------------- the page ---------------- */
 
-type Tab = 'all' | 'pending' | 'active' | 'inactive' | 'invited';
+type Tab = 'all' | 'pending' | 'active' | 'inactive' | 'locked' | 'invited' | 'signins';
 
+/*
+ * `signins` is the one tab that is not a filter over the same list — it
+ * answers a different question against a different table. Undefined here,
+ * and the render branches on it rather than pretending it is a status.
+ */
 const TAB_STATUS: Record<Tab, UserStatus | undefined> = {
   all: undefined,
   pending: 'Pending Approval',
   active: 'Active',
   inactive: 'Inactive',
+  locked: 'Locked',
   invited: 'Invitation Pending',
+  signins: undefined,
 };
 
 function UsersView() {
@@ -132,7 +142,8 @@ function UsersView() {
   const dir = useVisiblePeople();
   const can = useMay();
 
-  const [tab, setTab] = useTabFromUrl<Tab>('all', ['all', 'pending', 'active', 'inactive', 'invited']);
+  const [tab, setTab] = useTabFromUrl<Tab>('all',
+    ['all', 'pending', 'active', 'inactive', 'locked', 'invited', 'signins']);
   const [f, setF] = useState<UserFilter>({});
   const [picked, setPicked] = useState<string[]>([]);
 
@@ -140,12 +151,20 @@ function UsersView() {
   const { data: rows = [], loading, error } = useUsers(filter);
   const { data: all = [] } = useUsers({});
   const { data: stats } = useUserStats();
+  /*
+   * Only fetched on the tab that shows it: this is every account's history
+   * rather than one person's, and it is not worth pulling on the way to the
+   * list somebody actually opened the page for.
+   */
+  const { data: signIns = [], loading: signInsLoading } =
+    useTenantLoginHistory(tab === 'signins');
 
   const setStatus = useSetUserStatus();
   const remove = useDeleteUser();
   const decide = useDecideUser();
   const resend = useResendInvitation();
   const reset = useResetPassword();
+  const mfaReq = useSetMfaRequired();
   const bulk = useBulkUpdate();
 
   /*
@@ -231,7 +250,9 @@ function UsersView() {
     { v: 'pending', label: 'Pending Approval' },
     { v: 'active', label: 'Active Users' },
     { v: 'inactive', label: 'Inactive Users' },
+    { v: 'locked', label: 'Locked' },
     { v: 'invited', label: 'Invitations' },
+    { v: 'signins', label: 'Sign-in Activity' },
   ];
 
   return (
@@ -264,6 +285,29 @@ function UsersView() {
 
       <Tabs value={tab} options={tabs} onChange={(v) => { setTab(v); setPicked([]); }} />
 
+      {tab === 'signins' ? (
+        <Card
+          title="Sign-in Activity"
+          sub={`${signIns.length} ${signIns.length === 1 ? 'event' : 'events'}, newest first`}
+          flush
+        >
+          <div style={{ padding: 12 }}>
+            {/*
+              * Said before the table rather than after it: somebody arriving
+              * here is looking for a wrong password and will otherwise read
+              * its absence as "there were none".
+              */}
+            <div className="hint" style={{ marginBottom: 10 }}>
+              Sessions that started, ended, or were refused. Wrong passwords are
+              checked by the sign-in provider and are not recorded here.
+            </div>
+            {signInsLoading
+              ? <div className="muted" style={{ fontSize: 12.5 }}>Loading…</div>
+              : <SignInTable rows={signIns} dir={dir} showWho />}
+          </div>
+        </Card>
+      ) : (
+        <>
       <Filters f={f} set={setF} rows={all} />
 
       {picked.length > 0 && (
@@ -379,6 +423,25 @@ function UsersView() {
                               </button>
                             )}
 
+                            {/*
+                              * Requiring is an administrator's to set and only
+                              * the person's to satisfy — nothing here enrols on
+                              * their behalf, because that would mean handling
+                              * their secret.
+                              */}
+                            {can('user.suspend') && u.status !== 'Deleted' && (
+                              <button className="menu-row" onClick={() => {
+                                close();
+                                act(() => mfaReq.mutate(u.id, !u.mfaRequired),
+                                  u.mfaRequired
+                                    ? 'Two-factor sign-in no longer required'
+                                    : 'They must set up two-factor sign-in before next use');
+                              }}>
+                                <span className="gs-ic"><Icon n="lock" /></span>
+                                {u.mfaRequired ? 'Stop requiring two-factor' : 'Require two-factor sign-in'}
+                              </button>
+                            )}
+
                             {can('user.reset_password') && (
                               <button className="menu-row" onClick={() => {
                                 close();
@@ -448,6 +511,21 @@ function UsersView() {
             Nobody can decide a request they raised themselves.
           </p>
         </Card>
+      )}
+
+      {tab === 'locked' && (
+        <Card title="About locking" sub="Who sets it, and who can lift it">
+          <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.6 }}>
+            A lock is applied by an administrator and only an administrator can lift
+            it — a manager who could not lock an account cannot decide the reason for
+            it has passed. It is not applied automatically after failed sign-ins:
+            counting those would mean trusting the sign-in page to report its own
+            failures, which would let anybody lock an account whose email address
+            they can guess.
+          </p>
+        </Card>
+      )}
+        </>
       )}
     </div>
   );

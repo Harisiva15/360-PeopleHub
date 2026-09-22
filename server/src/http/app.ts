@@ -145,12 +145,23 @@ import {
 import {
   listUsers, getUser, userStats, nextEmployeeCode, createUser, updateUser,
   setUserStatus, removeUser, decideUser, resendInvitation, resetPassword,
-  bulkUpdateUsers, lastLoginNow, UserError,
+  bulkUpdateUsers, lastLoginNow, accountObligations, passwordChanged,
+  setMfaRequired, UserError,
 } from '../modules/users/service.ts';
 import {
   previewImport, commitImport, importHistory,
 } from '../modules/users/import.ts';
-import { modulesFor, POLICY, ROLE_SUMMARY } from '../auth/policy.ts';
+import {
+  agentFrom, recordLoginEvent, listLoginHistory, listTenantLoginHistory,
+} from '../modules/users/loginHistory.ts';
+import {
+  effectiveModulesFor, effectiveRule, ROLE_SUMMARY,
+} from '../auth/policy.ts';
+import { overridesFor } from '../auth/overrides.ts';
+import { moduleForPath } from './route-modules.ts';
+import {
+  permissionGrid, setPermissions, resetModule, PermissionError,
+} from '../modules/config/permissions.ts';
 import { navBadges, pending, pendingCount } from '../modules/approvals/service.ts';
 import { approveLoan, listLoans, LoanError } from '../modules/loans/service.ts';
 import {
@@ -174,6 +185,19 @@ type Handler = (
   params: Record<string, string>,
   body: unknown,
 ) => Promise<unknown>;
+
+/**
+ * Where a request came from, for the sign-in history.
+ *
+ * The trust rule for `x-forwarded-for` lives in agentFrom and is shared with
+ * the rate limiter, so there is one answer to whether the hop in front of us
+ * is ours rather than two that can drift apart.
+ */
+const agentOf = (req: IncomingMessage) => agentFrom(
+  req.socket.remoteAddress,
+  req.headers['x-forwarded-for'] as string | undefined,
+  req.headers['user-agent'],
+);
 
 interface Route {
   method: string;
@@ -1390,6 +1414,12 @@ const routes: Route[] = [
   },
   { method: 'GET', pattern: '/users/stats', handler: (c) => userStats(c) },
   { method: 'GET', pattern: '/users/next-code', handler: (c) => nextEmployeeCode(c) },
+  /* Above /users/:id, or "login-history" is read as an account id. */
+  {
+    method: 'GET',
+    pattern: '/users/login-history',
+    handler: (c) => listTenantLoginHistory(c),
+  },
   { method: 'GET', pattern: '/users/:id', handler: (c, _r, p) => getUser(c, p.id!) },
   { method: 'POST', pattern: '/users', handler: (c, _r, _p, b) => createUser(c, b as never) },
   {
@@ -1430,7 +1460,75 @@ const routes: Route[] = [
       resetPassword(c, p.id!, (b as { forceChange?: boolean }).forceChange ?? true),
   },
   /* No id: it stamps the caller's own row and nobody else's. */
-  { method: 'POST', pattern: '/users/me/last-login', handler: (c) => lastLoginNow(c) },
+  {
+    method: 'POST',
+    pattern: '/users/me/last-login',
+    handler: async (c, r, _p, b) => {
+      const account = await lastLoginNow(c);
+      /*
+       * The stamp and the history entry are the same event seen twice:
+       * `last_login_at` is the current fact an administrator sorts on, the
+       * history row is what the person themselves reads to recognise a
+       * session. Written together so they cannot disagree.
+       *
+       * `method` comes from the body because only the client knows whether a
+       * second factor was used, and it is a label on the caller's own row —
+       * the worst a lie does is mislabel your own history. Validated against
+       * a fixed list anyway.
+       */
+      const method = (b as { method?: string } | undefined)?.method ?? 'password';
+      await recordLoginEvent(c, 'success', agentOf(r), method);
+      return account;
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/users/me/sign-out',
+    handler: async (c, r, _p, b) => {
+      /*
+       * Recorded before the token is discarded, because afterwards there is
+       * no caller to attribute it to. An inactivity timeout and a deliberate
+       * sign-out both land here and are told apart by the reason, which is
+       * the difference between "I left" and "it logged me out".
+       */
+      const why = (b as { reason?: string } | undefined)?.reason;
+      await recordLoginEvent(c, 'signed_out', agentOf(r), 'password',
+        why === 'idle' ? 'signed out after a period of inactivity' : 'signed out');
+      return { ok: true };
+    },
+  },
+  /*
+   * Whether this caller owes a password change, and the acknowledgement that
+   * they have made one. Both take no id: your own row is the only one.
+   */
+  {
+    method: 'GET',
+    pattern: '/users/me/account-status',
+    handler: (c) => accountObligations(c),
+  },
+  {
+    method: 'POST',
+    pattern: '/users/me/password-changed',
+    handler: (c) => passwordChanged(c),
+  },
+  /* Your own history needs no permission; it is how you notice a stranger. */
+  {
+    method: 'GET',
+    pattern: '/users/me/login-history',
+    handler: (c) => listLoginHistory(c),
+  },
+  {
+    method: 'GET',
+    pattern: '/users/:id/login-history',
+    handler: (c, _r, p) => listLoginHistory(c, p.id!),
+  },
+  /* An administrator may require a second factor; only the person can meet it. */
+  {
+    method: 'PUT',
+    pattern: '/users/:id/mfa-required',
+    handler: (c, _r, p, b) =>
+      setMfaRequired(c, p.id!, (b as { required: boolean }).required),
+  },
   {
     method: 'POST',
     pattern: '/users/bulk-update',
@@ -1556,14 +1654,49 @@ const routes: Route[] = [
   {
     method: 'GET',
     pattern: '/me/permissions',
-    handler: async (c) => ({
-      role: c.role,
-      summary: ROLE_SUMMARY[c.role],
-      modules: modulesFor(c.role),
-      rules: Object.fromEntries(
-        modulesFor(c.role).map((m) => [m, POLICY[m]![c.role]]),
-      ),
-    }),
+    /*
+     * The tenant's *effective* policy, not the code's.
+     *
+     * role_permission may narrow what policy.ts grants, never widen it — see
+     * effectiveRule. So this can return less than the code does and never
+     * more, which is what makes it safe to let a screen drive itself from the
+     * answer: the worst a wrong row does is hide something.
+     *
+     * Narrowing is presentational until the route layer enforces it. It takes
+     * nothing away from the API, and it cannot add anything either, because a
+     * caller who ignores this response is left with exactly the access
+     * policy.ts already gave them.
+     */
+    handler: async (c) => {
+      const overrides = await overridesFor(c);
+      const modules = effectiveModulesFor(c.role, overrides);
+      return {
+        role: c.role,
+        summary: ROLE_SUMMARY[c.role],
+        modules,
+        rules: Object.fromEntries(
+          modules.map((m) => [m, effectiveRule(c.role, m, overrides)]),
+        ),
+      };
+    },
+  },
+
+  /*
+   * Permission narrowing. Under /config so it inherits the settings module,
+   * which only an administrator reads — the service checks the role again
+   * anyway, because a route grouping is not a permission.
+   */
+  { method: 'GET', pattern: '/config/permissions', handler: (c) => permissionGrid(c) },
+  {
+    method: 'PUT',
+    pattern: '/config/permissions',
+    handler: (c, _r, _p, b) =>
+      setPermissions(c, (b as { patches: never[] }).patches),
+  },
+  {
+    method: 'POST',
+    pattern: '/config/permissions/reset',
+    handler: (c, _r, _p, b) => resetModule(c, (b as { module: string }).module),
   },
 
   /* ---- approvals: the caller is the scope, so nothing is passed ---- */
@@ -1732,6 +1865,9 @@ const bearer = (req: IncomingMessage): string | undefined => {
 function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof AuthError) return { status: 401, message: error.message };
   if (error instanceof TenantContextError) return { status: 401, message: 'no tenant context' };
+  if (error instanceof PermissionError) {
+    return { status: error.kind === 'forbidden' ? 403 : 400, message: error.message };
+  }
   if (error instanceof NotFound) return { status: 404, message: error.message };
   if (error instanceof BadRequest) return { status: 400, message: error.message };
   if (error instanceof AttendanceError) {
@@ -1975,6 +2111,31 @@ export function createApp() {
           if (!params) continue;
 
           const caller = await callerFromToken(token);
+
+          /*
+           * The tenant's narrowing, enforced here rather than only in the menu.
+           *
+           * Without this, an administrator switching a module off removed its
+           * menu entry and left its routes answering — which is a preference,
+           * not a permission. One place rather than in each of forty-two
+           * services, because a service that forgot would fail silently.
+           *
+           * Read scope only. Whether a *particular* act inside a module is
+           * allowed stays with the service that performs it, where the rules
+           * are specific ("only an administrator can suspend an account") and
+           * already enforced. This gate answers the coarser question the
+           * override table actually asks: may this role open this module at
+           * all.
+           */
+          const moduleKey = moduleForPath(url.pathname);
+          if (moduleKey) {
+            const overrides = await overridesFor(caller);
+            if (effectiveRule(caller.role, moduleKey, overrides).read === 'none') {
+              send(res, 403, { error: 'this module is not available to your role' });
+              return;
+            }
+          }
+
           const body = req.method === 'GET' ? undefined : await readJsonBody(req);
           const result = await route.handler(caller, req, params, body);
           send(res, 200, result);

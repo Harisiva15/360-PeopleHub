@@ -17,6 +17,7 @@
  */
 
 import { verifyAccessToken, AuthError } from './verify.ts';
+import { REFUSED, assertSecondFactorSatisfied as checkFactor } from './rules.ts';
 import type { SupabaseClaims } from './verify.ts';
 import { withoutTenantForAuth } from '../tenancy/context.ts';
 import type { Caller } from '../tenancy/context.ts';
@@ -30,6 +31,7 @@ interface MembershipRow {
   employee_id: string | null;
   membership_status: string;
   tenant_status: string;
+  has_factor: boolean;
 }
 
 /**
@@ -51,7 +53,11 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
     // what the row-level policy on tenant_membership denies. See migration
     // 0011 for why a narrow function beats a wider policy here.
     const result = await db.query<MembershipRow>(
-      `SELECT tenant_id, role, employee_id, membership_status, tenant_status
+      // The factor flag rides along rather than costing a second round
+      // trip: it is needed on every request, and a call this hot should
+      // not become two.
+      `SELECT tenant_id, role, employee_id, membership_status, tenant_status,
+              auth_has_verified_factor($1) AS has_factor
          FROM auth_membership($1)
         WHERE ($2::uuid IS NULL OR tenant_id = $2::uuid)
         ORDER BY (tenant_id = $2::uuid) DESC
@@ -85,9 +91,17 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
     }
   }
 
-  if (!row) throw new AuthError('no active membership for this user');
+  if (!row) throw new AuthError(await refusalReason(claims.sub));
   if (row.tenant_status === 'suspended' || row.tenant_status === 'closed') {
     throw new AuthError('tenant is not active');
+  }
+  // Rethrown as an AuthError so the HTTP layer maps it to 401 like every
+  // other refusal here; the rule itself lives in rules.ts, testable without
+  // a database.
+  try {
+    checkFactor(claims.aal, row.has_factor);
+  } catch (e) {
+    throw new AuthError(e instanceof Error ? e.message : 'second factor required');
   }
 
   return {
@@ -96,6 +110,41 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
     employeeId: row.employee_id,
     role: row.role,
   };
+}
+
+/**
+ * Why somebody with a valid token was refused.
+ *
+ * `auth_membership` filters to active memberships, so deactivating an account
+ * takes effect on the very next request — the gate is the SQL, and it fails
+ * closed whatever the application forgets. That is the right way round and it
+ * is deliberately not moved up here.
+ *
+ * What it cost was the message. Every non-active status produced "no active
+ * membership for this user", so somebody suspended, somebody awaiting approval
+ * and somebody whose invitation had not been accepted all saw a sentence that
+ * reads like a fault in the software. Each of those needs a different action
+ * from the person reading it, and a vague refusal is paid for in support
+ * tickets.
+ *
+ * So the reason is fetched only on the path where access has *already* been
+ * refused. It cannot widen anything: by the time this runs the caller is
+ * getting a 401 regardless, and the function it calls returns a status and
+ * nothing else — no tenant, no role, no employee.
+ */
+
+async function refusalReason(userId: string): Promise<string> {
+  try {
+    const status = await withoutTenantForAuth(async (db) => {
+      const { rows } = await db.query<{ status: string }>(
+        'SELECT status FROM auth_membership_status($1) LIMIT 1', [userId]);
+      return rows[0]?.status ?? null;
+    });
+    if (status && REFUSED[status]) return REFUSED[status];
+  } catch {
+    /* The lookup is for the wording only. If it fails, the refusal still stands. */
+  }
+  return 'no active membership for this user';
 }
 
 /** Every tenant a user may enter, for a tenant picker. */
@@ -117,3 +166,4 @@ export async function membershipsFor(
     }));
   });
 }
+

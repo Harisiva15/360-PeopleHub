@@ -2,11 +2,10 @@
 import './assetWorkflow';
 
 import { addDays, monthLabelLong, TODAY, ymd } from '../lib/dates';
-import { chance, pick, ri, uid } from '../lib/rng';
+import { pick, ri, uid } from '../lib/rng';
 import { ACTIVE } from './employees';
 import { CUR_RUN } from './payroll';
 import type { CountryId } from '../types/country';
-import type { Employee } from '../types/employee';
 
 export type Severity = 'high' | 'medium' | 'low';
 
@@ -74,27 +73,21 @@ export const AUDIT: AuditEntry[] = [];
   AUDIT.sort((a, b) => (b.on + b.at).localeCompare(a.on + a.at));
 })();
 
-export interface PostureRecord {
-  e: Employee;
-  /** Second factor enrolled. */
-  mfa: boolean;
-  /** Enrolled in mobile device management. */
-  managed: boolean;
-  encrypted: boolean;
-  patched: boolean;
-  lastSeen: string;
-}
-
-/** Device and identity posture, derived from the workforce. */
-export const POSTURE: PostureRecord[] = ACTIVE().map((e) => ({
-  e,
-  /* MFA is mandatory for the departments that touch personal data */
-  mfa: chance(0.88) || ['HR', 'FIN', 'IT'].includes(e.dept),
-  managed: chance(0.91),
-  encrypted: chance(0.94),
-  patched: chance(0.83),
-  lastSeen: ymd(addDays(TODAY, -ri(0, 26))),
-}));
+/*
+ * A `POSTURE` book stood here: one row per active employee carrying mfa,
+ * managed, encrypted and patched, each drawn with `chance()`.
+ *
+ * Seeded data is right for a leave balance or a payslip — those are shapes a
+ * screen has to render and nobody mistakes the demo's figures for their own.
+ * It is wrong for a security measurement, because the whole value of the
+ * number is that somebody can rely on it, and a plausible invented percentage
+ * is indistinguishable from a measured one on the page. "94% encrypted" is
+ * what gets repeated in a client security review.
+ *
+ * Nothing replaces it. The security screen now derives its identity figure
+ * from sign-in history, which this product actually records, and says
+ * "Not measured" for device state, which it cannot see.
+ */
 
 /** Categories the audit trail is filtered by, in the order they are listed. */
 export const AUDIT_CATS = [

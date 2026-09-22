@@ -258,11 +258,10 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       controls: () => api.get('/security/controls'),
       retention: () => api.get('/security/retention'),
       /*
-       * `posture` stays on the mock. It reports whether each person's device
-       * has a second factor, is managed, encrypted and patched, and nothing
-       * here knows any of that — no MDM, no identity feed, no agent. A
-       * fabricated "94% encrypted" on a security page is a false assurance
-       * somebody repeats to a client, not a placeholder.
+       * There is no `posture` here, and none on the mock either. It reported
+       * device state nothing in this system can observe; keeping it on the
+       * mock meant the demo showed invented percentages and a configured build
+       * showed zeros. See src/data/security.ts for the full note.
        */
     },
 
@@ -379,6 +378,9 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/config/sites/${siteId}/fence`, patch),
       setLeaveQuota: (typeId, quota) =>
         api.put(`/config/leave-types/${typeId}/quota`, { quota }),
+      permissions: () => api.get('/config/permissions'),
+      setPermissions: (_c, patches) => api.put('/config/permissions', { patches }),
+      resetPermissions: (_c, module) => api.post('/config/permissions/reset', { module }),
       addHoliday: (date, name, optional) =>
         api.post('/config/holidays', { date, name, optional }),
     },
@@ -584,7 +586,17 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       resetPassword: (_c, id, forceChange) =>
         api.post(`/users/${id}/reset-password`, { forceChange }),
       bulkUpdate: (_c, ids, patch) => api.post('/users/bulk-update', { ids, patch }),
-      lastLoginNow: () => api.post('/users/me/last-login'),
+      lastLoginNow: (_c, method) => api.post('/users/me/last-login', { method }),
+      signOut: (_c, reason) => api.post('/users/me/sign-out', { reason }),
+      /* No id is your own, which is a different route rather than a null id. */
+      loginHistory: (_c, empId) => (empId
+        ? api.get(`/users/${empId}/login-history`)
+        : api.get('/users/me/login-history')),
+      tenantLoginHistory: () => api.get('/users/login-history'),
+      accountStatus: () => api.get('/users/me/account-status'),
+      setMfaRequired: (_c, id, required) =>
+        api.put(`/users/${id}/mfa-required`, { required }),
+      passwordChanged: () => api.post('/users/me/password-changed'),
     },
 
     /*

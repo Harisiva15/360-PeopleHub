@@ -48,7 +48,7 @@ export function useMay(): (action: UserAction) => boolean {
 /**
  * Green active, amber waiting, red held, grey retired.
  *
- * Deliberately four tones over six statuses: a status set where every value
+ * Deliberately four tones over seven statuses: a status set where every value
  * has its own colour stops being scannable, and the distinctions people act on
  * are "working", "waiting on somebody", "stopped" and "gone".
  */
@@ -56,6 +56,7 @@ const STATUS_TONE: Record<UserStatus, BadgeKind> = {
   Active: 'good',
   'Pending Approval': 'warn',
   'Invitation Pending': 'warn',
+  Locked: 'crit',
   Suspended: 'crit',
   Inactive: 'mute',
   Deleted: 'mute',

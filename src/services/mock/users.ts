@@ -15,8 +15,8 @@
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
 import { EMAP } from '../../data/employees';
-import { USERS, userOf } from '../../data/users';
-import type { UserAccount, UserStatus } from '../../data/users';
+import { LOGIN_HISTORY, USERS, loginHistoryFor, userOf } from '../../data/users';
+import type { LoginEvent, LoginMethod, UserAccount, UserStatus } from '../../data/users';
 import { actionScope, may, mayAssignRole } from '../../state/rbac';
 import type { UserAction } from '../../state/rbac';
 import { visibleIds } from '../../state/rbac';
@@ -213,6 +213,9 @@ export const userService: UserService = {
       empType: draft.empType ?? 'Full-time',
       joinedOn: draft.joinedOn ?? ymd(TODAY),
       role: draft.role,
+      lockedAt: null,
+      lockReason: '',
+      mfaRequired: false,
       status,
       createdOn: ymd(TODAY),
       createdById: c.meId,
@@ -399,10 +402,99 @@ export const userService: UserService = {
    *
    * Taking no id removes the hole rather than guarding it.
    */
-  lastLoginNow(c) {
+  lastLoginNow(c, method: LoginMethod = 'password') {
     const u = USERS.find((x) => x.empId === c.meId);
     if (!u) return ok(null);
     u.lastLoginAt = now();
+    /*
+     * The stamp and the history row are one event seen twice: the stamp is
+     * the current fact an administrator sorts on, the row is what the person
+     * reads to recognise a session. Written together so they cannot disagree.
+     */
+    LOGIN_HISTORY.unshift({
+      id: `LGN-${LOGIN_HISTORY.length + 1}`,
+      employeeId: c.meId,
+      at: now(),
+      outcome: 'success',
+      method,
+      reason: '',
+      // The browser cannot see its own address, and inventing one would make
+      // the mock teach a lesson the server contradicts. Blank renders as '—'.
+      ip: '',
+      userAgent: navigator.userAgent.slice(0, 400),
+    });
     return ok(u);
+  },
+
+  signOut(c, reason = 'manual') {
+    if (!c.meId) return ok(undefined);
+    LOGIN_HISTORY.unshift({
+      id: `LGN-${LOGIN_HISTORY.length + 1}`,
+      employeeId: c.meId,
+      at: now(),
+      outcome: 'signed_out',
+      method: 'password',
+      reason: reason === 'idle'
+        ? 'signed out after a period of inactivity'
+        : 'signed out',
+      ip: '',
+      userAgent: navigator.userAgent.slice(0, 400),
+    });
+    return ok(undefined);
+  },
+
+  /*
+   * Your own history takes no permission at all — it is the control that
+   * lets somebody notice a session they did not start, and a control only an
+   * administrator can reach does not do that job. Somebody else's goes
+   * through the same visibility every other module uses.
+   */
+  loginHistory(c, empId) {
+    const target = empId ?? c.meId;
+    if (!target) return ok([] as LoginEvent[]);
+    if (target !== c.meId && !visibleIds(c.role, c.meId).includes(target)) {
+      return refuse('You can only see your own sign-in history');
+    }
+    return ok(loginHistoryFor(target));
+  },
+
+  accountStatus(c) {
+    const u = USERS.find((x) => x.empId === c.meId);
+    return ok({
+      mustChangePassword: Boolean(u?.mustChangePassword),
+      /*
+       * Never true on the mock. Whether a factor exists is Supabase's answer
+       * and demo mode has no Supabase, so requiring enrolment here would
+       * block the demo on a screen that cannot succeed.
+       */
+      mustEnrolMfa: false,
+    });
+  },
+
+  setMfaRequired(c, id, required) {
+    if (!may(c.role, 'user.suspend')) {
+      return refuse('Only an administrator can require a second factor');
+    }
+    const u = userOf(id);
+    if (!u) return refuse('No such account');
+    u.mfaRequired = required;
+    return ok(u);
+  },
+
+  passwordChanged(c) {
+    const u = USERS.find((x) => x.empId === c.meId);
+    if (u) u.mustChangePassword = false;
+    return ok({ ok: true } as const);
+  },
+
+  tenantLoginHistory(c) {
+    if (c.role === 'employee') {
+      return refuse('Only an administrator or a manager can read this');
+    }
+    if (c.role === 'admin') return ok(LOGIN_HISTORY.slice(0, 500));
+    const mine = visibleIds(c.role, c.meId);
+    return ok(LOGIN_HISTORY
+      .filter((e) => e.employeeId && mine.includes(e.employeeId))
+      .slice(0, 500));
   },
 };

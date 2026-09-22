@@ -19,11 +19,12 @@ import { Badge, Banner, Card, EmptyState, Table, TableWrap, Tabs, Tile, StatRow 
 import { Chip } from '../../components/common';
 import { PERMS } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
-import { useShowEmployee } from '../employees/Profile';
 import {
   useAllEmployees, useAssets, useAudit, useAuditCategories, useControls, useExits,
-  usePosture, useRetention,
+  useRetention,
 } from './data';
+import { useTenantLoginHistory, useUsers } from '../users/data';
+import { useSecondFactor } from './measured';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { Icon } from '../../components/icons';
@@ -39,37 +40,80 @@ const TABS: { v: Tab; label: string }[] = [
 
 /* ---------- Posture ---------- */
 
+/**
+ * Security posture, measured rather than asserted.
+ *
+ * This tab used to report MFA enrolment, managed devices, disk encryption and
+ * patch compliance as percentages, and a weighted score over all four. Every
+ * one of those came from `src/data/security.ts`, which assigns them with a
+ * seeded random draw — there is no MDM, no identity feed and no endpoint
+ * agent behind any of it. The service seam already said so in a comment and
+ * the screen rendered the numbers anyway.
+ *
+ * A fabricated "94% encrypted" is not a placeholder. It is the figure
+ * somebody quotes in a client security review, and it is the one number on
+ * this page nobody can check. So the three device measures are gone — not
+ * replaced with zero, which would read as a finding, but stated as not
+ * measured, with what it would take to measure them.
+ *
+ * The one thing here that *is* knowable is whether people sign in with a
+ * second factor, because this product records the method on every sign-in.
+ * That is now the identity figure, labelled as what it actually counts.
+ */
 function PostureTab() {
-  const { data: POSTURE = [] } = usePosture();
   const { data: CONTROLS = [] } = useControls();
   const { data: AUDIT = [] } = useAudit();
   const { data: AUDIT_CATS = [] } = useAuditCategories();
-  const n = Math.max(1, POSTURE.length);
-  const mfa = POSTURE.filter((p) => p.mfa).length;
-  const mgd = POSTURE.filter((p) => p.managed).length;
-  const enc = POSTURE.filter((p) => p.encrypted).length;
-  const pat = POSTURE.filter((p) => p.patched).length;
+  const { data: history = [], loading: histLoading } = useTenantLoginHistory();
+  const { data: everyone = [] } = useAllEmployees();
   const met = CONTROLS.filter((c) => c.s === 'Met').length;
 
-  /* Identity is weighted heaviest, then device hygiene, then the control set. */
-  const score = Math.round((mfa / n) * 25 + (mgd / n) * 20 + (enc / n) * 20 + (pat / n) * 15 + (met / CONTROLS.length) * 20);
-  const band = score >= 85 ? 'Strong' : score >= 70 ? 'Adequate' : 'Needs work';
+  const sf = useSecondFactor(history);
 
+  /*
+   * Per department, over the people who have actually signed in. A department
+   * where nobody has signed in yet is left out rather than drawn at 0% — an
+   * empty bar and a bar of non-adopters look identical and mean opposite
+   * things.
+   */
+  const deptOfEmp = (id: string) => everyone.find((e) => e.id === id)?.dept;
   const byDept: HBarRow[] = DEPTS.map((d) => {
-    const g = POSTURE.filter((p) => p.e.dept === d.id);
-    return { k: d.name, c: d.color, v: g.length ? Math.round((g.filter((p) => p.mfa).length / g.length) * 100) : 0 };
-  });
+    const seen = [...sf.signedIn].filter((id) => deptOfEmp(id) === d.id);
+    const with2fa = seen.filter((id) => sf.withSecondFactor.has(id));
+    return { k: d.name, c: d.color, v: seen.length ? pct(with2fa.length, seen.length) : -1 };
+  }).filter((r) => r.v >= 0);
   const byCat: HBarRow[] = AUDIT_CATS.map((c, i) => ({ k: c, c: PAL[i % 8], v: AUDIT.filter((a) => a.cat === c).length })).filter((r) => r.v);
 
   return (
     <div className="stack">
-      <StatRow cols={5}>
-        <Tile label="Security score" value={`${score}/100`} foot={`${band} · weighted across identity, device and controls`} />
-        <Tile label="MFA enrolled" value={pct(mfa, n) + '%'} foot={`${n - mfa} accounts without a second factor`} />
-        <Tile label="Managed devices" value={pct(mgd, n) + '%'} foot={`${n - mgd} outside device management`} />
-        <Tile label="Disk encrypted" value={pct(enc, n) + '%'} foot={`${n - enc} unencrypted endpoints`} />
-        <Tile label="Patch compliance" value={pct(pat, n) + '%'} foot={`${n - pat} behind the baseline`} />
+      <StatRow cols={4}>
+        <Tile
+          label="Signed in with a second factor"
+          value={histLoading ? '—' : `${pct(sf.withSecondFactor.size, sf.signedIn.size)}%`}
+          foot={histLoading
+            ? 'Reading sign-in history…'
+            : `${sf.withSecondFactor.size} of ${sf.signedIn.size} accounts that have signed in`}
+        />
+        <Tile
+          label="Controls met"
+          value={`${met}/${CONTROLS.length}`}
+          foot={`${CONTROLS.length - met} not yet fully implemented`}
+        />
+        <Tile label="Managed devices" value="Not measured" foot="No device management is connected" />
+        <Tile label="Disk encryption" value="Not measured" foot="No endpoint agent is connected" />
       </StatRow>
+
+      {/*
+        * Above the charts, not below them. Somebody arriving to answer "are we
+        * secure" needs to know which half of this page is evidence before they
+        * read either half.
+        */}
+      <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Device posture is not measured">
+        Whether a laptop is enrolled in device management, encrypted or patched is
+        not something this application can observe. Reporting it would need an MDM
+        or endpoint agent connected under Integrations. Until one is, these figures
+        are absent rather than estimated — an estimate here reads as a measurement.
+      </Banner>
 
       <div className="grid g2">
         <Card title="Control framework" sub={`${met} of ${CONTROLS.length} controls fully met`} flush>
@@ -89,8 +133,13 @@ function PostureTab() {
           </Table>
         </Card>
 
-        <Card title="Posture by department" sub="MFA coverage — the weakest link decides the risk">
-          <HBar rows={byDept} fmt={(v) => v + '%'} />
+        <Card
+          title="Second factor by department"
+          sub="Share of people who have signed in using one. Departments with no sign-ins are omitted."
+        >
+          {byDept.length
+            ? <HBar rows={byDept} fmt={(v) => v + '%'} />
+            : <EmptyState msg="No sign-ins recorded yet" icon={<Icon n="security" size="lg" />} />}
         </Card>
       </div>
 
@@ -123,28 +172,55 @@ const SEV_KIND: Record<FindingSev, 'crit' | 'warn' | 'info'> = { crit: 'crit', w
  * translate into work yourself.
  */
 function useAccessFindings(goToAudit: () => void): Finding[] {
-  const showEmp = useShowEmployee();
   const nav = useNavigate();
-  const { data: POSTURE = [] } = usePosture();
   const { data: AUDIT = [] } = useAudit();
   const { data: EXITS = [] } = useExits();
   const { data: ASSETS = [] } = useAssets();
   const { data: everyone = [] } = useAllEmployees();
+  const { data: history = [] } = useTenantLoginHistory();
+  const { data: accounts = [] } = useUsers({});
+  const sf = useSecondFactor(history);
 
   const out: Finding[] = [];
-  const admins = everyone.filter((e) => e.dept === 'HR' && e.grade >= 'L4');
+  /*
+   * Who actually holds the administrator role, read from the account.
+   *
+   * This was `everyone.filter((e) => e.dept === 'HR' && e.grade >= 'L4')` —
+   * a guess at who administrators are, from a department and a grade band.
+   * It would have counted a senior HR person with no account at all and
+   * missed the IT administrator entirely. The role lives on
+   * `tenant_membership` and is what every server-side check reads, so it is
+   * what a finding about privilege has to count.
+   */
+  const admins = accounts.filter((a) => a.role === 'admin' && a.status === 'Active');
   /* A settled exit has had its access closed, so it is no longer a finding. */
   const leavers = EXITS.filter((x) => x.status !== 'Settled' && x.lwd <= ymd(addDays(TODAY, 14)));
 
-  POSTURE.filter((p) => !p.mfa).slice(0, 6).forEach((p) =>
-    out.push({
-      sev: 'crit',
-      cat: 'Identity',
-      t: `${p.e.name} has no second factor enrolled`,
-      d: `${deptOf(p.e.dept).name} · ${countryOf(p.e.country).name}. Policy requires MFA for every account with access to personal data.`,
-      act: { l: 'Open profile', f: () => showEmp(p.e.id) },
-    })
-  );
+  /*
+   * Accounts that sign in without a second factor.
+   *
+   * Stated as what was observed — "has only ever signed in with a password"
+   * — rather than "has no second factor enrolled", which is a claim about
+   * Supabase Auth's records that this application does not read. Somebody
+   * who enrolled yesterday and has not signed in since would have been
+   * accused of ignoring policy by the stronger wording.
+   */
+  accounts
+    .filter((a) => a.status === 'Active' && a.empId
+      && sf.signedIn.has(a.empId) && !sf.withSecondFactor.has(a.empId))
+    .slice(0, 6)
+    .forEach((a) => {
+      const e = everyone.find((y) => y.id === a.empId);
+      out.push({
+        sev: 'crit',
+        cat: 'Identity',
+        t: `${a.name} has only ever signed in with a password`,
+        d: e
+          ? `${deptOf(e.dept).name} · ${countryOf(e.country).name}. No sign-in on record used a second factor.`
+          : 'No sign-in on record used a second factor.',
+        act: { l: 'Open sign-in history', f: () => nav(`/users?v=signins`) },
+      });
+    });
 
   leavers.forEach((x) => {
     const e = everyone.find((y) => y.id === x.empId);
@@ -159,23 +235,22 @@ function useAccessFindings(goToAudit: () => void): Finding[] {
     });
   });
 
-  POSTURE.filter((p) => !p.managed).slice(0, 4).forEach((p) =>
-    out.push({
-      sev: 'warn',
-      cat: 'Device',
-      t: `${p.e.name} is signing in from an unmanaged device`,
-      d: `Not enrolled in mobile device management. Last seen ${fmtD(p.lastSeen)}.`,
-      act: { l: 'Open profile', f: () => showEmp(p.e.id) },
-    })
-  );
+  /*
+   * There were two device findings here — an unmanaged device and one behind
+   * on patches — each naming a real colleague. Both were drawn at random.
+   * A named accusation is worse than a wrong percentage: somebody would have
+   * been asked to explain a laptop nobody had looked at. Nothing replaces
+   * them, because nothing here can see a device.
+   */
 
-  POSTURE.filter((p) => !p.patched).slice(0, 4).forEach((p) =>
+  /* Locked accounts are a real finding, and they are in the account table. */
+  accounts.filter((a) => a.status === 'Locked').slice(0, 5).forEach((a) =>
     out.push({
       sev: 'warn',
-      cat: 'Device',
-      t: `${p.e.name}’s device is behind on patches`,
-      d: 'Operating system is more than two releases behind the baseline.',
-      act: { l: 'Raise a ticket', f: () => nav('/helpdesk') },
+      cat: 'Identity',
+      t: `${a.name}’s account is locked`,
+      d: a.lockReason || 'Locked by an administrator. Only an administrator can lift it.',
+      act: { l: 'Open user management', f: () => nav('/users?v=locked') },
     })
   );
 
@@ -195,7 +270,7 @@ function useAccessFindings(goToAudit: () => void): Finding[] {
     out.push({
       sev: 'warn',
       cat: 'Privilege',
-      t: `${admins.length} accounts hold full administrator rights`,
+      t: `${admins.length} active accounts hold the administrator role`,
       d: 'Organisation-wide access to every employee record, payroll run and configuration. Least privilege suggests no more than three.',
       act: { l: 'Open access control', f: () => nav('/settings') },
     });

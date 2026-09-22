@@ -52,7 +52,7 @@ import type {
 } from '../data/staffing';
 import type { MatchExplain } from '../data/matching';
 import type { AssetRequest } from '../data/assetWorkflow';
-import type { AuditEntry, Control, PostureRecord, RetentionRow, Severity } from '../data/security';
+import type { AuditEntry, Control, RetentionRow, Severity } from '../data/security';
 import type { FnF } from '../data/exit';
 import type { Onboarding } from '../data/onboarding';
 import type { Holiday, Site } from '../types/org';
@@ -94,7 +94,7 @@ export type { MatchExplain } from '../data/matching';
 export type { AssetRequest } from '../data/assetWorkflow';
 export type { Onboarding } from '../data/onboarding';
 export type { Holiday, Site } from '../types/org';
-export type { AuditEntry, Control, PostureRecord, RetentionRow, Severity } from '../data/security';
+export type { AuditEntry, Control, RetentionRow, Severity } from '../data/security';
 
 /** Who is asking. Every read is scoped to this, the way an API would scope to a token. */
 export interface Caller {
@@ -1407,6 +1407,42 @@ export interface ConfigService {
   /** Sets an entitlement and reprices open balances to match. */
   setLeaveQuota(typeId: string, quota: number): Promise<{ type: string; quota: number; repriced: number }>;
   addHoliday(date: string, name: string, optional: boolean): Promise<Holiday[]>;
+
+  /**
+   * Per-tenant permission narrowing, with the code's ceiling alongside.
+   *
+   * Both halves, because a screen that only knew the current values would
+   * offer choices the server silently clamps — the setting appears to save
+   * and nothing changes. The ceiling is what lets it grey those out.
+   */
+  permissions(c: Caller): Promise<ModuleGrid[]>;
+  /** Narrow cells, or restore them towards the ceiling. Admin only. */
+  setPermissions(c: Caller, patches: GridPatch[]): Promise<ModuleGrid[]>;
+  /** Drop every override for one module. Admin only. */
+  resetPermissions(c: Caller, module: string): Promise<ModuleGrid[]>;
+}
+
+/**
+ * One row of the permission grid.
+ *
+ * `ceiling` is what `server/src/auth/policy.ts` grants and is the same for
+ * every tenant; `effective` is what this tenant has narrowed it to. An
+ * override can only ever lower a value, so effective never exceeds ceiling.
+ */
+export interface ModuleGrid {
+  module: string;
+  ceiling: Record<AppRole, ModuleRule>;
+  effective: Record<AppRole, ModuleRule>;
+}
+
+export type PermScope = 'none' | 'own' | 'team' | 'all';
+export interface ModuleRule { read: PermScope; write: PermScope; approve: PermScope }
+export interface GridPatch {
+  module: string;
+  role: AppRole;
+  read?: PermScope;
+  write?: PermScope;
+  approve?: PermScope;
 }
 
 /* ---------- security ---------- */
@@ -1414,7 +1450,6 @@ export interface ConfigService {
 export interface SecurityService {
   audit(cat?: string, sev?: Severity): Promise<AuditEntry[]>;
   auditCategories(): Promise<string[]>;
-  posture(): Promise<PostureRecord[]>;
   controls(): Promise<Control[]>;
   retention(): Promise<RetentionRow[]>;
 }
@@ -1560,9 +1595,9 @@ export interface Services {
 
 /* ---------- user administration ---------- */
 
-export type { UserAccount, UserStatus } from '../data/users';
+export type { UserAccount, UserStatus, LoginEvent, LoginMethod } from '../data/users';
 export { USER_STATUSES } from '../data/users';
-import type { UserAccount, UserStatus } from '../data/users';
+import type { UserAccount, UserStatus, LoginEvent, LoginMethod } from '../data/users';
 
 /** What a new account is created from. */
 export interface UserDraft {
@@ -1612,6 +1647,18 @@ export interface UserStats {
 }
 
 /**
+ * What an account still owes before it may be used.
+ *
+ * Both are set by an administrator and both block the application until met.
+ * `mustEnrolMfa` is false once a factor exists — asking somebody who has
+ * already enrolled to enrol again is a loop with no way out.
+ */
+export interface AccountObligations {
+  mustChangePassword: boolean;
+  mustEnrolMfa: boolean;
+}
+
+/**
  * Administering accounts.
  *
  * Every method takes the caller, and every method checks it. Not as a
@@ -1644,10 +1691,44 @@ export interface UserService {
   resendInvitation(c: Caller, id: string): Promise<UserAccount>;
   resetPassword(c: Caller, id: string, forceChange?: boolean): Promise<UserAccount>;
   bulkUpdate(c: Caller, ids: string[], patch: UserPatch): Promise<UserAccount[]>;
-  /** Records a sign-in. Present so `lastLogin` is a fact rather than a fixture. */
-  /** Stamps the caller's own last sign-in. Takes no id: there is no row to
-      name but your own. */
-  lastLoginNow(c: Caller): Promise<UserAccount | null>;
+  /** Stamps the caller's own last sign-in and records it in the history.
+      Takes no id: there is no row to name but your own. */
+  lastLoginNow(c: Caller, method?: LoginMethod): Promise<UserAccount | null>;
+  /**
+   * Records the end of a session, before the token goes.
+   *
+   * `idle` and a deliberate sign-out are told apart because they are
+   * different things to read back: one says you left, the other says the
+   * application decided you had.
+   */
+  signOut(c: Caller, reason?: 'manual' | 'idle'): Promise<void>;
+  /**
+   * Sign-ins for one person, newest first. With no id, your own.
+   *
+   * Your own needs no permission, deliberately: it is the control that lets
+   * somebody notice a session they did not start, and a control only an
+   * administrator can use does not do that job.
+   */
+  loginHistory(c: Caller, empId?: string): Promise<LoginEvent[]>;
+  /** Everybody's, for an administrator. A manager sees their own line. */
+  tenantLoginHistory(c: Caller): Promise<LoginEvent[]>;
+  /**
+   * Whether the caller must set a new password before going further.
+   *
+   * Takes no id. An endpoint that answered this about somebody else would
+   * name the accounts an administrator has just reset, which is the set
+   * worth attacking.
+   */
+  accountStatus(c: Caller): Promise<AccountObligations>;
+  /** Clears the password flag once a new one has been set. */
+  passwordChanged(c: Caller): Promise<{ ok: true }>;
+  /**
+   * Require a second factor on an account, or stop requiring it.
+   *
+   * Sets an obligation and never satisfies one: enrolling means holding the
+   * secret, and only the account's owner should ever do that.
+   */
+  setMfaRequired(c: Caller, id: string, required: boolean): Promise<UserAccount>;
 }
 
 /* ---------- job titles ---------- */

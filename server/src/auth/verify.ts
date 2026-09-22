@@ -40,6 +40,13 @@ export interface SupabaseClaims extends JWTPayload {
   /** Set by Supabase once the address is confirmed. Never trust the address without it. */
   user_metadata?: { email_verified?: boolean };
   app_metadata?: { tenant_id?: string; app_role?: string };
+  /**
+   * How far this session was authenticated: 'aal2' once a second factor has
+   * been satisfied, 'aal1' otherwise. Signed by Supabase, so it cannot be
+   * edited by the holder — but see session.ts: 'aal1' alone is not grounds
+   * for refusal, because an account with no factor is legitimately aal1.
+   */
+  aal?: string;
 }
 
 /**

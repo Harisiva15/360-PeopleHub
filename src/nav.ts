@@ -60,11 +60,12 @@ export const NAV: NavGroup[] = [
   { group: 'Dashboard', ic: 'dashboard', k: 'dashboard', items: [] },
 
   {
-    group: 'Employees',
+    group: 'People',
     ic: 'employees',
     k: 'employees',
     desc: 'Manage your people, organisation and employee records.',
     items: [
+      { k: 'account', n: 'My account', ic: 'lock', d: 'Your sign-in details and every session opened against your account.' },
       { k: 'employees', n: 'Employee directory', ic: 'people', d: 'Find and contact colleagues.' },
       { k: 'org', n: 'Organisation chart', ic: 'projects', d: 'See who reports to whom.' },
       { k: 'jobtitles', n: 'Job titles', ic: 'briefcase', d: 'Titles, levels and who holds them.' },
@@ -72,16 +73,14 @@ export const NAV: NavGroup[] = [
       { k: 'documents', n: 'Documents & letters', ic: 'document', d: 'Issue and track employee paperwork.' },
       { k: 'onboarding', n: 'Onboarding', ic: 'joiner', d: 'Bring new joiners through their first weeks.', roles: ['manager', 'admin'] },
       { k: 'exit', n: 'Exit & final settlement', ic: 'undo', d: 'Offboard leavers and settle their dues.', roles: ['manager', 'admin'] },
-      { k: 'settings', n: 'Departments', to: '/settings?v=org', ic: 'building', d: 'Departments, heads and headcount.', roles: ['admin'] },
-      { k: 'settings', n: 'Locations', to: '/settings?v=sites', ic: 'location', d: 'Sites, addresses and geo-fences.', roles: ['admin'] },
     ],
   },
 
   {
-    group: 'Leave & attendance',
+    group: 'Time & attendance',
     ic: 'attendance',
     k: 'attendance',
-    desc: 'Hours worked, days off, and who is in today.',
+    desc: 'Hours worked, days off, timesheets and who is in today.',
     items: [
       { k: 'attendance', n: 'My attendance', ic: 'clock', d: 'Punch in and out, and see your month.' },
       { k: 'leave', n: 'My leave', ic: 'holiday', d: 'Apply for leave and check your balance.' },
@@ -89,25 +88,24 @@ export const NAV: NavGroup[] = [
       { k: 'leave', n: 'Team leave', to: '/leave?v=team', ic: 'team', d: 'Your line’s leave, in one calendar.', roles: ['manager', 'admin'] },
       { k: 'leave', n: 'Leave approvals', to: '/leave?v=appr', ic: 'done', d: 'Decide the requests waiting on you.', roles: ['manager', 'admin'] },
       { k: 'shifts', n: 'Roster', ic: 'schedule', d: 'Plan shifts and working patterns.', roles: ['manager', 'admin'] },
+      { k: 'attendance', n: 'Attendance regularisation', to: '/attendance?v=reg', ic: 'undo', d: 'Correct a missed punch or a wrong day.' },
       { k: 'leave', n: 'Holiday calendar', to: '/leave?v=cal', ic: 'calendar', d: 'Public holidays by location.' },
-    ],
-  },
-
-  {
-    group: 'Timesheet',
-    ic: 'timesheet',
-    k: 'timesheet',
-    desc: 'Track work hours, projects and approvals.',
-    items: [
+      /*
+       * Timesheet was its own top-level group. It is the same question as
+       * attendance — how long somebody worked and on what — asked for a
+       * different purpose, and two rail entries for one subject is what sends
+       * people to the wrong one. Every route, tab and permission is unchanged;
+       * only where they are listed has moved.
+       */
       { k: 'timesheet', n: 'Timesheet entry', to: '/timesheet?v=entry', ic: 'note', d: 'Log this week’s hours.' },
       { k: 'timesheet', n: 'My timesheets', to: '/timesheet?v=mine', ic: 'document', d: 'Every week you have submitted.' },
-      { k: 'timesheet', n: 'Approvals', to: '/timesheet?v=appr', ic: 'done', d: 'Decide your team’s weeks.', roles: ['manager', 'admin'] },
+      { k: 'timesheet', n: 'Timesheet approvals', to: '/timesheet?v=appr', ic: 'done', d: 'Decide your team’s weeks.', roles: ['manager', 'admin'] },
       { k: 'timesheet', n: 'Time reports', to: '/timesheet?v=rep', ic: 'chart', d: 'Utilisation and effort by project.' },
     ],
   },
 
   {
-    group: 'Payroll',
+    group: 'Compensation',
     ic: 'payroll',
     k: 'payroll',
     desc: 'Pay, tax, benefits and what you are owed.',
@@ -159,7 +157,7 @@ export const NAV: NavGroup[] = [
   },
 
   {
-    group: 'Projects',
+    group: 'Work',
     ic: 'projects',
     k: 'planner',
     desc: 'Work in flight, and who is carrying it.',
@@ -239,7 +237,6 @@ export const NAV: NavGroup[] = [
       { k: 'helpdesk', n: 'Knowledge base', to: '/helpdesk?v=kb', ic: 'policy', d: 'Policies and how-to articles.' },
       { k: 'helpdesk', n: 'Ticket queue', to: '/helpdesk?v=queue', ic: 'inbox', d: 'Everything waiting on your team.', roles: ['manager', 'admin'] },
       { k: 'helpdesk', n: 'SLA & analytics', to: '/helpdesk?v=sla', ic: 'timer', d: 'Response times against target.', roles: ['manager', 'admin'] },
-      { k: 'settings', n: 'Company profile', to: '/settings?v=company', ic: 'building', d: 'Who we are, legally and on paper.', roles: ['admin'] },
     ],
   },
 
@@ -286,6 +283,7 @@ export const NAV: NavGroup[] = [
       { k: 'integrations', n: 'API keys', to: '/integrations?v=keys', ic: 'lock', d: 'Credentials issued to other systems.' },
       { k: 'settings', n: 'Salary components', to: '/settings?v=pay', ic: 'money', d: 'Earnings, deductions and bands.' },
       { k: 'settings', n: 'Company profile', to: '/settings?v=company', ic: 'building', d: 'Legal entity, addresses and identifiers.' },
+      { k: 'users', n: 'Sign-in activity', to: '/users?v=signins', ic: 'clock', d: 'Sessions started, ended and refused, across every account.', roles: ['manager', 'admin'] },
       { k: 'security', n: 'Security & access review', ic: 'lock', d: 'Controls, posture and the access review.' },
       { k: 'settings', n: 'Audit log', to: '/settings?v=audit', ic: 'document', d: 'Who changed what, and when.' },
     ],

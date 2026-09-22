@@ -6,9 +6,11 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import type { AppRole } from '../../types/employee';
-import type { FenceUpdate } from '../../services';
+import type { FenceUpdate, GridPatch } from '../../services';
+import { useCaller } from '../../services/people';
 
-export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
+export { usePeople, useVisiblePeople } from '../../services/people';
+export { useCaller };
 export type { Directory } from '../../services/people';
 
 export const useAllEmployees = () => useQuery((s) => s.employees.active(), []);
@@ -32,3 +34,26 @@ export const useSetLeaveQuota = () =>
   useMutation((s, typeId: string, quota: number) => s.config.setLeaveQuota(typeId, quota));
 export const useAddHoliday = () =>
   useMutation((s, date: string, name: string, optional: boolean) => s.config.addHoliday(date, name, optional));
+
+/* ---------- permission narrowing ---------- */
+
+/**
+ * The permission grid: what the code grants, and what this tenant allows.
+ *
+ * Admin only, refused by the service rather than hidden here — a hook that
+ * filtered by role would be a second, quieter copy of the policy.
+ */
+export const usePermissionGrid = () => {
+  const c = useCaller();
+  return useQuery((s) => s.config.permissions(c), [c.role, c.meId]);
+};
+
+export const useSetPermissions = () => {
+  const c = useCaller();
+  return useMutation((s, patches: GridPatch[]) => s.config.setPermissions(c, patches));
+};
+
+export const useResetPermissions = () => {
+  const c = useCaller();
+  return useMutation((s, module: string) => s.config.resetPermissions(c, module));
+};

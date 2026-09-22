@@ -177,21 +177,41 @@ export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
             </form>
 
             {/*
-              * A link, not a form: sending the reset uses the same magic-link
-              * endpoint, so it needs the address above rather than a page of
-              * its own. Disabled until there is one to send it to.
+              * Two different things, and they were one for a while: this
+              * button sent a magic *sign-in* link while My Account told people
+              * to use a "Forgot your password" control that did not exist.
+              * A link that signs you in does not change your password, and
+              * somebody locked out by a forgotten one needs the second.
+              *
+              * Both reuse the address above rather than having a page each.
               */}
-            <button
-              type="button"
-              className="login-forgot"
-              disabled={busy || !email.trim()}
-              onClick={() => void run(
-                () => auth.sendMagicLink(email.trim()),
-                'Check your inbox for a sign-in link.',
-              )}
-            >
-              Email me a sign-in link instead
-            </button>
+            <div className="login-alts">
+              <button
+                type="button"
+                className="login-forgot"
+                disabled={busy || !email.trim()}
+                onClick={() => void run(
+                  () => auth.sendPasswordReset(email.trim()),
+                  // Deliberately the same sentence whether or not the address
+                  // has an account. Anything else turns this into a way to
+                  // find out who works here.
+                  'If that address has an account, a reset link is on its way.',
+                )}
+              >
+                Forgot your password?
+              </button>
+              <button
+                type="button"
+                className="login-forgot"
+                disabled={busy || !email.trim()}
+                onClick={() => void run(
+                  () => auth.sendMagicLink(email.trim()),
+                  'Check your inbox for a sign-in link.',
+                )}
+              >
+                Email me a sign-in link instead
+              </button>
+            </div>
 
             {ssoProviders.length > 0 && (
               <>

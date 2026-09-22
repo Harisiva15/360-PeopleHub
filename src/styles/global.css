@@ -2109,3 +2109,95 @@ button.chip:hover{border-color:var(--line-2)}
   text-align:left;cursor:pointer;
 }
 .linkish:hover{color:var(--brand-ink);text-decoration:underline}
+
+/* ---------------- idle warning ----------------
+ * Over the top of everything, including an open modal (z-index 100): the
+ * warning is about to end the session the modal belongs to, so it cannot sit
+ * behind it. It deliberately does not use .scrim — that one is the layer
+ * stack's, and reusing it would suggest Escape and a click outside dismiss
+ * this, which they must not.
+ */
+.idle-warn{
+  position:fixed;inset:0;z-index:200;display:flex;align-items:center;
+  justify-content:center;padding:20px;background:rgba(11,11,11,.44);
+  animation:fade .14s;
+}
+.idle-warn-box{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-xl);box-shadow:var(--shadow-lg);
+  padding:20px;width:100%;max-width:420px;animation:slideup .16s;
+}
+.idle-warn-box h2{font-size:17px;color:var(--ink);margin:0 0 8px}
+.idle-warn-box p{font-size:13px;color:var(--ink-2);margin:0 0 8px;line-height:1.55}
+.idle-warn-note{color:var(--ink-3)}
+.idle-warn-actions{display:flex;gap:8px;margin-top:16px}
+
+/* ---------------- two-factor sign-in ----------------
+ * The challenge reuses .login-card, so only what is particular to a code
+ * entry is defined here. The code field is the one deliberate exception to
+ * the input scale: six digits read as a sequence to check against a phone,
+ * and at body size people mistype them.
+ */
+.mfa-card{max-width:420px;display:flex;flex-direction:column;gap:12px}
+.mfa-label{
+  font-size:11.5px;font-weight:600;color:var(--ink-2);
+  letter-spacing:.04em;text-transform:uppercase;
+}
+.mfa-code{
+  width:100%;height:52px;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--ink);
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:26px;font-weight:600;
+  letter-spacing:.34em;text-align:center;padding:0 12px;
+  font-variant-numeric:tabular-nums;
+}
+.mfa-code:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-color:var(--brand)}
+.mfa-code:disabled{opacity:.6}
+.mfa-submit{width:100%;justify-content:center}
+.mfa-hint{margin:0;font-size:12px;line-height:1.55;color:var(--ink-3)}
+.mfa-error{
+  background:var(--crit-wash);border:1px solid var(--crit-solid);
+  border-radius:var(--r-sm);padding:10px 12px;font-size:12.5px;line-height:1.55;
+  color:var(--crit-text);
+}
+.mfa-good{
+  background:var(--good-wash);border:1px solid var(--good);
+  border-radius:var(--r-sm);padding:10px 12px;font-size:12.5px;color:var(--good-text);
+}
+.mfa-out{align-self:center;font-size:12.5px;color:var(--ink-3)}
+.mfa-qr{
+  display:flex;justify-content:center;padding:14px;background:#FFFFFF;
+  border:1px solid var(--line);border-radius:var(--r-sm);
+}
+.mfa-secret{
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:13px;letter-spacing:.12em;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-xs);
+  padding:8px 10px;word-break:break-all;color:var(--ink);
+}
+.kv-row{
+  display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  font-size:13.5px;color:var(--ink-2);
+}
+
+/* Two alternatives to a password, stacked so neither reads as the primary
+   action — the password field above is still the main way in. */
+.login-alts{display:flex;flex-direction:column;gap:6px;align-items:center}
+
+/* The password rules, ticking off as they are met. Colour is not the only
+   signal: the glyph changes too, so it survives a monochrome display. */
+.pw-rules{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.pw-rules li{
+  display:flex;gap:8px;align-items:center;font-size:12px;color:var(--ink-3);
+}
+.pw-rules li[data-met="true"]{color:var(--good-text)}
+.pw-mismatch{font-size:12px;color:var(--warn-text)}
+
+/* The enrolled authenticators. A list rather than cards: two rows that differ
+   only by a name do not need a border each. */
+.factor-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.factor-list li{
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);
+}
+.factor-name{font-size:13px;font-weight:600;color:var(--ink)}
+.factor-remove{font-size:12px;color:var(--crit-text)}

@@ -3,6 +3,10 @@ import type { ComponentType, ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppProvider, useApp } from './state/AppContext';
 import { AuthProvider, useAuth } from './auth/AuthContext';
+import { IdleGuard } from './auth/IdleGuard';
+import { MfaChallenge } from './auth/MfaChallenge';
+import { SetPassword } from './auth/SetPassword';
+import { RequireMfa } from './auth/RequireMfa';
 import { LoginPage } from './auth/LoginPage';
 import { LayerProvider } from './components/Layer';
 import { TooltipLayer } from './components/Tooltip';
@@ -71,6 +75,56 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (!auth.session) return <LoginPage theme={app.theme} />;
+
+  /*
+   * A session is not enough when the account carries a second factor.
+   *
+   * `null` means the answer has not come back yet, and it waits rather than
+   * guessing — rendering the app for the instant before the check resolves
+   * is the entire bypass, and it would be invisible in normal use because
+   * the check is fast. The strict direction costs a moment on a slow
+   * connection; the lax one costs the feature.
+   *
+   * The level itself is read from Supabase on every settle, so this cannot
+   * be turned off by editing anything the browser holds.
+   */
+  if (auth.mfaRequired === null) {
+    return (
+      <div className="login-shell">
+        <div className="muted" style={{ fontSize: 13 }}>Checking your session…</div>
+      </div>
+    );
+  }
+  if (auth.mfaRequired) return <MfaChallenge theme={app.theme} />;
+
+  /*
+   * And a pending password change, after the second factor rather than
+   * before it. Proving who you are comes first: otherwise a stolen password
+   * alone would reach the screen that sets a new one, which is the whole
+   * account.
+   */
+  if (auth.passwordChangeRequired === null) {
+    return (
+      <div className="login-shell">
+        <div className="muted" style={{ fontSize: 13 }}>Checking your session…</div>
+      </div>
+    );
+  }
+  if (auth.passwordChangeRequired) return <SetPassword />;
+
+  /*
+   * Last of the four gates, and last on purpose. Somebody arriving with a
+   * password an administrator set replaces it first; binding a second factor
+   * to an account still on its temporary credential is the wrong order.
+   *
+   * Only ever true when the account owes an enrolment *and* has no factor,
+   * so completing it ends the loop. `null` falls through rather than waiting:
+   * unlike the others this one cannot be satisfied without a working Supabase
+   * project, and blocking on an unknown answer would strand people behind a
+   * QR code nobody can help them past.
+   */
+  if (auth.mfaEnrolmentRequired) return <RequireMfa />;
+
   return <>{children}</>;
 }
 
@@ -84,6 +138,9 @@ export default function App() {
             <AuthGate>
               <Routed />
             </AuthGate>
+            {/* Outside the gate: it renders nothing without a session, and
+                inside it would unmount the moment it signed somebody out. */}
+            <IdleGuard />
           </LayerProvider>
         </AppProvider>
       </AuthProvider>

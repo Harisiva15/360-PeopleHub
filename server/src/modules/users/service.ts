@@ -49,6 +49,9 @@ export interface UserAccount {
   modifiedOn: string | null; modifiedById: string | null;
   lastLoginAt: string | null; invitedCount: number; inviteSentAt: string | null;
   mustChangePassword: boolean;
+  /** Set by an administrator; satisfied only by the person themselves. */
+  mfaRequired: boolean;
+  lockedAt: string | null; lockReason: string;
   deactivatedAt: string | null; deactivatedById: string | null;
   deactivationReason: string;
   requestedById: string | null; approvedById: string | null; approvedAt: string | null;
@@ -74,7 +77,8 @@ export type UserPatch = Partial<Omit<UserDraft, 'sendInvitation'>>;
 /* The database's vocabulary, and the screens'. Mapped in one place. */
 const TO_DB: Record<string, string> = {
   'Pending Approval': 'pending_approval', 'Invitation Pending': 'invited',
-  Active: 'active', Inactive: 'inactive', Suspended: 'suspended', Deleted: 'deleted',
+  Active: 'active', Inactive: 'inactive', Locked: 'locked',
+  Suspended: 'suspended', Deleted: 'deleted',
 };
 const FROM_DB: Record<string, string> = Object.fromEntries(
   Object.entries(TO_DB).map(([k, v]) => [v, k]));
@@ -88,6 +92,8 @@ interface Row {
   invited_at: string | null; last_login_at: string | null;
   invited_count: number; invite_sent_at: string | null;
   must_change_password: boolean;
+  mfa_required: boolean;
+  locked_at: string | null; lock_reason: string | null;
   deactivated_at: string | null; deactivated_by: string | null;
   deactivation_reason: string | null;
   requested_by: string | null; approved_by: string | null; approved_at: string | null;
@@ -106,7 +112,8 @@ const PROJECTION = `
          d.code AS dept_code, e.designation, s.code AS site_code, e.manager_id,
          e.employment_type, e.joined_on::text,
          m.invited_at::text, m.last_login_at::text, m.invited_count,
-         m.invite_sent_at::text, m.must_change_password,
+         m.invite_sent_at::text, m.must_change_password, m.mfa_required,
+         m.locked_at::text, m.lock_reason,
          m.deactivated_at::text, m.deactivated_by, m.deactivation_reason,
          m.requested_by, m.approved_by, m.approved_at::text,
          u.email AS account_email
@@ -139,6 +146,9 @@ const toAccount = (r: Row): UserAccount => ({
   invitedCount: Number(r.invited_count ?? 0),
   inviteSentAt: r.invite_sent_at,
   mustChangePassword: Boolean(r.must_change_password),
+  mfaRequired: Boolean(r.mfa_required),
+  lockedAt: r.locked_at,
+  lockReason: r.lock_reason ?? '',
   deactivatedAt: r.deactivated_at,
   deactivatedById: r.deactivated_by,
   deactivationReason: r.deactivation_reason ?? '',
@@ -406,6 +416,12 @@ export async function updateUser(
   });
 }
 
+/*
+ * Statuses only an administrator may set — and, once set, only an
+ * administrator may lift. See the check inside setUserStatus.
+ */
+const ADMIN_ONLY = ['suspended', 'locked', 'deleted'];
+
 export async function setUserStatus(
   caller: Caller,
   id: string,
@@ -416,15 +432,27 @@ export async function setUserStatus(
   const db_status = TO_DB[status];
   if (!db_status) throw new UserError('Not a status', 'invalid');
   /*
-   * Suspension is a sanction and deletion is final. Both are an
-   * administrator's, even on a manager's own line.
+   * Suspension is a sanction, a lock answers a security event, and deletion is
+   * final. All three are an administrator's, even on a manager's own line.
    */
-  if (['suspended', 'deleted'].includes(db_status) && caller.role !== 'admin') {
+  if (ADMIN_ONLY.includes(db_status) && caller.role !== 'admin') {
     throw new UserError(`Only an administrator can set an account to ${status}`, 'forbidden');
   }
 
   return withTenant(caller, async (db) => {
     const row = await load(db, caller, id);
+    /*
+     * And out of one, too. A manager who could not suspend somebody must not
+     * be able to lift the suspension an administrator applied — otherwise the
+     * sanction lasts exactly as long as it takes the manager to notice it.
+     * Same for a lock: the account was locked because something happened, and
+     * the person who could not lock it cannot decide it is over.
+     */
+    if (ADMIN_ONLY.includes(row.status) && caller.role !== 'admin') {
+      throw new UserError(
+        `Only an administrator can change an account that is ${FROM_DB[row.status] ?? row.status}`,
+        'forbidden');
+    }
     if (row.employee_id === caller.employeeId && db_status !== 'active') {
       throw new UserError('You cannot deactivate your own account', 'forbidden');
     }
@@ -444,6 +472,10 @@ export async function setUserStatus(
     await db.query(
       `UPDATE tenant_membership
           SET status = $1,
+              -- 0038 constrains locked_at to be set exactly while the status is
+              -- locked, so both directions are written here rather than one.
+              locked_at = CASE WHEN $1 = 'locked' THEN now() ELSE NULL END,
+              lock_reason = CASE WHEN $1 = 'locked' THEN $3 ELSE NULL END,
               deactivated_at = CASE WHEN $1 IN ('inactive','suspended') THEN now() ELSE NULL END,
               deactivated_by = CASE WHEN $1 IN ('inactive','suspended') THEN $2::uuid ELSE NULL END,
               deactivation_reason = CASE WHEN $1 IN ('inactive','suspended') THEN $3 ELSE '' END,
@@ -622,4 +654,105 @@ async function audit(
             COALESCE((SELECT full_name FROM employee WHERE id = $2), 'system'),
             'tenant_membership', $3, jsonb_build_object('summary', $4::text)`,
     [action, caller.employeeId, subjectId, summary]);
+}
+
+/**
+ * Whether this caller has to set a new password before going any further.
+ *
+ * **Takes no id**, like `lastLoginNow` and for the same reason: there is no row
+ * to ask about but your own, so there is nothing to guard. An endpoint that
+ * told you whether *somebody else* had a pending password reset would be a way
+ * to find the accounts worth attacking.
+ *
+ * This existed as a stored fact long before anything read it. `resetPassword`
+ * has set `must_change_password` since 0030 and the user drawer has displayed
+ * it — "Must change password: At next sign-in" — while the next sign-in did
+ * nothing at all. A flag nothing enforces is worse than no flag: the screen
+ * reports a control that is not there.
+ */
+export async function accountObligations(
+  caller: Caller,
+): Promise<{ mustChangePassword: boolean; mustEnrolMfa: boolean }> {
+  if (!caller.employeeId) return { mustChangePassword: false, mustEnrolMfa: false };
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query<{
+      must_change_password: boolean; mfa_required: boolean; has_factor: boolean;
+    }>(
+      `SELECT m.must_change_password, m.mfa_required,
+              auth_has_verified_factor(m.user_id) AS has_factor
+         FROM tenant_membership m
+        WHERE m.employee_id = $1`,
+      [caller.employeeId]);
+    const r = rows[0];
+    return {
+      mustChangePassword: Boolean(r?.must_change_password),
+      /*
+       * Owed only while there is no factor. Asking somebody who has already
+       * enrolled to enrol again is how a requirement turns into a loop nobody
+       * can leave — and the answer comes from auth.mfa_factors rather than a
+       * copy here, so it cannot go stale.
+       */
+      mustEnrolMfa: Boolean(r?.mfa_required) && !r?.has_factor,
+    };
+  });
+}
+
+/**
+ * Clear the flag, once the password has actually been changed.
+ *
+ * Supabase owns the password, so this server cannot verify the change happened
+ * — it is told. That is acceptable only because of what the lie would buy:
+ * somebody could clear their own reminder and carry on with the password an
+ * administrator wanted rotated. It does not grant access, reveal anything, or
+ * touch another account. The alternative is a webhook from Supabase, which is
+ * the right answer when there is somewhere to receive one.
+ *
+ * Recorded either way, so an administrator can see the reset was answered.
+ */
+export async function passwordChanged(caller: Caller): Promise<{ ok: true }> {
+  if (!caller.employeeId) return { ok: true };
+  return withTenant(caller, async (db) => {
+    await db.query(
+      'UPDATE tenant_membership SET must_change_password = false WHERE employee_id = $1',
+      [caller.employeeId]);
+    await audit(db, caller, 'user.password_changed', caller.employeeId ?? '',
+      'set a new password at sign-in');
+    return { ok: true } as const;
+  });
+}
+
+/**
+ * Require — or stop requiring — a second factor on one account.
+ *
+ * **Sets an obligation; never satisfies one.** There is no path here that
+ * enrols a factor, because enrolling means handling the TOTP secret and the
+ * only party who should ever hold it is the account's owner. An administrator
+ * able to enrol on somebody's behalf could, for a moment, sign in as them.
+ *
+ * The same asymmetry means this cannot *clear* a factor either: removing one
+ * is `supabase.auth.admin.mfa.deleteFactor`, which needs the service key this
+ * codebase deliberately does not hold. Turning the requirement off stops the
+ * account being blocked; it leaves any factor already enrolled in place, and
+ * the person can remove that themselves from My Account.
+ */
+export async function setMfaRequired(
+  caller: Caller,
+  id: string,
+  required: boolean,
+): Promise<UserAccount> {
+  if (caller.role !== 'admin') {
+    throw new UserError('Only an administrator can require a second factor', 'forbidden');
+  }
+  return withTenant(caller, async (db) => {
+    await load(db, caller, id);
+    await db.query('UPDATE tenant_membership SET mfa_required = $1 WHERE id = $2',
+      [required, id]);
+    await audit(db, caller, 'user.mfa_required', id,
+      required
+        ? 'must set up two-factor sign-in before next use'
+        : 'no longer required to use two-factor sign-in');
+    const after = await getUser(caller, id);
+    if (!after) throw new UserError('No such account', 'not_found');
+    return after;
+  });
 }

@@ -48,6 +48,7 @@ export const PERMS: Record<AppRole, string[]> = {
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
     'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events',
+    'account',
   ],
 
   /* Everything above, plus their reporting line. */
@@ -56,7 +57,7 @@ export const PERMS: Record<AppRole, string[]> = {
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
     'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events', 'exports', 'customreports',
     // The line.
-    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users',
+    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users', 'account',
   ],
 
   /*
@@ -71,7 +72,7 @@ export const PERMS: Record<AppRole, string[]> = {
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
     'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events', 'exports', 'customreports', 'integrations',
-    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users',
+    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users', 'account',
     // The tenant.
     'settings', 'security', 'exec', 'billing',
     'clients', 'requirements', 'bench', 'placements', 'vendors', 'recruitment',
@@ -130,6 +131,8 @@ export const LIVE_MODULES = new Set([
      and nobody could reach them, which checks/coverage.ts caught. */
   'users', 'recruitment', 'jobtitles', 'lifecycle', 'software', 'devplans',
   'events', 'exports', 'customreports', 'integrations',
+  /* Self-service: your own account and your own sign-in history. */
+  'account',
 ]);
 
 /**

@@ -20,9 +20,10 @@ import { Icon } from '../../components/icons';
 import { useApp } from '../../state/AppContext';
 import { mayAssignRole } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
+import { SignInTable } from './SignIns';
 import type { UserAccount, UserDraft } from '../../services';
 import {
-  useCreateUser, useNextCode, useUpdateUser, useVisiblePeople,
+  useCreateUser, useLoginHistory, useNextCode, useUpdateUser, useVisiblePeople,
 } from './data';
 import { ROLE_BLURB, ROLE_LABEL, RoleBadge, UserStatusBadge, whenOf } from './shared';
 
@@ -265,7 +266,13 @@ export function UserForm({
 /** The read-only profile — §9. */
 export function UserProfile({ u }: { u: UserAccount }) {
   const dir = useVisiblePeople();
-  const [tab, setTab] = useState<'profile' | 'access' | 'activity'>('profile');
+  const [tab, setTab] = useState<'profile' | 'access' | 'activity' | 'signins'>('profile');
+  /*
+   * Fetched whichever tab is open. The drawer is opened to look at one
+   * person and the history is a few dozen rows — deferring it buys a
+   * spinner on the tab somebody is most likely to click.
+   */
+  const { data: signIns = [], loading: signInsLoading } = useLoginHistory(u.empId ?? undefined);
 
   return (
     <div className="stack">
@@ -288,6 +295,7 @@ export function UserProfile({ u }: { u: UserAccount }) {
           { v: 'profile' as const, label: 'Profile' },
           { v: 'access' as const, label: 'Access & Role' },
           { v: 'activity' as const, label: 'Activity' },
+          { v: 'signins' as const, label: 'Sign-ins' },
         ]}
         onChange={setTab}
       />
@@ -313,10 +321,19 @@ export function UserProfile({ u }: { u: UserAccount }) {
             ['Status', <UserStatusBadge s={u.status} />],
             ['Can sign in', u.status === 'Active' ? 'Yes' : 'No'],
             ['Must change password', u.mustChangePassword ? 'At next sign-in' : 'No'],
+            ['Two-factor sign-in', u.mfaRequired
+              ? 'Required — they must set it up before using the account'
+              : 'Optional'],
             ['Invitations sent', u.invitedCount],
             ['Invitation sent', u.inviteSentAt ? fmtD(u.inviteSentAt) : '—'],
           ]} />
           <div className="hint" style={{ marginTop: 10 }}>{ROLE_BLURB[u.role]}</div>
+          {u.status === 'Locked' && (
+            <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Locked">
+              {u.lockReason || 'Locked by an administrator'}
+              {u.lockedAt && <>, {fmtD(u.lockedAt)}</>}
+            </Banner>
+          )}
           {u.status !== 'Active' && u.deactivationReason && (
             <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title={`${u.status}`}>
               {u.deactivationReason}
@@ -325,6 +342,21 @@ export function UserProfile({ u }: { u: UserAccount }) {
             </Banner>
           )}
         </>
+      )}
+
+      {tab === 'signins' && (
+        <div className="stack">
+          {signInsLoading
+            ? <div className="muted" style={{ fontSize: 12.5 }}>Loading…</div>
+            : (
+              <SignInTable
+                rows={signIns}
+                emptyMsg={u.empId
+                  ? 'No sign-ins recorded for this account yet'
+                  : 'This account has no employee record, so nothing is recorded against it'}
+              />
+            )}
+        </div>
       )}
 
       {tab === 'activity' && (

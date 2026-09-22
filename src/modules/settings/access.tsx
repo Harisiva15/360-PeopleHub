@@ -7,12 +7,16 @@ import { addDays, fmtD, TODAY } from '../../lib/dates';
 import { deptOf } from '../../data/org';
 import type { Employee } from '../../types/employee';
 import type { AppRole } from '../../types/employee';
+import type { PermScope } from '../../services';
 import { Badge, Banner, Card, KV, PersonCell, Table, TableWrap, Tile, StatRow } from '../../components/ui';
 import { Divide } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { ACCOUNTS, PERMS, SCOPE } from '../../state/rbac';
-import { useAllEmployees, useSetRole } from './data';
+import {
+  useAllEmployees, useSetRole,
+  usePermissionGrid, useSetPermissions, useResetPermissions,
+} from './data';
 import { Icon } from '../../components/icons';
 
 export const ROLES: AppRole[] = ['admin', 'manager', 'employee'];
@@ -39,44 +43,6 @@ export const MODULES: { k: string; n: string }[] = [
 ];
 
 /** What each role can actually do inside a module it can reach. */
-const CAPS: Record<AppRole, Record<string, string>> = {
-  admin: {
-    dashboard: 'Org-wide', attendance: 'All employees · configure policy', timesheet: 'All · approve any',
-    leave: 'All · approve & override balances', approvals: 'All queues', employees: 'Full record incl. salary · create & edit',
-    org: 'Full tree', celebrations: 'All', announcements: 'Post company-wide',
-    payroll: 'Run payroll · all payslips · registers', tax: 'All declarations · verify proofs',
-    hiring: 'All requisitions & candidates', onboarding: 'All journeys', reports: 'All 8 reports', settings: 'Full configuration',
-    shifts: 'Publish rosters · approve overtime', expenses: 'All claims · policy overrides · reimburse',
-    engagement: 'Launch surveys · full results', helpdesk: 'All tickets · SLA config',
-    benefits: 'Configure policies · all FBP · approve loans', performance: 'All goals & reviews · calibration',
-    learning: 'Assign courses · compliance tracker', exit: 'Full exit workflow · F&F settlement',
-    documents: 'Generate any letter · document repository',
-  },
-  manager: {
-    dashboard: 'Team view', attendance: 'Own + reporting tree', timesheet: 'Own + approve team',
-    leave: 'Own + approve team', approvals: 'Team queues only', employees: 'Directory + team profiles (no salary)',
-    org: 'Full tree (read)', celebrations: 'All', announcements: 'Post to team',
-    payroll: 'Own payslips + team cost in aggregate', tax: 'Own declaration only',
-    hiring: 'Requisitions where hiring manager', onboarding: 'Own new joiners', reports: '5 team-scoped reports', settings: '—',
-    shifts: 'Team roster · approve overtime', expenses: 'Own claims · approve team claims',
-    engagement: 'Team results (min 5 responses)', helpdesk: 'Own tickets · assigned queue',
-    benefits: 'Own benefits & FBP', performance: 'Team goals · write reviews · 9-box',
-    learning: 'Team progress · nudge', exit: 'Team exits · clearance sign-off',
-    documents: 'Own letters · team letters',
-  },
-  employee: {
-    dashboard: 'Self-service', attendance: 'Own record · punch & regularise', timesheet: 'Own · submit',
-    leave: 'Own · apply', approvals: '—', employees: 'Directory (contact details only)',
-    org: 'Full tree (read)', celebrations: 'All', announcements: 'Read & acknowledge',
-    payroll: 'Own payslips & salary structure', tax: 'Own declaration',
-    hiring: '—', onboarding: '—', reports: '—', settings: '—',
-    shifts: 'Own roster · log overtime', expenses: 'Own claims and advances',
-    engagement: 'Take surveys · see company results', helpdesk: 'Own tickets · knowledge base',
-    benefits: 'Own benefits, FBP and loans', performance: 'Own goals, self appraisal, praise wall',
-    learning: 'Enrol and complete courses', exit: 'Own resignation and F&F view',
-    documents: 'Own letters and documents',
-  },
-};
 
 const APPROVAL_CHAINS: [string, string, string, string][] = [
   ['Leave (≤ 3 days)', 'Reporting manager', '—', '24 hours'],
@@ -155,36 +121,7 @@ export function RbacTab() {
         ))}
       </div>
 
-      <Card title="Permission matrix" sub="What each role can reach and do" flush>
-        <TableWrap>
-          <Table>
-            <thead>
-              <tr>
-                <th>Module</th>
-                {ROLES.map((r) => <th key={r}>{ROLE_LABEL[r]}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {MODULES.map((m) => (
-                <tr key={m.k}>
-                  <td><b>{m.n}</b></td>
-                  {ROLES.map((r) => (
-                    <td key={r}>
-                      {PERMS[r].includes(m.k) ? (
-                        <>
-                          <Badge kind="good">✓</Badge> <span style={{ fontSize: 12 }}>{CAPS[r][m.k]}</span>
-                        </>
-                      ) : (
-                        <Badge kind="mute">No access</Badge>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </TableWrap>
-      </Card>
+      <PermissionMatrix />
 
       <div className="grid g2">
         <Card title="Approval chains" sub="Who signs off on what" flush>
@@ -350,3 +287,144 @@ export function UsersTab() {
   );
 }
 
+
+/* ---------------- the permission matrix ---------------- */
+
+/**
+ * Which modules each role may open, per tenant.
+ *
+ * **Read only, and that is deliberate.** `role_permission` carries read, write
+ * and approve scopes, and this screen edits the first. Narrowing write or
+ * approve would change nothing today: the services decide those for
+ * themselves — "only an administrator can suspend an account" is a line in
+ * users/service.ts, not a lookup — so a control for them would be a switch
+ * wired to nothing. Read is different: the API dispatcher refuses any route
+ * whose module a role cannot read, so switching it off here actually closes
+ * the door.
+ *
+ * **The code is a ceiling and this can only lower it.** An option above what
+ * `policy.ts` grants is not offered, because the server clamps it and the
+ * setting would appear to save while changing nothing.
+ */
+function PermissionMatrix() {
+  const app = useApp();
+  const { data: grid = [], loading, error, refetch } = usePermissionGrid();
+  const setPerms = useSetPermissions();
+  const reset = useResetPermissions();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const change = async (module: string, role: AppRole, read: PermScope) => {
+    setBusy(`${module}|${role}`);
+    try {
+      await setPerms.mutate([{ module, role, read }]);
+      refetch();
+      app.toast(read === 'none'
+        ? `${ROLE_LABEL[role]}s can no longer open ${module}`
+        : `${ROLE_LABEL[role]}s can open ${module}`);
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not save that', 'err');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (error) {
+    return (
+      <Card title="Permission matrix">
+        <div className="hint">{error.message}</div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      title="Permission matrix"
+      sub="Which modules each role may open here. The product's own limits still apply on top."
+      flush
+    >
+      <div style={{ padding: 12 }}>
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Lowering a setting takes access away for this company only; it can never
+          grant more than the role already has. What a person may <em>do</em> inside
+          a module they can open is decided by the module itself and is not set here.
+        </div>
+        {loading ? (
+          <div className="muted" style={{ fontSize: 12.5 }}>Loading…</div>
+        ) : (
+          <TableWrap>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Module</th>
+                  {ROLES.map((r) => <th key={r}>{ROLE_LABEL[r]}</th>)}
+                  <th className="right">Reset</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grid.map((row) => (
+                  <tr key={row.module}>
+                    <td><b>{row.module}</b></td>
+                    {ROLES.map((r) => {
+                      const ceiling = row.ceiling[r].read;
+                      const current = row.effective[r].read;
+                      /* Only the scopes at or below what the code grants. */
+                      const options = SCOPE_ORDER.slice(0, SCOPE_ORDER.indexOf(ceiling) + 1);
+                      return (
+                        <td key={r}>
+                          {ceiling === 'none' ? (
+                            <Badge kind="mute">No access</Badge>
+                          ) : (
+                            <select
+                              className="input sm"
+                              value={current}
+                              aria-label={`${row.module} for ${ROLE_LABEL[r]}`}
+                              disabled={busy === `${row.module}|${r}`}
+                              onChange={(e) =>
+                                void change(row.module, r, e.target.value as PermScope)}
+                            >
+                              {options.map((o) => (
+                                <option key={o} value={o}>{SCOPE_LABEL[o]}</option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="right">
+                      <button
+                        type="button"
+                        className="linkish"
+                        style={{ fontSize: 12 }}
+                        onClick={() => {
+                          void (async () => {
+                            try {
+                              await reset.mutate(row.module);
+                              refetch();
+                              app.toast(`${row.module} restored to its defaults`);
+                            } catch (e) {
+                              app.toast(e instanceof Error ? e.message : 'Could not reset', 'err');
+                            }
+                          })();
+                        }}
+                      >
+                        Restore
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </TableWrap>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+const SCOPE_ORDER: PermScope[] = ['none', 'own', 'team', 'all'];
+const SCOPE_LABEL: Record<PermScope, string> = {
+  none: 'No access',
+  own: 'Their own',
+  team: 'Their team',
+  all: 'Everyone',
+};

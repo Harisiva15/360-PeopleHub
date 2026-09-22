@@ -10,10 +10,98 @@
 import { ACTIVE } from '../../data/employees';
 import { HOLIDAYS, HOLIDAY_MAP, ltOf, SITES } from '../../data/org';
 import { LEAVE_BAL } from '../../data/leave';
-import type { ConfigService } from '../contracts';
+import { PERMS } from '../../state/rbac';
+import type { AppRole } from '../../types/employee';
+import type { ConfigService, GridPatch, ModuleGrid, PermScope } from '../contracts';
 import { ok } from './util';
 
+/* ---------------- the permission grid ----------------
+ *
+ * **The mock models which modules a role reaches, and not how far inside
+ * them.** `src/state/rbac.ts` is a mirror of the server's policy, and what it
+ * mirrors is the module list per role — it does not carry the read/write/
+ * approve scopes that policy.ts holds. So a faithful ceiling cannot be built
+ * here, and the alternative was to invent one.
+ *
+ * Inventing it would have been the same mistake as the security screen's
+ * fabricated MFA percentage: a grid that looks authoritative, is drawn from a
+ * guess, and would teach anybody reading the demo something untrue about how
+ * the product is configured.
+ *
+ * So the mock says what it knows. A module a role reaches is 'all' across the
+ * three columns; one it does not is 'none'. The screen labels this, and a
+ * configured build gets the real grid from the server.
+ */
+const ALL: PermScope = 'all';
+const NONE: PermScope = 'none';
+const ruleOf = (role: AppRole, module: string) => {
+  const reaches = PERMS[role].includes(module);
+  const v = reaches ? ALL : NONE;
+  return { read: v, write: v, approve: v };
+};
+
+/* Narrowing applied in this session, so the screen responds to its own edits. */
+const NARROWED = new Map<string, PermScope>();
+const key = (module: string, role: AppRole, field: string) => `${module}|${role}|${field}`;
+
+const RANK: Record<PermScope, number> = { none: 0, own: 1, team: 2, all: 3 };
+const narrower = (a: PermScope, b: PermScope): PermScope => (RANK[a] <= RANK[b] ? a : b);
+
+/* Every module any role reaches — the admin list is the superset. */
+const MODULES: string[] = [...PERMS.admin].sort();
+
+const gridNow = (): ModuleGrid[] => MODULES.map((module: string) => {
+  const cell = (role: AppRole) => {
+    const base = ruleOf(role, module);
+    return {
+      read: narrower(base.read, NARROWED.get(key(module, role, 'read')) ?? base.read),
+      write: narrower(base.write, NARROWED.get(key(module, role, 'write')) ?? base.write),
+      approve: narrower(base.approve, NARROWED.get(key(module, role, 'approve')) ?? base.approve),
+    };
+  };
+  return {
+    module,
+    ceiling: { employee: ruleOf('employee', module), manager: ruleOf('manager', module), admin: ruleOf('admin', module) },
+    effective: { employee: cell('employee'), manager: cell('manager'), admin: cell('admin') },
+  };
+});
+
 export const configService: ConfigService = {
+  permissions(c) {
+    if (c.role !== 'admin') return Promise.reject(new Error('Only an administrator can read this'));
+    return ok(gridNow());
+  },
+
+  setPermissions(c, patches: GridPatch[]) {
+    if (c.role !== 'admin') {
+      return Promise.reject(new Error('Only an administrator can change permissions'));
+    }
+    for (const p of patches) {
+      if (p.module === 'settings' && p.role === 'admin' && p.read === 'none') {
+        return Promise.reject(new Error(
+          'Administrators cannot be removed from Settings — there would be no way '
+          + 'back from inside the application'));
+      }
+    }
+    for (const p of patches) {
+      for (const field of ['read', 'write', 'approve'] as const) {
+        const v = p[field];
+        if (v !== undefined) NARROWED.set(key(p.module, p.role, field), v);
+      }
+    }
+    return ok(gridNow());
+  },
+
+  resetPermissions(c, module) {
+    if (c.role !== 'admin') {
+      return Promise.reject(new Error('Only an administrator can change permissions'));
+    }
+    for (const k of [...NARROWED.keys()]) {
+      if (k.startsWith(`${module}|`)) NARROWED.delete(k);
+    }
+    return ok(gridNow());
+  },
+
   sites() { return ok(SITES.slice()); },
   holidays() { return ok(HOLIDAYS.slice()); },
 

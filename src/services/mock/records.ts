@@ -18,7 +18,7 @@ import { leaveBalance } from '../../data/leave';
 import { activeLoans } from '../../data/loans';
 import { ASSET_REQS, arOpen } from '../../data/assetWorkflow';
 import { assetKPI, pendingRecovery } from '../../data/assets';
-import { AUDIT, AUDIT_CATS, CONTROLS, POSTURE, RETENTION } from '../../data/security';
+import { AUDIT, AUDIT_CATS, CONTROLS, RETENTION } from '../../data/security';
 import { ONBOARD, ONB_TEMPLATE } from '../../data/onboarding';
 import { blankRequest, DOC_REQS, JOINER_DOCUMENTS, requestsFor } from '../../data/docRequests';
 import type {
@@ -356,7 +356,6 @@ export const securityService: SecurityService = {
     return ok(out);
   },
   auditCategories() { return ok(AUDIT_CATS.slice()); },
-  posture() { return ok(POSTURE.slice()); },
   controls() { return ok(CONTROLS.slice()); },
   retention() { return ok(RETENTION.slice()); },
 };

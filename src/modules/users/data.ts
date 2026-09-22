@@ -8,7 +8,7 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import { useCaller } from '../../services/people';
-import type { UserDraft, UserFilter, UserPatch, UserStatus } from '../../services';
+import type { LoginEvent, UserDraft, UserFilter, UserPatch, UserStatus } from '../../services';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
@@ -69,6 +69,12 @@ export const useResendInvitation = () => {
   return useMutation((s, id: string) => s.users.resendInvitation(c, id));
 };
 
+export const useSetMfaRequired = () => {
+  const c = useCaller();
+  return useMutation((s, id: string, required: boolean) =>
+    s.users.setMfaRequired(c, id, required));
+};
+
 export const useResetPassword = () => {
   const c = useCaller();
   return useMutation((s, id: string, force?: boolean) => s.users.resetPassword(c, id, force));
@@ -83,3 +89,31 @@ export const useNextCode = () => {
   const c = useCaller();
   return useMutation((s) => s.users.nextEmployeeCode(c));
 };
+
+/* ---------- sign-in history ---------- */
+
+/**
+ * One person's sign-ins. With no id, the caller's own.
+ *
+ * Your own takes no permission at all, deliberately: this is the control that
+ * lets somebody notice a session they did not start, and a control only an
+ * administrator can reach does not do that job.
+ */
+export function useLoginHistory(empId?: string) {
+  const c = useCaller();
+  return useQuery((s) => s.users.loginHistory(c, empId), [c.role, c.meId, empId]);
+}
+
+/**
+ * Everybody's, for an administrator. A manager sees their own line.
+ *
+ * `enabled` because this is the whole tenant's history and it sits behind a
+ * tab most people never open. useQuery has no enabled flag, so the disabled
+ * case resolves empty rather than being skipped — same shape, no request.
+ */
+export function useTenantLoginHistory(enabled = true) {
+  const c = useCaller();
+  return useQuery(
+    (s) => (enabled ? s.users.tenantLoginHistory(c) : Promise.resolve([] as LoginEvent[])),
+    [c.role, c.meId, enabled]);
+}

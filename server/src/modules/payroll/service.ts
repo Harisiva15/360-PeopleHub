@@ -723,7 +723,12 @@ export async function activeLoans(caller: Caller): Promise<Record<string, unknow
               l.status, l.sanctioned_on, lt.name AS kind
          FROM loan l JOIN loan_type lt ON lt.id = l.loan_type_id
         WHERE l.status = 'active' ${scope}
-        ORDER BY l.disbursed_on DESC`,
+        -- sanctioned_on, not disbursed_on: the latter has never existed on
+        -- this table. Migration 0005 records requested_on, sanctioned_on and
+        -- closed_on, and a CHECK there guarantees an active loan has a
+        -- sanctioned_on — so for the active loans this query returns, it is
+        -- never null and is the date the money was granted.
+        ORDER BY l.sanctioned_on DESC`,
       maySeeAll(caller) ? [] : [caller.employeeId]);
     return rows.map((r) => ({
       id: r.id, empId: r.employee_id, kind: r.kind,

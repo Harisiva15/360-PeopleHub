@@ -1,9 +1,35 @@
 /** Environment configuration, read once and validated at boot. */
 
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 const required = (name: string): string => {
   const value = process.env[name];
-  if (!value) throw new Error(`missing required environment variable ${name}`);
-  return value;
+  if (value) return value;
+
+  /*
+   * Say where we looked, because the usual cause is not a missing variable.
+   *
+   * The dev and start scripts pass `--env-file-if-exists=.env`, and that flag
+   * is silent when the file is not there — by design, so a deployment supplying
+   * its environment another way does not need a dummy file. The cost is that
+   * running from the wrong directory produces this error and no clue: there is
+   * no .env at the repository root, the flag finds nothing, says nothing, and
+   * the first thing you learn is that a variable you can plainly see in the
+   * file is "missing".
+   *
+   * One line of context turns twenty minutes into ten seconds.
+   */
+  const where = process.cwd();
+  const hasEnvFile = existsSync(join(where, '.env'));
+  throw new Error([
+    `missing required environment variable ${name}`,
+    `  working directory: ${where}`,
+    `  .env found there:  ${hasEnvFile ? 'yes' : 'NO'}`,
+    hasEnvFile
+      ? `  The file exists but does not define ${name}.`
+      : '  Run this from the server directory: cd server && npm run dev',
+  ].join('\n'));
 };
 
 export const config = {
