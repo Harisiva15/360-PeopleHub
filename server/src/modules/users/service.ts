@@ -116,12 +116,15 @@ const PROJECTION = `
          m.locked_at::text, m.lock_reason,
          m.deactivated_at::text, m.deactivated_by, m.deactivation_reason,
          m.requested_by, m.approved_by, m.approved_at::text,
-         u.email AS account_email
+         -- Not a join: app_rw has no access to the auth schema, and cannot
+         -- be granted one because supabase_auth_admin owns it. 0042 wraps
+         -- the single column this needs in a SECURITY DEFINER function.
+         auth_email_for(m.user_id) AS account_email
     FROM tenant_membership m
     LEFT JOIN employee e ON e.id = m.employee_id
     LEFT JOIN department d ON d.id = e.department_id
     LEFT JOIN site s ON s.id = e.site_id
-    LEFT JOIN auth.users u ON u.id = m.user_id`;
+`;
 
 const toAccount = (r: Row): UserAccount => ({
   id: r.id,
