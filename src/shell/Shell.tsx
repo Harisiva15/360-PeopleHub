@@ -13,6 +13,9 @@ import { PageActionsTarget } from './PageActions';
 import { NavFlyout, placeFlyout } from './NavFlyout';
 import type { FlyoutState } from './NavFlyout';
 import { useFavourites } from './favourites';
+import { Menu } from '../components/Menu';
+import { useAuth } from '../auth/AuthContext';
+import { ROLE_LABEL } from '../modules/settings/access';
 import type { ReactNode } from 'react';
 
 const isMobile = () => window.matchMedia('(max-width: 860px)').matches;
@@ -275,18 +278,35 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         )}
 
+        {/*
+          * The account block. Signing out belongs at the foot of the rail
+          * rather than in a navigation list: it is not somewhere in the
+          * product, it is the way out of it, and a list item called "Log out"
+          * sitting between Reports and Administration reads as a page.
+          *
+          * The second line is the *role*, not the job title. Which department
+          * somebody sits in does not tell them why a menu is short; "Employee"
+          * does. The job title is still one click away, under Profile.
+          */}
         <div className="rail-foot">
-          <div className="row" style={{ gap: 9 }}>
-            <Avatar name={app.me.name} />
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="nm">{app.me.name}</div>
-              <div className="mt">{app.me.designation}</div>
-            </div>
-            <button className="btn ghost icon sm" onClick={app.toggleTheme}
-              title="Toggle theme" aria-label="Toggle theme">
-              <Icon n="sparkle" size="lg" />
-            </button>
-          </div>
+          <Menu
+            label="Account"
+            align="start"
+            width={214}
+            className="rail-acct-menu"
+            trigger={(
+              <div className="rail-acct">
+                <Avatar name={app.me.name} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="nm">{app.me.name}</div>
+                  <div className="mt">{ROLE_LABEL[app.role]}</div>
+                </div>
+                <Icon n="up" size="sm" />
+              </div>
+            )}
+          >
+            {(close) => <AccountMenu close={close} />}
+          </Menu>
         </div>
       </aside>
 
@@ -388,5 +408,62 @@ function FavouriteToggle({
       <Icon n="star" size="sm" />
       {on ? 'Pinned' : 'Pin this page'}
     </button>
+  );
+}
+
+/**
+ * What the account block opens.
+ *
+ * Three items, and the third is the one that matters. Profile and Account
+ * Settings are ordinary navigation; signing out ends the session, so it is
+ * separated by a rule and carries the only destructive styling in the rail.
+ *
+ * **Sign out is absent in demo mode rather than disabled.** The public demo
+ * has no session to end — `authConfigured` is false and `signOut` returns
+ * immediately. A control that looks available and does nothing teaches people
+ * the product is broken; the role switcher sits there instead, which is what
+ * the demo actually offers.
+ */
+function AccountMenu({ close }: { close: () => void }) {
+  const app = useApp();
+  const auth = useAuth();
+
+  return (
+    <>
+      <div className="menu-head">
+        <b>{app.me.name}</b>
+        <i>{app.me.designation}</i>
+      </div>
+
+      <Link to="/account" role="menuitem" className="menu-row" onClick={close}>
+        <span className="gs-ic" aria-hidden="true"><Icon n="person" /></span> Profile
+      </Link>
+      <Link to="/account?v=security" role="menuitem" className="menu-row" onClick={close}>
+        <span className="gs-ic" aria-hidden="true"><Icon n="lock" /></span> Account settings
+      </Link>
+      <button
+        type="button"
+        role="menuitem"
+        className="menu-row"
+        onClick={() => { app.toggleTheme(); close(); }}
+      >
+        <span className="gs-ic" aria-hidden="true"><Icon n="sparkle" /></span>
+        {app.theme === 'light' ? 'Dark theme' : 'Light theme'}
+      </button>
+
+      {auth.configured && (
+        <>
+          <div className="menu-sep" />
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-row danger"
+            onClick={() => { close(); void auth.signOut('manual'); }}
+          >
+            <span className="gs-ic" aria-hidden="true"><Icon n="close" /></span> Log out
+          </button>
+        </>
+      )}
+    </>
   );
 }

@@ -1,8 +1,10 @@
 import { lazy, Suspense } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { HashRouter, Navigate, Route, Routes, Link } from 'react-router-dom';
 import { AppProvider, useApp } from './state/AppContext';
 import { AuthProvider, useAuth } from './auth/AuthContext';
+import { TITLES } from './modules/titles';
+import { Icon } from './components/icons';
 import { IdleGuard } from './auth/IdleGuard';
 import { MfaChallenge } from './auth/MfaChallenge';
 import { SetPassword } from './auth/SetPassword';
@@ -25,12 +27,26 @@ const LAZY: Record<string, ComponentType> = Object.fromEntries(
   ALL_ROUTES.map((r) => [r, lazy(() => loadRoute(r))]),
 );
 
-/** Renders a route's module, bouncing to the dashboard if the role lacks access. */
+/**
+ * Renders a route's module, or says why it will not.
+ *
+ * A role that may not open a module used to be bounced to the dashboard. That
+ * is indistinguishable from a broken link: somebody follows a URL a colleague
+ * sent them, lands somewhere else, and concludes the application is confused
+ * rather than that they lack access. Saying so is both kinder and more honest.
+ *
+ * It is not a security boundary and does not pretend to be — the API refuses
+ * the same request regardless of what this renders. See http/app.ts, where the
+ * dispatcher checks the same module against the same policy.
+ *
+ * A route that does not exist still redirects, because there is nothing to
+ * explain: a typo is not a permission problem.
+ */
 function RouteView({ route }: { route: string }) {
   const app = useApp();
-  if (!app.can(route)) return <Navigate to="/dashboard" replace />;
   const View = LAZY[route];
   if (!View) return <Navigate to="/dashboard" replace />;
+  if (!app.can(route)) return <AccessDenied route={route} />;
   return <View />;
 }
 
@@ -145,5 +161,28 @@ export default function App() {
         </AppProvider>
       </AuthProvider>
     </HashRouter>
+  );
+}
+
+/**
+ * What somebody sees when their role cannot open a route.
+ *
+ * Names the module, because "access denied" without a subject leaves people
+ * guessing which of the three links they just clicked was the problem. Offers
+ * the way back rather than only the bad news, and says who can change it —
+ * "ask an administrator" is actionable in a way that a bare 403 is not.
+ */
+function AccessDenied({ route }: { route: string }) {
+  return (
+    <div className="denied">
+      <Icon n="lock" size="xl" />
+      <h1>You do not have access to this</h1>
+      <p>
+        Your role does not include <strong>{TITLES[route] ?? route}</strong>. If you
+        need it, an administrator can change what your role reaches under
+        Settings → Access Control.
+      </p>
+      <Link className="btn primary" to="/dashboard">Back to the dashboard</Link>
+    </div>
   );
 }

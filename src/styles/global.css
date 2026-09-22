@@ -2201,3 +2201,29 @@ button.chip:hover{border-color:var(--line-2)}
 }
 .factor-name{font-size:13px;font-weight:600;color:var(--ink)}
 .factor-remove{font-size:12px;color:var(--crit-text)}
+
+/* The account block at the foot of the rail. A button, because it opens a
+   menu — but styled as the row it replaced, so the rail does not grow a
+   control that looks like a call to action. */
+.rail-acct{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:6px;border-radius:var(--r-sm);cursor:pointer;
+  transition:background .12s;
+}
+.rail-acct:hover{background:var(--rail-2)}
+.rail-acct-menu{width:100%}
+.rail-acct-menu > button{width:100%;padding:0;border:0;background:none}
+/* Signing out is the one row in this menu that ends something. Colour on the
+   text rather than a filled row: a red block in a dropdown reads as an error
+   the menu is reporting, not an action it offers. */
+.menu-row.danger{color:var(--crit-text)}
+.menu-row.danger:hover{background:var(--crit-wash)}
+
+/* Access denied. Centred and roomy rather than an error banner: it is the whole
+   page, not a problem with part of one. */
+.denied{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;text-align:center;padding:40px 20px;color:var(--ink-3);
+}
+.denied h1{font-size:19px;font-weight:700;color:var(--ink);margin:0}
+.denied p{margin:0;max-width:46ch;font-size:13.5px;line-height:1.6;color:var(--ink-2)}
