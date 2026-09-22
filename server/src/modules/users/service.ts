@@ -312,15 +312,57 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
     const { rows: dupCode } = await db.query('SELECT 1 FROM employee WHERE code = $1', [code]);
     if (dupCode.length) throw new UserError(`${code} is already in use`, 'duplicate');
 
+    /*
+     * Two columns the form does not ask for and the row cannot do without.
+     *
+     * Both are NOT NULL with no default, so omitting them made every attempt
+     * to create a user fail with a constraint violation the screen reported as
+     * "internal error". Resolved here, with a sentence each, because "this
+     * company has no legal entity configured" is something an administrator
+     * can act on and a Postgres constraint name is not.
+     *
+     * The legal entity is the tenant's default — there is one per company in
+     * the ordinary case, and the flag says which when there are several.
+     */
+    const { rows: entity } = await db.query<{ id: string }>(
+      'SELECT id FROM legal_entity ORDER BY is_default DESC, code LIMIT 1');
+    if (!entity[0]) {
+      throw new UserError(
+        'This company has no legal entity configured, so an employee record '
+        + 'cannot be created. Add one under Settings before creating accounts.',
+        'invalid');
+    }
+
+    /*
+     * The shift follows the site's country, because that is what shifts are
+     * keyed by — IN, UK, US, AE. Picking one arbitrarily would put somebody in
+     * Chennai on the UK roster and their attendance would be judged against
+     * hours they never worked. Any shift is better than none if the country
+     * has no roster of its own, and the row cannot exist without one.
+     */
+    const { rows: shift } = await db.query<{ id: string }>(
+      `SELECT s.id FROM shift s
+        ORDER BY (s.code = (SELECT country FROM site WHERE id = $1)) DESC, s.code
+        LIMIT 1`,
+      [site[0].id]);
+    if (!shift[0]) {
+      throw new UserError(
+        'This company has no shifts configured, so an employee record cannot be '
+        + 'created — attendance would have no hours to measure against.',
+        'invalid');
+    }
+
     const { rows: emp } = await db.query<{ id: string }>(
       `INSERT INTO employee
          (code, full_name, work_email, phone, department_id, site_id, designation,
-          manager_id, employment_type, joined_on, status, app_role)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10::date, CURRENT_DATE),'active',$11)
+          manager_id, employment_type, joined_on, status, app_role,
+          legal_entity_id, shift_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10::date, CURRENT_DATE),'active',$11,
+               $12,$13)
        RETURNING id`,
       [code, d.name.trim(), d.email.trim(), d.phone ?? '', dept[0].id, site[0].id,
         d.designation, d.managerId ?? null, d.empType ?? 'permanent',
-        d.joinedOn ?? null, d.role]);
+        d.joinedOn ?? null, d.role, entity[0].id, shift[0].id]);
 
     /*
      * A manager's account lands pending_approval; an administrator's is live.

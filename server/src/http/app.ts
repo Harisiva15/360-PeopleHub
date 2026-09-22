@@ -2184,6 +2184,29 @@ export function createApp() {
       } catch (error) {
         const { status, message } = statusFor(error);
         if (status >= 500) console.error('[http] unhandled', error);
+        /*
+         * A refusal that came from the database, logged even though the caller
+         * gets a 4xx.
+         *
+         * Mapping these to 400/404/409 was right — a malformed date is not our
+         * fault — but it also stopped them reaching the log, because only 5xx
+         * was printed. The result was a generic sentence on the screen and
+         * nothing anywhere to say which constraint objected, which is worse
+         * than the 500 it replaced.
+         *
+         * The response stays generic, deliberately: constraint and column
+         * names describe the schema and belong in the log, not in a body sent
+         * to whoever asked.
+         */
+        const dbErr = error as { code?: string; constraint?: string; table?: string; message?: string };
+        if (status < 500 && typeof dbErr?.code === 'string' && /^[0-9A-Z]{5}$/.test(dbErr.code)) {
+          console.warn(
+            `[db] ${req.method} ${url.pathname} -> ${status}  sqlstate=${dbErr.code}`
+            + `${dbErr.table ? ` table=${dbErr.table}` : ''}`
+            + `${dbErr.constraint ? ` constraint=${dbErr.constraint}` : ''}`
+            + `
+      ${dbErr.message ?? ''}`);
+        }
         send(res, status, { error: message });
       }
     })();
