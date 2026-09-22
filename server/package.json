@@ -6,6 +6,7 @@
   "description": "Multi-tenant API implementing docs/api-contract.md",
   "scripts": {
     "check:schema": "node scripts/check-schema.mjs",
+    "check:bootstrap": "node scripts/check-bootstrap.mjs",
     "typecheck": "tsc --noEmit",
     "migrate": "node scripts/migrate.mjs",
     "dev": "node --watch --env-file-if-exists=.env --import=tsx/esm src/index.ts",
@@ -18,7 +19,7 @@
     "check:policy": "node --experimental-strip-types scripts/policy.test.mjs",
     "check:routemodules": "node --experimental-strip-types scripts/route-modules.test.mjs",
     "check:routes": "node scripts/check-routes.mjs",
-    "check": "npm run check:schema && npm run check:schema:test && npm run check:ratelimit && npm run check:csv && npm run check:auth && npm run check:tenancy && npm run check:policy && npm run check:routemodules && npm run check:routes && npm run typecheck",
+    "check": "npm run check:schema && npm run check:bootstrap && npm run check:schema:test && npm run check:ratelimit && npm run check:csv && npm run check:auth && npm run check:tenancy && npm run check:policy && npm run check:routemodules && npm run check:routes && npm run typecheck",
     "inspect": "node scripts/inspect.mjs",
     "retention": "node scripts/retention.mjs",
     "verify:isolation": "node scripts/verify-isolation.mjs",

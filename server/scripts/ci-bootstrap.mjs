@@ -27,6 +27,29 @@ await c.query(`
     email text
   )`);
 
+/*
+ * auth.mfa_factors, for 0039's auth_has_verified_factor().
+ *
+ * PostgreSQL parses the body of a LANGUAGE sql function when it is created, so
+ * a reference to a table that is not there fails the migration outright with
+ * 42P01 rather than at first call. Without this, 0039 stops the whole run and
+ * the step reports only "exit code 1".
+ *
+ * The columns are the ones the function reads plus enough shape to be
+ * recognisable. This is a stand-in for CI, not a copy of Supabase's table —
+ * the real one carries the TOTP secret, which nothing here should imitate even
+ * in a throwaway container.
+ */
+await c.query(`
+  CREATE TABLE IF NOT EXISTS auth.mfa_factors (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       uuid NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE,
+    friendly_name text,
+    factor_type   text NOT NULL DEFAULT 'totp',
+    status        text NOT NULL DEFAULT 'unverified',
+    created_at    timestamptz NOT NULL DEFAULT now()
+  )`);
+
 // Supabase's PostgREST roles. The migrations grant to them when they exist, so
 // creating them here exercises that path rather than skipping it.
 for (const role of ['anon', 'authenticated', 'service_role']) {
@@ -44,5 +67,5 @@ await c.query(`
     SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
   $$`);
 
-console.log('CI bootstrap: auth schema, auth.users, PostgREST roles');
+console.log('CI bootstrap: auth schema, auth.users, auth.mfa_factors, PostgREST roles');
 await c.end();
