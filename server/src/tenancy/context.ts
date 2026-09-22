@@ -12,6 +12,7 @@
  * shared-pool multi-tenant service leaks.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../db/pool.ts';
 
@@ -30,6 +31,38 @@ export type TenantClient = PoolClient;
 export class TenantContextError extends Error {}
 
 /**
+ * The transaction this request is already inside, if any.
+ *
+ * **Why this exists.** A service that inserts a row and then calls a `getX`
+ * helper to return it was opening a *second* connection: withTenant took a
+ * fresh one from the pool every time, so the helper ran outside the caller's
+ * transaction and could not see the uncommitted row. It returned null, the
+ * caller threw, and the throw rolled the insert back. Creating a user, a job
+ * title, a saved report, a development plan, an event, a job order and a
+ * software product all failed that way — every time, for everybody — while
+ * typechecking cleanly, because both halves are correct on their own.
+ *
+ * The milder form is worse to find: after an UPDATE the row exists, so the
+ * helper returned the values from *before* the change and nothing errored.
+ * Eighteen call sites did that.
+ *
+ * **The tenant id is part of the key, and that is the whole safety argument.**
+ * Reusing a connection means reusing its `app.tenant_id`, which is SET LOCAL
+ * to the outer transaction. If a nested call belonged to a different tenant
+ * and this reused the connection anyway, that call would silently read and
+ * write the outer tenant's rows with row-level security none the wiser — it
+ * would be doing exactly what the setting told it. So a mismatch opens a new
+ * connection instead, which is correct and merely slower.
+ */
+const ambient = new AsyncLocalStorage<{ client: TenantClient; tenantId: string }>();
+
+/** The open transaction for this tenant, or null if there is not one. */
+const ambientFor = (tenantId: string): TenantClient | null => {
+  const store = ambient.getStore();
+  return store && store.tenantId === tenantId ? store.client : null;
+};
+
+/**
  * Run `fn` inside a transaction scoped to the caller's tenant.
  *
  * Everything the callback does is committed together or not at all, which is
@@ -42,6 +75,15 @@ export async function withTenant<T>(
 ): Promise<T> {
   if (!caller.tenantId) throw new TenantContextError('no tenant on the caller');
 
+  /*
+   * Already inside a transaction for this same tenant: join it rather than
+   * opening a second one. The callback sees its own uncommitted work, and the
+   * whole request still commits or rolls back together — which is what the
+   * outer caller already believed was happening.
+   */
+  const joined = ambientFor(caller.tenantId);
+  if (joined) return fn(joined);
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -52,7 +94,7 @@ export async function withTenant<T>(
       'app.actor_id', caller.employeeId ?? '',
     ]);
 
-    const result = await fn(client);
+    const result = await ambient.run({ client, tenantId: caller.tenantId }, () => fn(client));
     await client.query('COMMIT');
     return result;
   } catch (error) {
@@ -75,6 +117,15 @@ export async function withTenantReadOnly<T>(
   caller: Caller,
   fn: (db: TenantClient) => Promise<T>,
 ): Promise<T> {
+  /*
+   * Inside an existing transaction, join it and do *not* mark it read only.
+   * SET TRANSACTION READ ONLY applies to the whole transaction, so setting it
+   * here would demote the caller's write — and PostgreSQL refuses it outright
+   * once a statement has run. A read nested in a write is a read either way.
+   */
+  const joined = ambientFor(caller.tenantId);
+  if (joined) return fn(joined);
+
   return withTenant(caller, async (db) => {
     await db.query('SET TRANSACTION READ ONLY');
     return fn(db);
