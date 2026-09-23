@@ -152,7 +152,31 @@ const attempt = async (fn) => {
  * trace that sends people to look at the wrong thing, so it is named.
  */
 const explain = (e) => {
-  if (!/ENOIDENTIFIER/.test(String(e?.message ?? e))) return false;
+  const text = String(e?.message ?? e);
+
+  /*
+   * The pooler stops accepting connections for a role after repeated failed
+   * authentication, and stays shut for a few minutes. The usual cause is a
+   * wrong username or password that has just been corrected — the breaker
+   * does not know that and is still counting the old attempts.
+   */
+  if (/ECIRCUITBREAKER/.test(text)) {
+    console.error([
+      '',
+      '  FAIL  the pooler is refusing new connections for this role',
+      '',
+      '        Supabase trips a circuit breaker after repeated authentication',
+      '        failures and keeps it shut for a few minutes. If the credentials',
+      '        were just corrected, they are probably right and this is the',
+      '        breaker still counting the attempts that were wrong.',
+      '',
+      '        Wait a few minutes and run it again. Nothing needs changing.',
+      '',
+    ].join('\n'));
+    return true;
+  }
+
+  if (!/ENOIDENTIFIER/.test(text)) return false;
   console.error([
     '',
     '  FAIL  the database refused the connection',
