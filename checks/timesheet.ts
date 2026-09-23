@@ -291,8 +291,18 @@ console.log('\nthe other views read the service\n');
   ok('Time Entries reads the sheet list', /const rows = useMemo\(\(\) => sheets\.flatMap/.test(views));
   ok('Projects reads the project service', /useBookableProjects\(\)/.test(views));
   ok('Calendar reads the sheet list', /useSheets\(\[app\.meId\]/.test(views));
-  ok('every view has an empty state', (views.match(/EmptyState/g) ?? []).length >= 3);
-  ok('and a loading state', (views.match(/Loading…/g) ?? []).length >= 3);
+  ok('every view goes through Loaded', (views.match(/<Loaded/g) ?? []).length >= 4,
+    'Loaded is what keeps a failed request from rendering as an empty list');
+  /*
+   * Three, not four. The calendar renders a tile per week whatever the data —
+   * a week with no sheet reads 'Not started', which is the thing somebody
+   * scanning for a gap is looking for. It is never empty, so it says so with
+   * empty={false} rather than carrying an empty state it cannot reach.
+   */
+  ok('the three list views name an empty state', (views.match(/<Nothing/g) ?? []).length >= 3);
+  ok('and the calendar is deliberately never empty', /empty={false}/.test(views),
+    'a calendar with no sheets still has weeks to show');
+  ok('every view names a skeleton', (views.match(/Skeleton/g) ?? []).length >= 4);
 
   /* Nothing in the module fabricates a sheet, an entry or an employee. */
   for (const rel of [
@@ -315,6 +325,133 @@ console.log('\npayroll and the dashboard are untouched by this module\n');
   const dash = files.filter((f) => /dashboard/i.test(f));
   ok('no payroll or migration file is modified', payroll.length === 0, payroll.join(', '));
   ok('no dashboard file is modified', dash.length === 0, dash.join(', '));
+}
+
+
+/* ------------------------------------------------------------------ *
+ * 6. Filters, states, and the approval guard
+ * ------------------------------------------------------------------ */
+
+console.log('\nevery list view can be narrowed, and can be un-narrowed\n');
+
+{
+  const views = read('src/modules/timesheet/Views.tsx');
+  const idx = read('src/modules/timesheet/index.tsx');
+
+  /* A filter that does not narrow the rows is decoration. Each of these is
+     read back out of the filter chain, not just rendered as a control. */
+  const has = (src: string, control: string, applied: RegExp) =>
+    src.includes(control) && applied.test(src);
+
+  ok('Time Entries filters by text, dates, project, billing and status',
+    has(views, 'aria-label="Search"', /needle/)
+    && has(views, 'aria-label="From"', /r\.entry\.date >= from/)
+    && has(views, 'aria-label="To"', /r\.entry\.date <= to/)
+    && has(views, 'aria-label="Project"', /r\.entry\.proj === project/)
+    && has(views, 'aria-label="Billable"', /=== r\.entry\.billable/)
+    && has(views, 'aria-label="Status"', /r\.sheet\.status === status/));
+
+  ok('Team Timesheets filters by week, employee, status and project',
+    has(views, 'aria-label="Week"', /weekStart: week/)
+    && has(views, 'aria-label="Employee"', /s\.empId === who/)
+    && /s\.status === status/.test(views)
+    && /e\.proj === project/.test(views));
+
+  ok('Projects filters by search, status and billing',
+    has(views, 'aria-label="Search"', /p\.name\.toLowerCase\(\)\.includes\(needle\)/)
+    && /=== p\.active/.test(views)
+    && /=== p\.billable/.test(views));
+
+  ok('History filters by date range and status',
+    has(idx, 'aria-label="From week"', /t\.weekStart >= from/)
+    && has(idx, 'aria-label="To week"', /t\.weekStart <= to/)
+    && /t\.status === status/.test(idx));
+
+  ok('Pending Approvals filters by employee and week',
+    has(idx, 'aria-label="Employee"', /t\.empId === who/)
+    && /t\.weekStart === week/.test(idx));
+
+  ok('Reports filters by project and employee',
+    /r\.e\.proj === project/.test(idx) && /s\.empId === who/.test(idx));
+
+  const clears = (views.match(/Clear filters/g) ?? []).length
+    + (idx.match(/Clear filters/g) ?? []).length;
+  ok(`every filtered view can be reset (${clears} controls)`, clears >= 8);
+}
+
+console.log('\nthe calendar can be moved around\n');
+
+{
+  const views = read('src/modules/timesheet/Views.tsx');
+  ok('it steps a week at a time', /Previous week/.test(views) && /Next week/.test(views));
+  ok('it can jump to today', /Today/.test(views));
+  ok('it switches between all weeks and one week',
+    /'weeks' \| 'days'/.test(views) && /Week view/.test(views) && /All weeks/.test(views));
+  ok('a tile opens that week', /onOpen\(ws\)/.test(views) && /onOpen\(anchor\)/.test(views));
+  ok('a day shows its hours and entry count',
+    /hrs\(total\)/.test(views) && /entries\.length/.test(views));
+}
+
+console.log('\na failed request is not an empty list\n');
+
+{
+  const states = read('src/modules/timesheet/States.tsx');
+  ok('the error state is offered before the empty one',
+    /if \(q\.error\) return <LoadError/.test(states),
+    'an error rendered as "none" is a statement about the data rather than the '
+    + 'network, and the person believes it');
+  ok('retry calls the query it failed on', /onRetry=\{q\.refetch\}/.test(states),
+    'reloading the browser would lose everything else on the page');
+  ok('the failure says what could not be loaded', /We couldn/.test(states));
+  ok('and shows what the service said', /error\.message/.test(states),
+    'swallowing it costs the person the only clue they had');
+  ok('there is a Retry button', /Retry<\/button>/.test(states));
+
+  ok('skeletons exist for tables, cards and the calendar',
+    /TableSkeleton/.test(states) && /CardSkeleton/.test(states)
+    && /CalendarSkeleton/.test(states));
+  ok('and they respect reduced motion',
+    /prefers-reduced-motion/.test(readRaw('src/styles/global.css')));
+
+  /* Every screen has to route through it, or one of them silently will not. */
+  const idx = read('src/modules/timesheet/index.tsx');
+  const views = read('src/modules/timesheet/Views.tsx');
+  const total = (idx.match(/<Loaded/g) ?? []).length + (views.match(/<Loaded/g) ?? []).length;
+  ok(`all seven API-driven screens route through Loaded (${total})`, total >= 7);
+}
+
+console.log('\ndeciding twice is refused\n');
+
+{
+  const idx = read('src/modules/timesheet/index.tsx');
+  ok('approving guards on the row already acting', /if \(acting\) return;/.test(idx),
+    'the service would refuse the second, but as an error for something the '
+    + 'person did not knowingly do twice');
+  ok('the button disables while the decision is in flight',
+    /disabled=\{busy \|\| decide\.pending\}/.test(idx));
+  ok('and says what it is doing', /Approving…/.test(idx));
+  ok('rejecting goes through the review dialog, which collects the reason',
+    /onClick=\{\(\) => review\(t\)\}/.test(idx));
+  ok('the decision itself is the service call', /decide\.mutate\(t\.id, 'Approved'\)/.test(idx));
+}
+
+console.log('\nnothing here invents leave, a holiday or a capacity\n');
+
+{
+  for (const rel of [
+    'src/modules/timesheet/Views.tsx',
+    'src/modules/timesheet/index.tsx',
+    'src/modules/timesheet/MyWeek.tsx',
+    'src/modules/timesheet/WeekGrid.tsx',
+    'src/modules/timesheet/States.tsx',
+  ]) {
+    const src = read(rel);
+    ok(`${rel.split('/').pop()} names no leave or holiday`,
+      !/holiday|leaveHours|onLeave/i.test(src),
+      'the timesheet service exposes neither; a marker here would be invented');
+    ok(`  and computes no utilisation`, !/utilisation|utilization|capacity/i.test(src),
+      'utilisation needs a capacity the timesheet model does not hold');
+  }
 }
 
 

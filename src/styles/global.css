@@ -2306,3 +2306,62 @@ button.chip:hover{border-color:var(--line-2)}
 .ts-weekbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .ts-weekbar-mid{display:flex;align-items:center;gap:10px}
 .ts-weekbar-range{font-size:15px;font-weight:600;color:var(--ink);min-width:200px;text-align:center}
+
+/* ---------------------------------------------------------------------------
+   Loading, failure and emptiness on the timesheet screens.
+
+   Three states that are genuinely different: not asked yet, asked and the
+   answer was none, asked and never found out. The third used to render as the
+   second, which told people they had no timesheets when the request had simply
+   failed.
+   --------------------------------------------------------------------------- */
+
+.sk-bar{display:block;border-radius:var(--r-sm);background:var(--surface-2);position:relative;overflow:hidden}
+.sk-bar::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,var(--surface),transparent);
+  transform:translateX(-100%);animation:sk-sweep 1.3s infinite;
+}
+@keyframes sk-sweep{to{transform:translateX(100%)}}
+@media (prefers-reduced-motion:reduce){.sk-bar::after{animation:none}}
+
+.sk-table{padding:10px 12px}
+.sk-row{display:flex;gap:14px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+.sk-row>.sk-bar{flex:1}
+.sk-row:last-child{border-bottom:none}
+.sk-head>.sk-bar{opacity:.65}
+
+.sk-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;padding:10px 12px}
+.sk-card{border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;display:grid;gap:8px}
+
+.sk-cal{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:10px 12px}
+.sk-cal-cell{border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;display:grid;gap:8px}
+
+/* A request that did not come back. */
+.ts-fail{
+  display:flex;align-items:flex-start;gap:12px;
+  border:1px solid var(--line);border-radius:var(--r);
+  background:var(--crit-wash);color:var(--crit-text);
+  padding:14px 16px;
+}
+.ts-fail-body{flex:1;min-width:0}
+.ts-fail-detail{
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11.5px;margin-top:7px;
+  opacity:.85;word-break:break-word;
+}
+
+.ts-nothing{display:grid;justify-items:center;gap:10px;padding:22px 7px 0}
+
+/* The calendar's week and day tiles. */
+.ts-cal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.ts-cal-week{
+  text-align:left;padding:11px 13px;border-radius:var(--r);
+  border:1px solid var(--line);background:var(--surface);
+  cursor:pointer;display:grid;gap:6px;
+}
+.ts-cal-week:hover{border-color:var(--brand);background:var(--brand-wash)}
+.ts-cal-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ts-cal-range{font-size:12.5px;font-weight:600;color:var(--ink)}
+.ts-cal-meta{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-2)}
+.ts-cal-sub{font-size:11px;color:var(--ink-3)}
+.ts-dot{width:8px;height:8px;border-radius:var(--r-pill);display:inline-block;flex:none}

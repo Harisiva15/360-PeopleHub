@@ -48,7 +48,7 @@ export const useProjects = () => useQuery((s) => s.timesheet.projects(), []);
 
 /** Only an active project may be booked against — the same rule the server applies. */
 export function useBookableProjects() {
-  const { data, loading, error } = useProjects();
+  const { data, loading, error, refetch } = useProjects();
   return {
     all: data ?? [],
     list: (data ?? []).filter((p) => p.active),
@@ -57,6 +57,7 @@ export function useBookableProjects() {
       (data ?? []).find((p) => p.id === id)?.name ?? id ?? '—',
     loading,
     error,
+    refetch,
   };
 }
 
