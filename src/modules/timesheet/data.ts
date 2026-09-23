@@ -35,7 +35,30 @@ export function useSheets(
   );
 }
 
-export const useProjects = () => useQuery((s) => s.planner.board(), []);
+/**
+ * The projects work can be booked against.
+ *
+ * This used to call `planner.board()`, which returns `BoardStats[]` — status,
+ * count, estimate — and is not a project list at all. Nothing consumed it, so
+ * every picker read the static array in `src/data/org.ts` instead, while
+ * `addEntry` validated the code against the `project` table. The two agreed by
+ * luck rather than construction.
+ */
+export const useProjects = () => useQuery((s) => s.timesheet.projects(), []);
+
+/** Only an active project may be booked against — the same rule the server applies. */
+export function useBookableProjects() {
+  const { data, loading, error } = useProjects();
+  return {
+    all: data ?? [],
+    list: (data ?? []).filter((p) => p.active),
+    byId: (id: string | null | undefined) => (data ?? []).find((p) => p.id === id),
+    name: (id: string | null | undefined) =>
+      (data ?? []).find((p) => p.id === id)?.name ?? id ?? '—',
+    loading,
+    error,
+  };
+}
 
 /* ---------- writes ---------- */
 

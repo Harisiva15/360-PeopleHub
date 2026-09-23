@@ -9,10 +9,6 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import type { StructureDraft } from '../../services';
-import { addDays, mondayOf, TODAY, ymd } from '../../lib/dates';
-
-/** Team-cost charts look back four weeks of logged effort. */
-const teamWindowStart = () => ymd(mondayOf(addDays(TODAY, -28)));
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
@@ -33,8 +29,6 @@ export const useBankBatches = () => useQuery((s) => s.payroll.bankBatches(), [])
 export const useCompliancePayments = () => useQuery((s) => s.payroll.compliancePayments(), []);
 export const useActiveLoans = () => useQuery((s) => s.payroll.activeLoans(), []);
 export const useApprovedClaims = () => useQuery((s) => s.expenses.claims({ status: 'Approved' }), []);
-export const useTeamTimesheets = (empIds: string[]) =>
-  useQuery((s) => s.timesheet.list({ empIds, since: teamWindowStart() }), [empIds.join(",")]);
 export const useProcessRun = () => useMutation((s, mk: string) => s.payroll.processRun(mk));
 
 /* ---------- compensation ---------- */

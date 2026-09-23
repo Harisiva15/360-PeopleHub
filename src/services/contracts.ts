@@ -271,8 +271,30 @@ export interface EntryDraft {
   remarks?: string;
 }
 
+/**
+ * A project work can be booked against.
+ *
+ * Keyed by code, because that is what an entry carries. Read-only here:
+ * creating a project is delivery administration, not timekeeping.
+ */
+export interface TimesheetProject {
+  id: string;
+  name: string;
+  client: string;
+  billable: boolean;
+  /** Only an active project may be booked against;  enforces it. */
+  active: boolean;
+  startsOn: string | null;
+  endsOn: string | null;
+}
+
 export interface TimesheetService {
   list(q: TimesheetQuery): Promise<Timesheet[]>;
+  /**
+   * Every project, closed ones included, so an old entry still resolves to a
+   * name. Pickers offer the active ones — the same rule the server applies.
+   */
+  projects(): Promise<TimesheetProject[]>;
   /**
    * The sheet for one person's week, created as an empty draft if they have
    * not started it. Creation belongs here rather than in the editor, which

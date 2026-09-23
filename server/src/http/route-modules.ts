@@ -57,6 +57,7 @@ export const ROUTE_MODULE: Record<string, string> = {
   payroll: 'payroll',
   performance: 'performance',
   planner: 'planner',
+  projects: 'timesheet',
   recruiters: 'recruitment',
   recruitment: 'recruitment',
   reports: 'reports',

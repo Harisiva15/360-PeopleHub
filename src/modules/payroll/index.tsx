@@ -10,7 +10,7 @@ import {
   useActiveLoans, useApprovedClaims, useBankBatches, useCompensation, useCompliancePayments,
   useCurrentRun, useDeclarations, usePayInputs, usePayRuns, usePayrollTotals,
   useProcessRun, usePayrollTotalsFor, usePayslipHistory, useRegister, useStructure,
-  useTeamTimesheets, useVisiblePeople,
+  useVisiblePeople,
 } from './data';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { ListRow, StatusBadge } from '../../components/common';
@@ -992,70 +992,9 @@ function PyMe() {
   );
 }
 
-/* ---------------- Team cost (manager) ---------------- */
-
-function PyTeamCost() {
-  const app = useApp();
-  const showEmp = useShowEmployee();
-  const dir = useVisiblePeople();
-  const { data: runs = [] } = usePayRuns();
-  const team = dir.list.filter((e) => e.id !== app.meId);
-  const ids = team.map((x) => x.id);
-  const { data: recent = [] } = useTeamTimesheets(ids);
-  if (runs.length < 2) return <EmptyState msg="Loading team cost…" icon={<Icon n="rupee" size="lg" />} />;
-  const mk = runs[runs.length - 2].mk;
-  const total = sum(team, (e) => e.ctc);
-
-  const byGrade = (Object.keys(GRADES) as Grade[]).map((g, i) => ({
-    k: GRADES[g].label, c: PAL[i], v: sum(team.filter((e) => e.grade === g), (e) => e.ctc),
-  })).filter((r) => r.v);
-
-
-  const billableCoverage = pct(
-    sum(recent, (t) => t.billable),
-    Math.max(1, sum(recent, (t) => t.total)),
-  );
-
-  return (
-    <div className="stack">
-      <Banner icon={<Icon n="lock" size="lg" />} title="Aggregate view only">
-        Individual salary details are visible to HR administrators and the employee. Managers see team cost in aggregate
-        for budget planning.
-      </Banner>
-
-      <StatRow cols={4}>
-        <Tile label="Team annual CTC" value={lakh(total)} foot={`${team.length} employees`} />
-        <Tile label="Average CTC" value={lakh(total / Math.max(1, team.length))} foot="Per employee" />
-        <Tile label="Monthly run rate" value={lakh(total / 12)} foot={monthLabelLong(mk)} />
-        <Tile label="Billable coverage" value={billableCoverage + '%'} foot="Last 4 weeks" />
-      </StatRow>
-
-      <div className="grid g2">
-        <Card title="Cost by grade" sub="Annual CTC">
-          <HBar rows={sortBy(byGrade, (r) => -r.v)} fmt={(v) => lakh(v)} />
-        </Card>
-        <Card title="Team composition" sub={`${team.length} people`} flush>
-          <div style={{ maxHeight: 340, overflow: 'auto' }}>
-            {sortBy(team, (e) => e.name).map((e) => (
-              <ListRow key={e.id} onClick={() => showEmp(e.id)}>
-                <Avatar name={e.name} size="sm" />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 650, fontSize: 12.5 }}>{e.name}</div>
-                  <div className="muted" style={{ fontSize: 11.5 }}>{e.designation}</div>
-                </div>
-                <Badge>{e.grade}</Badge>
-              </ListRow>
-            ))}
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
 /* ---------------- entry ---------------- */
 
-type Tab = 'runs' | 'inputs' | 'reg' | 'bank' | 'comply' | 'stat' | 'struct' | 'me' | 'team';
+type Tab = 'runs' | 'inputs' | 'reg' | 'bank' | 'comply' | 'stat' | 'struct' | 'me';
 
 function Payroll() {
   const app = useApp();
@@ -1068,7 +1007,7 @@ function Payroll() {
           { v: 'struct', label: 'Salary Structures' }, { v: 'me', label: 'My Payslips' },
         ]
       : app.role === 'manager'
-        ? [{ v: 'me', label: 'My Payslips' }, { v: 'team', label: 'Team Cost' }]
+        ? [{ v: 'me', label: 'My Payslips' }]
         : [{ v: 'me', label: 'My Payslips' }, { v: 'struct', label: 'My Salary Structure' }];
 
   const [tab, setTab] = useTabFromUrl<Tab>(tabs[0]!.v, tabs.map((t) => t.v));
@@ -1092,7 +1031,6 @@ function Payroll() {
       {active === 'stat' && <PyStatutory mk={mk} setMk={setMk} />}
       {active === 'struct' && (app.role === 'admin' ? <PyStructures /> : <PyMyStructure />)}
       {active === 'me' && <PyMe />}
-      {active === 'team' && <PyTeamCost />}
     </>
   );
 }

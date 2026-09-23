@@ -97,10 +97,20 @@ export const NAV: NavGroup[] = [
        * people to the wrong one. Every route, tab and permission is unchanged;
        * only where they are listed has moved.
        */
-      { k: 'timesheet', n: 'Timesheet entry', to: '/timesheet?v=entry', ic: 'note', d: 'Log this week’s hours.' },
-      { k: 'timesheet', n: 'My timesheets', to: '/timesheet?v=mine', ic: 'document', d: 'Every week you have submitted.' },
-      { k: 'timesheet', n: 'Timesheet approvals', to: '/timesheet?v=appr', ic: 'done', d: 'Decide your team’s weeks.', roles: ['manager', 'admin'] },
-      { k: 'timesheet', n: 'Time reports', to: '/timesheet?v=rep', ic: 'chart', d: 'Utilisation and effort by project.' },
+      { k: 'timesheet', n: 'My timesheet', to: '/timesheet?v=entry', ic: 'note', d: 'Log this week’s hours.' },
+      { k: 'timesheet', n: 'Time entries', to: '/timesheet?v=entries', ic: 'document', d: 'Every line you have logged, filterable.' },
+      { k: 'timesheet', n: 'Timesheet calendar', to: '/timesheet?v=cal', ic: 'calendar', d: 'Your weeks at a glance, and the ones you have not started.' },
+      { k: 'timesheet', n: 'Timesheet history', to: '/timesheet?v=hist', ic: 'clock', d: 'Every week you have submitted.' },
+      /*
+       * The four below read somebody else's week, which the policy grants a
+       * manager ('team') and an admin ('all') and an employee not at all. The
+       * service scopes every read again — this only stops offering a screen
+       * that would come back empty.
+       */
+      { k: 'timesheet', n: 'Team timesheets', to: '/timesheet?v=team', ic: 'team', d: 'Your line’s weeks, with hours and status.', roles: ['manager', 'admin'] },
+      { k: 'timesheet', n: 'Pending approvals', to: '/timesheet?v=appr', ic: 'done', d: 'Decide your team’s weeks.', roles: ['manager', 'admin'] },
+      { k: 'timesheet', n: 'Projects', to: '/timesheet?v=proj', ic: 'projects', d: 'What time can be booked against.', roles: ['manager', 'admin'] },
+      { k: 'timesheet', n: 'Time reports', to: '/timesheet?v=rep', ic: 'chart', d: 'Utilisation and effort by project.', roles: ['manager', 'admin'] },
     ],
   },
 
@@ -122,7 +132,6 @@ export const NAV: NavGroup[] = [
       { k: 'tax', n: 'Tax declarations', ic: 'tax', d: 'Declare investments and claim exemptions.' },
       { k: 'benefits', n: 'Benefits & flexi', ic: 'gift', d: 'Allocate your flexible benefit pot.' },
       { k: 'expenses', n: 'Reimbursements', ic: 'invoice', d: 'Claim expenses and travel.' },
-      { k: 'payroll', n: 'Team cost', to: '/payroll?v=team', ic: 'team', d: 'What your line costs.', roles: ['manager'] },
       { k: 'payroll', n: 'Payroll runs', to: '/payroll?v=runs', ic: 'refresh', d: 'Open, process and close a cycle.', roles: ['admin'] },
       { k: 'payroll', n: 'Salary register', to: '/payroll?v=reg', ic: 'document', d: 'Every payslip in the cycle.', roles: ['admin'] },
       { k: 'payroll', n: 'Payroll inputs', to: '/payroll?v=inputs', ic: 'note', d: 'Overtime, deductions and one-offs.', roles: ['admin'] },
@@ -323,7 +332,7 @@ export const hrefOf = (i: NavItem): string => i.to ?? `/${i.k}`;
  * offers, not what any one person gets.
  */
 export const QUICK_ACTIONS = [
-  'My leave', 'Timesheet entry', 'My attendance', 'Reimbursements',
+  'My leave', 'My timesheet', 'My attendance', 'Reimbursements',
   'Helpdesk', 'My payslips', 'Employee directory',
 ] as const;
 

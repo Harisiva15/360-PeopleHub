@@ -1,7 +1,7 @@
 /**
  * Timesheets — entry, history, approval, reporting.
  *
- * Four tabs, and which of them a person gets follows the policy rather than
+ * Eight views, and which of them a person gets follows the policy rather than
  * their job title: everybody writes and reads their own week, approvers get
  * the queue their line feeds, and the reports read whatever the employee
  * service already scoped for the caller. Nothing here decides who may see
@@ -21,12 +21,15 @@ import { BarChart, HBar, Legend, LineChart, PAL } from '../../components/charts'
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import {
-  useDecideSheet, useMySheets, usePeople, useSheets, useVisiblePeople,
+  useBookableProjects, useDecideSheet, useMySheets, usePeople, useSheets, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
 import { MyWeek, overtimeOf } from './MyWeek';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
+import {
+  TeamTimesheets, TimeEntries, TimesheetCalendar, TimesheetProjects,
+} from './Views';
 import { TITLES } from '../titles';
 import { Icon } from '../../components/icons';
 
@@ -425,6 +428,7 @@ function TsApprovals({ ws, setWs }: { ws: string; setWs: (s: string) => void }) 
 
 function TsReports() {
   const dir = useVisiblePeople();
+  const proj = useBookableProjects();
   const weeks: string[] = [];
   for (let w = 7; w >= 0; w--) weeks.push(ymd(mondayOf(addDays(TODAY, -w * 7))));
 
@@ -465,7 +469,7 @@ function TsReports() {
         <Tile label="Avg per person / week"
           value={hrs(sum(totals) / Math.max(1, dir.ids.length) / 8)} foot="Standard week 40 h" />
         <Tile label="Active projects" value={series.length}
-          foot={`${PROJECTS.filter((p) => p.billable).length} billable in the catalogue`} />
+          foot={`${proj.list.filter((p) => p.billable).length} billable of ${proj.list.length} open`} />
       </StatRow>
 
       <Card title="Effort by project" sub="Hours per week · last 8 weeks">
@@ -502,33 +506,68 @@ function TsReports() {
 
 /* ---------------- entry ---------------- */
 
-type Tab = 'entry' | 'mine' | 'appr' | 'rep';
+type Tab =
+  | 'entry' | 'entries' | 'cal' | 'hist'
+  | 'team' | 'appr' | 'proj' | 'rep';
+
+/**
+ * Which views a role is offered.
+ *
+ * `policy.ts` grants `timesheet` as employee `own`, manager `team`, admin
+ * `all`, and `seesOthers` below is that line mirrored — the same mirroring
+ * every other module does, kept honest by `checks/roles.ts`, which compares
+ * the client's table against the server's policy and fails when they drift.
+ *
+ * This decides what is *offered*, never what is *allowed*. `scope()` in the
+ * timesheet service filters every read by the caller in SQL, so an employee who
+ * reached the team view by editing the URL would get their own rows back and
+ * nothing else. The tabs are a courtesy; the boundary is the server's.
+ */
+const SELF: { v: Tab; label: string }[] = [
+  { v: 'entry', label: 'My Timesheet' },
+  { v: 'entries', label: 'Time Entries' },
+  { v: 'cal', label: 'Calendar' },
+  { v: 'hist', label: 'History' },
+];
+
+const TEAM: { v: Tab; label: string }[] = [
+  { v: 'team', label: 'Team Timesheets' },
+  { v: 'appr', label: 'Pending Approvals' },
+  { v: 'proj', label: 'Projects' },
+  { v: 'rep', label: 'Reports' },
+];
+
+const ALL_TABS: Tab[] = [...SELF, ...TEAM].map((t) => t.v);
 
 function TimesheetView() {
   const app = useApp();
 
   /*
-   * An employee approves nothing — not even their own week — so the queue is
-   * not offered to them. Everything else they get, scoped to themselves by the
-   * employee service rather than by this list.
+   * An employee approves nothing and sees nobody else's week, so the four team
+   * views are not offered to them. The policy is the source: employee 'own',
+   * manager 'team', admin 'all'.
    */
-  const tabs: { v: Tab; label: string }[] = [
-    { v: 'entry', label: 'Timesheet Entry' },
-    { v: 'mine', label: 'My Timesheets' },
-    ...(app.role === 'employee' ? [] : [{ v: 'appr' as Tab, label: 'Approvals' }]),
-    { v: 'rep', label: 'Reports' },
-  ];
+  const seesOthers = app.role !== 'employee';
+  const tabs = seesOthers ? [...SELF, ...TEAM] : SELF;
 
-  const [tab, setTab] = useTabFromUrl<Tab>('entry', ['entry', 'mine', 'appr', 'rep']);
+  const [tab, setTab] = useTabFromUrl<Tab>('entry', ALL_TABS);
   const [ws, setWs] = useState(ymd(mondayOf(TODAY)));
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
+
+  /* Opening somebody's week from a team view lands on the approval queue for
+     that week, which is where a decision is actually made. */
+  const openWeek = (_empId: string, weekStart: string) => { setWs(weekStart); setTab('appr'); };
 
   return (
     <>
       <Tabs value={active} options={tabs} onChange={setTab} />
       {active === 'entry' && <MyWeek ws={ws} setWs={setWs} />}
-      {active === 'mine' && <TsHist setWs={setWs} setTab={setTab} />}
+      {active === 'entries' && <TimeEntries scope={seesOthers ? 'team' : 'mine'} />}
+      {active === 'cal' && <TimesheetCalendar onOpen={(w) => { setWs(w); setTab('entry'); }} />}
+      {active === 'hist' && <TsHist setWs={setWs} setTab={() => setTab('entry')} />}
+      {active === 'team' && <TeamTimesheets onOpen={openWeek} />}
       {active === 'appr' && <TsApprovals ws={ws} setWs={setWs} />}
+      {active === 'proj' && <TimesheetProjects />}
       {active === 'rep' && <TsReports />}
     </>
   );

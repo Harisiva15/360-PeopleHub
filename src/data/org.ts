@@ -128,6 +128,16 @@ export const PROJECTS: Project[] = [
   { id: 'P-SUP', name: 'Managed Support Desk', client: 'Multiple', billable: true, color: 'var(--s6)' },
   { id: 'P-PRESALES', name: 'Pre-Sales & Solutioning', client: 'Internal', billable: false, color: 'var(--s8)' }
 ];
-export const projOf = (id: string): Project => PROJECTS.find(p => p.id === id) || PROJECTS[0];
+/**
+ * A project by code, for display.
+ *
+ * An unknown code returns a placeholder carrying that code, not the first
+ * project in the list. The old fallback meant a project the server holds and
+ * this array does not rendered as 'Atlas Core Platform' — confidently, and
+ * wrongly. Anything that *chooses* a project reads the API; see useProjects.
+ */
+export const projOf = (id: string): Project =>
+  PROJECTS.find(p => p.id === id)
+  || { id, name: id || '—', client: '—', billable: false, color: 'var(--line)' };
 export const TASK_TYPES: string[] = ['Development', 'Code Review', 'Testing', 'Bug Fix', 'Design', 'Meetings', 'Documentation', 'Deployment', 'Support', 'Training'];
 

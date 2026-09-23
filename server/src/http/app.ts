@@ -33,6 +33,7 @@ import {
   CompensationError, listComponents, removeComponent,
   salaryHistory, saveComponent, setSalaryStructure,
 } from '../modules/payroll/compensation.ts';
+import { listProjects } from '../modules/projects/service.ts';
 import {
   approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
 } from '../modules/joiners/service.ts';
@@ -941,6 +942,13 @@ const routes: Route[] = [
     pattern: '/payroll/structure/:empId/history',
     handler: (c, _r, p) => salaryHistory(c, p.empId!),
   },
+
+  /*
+   * Projects, so a timesheet can offer one the server will accept. Mapped to
+   * the timesheet module rather than a module of its own: it exists for the
+   * screens that book time, and an employee filling in their own week needs it.
+   */
+  { method: 'GET', pattern: '/projects', handler: (c) => listProjects(c) },
 
   { method: 'GET', pattern: '/config/sites', handler: (c) => listSites(c) },
   { method: 'GET', pattern: '/config/holidays', handler: (c) => listHolidays(c) },

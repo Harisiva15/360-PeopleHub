@@ -80,6 +80,24 @@ function validate(
 }
 
 export const timesheetService: TimesheetService = {
+  /*
+   * The demo's projects, in the shape the service returns. The codes and
+   * billable flags are the same eight the seed creates, so a picker built here
+   * offers what a configured build would accept — checks/timesheet.ts fails if
+   * the two lists drift.
+   */
+  projects() {
+    return ok(PROJECTS.map((p) => ({
+      id: p.id,
+      name: p.name,
+      client: p.client,
+      billable: p.billable,
+      active: true,
+      startsOn: null,
+      endsOn: null,
+    })));
+  },
+
   list(q) {
     let out = TS.slice();
     if (q.empIds?.length) {

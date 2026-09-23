@@ -137,7 +137,40 @@ console.log('\na locked cycle is shown as locked\n');
     /!r\.locked && r\.status !== 'Paid'/.test(src));
 }
 
+/* ------------------------------------------------------------------ *
+ * 5. A manager's payroll is their own and nothing else
+ * ------------------------------------------------------------------ */
+
+console.log('\na manager reaches only their own pay\n');
+
+{
+  const payroll = read('src/modules/payroll/index.tsx');
+  const nav = read('src/nav.ts');
+
+  /*
+   * Team Cost was a manager-only tab summing the line's CTC. It leaked
+   * nothing — `maySeePay` is admin-only and a manager receives `ctc: 0` — and
+   * that was the problem: it rendered a confident ₹0 for the one role it
+   * existed for, while implying managers have a view of what their team costs.
+   * The policy says they do not.
+   */
+  ok('the Team Cost screen is gone', !/PyTeamCost/.test(payroll),
+    'a manager-only payroll screen that sums salaries contradicts the policy, '
+    + 'which grants a manager `own` on payroll and nothing more');
+  ok('no payroll tab is named team', !/v: 'team'/.test(payroll));
+  ok('the menu offers no team payroll', !/'\/payroll\?v=team'/.test(nav));
+
+  /* Whatever the manager list becomes, it must stay self-service. */
+  const managerTabs = payroll.match(/app\.role === 'manager'\s*\?\s*\[([^\]]*)\]/)?.[1] ?? '';
+  const labels = [...managerTabs.matchAll(/label: '([^']+)'/g)].map((m) => m[1]!);
+  ok(`a manager is offered only their own payslips (${labels.join(', ') || 'none'})`,
+    labels.length === 1 && labels[0] === 'My Payslips',
+    `manager tabs are: ${labels.join(', ')} — anything beyond the caller's own `
+    + 'record needs a policy change, not a tab');
+}
+
 console.log(failed
   ? `\n${failed} failed\n`
-  : '\nprocessing payroll is deliberate, and a locked cycle says so\n');
+  : '\nprocessing payroll is deliberate, a locked cycle says so, '
+    + 'and a manager sees only their own\n');
 process.exit(failed ? 1 : 0);

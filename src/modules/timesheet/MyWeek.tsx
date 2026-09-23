@@ -20,17 +20,18 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { EntryDraft, Timesheet, TSEntry } from '../../services';
+import type { EntryDraft, Timesheet, TimesheetProject, TSEntry } from '../../services';
 import { addDays, DOW, fmtD, fmtDS, mondayOf, parseYmd, TODAY, ymd } from '../../lib/dates';
-import { projOf, PROJECTS, TASK_TYPES } from '../../data/org';
+import { TASK_TYPES } from '../../data/org';
 import { Avatar, Badge, Banner, Card, EmptyState, KV } from '../../components/ui';
-import { Donut, Legend } from '../../components/charts';
+import { Donut, Legend, PAL } from '../../components/charts';
 import { StatusBadge } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import { PageActions } from '../../shell/PageActions';
 import {
-  useAddEntry, useCopyPreviousWeek, useRecallSheet, useRemoveEntry, useSetComment,
+  useAddEntry, useBookableProjects, useCopyPreviousWeek, useRecallSheet, useRemoveEntry,
+  useSetComment,
   useSheet, useSubmitSheet, useUpdateEntry,
 } from './data';
 import { Icon } from '../../components/icons';
@@ -74,7 +75,7 @@ type Days = ReturnType<typeof weekDays>;
  * remount on every keystroke and drop the caret.
  */
 function LineCells({
-  v, set, days, disabled, onCommit,
+  v, set, days, disabled, onCommit, projects,
 }: {
   v: Line;
   set: (patch: Partial<Line>) => void;
@@ -82,8 +83,10 @@ function LineCells({
   disabled?: boolean;
   /** Called when a field is finished with — blur for typing, change for the rest. */
   onCommit: (patch: Partial<Line>) => void;
+  /** From the API. A code the server does not hold is refused on save. */
+  projects: TimesheetProject[];
 }) {
-  const p = projOf(v.proj);
+  const p = projects.find((x) => x.id === v.proj);
   const dow = /^\d{4}-\d{2}-\d{2}$/.test(v.date) ? DOW[parseYmd(v.date).getDay()] : '—';
 
   return (
@@ -99,13 +102,14 @@ function LineCells({
         <select className="input sm" aria-label="Project" value={v.proj} disabled={disabled}
           onChange={(e) => {
             /* Billability defaults from the project, and stays overridable. */
-            const next = { proj: e.target.value, billable: projOf(e.target.value).billable };
+            const chosen = projects.find((x) => x.id === e.target.value);
+            const next = { proj: e.target.value, billable: chosen?.billable ?? true };
             set(next);
             onCommit(next);
           }}>
-          {PROJECTS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          {projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
-        <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{p.client}</div>
+        <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{p?.client ?? '—'}</div>
       </td>
       <td>
         <input className="input sm" aria-label="Task or activity" list="ts-tasks"
@@ -134,9 +138,10 @@ function LineCells({
 }
 
 function StoredRow({
-  sheet, entry, days, editable,
+  sheet, entry, days, editable, projects,
 }: {
   sheet: Timesheet; entry: TSEntry; days: Days; editable: boolean;
+  projects: TimesheetProject[];
 }) {
   const app = useApp();
   const update = useUpdateEntry();
@@ -182,7 +187,7 @@ function StoredRow({
     <>
       <tr>
         <LineCells v={v} set={(p) => setV({ ...v, ...p })} days={days}
-          disabled={!editable} onCommit={commit} />
+          disabled={!editable} onCommit={commit} projects={projects} />
         <td className="right nowrap">
           {editable
             ? <button className="btn ghost icon sm" title="Remove this line"
@@ -196,9 +201,10 @@ function StoredRow({
 }
 
 function DraftRow({
-  sheet, draft, days, onDone, onDrop,
+  sheet, draft, days, onDone, onDrop, projects,
 }: {
   sheet: Timesheet;
+  projects: TimesheetProject[];
   draft: { key: number; line: Line };
   days: Days;
   onDone: (key: number) => void;
@@ -222,7 +228,8 @@ function DraftRow({
   return (
     <>
       <tr className="ts-draft">
-        <LineCells v={v} set={(p) => setV({ ...v, ...p })} days={days} onCommit={() => setErr('')} />
+        <LineCells v={v} set={(p) => setV({ ...v, ...p })} days={days}
+          onCommit={() => setErr('')} projects={projects} />
         <td className="right nowrap">
           <button className="btn primary sm" disabled={add.pending} onClick={save}>Save</button>{' '}
           <button className="btn ghost icon sm" title="Discard this line"
@@ -236,14 +243,16 @@ function DraftRow({
 
 /* ---------------- bulk entry ---------------- */
 
-function BulkForm({ sheet, close }: { sheet: Timesheet; close: () => void }) {
+function BulkForm({ sheet, close, projects }: {
+  sheet: Timesheet; close: () => void; projects: TimesheetProject[];
+}) {
   const app = useApp();
   const add = useAddEntry();
   const days = weekDays(sheet.weekStart);
 
-  const [proj, setProj] = useState(PROJECTS[0].id);
+  const [proj, setProj] = useState(projects[0]?.id ?? '');
   const [task, setTask] = useState(TASK_TYPES[0]);
-  const [billable, setBillable] = useState(PROJECTS[0].billable);
+  const [billable, setBillable] = useState(projects[0]?.billable ?? true);
   const [hours, setHours] = useState('8');
   const [remarks, setRemarks] = useState('');
   const [picked, setPicked] = useState<string[]>(days.filter((d) => !d.weekend).map((d) => d.date));
@@ -290,8 +299,11 @@ function BulkForm({ sheet, close }: { sheet: Timesheet; close: () => void }) {
       <div className="field">
         <label>Project</label>
         <select className="input" value={proj}
-          onChange={(e) => { setProj(e.target.value); setBillable(projOf(e.target.value).billable); }}>
-          {PROJECTS.map((p) => (
+          onChange={(e) => {
+            setProj(e.target.value);
+            setBillable(projects.find((x) => x.id === e.target.value)?.billable ?? true);
+          }}>
+          {projects.map((p) => (
             <option key={p.id} value={p.id}>{p.name} · {p.client}</option>
           ))}
         </select>
@@ -340,6 +352,9 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
   const app = useApp();
   const layer = useLayer();
   const { data: sheet, loading } = useSheet(app.meId, ws);
+  /* Projects come from the API, which is what addEntry validates against. */
+  const proj = useBookableProjects();
+  const projects = proj.list;
 
   const copyPrev = useCopyPreviousWeek();
   const setComment = useSetComment();
@@ -372,7 +387,8 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
   const nextDay = days.find((d) => !sheet.entries.some((e) => e.date === d.date))?.date ?? days[0].date;
 
   const addRow = () => {
-    const p = PROJECTS[0];
+    const p = projects[0];
+    if (!p) return;
     draftSeq.current += 1;
     setDrafts((d) => [...d, {
       key: draftSeq.current,
@@ -445,7 +461,7 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
   const bulk = () => layer.modal({
     title: 'Bulk entry',
     sub: 'The same work across several days',
-    body: (close) => <BulkForm sheet={sheet} close={close} />,
+    body: (close) => <BulkForm sheet={sheet} close={close} projects={projects} />,
     footer: null,
   });
 
@@ -553,12 +569,13 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
                 </thead>
                 <tbody>
                   {sheet.entries.map((e) => (
-                    <StoredRow key={e.id} sheet={sheet} entry={e} days={days} editable={editable} />
+                    <StoredRow key={e.id} sheet={sheet} entry={e} days={days} editable={editable} projects={projects} />
                   ))}
                   {drafts.map((d) => (
                     <DraftRow key={d.key} sheet={sheet} draft={d} days={days}
                       onDone={(k) => setDrafts((s) => s.filter((x) => x.key !== k))}
-                      onDrop={(k) => setDrafts((s) => s.filter((x) => x.key !== k))} />
+                      onDrop={(k) => setDrafts((s) => s.filter((x) => x.key !== k))}
+                      projects={projects} />
                   ))}
                   {!sheet.entries.length && !drafts.length && (
                     <tr>
@@ -617,16 +634,16 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
                 {Object.entries(sheet.entries.reduce<Record<string, number>>((acc, e) => {
                   acc[e.proj] = (acc[e.proj] ?? 0) + e.hours;
                   return acc;
-                }, {})).sort((a, b) => b[1] - a[1]).map(([id, h]) => (
+                }, {})).sort((a, b) => b[1] - a[1]).map(([id, h], i) => (
                   <div key={id} style={{ padding: '7px 14px' }}>
                     <div className="row" style={{ justifyContent: 'space-between', fontSize: 12.5 }}>
-                      <span>{projOf(id).name}</span>
+                      <span>{proj.name(id)}</span>
                       <b className="mono">{hrs(h)}</b>
                     </div>
                     <div className="bar" style={{ marginTop: 5 }}>
                       <i style={{
                         width: (sheet.total ? (h / sheet.total) * 100 : 0) + '%',
-                        background: projOf(id).color,
+                        background: PAL[i % PAL.length],
                       }} />
                     </div>
                   </div>
