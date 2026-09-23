@@ -49,6 +49,8 @@ export interface Site {
   headquarters?: boolean | undefined;
   state?: string | undefined;
   postcode?: string | undefined;
+  /** A closed location is still named on old records; no form offers it. */
+  active?: boolean | undefined;
 }
 
 export interface Holiday {
@@ -77,18 +79,52 @@ const toSite = (r: Record<string, unknown>): Site => ({
   postcode: (r.postal_code as string) ?? '',
   tz: (r.timezone as string) ?? 'Asia/Kolkata',
   shift: (r.shift_code as string) ?? 'GEN',
+  /* Absent from a row selected before this column was read: treat as open. */
+  active: r.active === undefined ? true : Boolean(r.active),
 });
 
+/*
+ * Every column a Site is built from, in one place.
+ *
+ * It had been written out at each call site, and the copies drifted: a fence
+ * move re-read the row without `kind`, `state`, `postal_code` or the
+ * headquarters flag, so saving a fence silently handed the caller a location
+ * that had stopped being head office and had no state.
+ */
+const SITE_COLUMNS =
+  `SELECT s.code, s.name, s.city, s.country, s.address, s.timezone,
+          s.latitude, s.longitude, s.fence_radius_m, sh.code AS shift_code,
+          s.kind, s.is_headquarters, s.state, s.postal_code, s.active
+     FROM site s
+     LEFT JOIN shift sh ON sh.id = s.default_shift_id`;
+
+/** One audit row per configuration write, with the actor's name resolved. */
+async function audit(
+  db: { query: (sql: string, params?: unknown[]) => Promise<unknown> },
+  caller: Caller,
+  action: string,
+  siteCode: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO audit_log (category, action, actor_employee_id, actor_label,
+                            subject_table, detail)
+     SELECT 'config', $2, $1, COALESCE(e.full_name, 'system'), 'site',
+            $4::jsonb || jsonb_build_object('site', $3::text)
+       FROM employee e WHERE e.id = $1`,
+    [caller.employeeId, action, siteCode, JSON.stringify(detail)]);
+}
+
+/**
+ * Every location, closed ones included.
+ *
+ * Closed sites are returned because a screen still has to resolve the code on
+ * an old attendance row to a name. `active` says which are open, and the forms
+ * offer only those — see `useSites` on the client.
+ */
 export async function listSites(caller: Caller): Promise<Site[]> {
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query(
-      `SELECT s.code, s.name, s.city, s.country, s.address, s.timezone,
-              s.latitude, s.longitude, s.fence_radius_m, sh.code AS shift_code,
-              s.kind, s.is_headquarters, s.state, s.postal_code
-         FROM site s
-         LEFT JOIN shift sh ON sh.id = s.default_shift_id
-        WHERE s.active
-        ORDER BY s.name`);
+    const { rows } = await db.query(`${SITE_COLUMNS} ORDER BY s.active DESC, s.name`);
     return rows.map(toSite);
   });
 }
@@ -151,12 +187,225 @@ export async function updateFence(
          FROM employee e WHERE e.id = $1`,
       [caller.employeeId, siteCode, String(patch.radius)]);
 
-    const { rows } = await db.query(
-      `SELECT s.code, s.name, s.city, s.country, s.address, s.timezone,
-              s.latitude, s.longitude, s.fence_radius_m, sh.code AS shift_code
-         FROM site s LEFT JOIN shift sh ON sh.id = s.default_shift_id
-        WHERE s.code = $1`, [siteCode]);
+    const { rows } = await db.query(`${SITE_COLUMNS} WHERE s.code = $1`, [siteCode]);
     return toSite(rows[0]!);
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Locations
+ *
+ * A site is referenced by employees, attendance, requisitions and shifts, so
+ * there is no delete — closing an office is `active = false`, and the rules
+ * below are the ones that keep the remaining rows meaning something.
+ * ------------------------------------------------------------------ */
+
+export interface SiteDraft {
+  code: string;
+  name: string;
+  city?: string;
+  state?: string;
+  country: string;
+  address?: string;
+  postcode?: string;
+  timezone?: string;
+  kind: 'headquarters' | 'office' | 'client' | 'remote';
+}
+
+export type SitePatch = Partial<Omit<SiteDraft, 'code'>>;
+
+const KINDS = new Set(['headquarters', 'office', 'client', 'remote']);
+
+/**
+ * What a location must say about itself before it is worth storing.
+ *
+ * The schema refuses a bad `kind` and two head offices; these are the things it
+ * cannot see — a blank name, a code that is not a code, a country that is not
+ * two letters. Saying so here means the person gets a sentence rather than a
+ * constraint violation.
+ */
+function checkDraft(d: SiteDraft | SitePatch, partial: boolean): void {
+  const need = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+
+  if (!partial) {
+    const full = d as SiteDraft;
+    if (!need(full.code)) throw new ConfigError('a location needs a code', 'invalid');
+    if (!/^[A-Z0-9]{2,10}$/.test(full.code.trim().toUpperCase())) {
+      throw new ConfigError('a code is 2–10 letters or digits, such as BLR', 'invalid');
+    }
+    if (!need(full.name)) throw new ConfigError('a location needs a name', 'invalid');
+    if (!need(full.country)) throw new ConfigError('a location needs a country', 'invalid');
+  }
+  if (d.name !== undefined && !need(d.name)) {
+    throw new ConfigError('a location needs a name', 'invalid');
+  }
+  if (d.country !== undefined && !/^[A-Z]{2}$/.test(String(d.country).trim().toUpperCase())) {
+    throw new ConfigError('a country is a two-letter code, such as IN', 'invalid');
+  }
+  if (d.kind !== undefined && !KINDS.has(d.kind)) {
+    throw new ConfigError('a location is a headquarters, office, client site or remote', 'invalid');
+  }
+}
+
+/**
+ * Make this site head office, and no other.
+ *
+ * `site_one_headquarters` permits exactly one active flagged row per tenant, so
+ * promoting without demoting fails the index rather than moving the flag. Both
+ * columns move together because `site_headquarters_is_consistent` refuses them
+ * apart — the old head office becomes an ordinary office, which is what it is.
+ *
+ * Runs inside the caller's transaction, so a failure anywhere after it leaves
+ * the company with the head office it started with.
+ */
+async function nominateHeadquarters(
+  db: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null; rows: Record<string, unknown>[] }> },
+  code: string,
+): Promise<void> {
+  await db.query(
+    `UPDATE site SET is_headquarters = false, kind = 'office'
+      WHERE is_headquarters AND code <> $1`, [code]);
+  await db.query(
+    `UPDATE site SET is_headquarters = true, kind = 'headquarters' WHERE code = $1`, [code]);
+}
+
+/** Open a location. Admin only — this is what every posting screen offers. */
+export async function createSite(caller: Caller, draft: SiteDraft): Promise<Site> {
+  if (caller.role !== 'admin') {
+    throw new ConfigError('only an admin may add a location', 'forbidden');
+  }
+  checkDraft(draft, false);
+
+  const code = draft.code.trim().toUpperCase();
+  const country = draft.country.trim().toUpperCase();
+
+  return withTenant(caller, async (db) => {
+    const clash = await db.query('SELECT 1 FROM site WHERE code = $1', [code]);
+    if (clash.rowCount) throw new ConfigError(`${code} is already a location`, 'conflict');
+
+    const { rows } = await db.query(
+      `INSERT INTO site (code, name, city, state, country, address, postal_code,
+                         timezone, kind, is_headquarters, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 'Asia/Kolkata'), $9, false, true)
+       RETURNING id`,
+      [code, draft.name.trim(), draft.city?.trim() ?? null, draft.state?.trim() ?? null,
+        country, draft.address?.trim() ?? null, draft.postcode?.trim() ?? null,
+        draft.timezone?.trim() || null,
+        /* Head office is set below, so the demotion and promotion stay one step. */
+        draft.kind === 'headquarters' ? 'office' : draft.kind]);
+    if (!rows[0]) throw new ConfigError('the location was not created', 'invalid');
+
+    if (draft.kind === 'headquarters') await nominateHeadquarters(db, code);
+
+    await audit(db, caller, 'site_created', code,
+      { name: draft.name.trim(), kind: draft.kind });
+
+    const back = await db.query(`${SITE_COLUMNS} WHERE s.code = $1`, [code]);
+    return toSite(back.rows[0]!);
+  });
+}
+
+/** Change a location's details. The code is its identity and does not move. */
+export async function updateSite(
+  caller: Caller, siteCode: string, patch: SitePatch,
+): Promise<Site> {
+  if (caller.role !== 'admin') {
+    throw new ConfigError('only an admin may change a location', 'forbidden');
+  }
+  checkDraft(patch, true);
+
+  return withTenant(caller, async (db) => {
+    const found = await db.query(
+      'SELECT kind, active FROM site WHERE code = $1', [siteCode]);
+    if (!found.rows[0]) throw new ConfigError('no such location', 'not_found');
+    const was = found.rows[0] as { kind: string; active: boolean };
+
+    if (patch.kind === 'headquarters' && !was.active) {
+      throw new ConfigError('a closed location cannot be head office', 'invalid');
+    }
+    if (was.kind === 'headquarters' && patch.kind !== undefined && patch.kind !== 'headquarters') {
+      throw new ConfigError(
+        'nominate another location as head office first — the company must have one',
+        'invalid');
+    }
+
+    /*
+     * `kind` is written by nominateHeadquarters when head office is involved,
+     * so it is left out of this statement to keep one writer per column.
+     */
+    const movesHq = patch.kind === 'headquarters' && was.kind !== 'headquarters';
+    await db.query(
+      `UPDATE site
+          SET name        = COALESCE($2, name),
+              city        = COALESCE($3, city),
+              state       = COALESCE($4, state),
+              country     = COALESCE($5, country),
+              address     = COALESCE($6, address),
+              postal_code = COALESCE($7, postal_code),
+              timezone    = COALESCE($8, timezone),
+              kind        = CASE WHEN $9::text IS NULL OR $10::boolean THEN kind ELSE $9 END
+        WHERE code = $1`,
+      [siteCode, patch.name?.trim() ?? null, patch.city?.trim() ?? null,
+        patch.state?.trim() ?? null, patch.country?.trim().toUpperCase() ?? null,
+        patch.address?.trim() ?? null, patch.postcode?.trim() ?? null,
+        patch.timezone?.trim() ?? null, patch.kind ?? null, movesHq]);
+
+    if (movesHq) await nominateHeadquarters(db, siteCode);
+
+    await audit(db, caller, 'site_updated', siteCode,
+      { fields: Object.keys(patch).join(', ') });
+
+    const back = await db.query(`${SITE_COLUMNS} WHERE s.code = $1`, [siteCode]);
+    return toSite(back.rows[0]!);
+  });
+}
+
+/**
+ * Close a location, or open it again.
+ *
+ * Closing is refused while anyone is still posted there. A closed site drops
+ * out of `listSites`, so every screen that resolves a code to a name would
+ * start printing a dash for people who work at a real office — the record would
+ * be wrong rather than merely out of date. Move them, then close it.
+ *
+ * Head office cannot be closed at all: `site_one_headquarters` only counts
+ * active rows, so closing it would leave the company with no registered
+ * address and no error to say so.
+ */
+export async function setSiteActive(
+  caller: Caller, siteCode: string, active: boolean,
+): Promise<Site> {
+  if (caller.role !== 'admin') {
+    throw new ConfigError('only an admin may open or close a location', 'forbidden');
+  }
+
+  return withTenant(caller, async (db) => {
+    const found = await db.query(
+      'SELECT id, is_headquarters FROM site WHERE code = $1', [siteCode]);
+    if (!found.rows[0]) throw new ConfigError('no such location', 'not_found');
+    const row = found.rows[0] as { id: string; is_headquarters: boolean };
+
+    if (!active) {
+      if (row.is_headquarters) {
+        throw new ConfigError(
+          'head office cannot be closed — nominate another location first', 'invalid');
+      }
+      const { rows } = await db.query(
+        `SELECT count(*)::int AS n FROM employee
+          WHERE site_id = $1 AND status <> 'exited'`, [row.id]);
+      const n = (rows[0] as { n: number }).n;
+      if (n > 0) {
+        throw new ConfigError(
+          `${n} ${n === 1 ? 'person is' : 'people are'} still posted here — `
+          + 'move them before closing it', 'conflict');
+      }
+    }
+
+    await db.query('UPDATE site SET active = $2 WHERE code = $1', [siteCode, active]);
+    await audit(db, caller, active ? 'site_reopened' : 'site_closed', siteCode, {});
+
+    const back = await db.query(`${SITE_COLUMNS} WHERE s.code = $1`, [siteCode]);
+    return toSite(back.rows[0]!);
   });
 }
 

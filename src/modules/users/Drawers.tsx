@@ -13,7 +13,8 @@
 import { useState } from 'react';
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd, fmtD } from '../../lib/dates';
-import { DEPTS, SITES } from '../../data/org';
+import { DEPTS } from '../../data/org';
+import { useSites } from '../../services/sites';
 import { Badge, Banner, EmptyState, KV, Tabs } from '../../components/ui';
 import { Avatar } from '../../components/ui';
 import { Icon } from '../../components/icons';
@@ -43,6 +44,7 @@ export function UserForm({
 }) {
   const app = useApp();
   const dir = useVisiblePeople();
+  const sites = useSites();
   const create = useCreateUser();
   const update = useUpdateUser();
   const nextCode = useNextCode();
@@ -166,9 +168,10 @@ export function UserForm({
           </div>
           <div className="field">
             <label>Location <Req /></label>
-            <select className="input" value={site} onChange={(e) => setSite(e.target.value)}>
-              <option value="">Choose…</option>
-              {SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <select className="input" value={site} disabled={sites.loading}
+              onChange={(e) => setSite(e.target.value)}>
+              <option value="">{sites.loading ? 'Loading…' : 'Choose…'}</option>
+              {sites.list.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div className="field">

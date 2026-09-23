@@ -143,7 +143,8 @@ export function annualTaxFor(e: Employee): number {
     }
     return taxNewRegime(s.grossA).total;
   }
-  if (cty === 'US') return taxUS(s.grossA, siteOf(e.site).id === 'DAL' ? 'TX' : 'NJ').total;
+  /* New Jersey is the only US site; taxUS still holds the other state rates. */
+  if (cty === 'US') return taxUS(s.grossA, 'NJ').total;
   if (cty === 'CA') return taxCA(s.grossA).total;
   if (cty === 'GB') return taxGB(s.grossA).total;
   return 0;
@@ -265,7 +266,7 @@ export function payslip(e: Employee, mk: string): Payslip {
     ded.push({ k: 'Income Tax (TDS)', a: tds });
     statutory = { pf: pfEE + pfER, esi: esiEE + esiER, pt: ptax, tax: tds };
   } else if (cty === 'US') {
-    const st = siteOf(e.site).id === 'DAL' ? 'TX' : 'NJ';
+    const st = 'NJ';
     const t = taxUS(annualGross, st);
     const ss = Math.round(Math.min(gross, 168600 / 12) * 0.062);
     const mc = Math.round(gross * 0.0145);

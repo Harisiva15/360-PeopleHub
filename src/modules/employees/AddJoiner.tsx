@@ -15,7 +15,8 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Banner, Card } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
-import { DEPTS, GRADES, SITES } from '../../data/org';
+import { DEPTS, GRADES } from '../../data/org';
+import { useSites } from '../../services/sites';
 import { getServices } from '../../services';
 import type { Grade } from '../../types/country';
 
@@ -45,6 +46,7 @@ const EMPTY: JoinerDraft = {
 
 export function AddJoinerForm({ close, onDone }: { close: () => void; onDone: () => void }) {
   const app = useApp();
+  const sites = useSites();
   const [d, setD] = useState<JoinerDraft>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,10 +139,10 @@ export function AddJoinerForm({ close, onDone }: { close: () => void; onDone: ()
         </div>
         <div className="field">
           <label htmlFor="j-site">Location</label>
-          <select id="j-site" className="input" value={d.site}
+          <select id="j-site" className="input" value={d.site} disabled={sites.loading}
             onChange={(e) => set('site', e.target.value)}>
-            <option value="">—</option>
-            {SITES.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            <option value="">{sites.loading ? 'Loading…' : '—'}</option>
+            {sites.list.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </div>
         <div className="field">

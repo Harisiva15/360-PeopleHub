@@ -29,6 +29,14 @@ export interface Site {
   headquarters?: boolean;
   state?: string;
   postcode?: string;
+  /**
+   * Whether the location is open.
+   *
+   * A closed one is still returned, because an attendance row from last year
+   * names it and a screen has to resolve that code to something better than a
+   * dash. No form offers it. Absent means open — the demo table predates this.
+   */
+  active?: boolean;
 }
 
 export interface Dept {

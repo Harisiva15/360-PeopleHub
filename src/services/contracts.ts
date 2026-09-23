@@ -1394,6 +1394,25 @@ export interface FenceUpdate {
   radius: number;
 }
 
+/** A location being opened. `code` is its identity and cannot change after. */
+export interface SiteDraft {
+  /** 2–10 letters or digits, such as BLR. Unique within the company. */
+  code: string;
+  name: string;
+  city?: string;
+  state?: string;
+  /** Two-letter country code, such as IN. */
+  country: string;
+  address?: string;
+  postcode?: string;
+  /** IANA zone. Defaults to Asia/Kolkata, which is where the company is. */
+  timezone?: string;
+  kind: 'headquarters' | 'office' | 'client' | 'remote';
+}
+
+/** The fields of a location that may be changed. Everything is optional. */
+export type SitePatch = Partial<Omit<SiteDraft, 'code'>>;
+
 /**
  * The settings writes. These are configuration changes with reach: changing an
  * entitlement reprices every open balance, which is exactly why it belongs on
@@ -1404,6 +1423,26 @@ export interface ConfigService {
   holidays(): Promise<Holiday[]>;
   /** Move a site's geo-fence. Does not touch anyone's shift. */
   updateFence(siteId: string, patch: FenceUpdate): Promise<Site>;
+
+  /**
+   * Open a location. Admin only.
+   *
+   * Naming one `headquarters` demotes the previous head office in the same
+   * transaction — the schema permits exactly one, so this is a move rather than
+   * an addition.
+   */
+  createSite(draft: SiteDraft): Promise<Site>;
+  /** Change a location's details. Its code is its identity and cannot move. */
+  updateSite(siteId: string, patch: SitePatch): Promise<Site>;
+  /**
+   * Close a location, or open it again.
+   *
+   * There is no delete: employees, attendance and requisitions all point at a
+   * site, and a record that names an office nobody can look up is worse than a
+   * closed one. Refused while anyone is still posted there, and head office
+   * cannot be closed at all.
+   */
+  setSiteActive(siteId: string, active: boolean): Promise<Site>;
   /** Sets an entitlement and reprices open balances to match. */
   setLeaveQuota(typeId: string, quota: number): Promise<{ type: string; quota: number; repriced: number }>;
   addHoliday(date: string, name: string, optional: boolean): Promise<Holiday[]>;

@@ -6,6 +6,8 @@ import { LOGO_LIGHT } from '../../assets/logo';
 
 import { BANKS, DEPTS, GRADES, LEAVE_TYPES, ORG, PROJECTS } from '../../data/org';
 import type { Site } from '../../types/org';
+import type { CountryId } from '../../types/country';
+import { COUNTRIES } from '../../data/countries';
 
 
 
@@ -18,8 +20,9 @@ import { useApp } from '../../state/AppContext';
 import { FenceForm } from './Fence';
 import {
   useAddHoliday, useAllEmployees, useAttendanceAll, useCandidates, useCompensation,
-  useHolidays, useLeaveAll, usePayRuns, useRequisitions, useSetLeaveQuota, useSites,
-  useTimesheetsAll, useVisiblePeople,
+  useCreateSite, useHolidays, useLeaveAll, usePayRuns, useRequisitions,
+  useSetLeaveQuota, useSetSiteActive, useSites,
+  useTimesheetsAll, useUpdateSite, useVisiblePeople,
 } from './data';
 import { Icon } from '../../components/icons';
 
@@ -33,29 +36,203 @@ const CAPTURE_TOGGLES: [string, boolean][] = [
   ['Require a reason on regularisation', true],
 ];
 
+const KIND_LABEL: Record<NonNullable<Site['kind']>, string> = {
+  headquarters: 'Head office',
+  office: 'Office',
+  client: 'Client site',
+  remote: 'Remote',
+};
+
 function SiteCard(
-  { site, assigned, onFence }:
-  { site: Site; assigned: number; onFence: (s: Site) => void },
+  { site, assigned, onFence, onEdit, onToggle }:
+  {
+    site: Site;
+    assigned: number;
+    onFence: (s: Site) => void;
+    onEdit: (s: Site) => void;
+    onToggle: (s: Site) => void;
+  },
 ) {
   const fenced = site.lat !== null && site.lng !== null && site.radius !== null;
+  const closed = site.active === false;
+  const where = [site.city, site.state, site.postcode].filter((x) => x && x !== '—').join(', ');
   return (
-    <Card title={site.name} sub={site.addr}
+    <Card
+      title={site.name}
+      sub={site.addr || where || undefined}
       actions={
-        <button className="btn sm" onClick={() => onFence(site)}>
-          {fenced ? 'Move fence' : 'Set a fence'}
-        </button>
+        <div className="row" style={{ gap: 6 }}>
+          <button className="btn sm" onClick={() => onEdit(site)}>Edit</button>
+          {!site.remote && !closed && (
+            <button className="btn sm" onClick={() => onFence(site)}>
+              {fenced ? 'Move fence' : 'Set a fence'}
+            </button>
+          )}
+          <button className="btn sm" onClick={() => onToggle(site)}>
+            {closed ? 'Reopen' : 'Close'}
+          </button>
+        </div>
       }>
+      <div className="row wrap" style={{ gap: 6, marginBottom: 8 }}>
+        <Badge>{site.id}</Badge>
+        <Badge>{KIND_LABEL[site.kind ?? 'office']}</Badge>
+        {site.headquarters && <Badge kind="good">Head office</Badge>}
+        {closed && <Badge kind="warn">Closed</Badge>}
+      </div>
       <KV rows={[
-        ['City', site.city || '—'],
+        ['City', site.city && site.city !== '—' ? site.city : '—'],
+        ['State', site.state || '—'],
+        ['Postal code', site.postcode || '—'],
         ['Country', site.country],
         ['Timezone', site.tz],
         ['Shift timing', site.shift],
         ['Employees based here', String(assigned)],
-        ['Geo-fence', fenced
-          ? `${site.radius} m around ${site.lat!.toFixed(4)}, ${site.lng!.toFixed(4)}`
-          : <span className="muted">Not set — punches here are never measured</span>],
+        ['Geo-fence', site.remote
+          ? <span className="muted">A way of working, not a place — never fenced</span>
+          : fenced
+            ? `${site.radius} m around ${site.lat!.toFixed(4)}, ${site.lng!.toFixed(4)}`
+            : <span className="muted">Not set — punches here are never measured</span>],
       ]} />
     </Card>
+  );
+}
+
+/**
+ * Open a location, or change one.
+ *
+ * The code identifies the location on every employee, punch and requisition
+ * that refers to it, so it is asked for once and then shown rather than
+ * offered. Renaming an office is ordinary; renumbering it is a migration.
+ *
+ * Nothing here decides what may be saved. Head office moving, a duplicate
+ * code, a closed site being nominated — all of those are refused by the server,
+ * and the refusal is shown where it happened rather than guessed at first.
+ */
+function SiteForm({ close, existing }: { close: () => void; existing?: Site }) {
+  const app = useApp();
+  const create = useCreateSite();
+  const update = useUpdateSite();
+  const editing = existing !== undefined;
+
+  const [code, setCode] = useState(existing?.id ?? '');
+  const [name, setName] = useState(existing?.name ?? '');
+  const [city, setCity] = useState(existing?.city === '—' ? '' : existing?.city ?? '');
+  const [state, setState] = useState(existing?.state ?? '');
+  const [postcode, setPostcode] = useState(existing?.postcode ?? '');
+  const [country, setCountry] = useState(existing?.country ?? 'IN');
+  const [address, setAddress] = useState(existing?.addr ?? '');
+  const [timezone, setTimezone] = useState(existing?.tz ?? 'Asia/Kolkata');
+  const [kind, setKind] = useState<NonNullable<Site['kind']>>(existing?.kind ?? 'office');
+  const [busy, setBusy] = useState(false);
+
+  const promoting = kind === 'headquarters' && !existing?.headquarters;
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const body = {
+        name: name.trim(),
+        city: city.trim(),
+        state: state.trim(),
+        country,
+        address: address.trim(),
+        postcode: postcode.trim(),
+        timezone: timezone.trim(),
+        kind,
+      };
+      if (editing) await update.mutate(existing.id, body);
+      else await create.mutate({ code: code.trim().toUpperCase(), ...body });
+      app.toast(editing ? 'Location saved' : 'Location opened', 'ok');
+      close();
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not save the location', 'err');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="stack">
+      <div className="grid g2">
+        <label className="fld">
+          <span>Code</span>
+          <input className="input" value={code} disabled={editing} autoFocus={!editing}
+            placeholder="BLR" onChange={(e) => setCode(e.target.value.toUpperCase())} />
+          {editing && (
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              Every record that names this location uses the code, so it does not change.
+            </span>
+          )}
+        </label>
+        <label className="fld">
+          <span>Name</span>
+          <input className="input" value={name} autoFocus={editing}
+            placeholder="Bengaluru" onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label className="fld">
+          <span>Kind</span>
+          <select className="input" value={kind}
+            onChange={(e) => setKind(e.target.value as NonNullable<Site['kind']>)}>
+            {(Object.keys(KIND_LABEL) as NonNullable<Site['kind']>[]).map((k) => (
+              <option key={k} value={k}>{KIND_LABEL[k]}</option>
+            ))}
+          </select>
+        </label>
+        <label className="fld">
+          <span>City</span>
+          <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
+        </label>
+        <label className="fld">
+          <span>State</span>
+          <input className="input" value={state} placeholder="Karnataka"
+            onChange={(e) => setState(e.target.value)} />
+        </label>
+        <label className="fld">
+          <span>Postal code</span>
+          <input className="input" value={postcode} placeholder="560103"
+            onChange={(e) => setPostcode(e.target.value)} />
+        </label>
+        <label className="fld">
+          <span>Country</span>
+          {/*
+            * A list rather than a text box. Payroll, statutory deductions and
+            * the tax year all branch on the country, and only these five are
+            * implemented — a location in a sixth would take joiners and then
+            * have no way to pay them.
+            */}
+          <select className="input" value={country}
+            onChange={(e) => setCountry(e.target.value as CountryId)}>
+            {COUNTRIES.map((c) => (
+              <option key={c.id} value={c.id}>{c.flag} {c.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="fld">
+          <span>Timezone</span>
+          <input className="input" value={timezone} placeholder="Asia/Kolkata"
+            onChange={(e) => setTimezone(e.target.value)} />
+        </label>
+      </div>
+      <label className="fld">
+        <span>Address</span>
+        <input className="input" value={address}
+          placeholder="Ecospace, Bellandur, ORR"
+          onChange={(e) => setAddress(e.target.value)} />
+      </label>
+
+      {promoting && (
+        <Banner kind="warn" title="This becomes the company's head office">
+          A company has one. Nominating this location demotes the current head
+          office to an ordinary office in the same step — letters, payslips and
+          statutory filings that name the registered address will follow it.
+        </Banner>
+      )}
+
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={close}>Cancel</button>
+        <button className="btn primary" onClick={save} disabled={busy}>
+          {busy ? 'Saving…' : editing ? 'Save location' : 'Open location'}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -75,8 +252,10 @@ function SiteCard(
 export function LocationsTab() {
   const app = useApp();
   const layer = useLayer();
+  /* useQuery re-runs on any mutation, so a save here refreshes the list. */
   const { data: sites = [] } = useSites();
   const { data: everyone = [] } = useAllEmployees();
+  const setActive = useSetSiteActive();
 
   const editFence = (site: Site) => layer.modal({
     title: `Geo-fence — ${site.name}`,
@@ -85,8 +264,54 @@ export function LocationsTab() {
     body: (close: () => void) => <FenceForm close={close} site={site} />,
     footer: null,
   });
+
+  const editSite = (site: Site) => layer.modal({
+    title: site.name,
+    sub: 'The location, as every record that names it will read',
+    size: 'narrow',
+    body: (close: () => void) => <SiteForm close={close} existing={site} />,
+    footer: null,
+  });
+
+  const addSite = () => layer.modal({
+    title: 'Open a location',
+    sub: 'It becomes choosable on every posting screen',
+    size: 'narrow',
+    body: (close: () => void) => <SiteForm close={close} />,
+    footer: null,
+  });
+
+  /*
+   * Closing is refused by the server while anyone is posted there, and for head
+   * office at any time. The button stays enabled and the refusal is shown,
+   * because a disabled button with no explanation is the version of this rule
+   * nobody learns anything from.
+   */
+  const toggle = async (site: Site) => {
+    const closing = site.active !== false;
+    try {
+      await setActive.mutate(site.id, !closing);
+      app.toast(closing ? `${site.name} closed` : `${site.name} reopened`, 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not change the location', 'err');
+    }
+  };
+
+  const open = sites.filter((s) => s.active !== false);
+  const closed = sites.filter((s) => s.active === false);
+  const hq = open.find((s) => s.headquarters);
+
   return (
     <div className="stack">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="muted" style={{ fontSize: 12.5 }}>
+          {hq
+            ? <>Head office is <b>{hq.name}</b>. {open.length} locations open.</>
+            : <>No head office is nominated. {open.length} locations open.</>}
+        </div>
+        <button className="btn primary sm" onClick={addSite}>Open a location</button>
+      </div>
+
       <Banner kind="warn" icon={<Icon n="location" size="lg" />} title="Punches record where they were made">
         Punching in asks the browser for a position and stores it against the punch,
         with the distance from this site at that moment. A punch outside the fence is
@@ -96,35 +321,62 @@ export function LocationsTab() {
       </Banner>
 
       <div className="grid g2">
-        {sites.filter((s) => !s.remote).map((s) => (
+        {open.map((s) => (
           <SiteCard
             key={s.id}
             site={s}
             assigned={everyone.filter((e) => e.site === s.id).length}
             onFence={editFence}
+            onEdit={editSite}
+            onToggle={toggle}
           />
         ))}
       </div>
 
-      <Card title="Attendance capture settings" sub="Applies to all sites">
+      {closed.length > 0 && (
+        <>
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
+            Closed. Nobody can be posted here, and the records that already name
+            one of these still resolve to it.
+          </div>
+          <div className="grid g2">
+            {closed.map((s) => (
+              <SiteCard
+                key={s.id}
+                site={s}
+                assigned={everyone.filter((e) => e.site === s.id).length}
+                onFence={editFence}
+                onEdit={editSite}
+                onToggle={toggle}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {/*
+        * Attendance capture is not stored anywhere yet. The card used to end in
+        * a Save that toasted "Settings saved" and wrote nothing — a form that
+        * reports success for work it did not do is worse than one that is
+        * plainly not finished, because the numbers then appear to be in force.
+        */}
+      <Card title="Attendance capture settings"
+        sub="Not yet stored — these are the defaults the rules currently use">
         <div className="grid g3" style={{ gap: '0 14px' }}>
-          <div className="field"><label>Grace period (minutes)</label><input type="number" className="input" defaultValue={20} /></div>
-          <div className="field"><label>Full day (hours)</label><input type="number" className="input" defaultValue={8} step={0.5} /></div>
-          <div className="field"><label>Half day (hours)</label><input type="number" className="input" defaultValue={4} step={0.5} /></div>
-          <div className="field"><label>Break deduction (minutes)</label><input type="number" className="input" defaultValue={45} /></div>
-          <div className="field"><label>Max WFH days / month</label><input type="number" className="input" defaultValue={8} /></div>
-          <div className="field"><label>Late marks before penalty</label><input type="number" className="input" defaultValue={3} /></div>
+          <div className="field"><label>Grace period (minutes)</label><input type="number" className="input" value={20} disabled readOnly /></div>
+          <div className="field"><label>Full day (hours)</label><input type="number" className="input" value={8} step={0.5} disabled readOnly /></div>
+          <div className="field"><label>Half day (hours)</label><input type="number" className="input" value={4} step={0.5} disabled readOnly /></div>
+          <div className="field"><label>Break deduction (minutes)</label><input type="number" className="input" value={45} disabled readOnly /></div>
+          <div className="field"><label>Max WFH days / month</label><input type="number" className="input" value={8} disabled readOnly /></div>
+          <div className="field"><label>Late marks before penalty</label><input type="number" className="input" value={3} disabled readOnly /></div>
         </div>
         <div className="row wrap" style={{ gap: 16, marginTop: 6 }}>
           {CAPTURE_TOGGLES.map(([k, on]) => (
-            <label key={k} className="row" style={{ gap: 7, cursor: 'pointer' }}>
-              <input type="checkbox" defaultChecked={on} />
+            <label key={k} className="row" style={{ gap: 7 }}>
+              <input type="checkbox" checked={on} disabled readOnly />
               <span style={{ fontSize: 12.5 }}>{k}</span>
             </label>
           ))}
-        </div>
-        <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn primary" onClick={() => app.toast('Settings saved', 'ok')}>Save settings</button>
         </div>
       </Card>
     </div>

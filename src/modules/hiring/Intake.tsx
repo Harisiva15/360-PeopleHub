@@ -22,7 +22,8 @@
 import { useState } from 'react';
 import type { Candidate, Employee, Requisition } from '../../services';
 import { addDays, TODAY, ymd } from '../../lib/dates';
-import { DEPTS, GRADES, SITES } from '../../data/org';
+import { DEPTS, GRADES } from '../../data/org';
+import { useSites } from '../../services/sites';
 import { SOURCES } from '../../data/ats';
 import { useApp } from '../../state/AppContext';
 import {
@@ -59,12 +60,19 @@ export function NewRequisitionForm({ close, people }: {
 }) {
   const app = useApp();
   const open = useOpenRequisition();
+  const sites = useSites();
   const [busy, setBusy] = useState(false);
 
   const [title, setTitle] = useState('');
   const [dept, setDept] = useState(DEPTS[0]!.id);
   const [grade, setGrade] = useState('L2');
-  const [site, setSite] = useState(SITES[0]!.id);
+  /*
+   * Empty means "not chosen yet", which is every render before the locations
+   * arrive. `posting` below supplies the default rather than an effect writing
+   * state back — a location that changes under the person filling the form in
+   * is worse than one that appears a moment late.
+   */
+  const [site, setSite] = useState('');
   const [openings, setOpenings] = useState('1');
   const [priority, setPriority] = useState('Medium');
   const [hm, setHm] = useState('');
@@ -75,8 +83,16 @@ export function NewRequisitionForm({ close, people }: {
   const [desc, setDesc] = useState('');
   const [skills, setSkills] = useState('');
 
+  /*
+   * Head office where one is nominated, otherwise the first location the
+   * service returned. The old default was whichever row happened to sit at the
+   * top of a hand-written array, which was never a decision anyone made.
+   */
+  const posting = site || sites.headquarters?.id || sites.list[0]?.id || '';
+
   const save = async () => {
     if (!title.trim()) { app.toast('Give the role a title', 'err'); return; }
+    if (!posting) { app.toast('Choose a location', 'err'); return; }
     if (!hm) { app.toast('Name the hiring manager', 'err'); return; }
     const n = Number(openings);
     if (!Number.isInteger(n) || n < 1) { app.toast('A requisition needs at least one opening', 'err'); return; }
@@ -89,7 +105,7 @@ export function NewRequisitionForm({ close, people }: {
     setBusy(true);
     try {
       await open.mutate({
-        title: title.trim(), dept, grade, site, openings: n, priority,
+        title: title.trim(), dept, grade, site: posting, openings: n, priority,
         hiringManagerId: hm,
         ...(recruiter ? { recruiterId: recruiter } : {}),
         ...(min ? { budgetMin: Number(min) } : {}),
@@ -123,8 +139,10 @@ export function NewRequisitionForm({ close, people }: {
         </label>
         <label className="fld">
           <span>Location</span>
-          <select className="input" value={site} onChange={(e) => setSite(e.target.value)}>
-            {SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          <select className="input" value={posting} disabled={sites.loading}
+            onChange={(e) => setSite(e.target.value)}>
+            {sites.loading && <option value="">Loading…</option>}
+            {sites.list.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
         <label className="fld">

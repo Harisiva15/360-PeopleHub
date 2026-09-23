@@ -376,6 +376,10 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
        */
       updateFence: (siteId, patch) =>
         api.put(`/config/sites/${siteId}/fence`, patch),
+      createSite: (draft) => api.post('/config/sites', draft),
+      updateSite: (siteId, patch) => api.put(`/config/sites/${siteId}`, patch),
+      setSiteActive: (siteId, active) =>
+        api.put(`/config/sites/${siteId}/active`, { active }),
       setLeaveQuota: (typeId, quota) =>
         api.put(`/config/leave-types/${typeId}/quota`, { quota }),
       permissions: () => api.get('/config/permissions'),

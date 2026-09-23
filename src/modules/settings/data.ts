@@ -6,7 +6,7 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import type { AppRole } from '../../types/employee';
-import type { FenceUpdate, GridPatch } from '../../services';
+import type { FenceUpdate, GridPatch, SiteDraft, SitePatch } from '../../services';
 import { useCaller } from '../../services/people';
 
 export { usePeople, useVisiblePeople } from '../../services/people';
@@ -18,6 +18,12 @@ export const useExitedEmployees = () => useQuery((s) => s.employees.exited(), []
 export const useSites = () => useQuery((s) => s.config.sites(), []);
 export const useUpdateFence = () =>
   useMutation((s, siteId: string, patch: FenceUpdate) => s.config.updateFence(siteId, patch));
+export const useCreateSite = () =>
+  useMutation((s, draft: SiteDraft) => s.config.createSite(draft));
+export const useUpdateSite = () =>
+  useMutation((s, siteId: string, patch: SitePatch) => s.config.updateSite(siteId, patch));
+export const useSetSiteActive = () =>
+  useMutation((s, siteId: string, active: boolean) => s.config.setSiteActive(siteId, active));
 export const useHolidays = () => useQuery((s) => s.config.holidays(), []);
 export const useCompensation = () => useQuery((s) => s.payroll.compensation(), []);
 export const usePayRuns = () => useQuery((s) => s.payroll.runs(), []);

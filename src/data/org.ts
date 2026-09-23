@@ -19,17 +19,34 @@ export const ORG = {
   weekOff: [0, 6]
 };
 
+/**
+ * The company's locations, as the demo dataset sees them.
+ *
+ * **This table is not the source of truth.** A configured build reads locations
+ * from `config.sites()`, and any form that sends a location somewhere must use
+ * `useSites()` — the server will refuse a code it does not hold. What follows
+ * exists so the demo has something to draw charts and seed people from.
+ *
+ * It is nevertheless kept in step with the `site` table, because the two
+ * drifting is how the trouble started: this list offered Dallas and Toronto,
+ * which the company does not operate, and omitted Pune, which it does — so the
+ * one office a joiner might actually be posted to was the one no form could
+ * name. `checks/locations.ts` fails if they diverge again.
+ *
+ * `ptax` is the only column with no counterpart on the server: monthly
+ * professional tax is a payroll input the demo needs and the schema stores per
+ * state rather than per site.
+ */
 export const SITES: Site[] = [
-  { id: 'CHN', name: 'Chennai HQ', city: 'Chennai', country: 'IN', addr: 'Prestige Palladium, OMR, Perungudi', remote: false, lat: 12.9911, lng: 80.2503, radius: 250, ptax: 208, tz: 'IST', shift: '09:30-18:30' },
-  { id: 'BLR', name: 'Bengaluru Office', city: 'Bengaluru', country: 'IN', addr: 'Ecospace, Bellandur, ORR', remote: false, lat: 12.9352, lng: 77.6245, radius: 220, ptax: 200, tz: 'IST', shift: '09:30-18:30' },
-  { id: 'HYD', name: 'Hyderabad Office', city: 'Hyderabad', country: 'IN', addr: 'Cyber Towers, HITEC City, Madhapur', remote: false, lat: 17.4435, lng: 78.3772, radius: 200, ptax: 200, tz: 'IST', shift: '10:00-19:00' },
-  { id: 'NJ', name: 'New Jersey Office', city: 'East Brunswick', country: 'US', addr: '2 Tower Center Blvd, Suite 1101', remote: false, lat: 40.4293, lng: -74.4074, radius: 250, ptax: 0, tz: 'EST', shift: '09:00-18:00' },
-  { id: 'DAL', name: 'Dallas Office', city: 'Dallas', country: 'US', addr: '5001 Spring Valley Rd, Suite 400E', remote: false, lat: 32.9268, lng: -96.7702, radius: 250, ptax: 0, tz: 'CST', shift: '09:00-18:00' },
-  { id: 'TOR', name: 'Toronto Office', city: 'Toronto', country: 'CA', addr: '5140 Yonge Street, Suite 1600', remote: false, lat: 43.7695, lng: -79.4128, radius: 220, ptax: 0, tz: 'EST', shift: '09:00-17:30' },
-  { id: 'DXB', name: 'Dubai Office', city: 'Dubai', country: 'AE', addr: 'Building 3, Dubai Internet City', remote: false, lat: 25.0942, lng: 55.1616, radius: 250, ptax: 0, tz: 'GST', shift: '09:00-18:00' },
-  { id: 'LON', name: 'London Office', city: 'London', country: 'GB', addr: '30 Churchill Place, Canary Wharf', remote: false, lat: 51.5045, lng: -0.0175, radius: 200, ptax: 0, tz: 'GMT', shift: '09:00-17:30' },
-  { id: 'WFH', name: 'Work From Home', city: '—', country: 'IN', addr: 'Registered home address', remote: true, lat: null, lng: null, radius: null, ptax: 208, tz: 'IST', shift: '09:30-18:30' },
-  { id: 'CLIENT', name: 'Client Site', city: '—', country: 'IN', addr: 'Customer premises', remote: true, lat: null, lng: null, radius: null, ptax: 208, tz: 'IST', shift: 'Flexible' }
+  { id: 'BLR', name: 'Bengaluru', city: 'Bengaluru', country: 'IN', addr: 'Ecospace, Bellandur, ORR', remote: false, lat: 12.9352, lng: 77.6245, radius: 220, ptax: 200, tz: 'IST', shift: '09:30-18:30', kind: 'headquarters', headquarters: true, state: 'Karnataka' },
+  { id: 'CHN', name: 'Chennai', city: 'Chennai', country: 'IN', addr: 'Prestige Palladium, OMR, Perungudi', remote: false, lat: 12.9911, lng: 80.2503, radius: 250, ptax: 208, tz: 'IST', shift: '09:30-18:30', kind: 'office', state: 'Tamil Nadu' },
+  { id: 'HYD', name: 'Hyderabad Office', city: 'Hyderabad', country: 'IN', addr: 'Cyber Towers, HITEC City, Madhapur', remote: false, lat: 17.4435, lng: 78.3772, radius: 200, ptax: 200, tz: 'IST', shift: '10:00-19:00', kind: 'office', state: 'Telangana' },
+  { id: 'PNQ', name: 'Pune', city: 'Pune', country: 'IN', addr: 'Rajiv Gandhi Infotech Park, Hinjawadi', remote: false, lat: 18.5913, lng: 73.7389, radius: 220, ptax: 200, tz: 'IST', shift: '09:30-18:30', kind: 'office', state: 'Maharashtra' },
+  { id: 'NJ', name: 'New Jersey Office', city: 'Jersey City', country: 'US', addr: '2 Tower Center Blvd, Suite 1101', remote: false, lat: 40.4293, lng: -74.4074, radius: 250, ptax: 0, tz: 'EST', shift: '09:00-18:00', kind: 'office' },
+  { id: 'DXB', name: 'Dubai Office', city: 'Dubai', country: 'AE', addr: 'Building 3, Dubai Internet City', remote: false, lat: 25.0942, lng: 55.1616, radius: 250, ptax: 0, tz: 'GST', shift: '09:00-18:00', kind: 'office' },
+  { id: 'LON', name: 'London Office', city: 'London', country: 'GB', addr: '30 Churchill Place, Canary Wharf', remote: false, lat: 51.5045, lng: -0.0175, radius: 200, ptax: 0, tz: 'GMT', shift: '09:00-17:30', kind: 'office' },
+  { id: 'WFH', name: 'Work From Home', city: '—', country: 'IN', addr: 'Registered home address', remote: true, lat: null, lng: null, radius: null, ptax: 208, tz: 'IST', shift: '09:30-18:30', kind: 'remote' },
+  { id: 'CLIENT', name: 'Client Site', city: '—', country: 'IN', addr: 'Customer premises', remote: true, lat: null, lng: null, radius: null, ptax: 208, tz: 'IST', shift: 'Flexible', kind: 'client' }
 ];
 export const siteOf = (id: string): Site => SITES.find(s => s.id === id) || SITES[0];
 

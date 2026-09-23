@@ -13,6 +13,7 @@ import { LEAVE_BAL } from '../../data/leave';
 import { PERMS } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
 import type { ConfigService, GridPatch, ModuleGrid, PermScope } from '../contracts';
+import type { Site } from '../../types/org';
 import { ok } from './util';
 
 /* ---------------- the permission grid ----------------
@@ -65,6 +66,23 @@ const gridNow = (): ModuleGrid[] => MODULES.map((module: string) => {
     effective: { employee: cell('employee'), manager: cell('manager'), admin: cell('admin') },
   };
 });
+
+/**
+ * Make one site head office, and no other.
+ *
+ * Head office is a move rather than a flag: `site_one_headquarters` permits
+ * exactly one active site carrying it, so promoting always demotes. Both
+ * columns travel together because `site_headquarters_is_consistent` refuses
+ * them apart — the outgoing head office becomes an ordinary office, which is
+ * what it now is.
+ */
+function nominate(code: string): void {
+  for (const s of SITES) {
+    if (s.headquarters && s.id !== code) { s.headquarters = false; s.kind = 'office'; }
+  }
+  const next = SITES.find((s) => s.id === code);
+  if (next) { next.headquarters = true; next.kind = 'headquarters'; }
+}
 
 export const configService: ConfigService = {
   permissions(c) {
@@ -121,6 +139,84 @@ export const configService: ConfigService = {
     site.lat = patch.lat;
     site.lng = patch.lng;
     site.radius = patch.radius;
+    return ok(site);
+  },
+
+  /*
+   * The location writes refuse on the same grounds the server does, because a
+   * demo that accepts what production rejects teaches the wrong thing. The
+   * rules restated here are the ones a person can hit by filling the form in:
+   * a duplicate code, a second head office, closing an office people work at.
+   */
+  createSite(draft) {
+    const code = draft.code.trim().toUpperCase();
+    if (!/^[A-Z0-9]{2,10}$/.test(code)) {
+      return Promise.reject(new Error('A code is 2–10 letters or digits, such as BLR'));
+    }
+    if (!draft.name.trim()) return Promise.reject(new Error('A location needs a name'));
+    if (SITES.some((s) => s.id === code)) {
+      return Promise.reject(new Error(`${code} is already a location`));
+    }
+    const made: Site = {
+      id: code,
+      name: draft.name.trim(),
+      city: draft.city?.trim() || '—',
+      country: (draft.country || 'IN').trim().toUpperCase() as Site['country'],
+      addr: draft.address?.trim() ?? '',
+      remote: draft.kind === 'remote' || draft.kind === 'client',
+      lat: null, lng: null, radius: null,
+      /* Professional tax is a payroll input the server does not hold per site. */
+      ptax: 0,
+      tz: draft.timezone?.trim() || 'IST',
+      shift: '09:30-18:30',
+      kind: draft.kind === 'headquarters' ? 'office' : draft.kind,
+      headquarters: false,
+      ...(draft.state?.trim() ? { state: draft.state.trim() } : {}),
+      ...(draft.postcode?.trim() ? { postcode: draft.postcode.trim() } : {}),
+    };
+    SITES.push(made);
+    if (draft.kind === 'headquarters') nominate(code);
+    return ok(made);
+  },
+
+  updateSite(siteId, patch) {
+    const site = SITES.find((s) => s.id === siteId);
+    if (!site) return Promise.reject(new Error('No such location: ' + siteId));
+    if (patch.name !== undefined && !patch.name.trim()) {
+      return Promise.reject(new Error('A location needs a name'));
+    }
+    if (site.kind === 'headquarters' && patch.kind !== undefined && patch.kind !== 'headquarters') {
+      return Promise.reject(new Error(
+        'Nominate another location as head office first — the company must have one'));
+    }
+    if (patch.name !== undefined) site.name = patch.name.trim();
+    if (patch.city !== undefined) site.city = patch.city.trim() || '—';
+    if (patch.state !== undefined) site.state = patch.state.trim();
+    if (patch.postcode !== undefined) site.postcode = patch.postcode.trim();
+    if (patch.country !== undefined) site.country = patch.country.trim().toUpperCase() as Site['country'];
+    if (patch.address !== undefined) site.addr = patch.address.trim();
+    if (patch.timezone !== undefined) site.tz = patch.timezone.trim();
+    if (patch.kind !== undefined && patch.kind !== 'headquarters') site.kind = patch.kind;
+    if (patch.kind === 'headquarters') nominate(siteId);
+    return ok(site);
+  },
+
+  setSiteActive(siteId, active) {
+    const site = SITES.find((s) => s.id === siteId);
+    if (!site) return Promise.reject(new Error('No such location: ' + siteId));
+    if (!active) {
+      if (site.headquarters) {
+        return Promise.reject(new Error(
+          'Head office cannot be closed — nominate another location first'));
+      }
+      const n = ACTIVE().filter((e) => e.site === siteId).length;
+      if (n > 0) {
+        return Promise.reject(new Error(
+          `${n} ${n === 1 ? 'person is' : 'people are'} still posted here — `
+          + 'move them before closing it'));
+      }
+    }
+    site.active = active;
     return ok(site);
   },
 

@@ -71,9 +71,9 @@ export const ROUTE_MODULE: Record<string, string> = {
 };
 
 /**
- * Paths that belong to no module and are never narrowed.
+ * Requests that belong to no module and are never narrowed.
  *
- * These are self-service: they act on the caller's own row and nobody else's,
+ * Most are self-service: they act on the caller's own row and nobody else's,
  * and they are how somebody signs in, signs out and reads their own history.
  * Gating them on a module would be actively wrong — `users` grants an employee
  * nothing, so narrowing enforcement over `/users/me/last-login` would stop
@@ -81,17 +81,35 @@ export const ROUTE_MODULE: Record<string, string> = {
  * `/users/me/password-status` would stop the forced-password gate working for
  * exactly the people it exists for.
  *
- * Matched on the full path, not the prefix, so adding `/users/:id/...` later
- * cannot accidentally inherit the exemption.
+ * **Method and full path, not the prefix.** Adding `/users/:id/...` later
+ * cannot inherit the exemption, and — the reason the method is here — reading
+ * the location list does not exempt writing it. `GET /config/sites` and
+ * `POST /config/sites` are the same path; one is reference data every posting
+ * form needs, the other opens an office.
  */
 export const UNGATED = new Set<string>([
-  '/health',
-  '/me/permissions',
-  '/users/me/last-login',
-  '/users/me/sign-out',
-  '/users/me/login-history',
-  '/users/me/account-status',
-  '/users/me/password-changed',
+  'GET /health',
+  'GET /me/permissions',
+  'POST /users/me/last-login',
+  'POST /users/me/sign-out',
+  'GET /users/me/login-history',
+  'GET /users/me/account-status',
+  'POST /users/me/password-changed',
+
+  /*
+   * The locations and the holiday calendar are reference data.
+   *
+   * They sit under /config, which maps to `settings`, which only an admin
+   * reaches — so gating them would empty the location dropdown on every form a
+   * manager can open, including the joiner request and the requisition. It
+   * would also be a strange thing to withhold: an employee's own profile names
+   * their location, and the leave calendar shows the holidays.
+   *
+   * Only the reads. Every write under /config/sites keeps the `settings` gate
+   * and is refused again by the service.
+   */
+  'GET /config/sites',
+  'GET /config/holidays',
 ]);
 
 /**
@@ -102,8 +120,8 @@ export const UNGATED = new Set<string>([
  * dispatcher refuses rather than waving it through — an unrecognised path is
  * not a reason to skip authorisation.
  */
-export function moduleForPath(pathname: string): string | null {
-  if (UNGATED.has(pathname)) return null;
+export function moduleForPath(method: string, pathname: string): string | null {
+  if (UNGATED.has(`${method} ${pathname}`)) return null;
   const first = pathname.split('/')[1] ?? '';
   return ROUTE_MODULE[first] ?? 'unmapped';
 }

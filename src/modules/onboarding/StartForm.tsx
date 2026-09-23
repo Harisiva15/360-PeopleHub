@@ -15,7 +15,8 @@
 import { useState } from 'react';
 import type { Employee } from '../../services';
 import { addDays, fmtD, TODAY, ymd } from '../../lib/dates';
-import { DEPTS, SITES } from '../../data/org';
+import { DEPTS } from '../../data/org';
+import { useSites } from '../../services/sites';
 import { useApp } from '../../state/AppContext';
 import { useCreateJourney } from './data';
 
@@ -25,12 +26,14 @@ export function StartJourneyForm({ close, people }: {
 }) {
   const app = useApp();
   const create = useCreateJourney();
+  const sites = useSites();
   const [busy, setBusy] = useState(false);
 
   const [name, setName] = useState('');
   const [dept, setDept] = useState(DEPTS[0]!.id);
   const [designation, setDesignation] = useState('');
-  const [site, setSite] = useState(SITES[0]!.id);
+  /* Empty until the locations arrive; `posting` below supplies the default. */
+  const [site, setSite] = useState('');
   const [doj, setDoj] = useState(ymd(addDays(TODAY, 14)));
   const [managerId, setManagerId] = useState('');
   const [buddyId, setBuddyId] = useState('');
@@ -38,14 +41,18 @@ export function StartJourneyForm({ close, people }: {
 
   const past = doj < ymd(TODAY);
 
+  /* Head office where one is nominated, otherwise the first location returned. */
+  const posting = site || sites.headquarters?.id || sites.list[0]?.id || '';
+
   const save = async () => {
     if (!name.trim()) { app.toast('The joiner needs a name', 'err'); return; }
     if (!designation.trim()) { app.toast('What are they joining as?', 'err'); return; }
+    if (!posting) { app.toast('Choose a location', 'err'); return; }
     if (!doj) { app.toast('Set a joining date', 'err'); return; }
     setBusy(true);
     try {
       await create.mutate({
-        name: name.trim(), dept, designation: designation.trim(), site, doj,
+        name: name.trim(), dept, designation: designation.trim(), site: posting, doj,
         ...(managerId ? { managerId } : {}),
         ...(buddyId ? { buddyId } : {}),
         ...(ctc ? { ctc: Number(ctc) } : {}),
@@ -83,8 +90,10 @@ export function StartJourneyForm({ close, people }: {
         </label>
         <label className="fld">
           <span>Location</span>
-          <select className="input" value={site} onChange={(e) => setSite(e.target.value)}>
-            {SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          <select className="input" value={posting} disabled={sites.loading}
+            onChange={(e) => setSite(e.target.value)}>
+            {sites.loading && <option value="">Loading…</option>}
+            {sites.list.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
         <label className="fld">

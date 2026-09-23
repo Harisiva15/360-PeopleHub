@@ -26,7 +26,8 @@ import {
   cancelLeave, listLeave, rejectLeave,
 } from '../modules/leave/service.ts';
 import {
-  addHoliday, ConfigError, listHolidays, listSites, setLeaveQuota, updateFence,
+  addHoliday, ConfigError, createSite, listHolidays, listSites, setLeaveQuota,
+  setSiteActive, updateFence, updateSite,
 } from '../modules/config/service.ts';
 import {
   approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
@@ -916,6 +917,23 @@ const routes: Route[] = [
     pattern: '/config/sites/:code/fence',
     handler: (c, _r, p, body) =>
       updateFence(c, p.code!, body as Parameters<typeof updateFence>[2]),
+  },
+  {
+    method: 'POST',
+    pattern: '/config/sites',
+    handler: (c, _r, _p, body) => createSite(c, body as Parameters<typeof createSite>[1]),
+  },
+  {
+    method: 'PUT',
+    pattern: '/config/sites/:code',
+    handler: (c, _r, p, body) =>
+      updateSite(c, p.code!, body as Parameters<typeof updateSite>[2]),
+  },
+  {
+    method: 'PUT',
+    pattern: '/config/sites/:code/active',
+    handler: (c, _r, p, body) =>
+      setSiteActive(c, p.code!, (body as { active: boolean }).active),
   },
   {
     method: 'PUT',
@@ -2166,7 +2184,7 @@ export function createApp() {
            * override table actually asks: may this role open this module at
            * all.
            */
-          const moduleKey = moduleForPath(url.pathname);
+          const moduleKey = moduleForPath(req.method ?? 'GET', url.pathname);
           if (moduleKey) {
             const overrides = await overridesFor(caller);
             if (effectiveRule(caller.role, moduleKey, overrides).read === 'none') {

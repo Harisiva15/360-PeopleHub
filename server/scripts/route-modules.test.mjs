@@ -34,6 +34,9 @@ const ok = (label, cond, detail = '') => {
 /** Every route pattern in source order. */
 const patterns = [...source.matchAll(/\bpattern:\s*'([^']+)'/g)].map((m) => m[1]);
 
+/* An exemption names a method and a path; these compare against the path. */
+const exemptPaths = [...UNGATED].map((e) => e.split(' ')[1]);
+
 console.log('\nroute to module\n');
 
 ok(`${patterns.length} route patterns read out of app.ts`, patterns.length >= 300,
@@ -43,7 +46,7 @@ ok(`${patterns.length} route patterns read out of app.ts`, patterns.length >= 30
 const unmapped = new Set();
 for (const p of patterns) {
   const first = p.split('/')[1] ?? '';
-  if (!ROUTE_MODULE[first] && !UNGATED.has(p)) unmapped.add(first);
+  if (!ROUTE_MODULE[first] && !exemptPaths.includes(p)) unmapped.add(first);
 }
 ok('every route prefix maps to a module', unmapped.size === 0,
   `Unmapped: ${[...unmapped].join(', ')}\n        `
@@ -62,7 +65,8 @@ ok('the map has no entries for routes that do not exist', dead.length === 0,
   `Dead entries: ${dead.join(', ')} — remove them, or the map stops describing the API.`);
 
 /* 4. Same for the exemptions, which are the riskiest lines in the file. */
-const deadExempt = [...UNGATED].filter((p) => p !== '/health' && !patterns.includes(p));
+const deadExempt = [...UNGATED].filter(
+  (e) => e !== 'GET /health' && !patterns.includes(e.split(' ')[1]));
 ok('every exemption names a route that exists', deadExempt.length === 0,
   `Stale exemptions: ${deadExempt.join(', ')} — an exemption for a path that moved is a `
   + 'hole waiting for a route to be added back at the same address.');
@@ -74,8 +78,19 @@ console.log('\nthe exemptions, one at a time\n');
  * listed rather than counted. Anybody reviewing this file should be able to
  * read the list and agree with it.
  */
-for (const p of [...UNGATED].sort()) {
-  ok(`${p} is ungated`, moduleForPath(p) === null);
+for (const e of [...UNGATED].sort()) {
+  const [method, path] = e.split(' ');
+  ok(`${e} is ungated`, moduleForPath(method, path) === null);
+  /*
+   * And the other methods on that same path are not. Reading the location
+   * list is reference data; opening an office is not, and the two share an
+   * address — which is the whole reason the exemption carries a method.
+   */
+  for (const other of ['GET', 'POST', 'PUT', 'DELETE']) {
+    if (other === method || UNGATED.has(`${other} ${path}`)) continue;
+    ok(`  ${other} ${path} is still gated`, moduleForPath(other, path) !== null,
+      'The exemption is leaking to a method it does not name.');
+  }
 }
 ok('nothing under /users/:id is ungated',
   ![...UNGATED].some((p) => /^\/users\/[^m]/.test(p)),
@@ -88,7 +103,8 @@ console.log('\nthe gate refuses what it should\n');
  * This is the state the check above prevents, and it must still fail closed
  * if it ever occurs.
  */
-ok('an unrecognised path maps to "unmapped"', moduleForPath('/nonesuch/thing') === 'unmapped');
+ok('an unrecognised path maps to "unmapped"',
+  moduleForPath('GET', '/nonesuch/thing') === 'unmapped');
 for (const role of ROLES) {
   ok(`${role} is refused an unmapped module`,
     effectiveRule(role, 'unmapped', {}).read === 'none',
