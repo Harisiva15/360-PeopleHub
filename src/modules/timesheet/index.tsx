@@ -24,7 +24,7 @@ import {
   useBookableProjects, useDecideSheet, useMySheets, usePeople, useSheets, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
-import { MyWeek, overtimeOf } from './MyWeek';
+import { MyWeek } from './MyWeek';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import {
@@ -239,7 +239,7 @@ function TsHist({ setWs, setTab }: { setWs: (s: string) => void; setTab: (t: 'en
               <thead>
                 <tr>
                   <th>Week</th><th>Projects</th><th className="num">Hours</th>
-                  <th className="num">Billable</th><th className="num">Overtime</th>
+                  <th className="num">Billable</th>
                   <th>Status</th><th>Submitted</th><th>Approver</th>
                 </tr>
               </thead>
@@ -258,7 +258,6 @@ function TsHist({ setWs, setTab }: { setWs: (s: string) => void; setTab: (t: 'en
                       </td>
                       <td className="num strong">{hrs(t.total)}</td>
                       <td className="num">{hrs(t.billable)}</td>
-                      <td className="num">{hrs(overtimeOf(t.total))}</td>
                       <td><StatusBadge status={t.status} /></td>
                       <td className="nowrap">{t.submittedOn ? fmtD(t.submittedOn) : '—'}</td>
                       <td>{approvers.name(t.approverId)}</td>

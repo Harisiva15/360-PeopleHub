@@ -90,17 +90,19 @@ export const NAV: NavGroup[] = [
       { k: 'shifts', n: 'Roster', ic: 'schedule', d: 'Plan shifts and working patterns.', roles: ['manager', 'admin'] },
       { k: 'attendance', n: 'Attendance regularisation', to: '/attendance?v=reg', ic: 'undo', d: 'Correct a missed punch or a wrong day.' },
       { k: 'leave', n: 'Holiday calendar', to: '/leave?v=cal', ic: 'calendar', d: 'Public holidays by location.' },
-      /*
-       * Timesheet was its own top-level group. It is the same question as
-       * attendance — how long somebody worked and on what — asked for a
-       * different purpose, and two rail entries for one subject is what sends
-       * people to the wrong one. Every route, tab and permission is unchanged;
-       * only where they are listed has moved.
-       */
+    ],
+  },
+
+  {
+    group: 'Timesheet',
+    ic: 'note',
+    k: 'timesheet',
+    desc: 'What you worked on, by week, and whose weeks are waiting on you.',
+    items: [
       { k: 'timesheet', n: 'My timesheet', to: '/timesheet?v=entry', ic: 'note', d: 'Log this week’s hours.' },
       { k: 'timesheet', n: 'Time entries', to: '/timesheet?v=entries', ic: 'document', d: 'Every line you have logged, filterable.' },
-      { k: 'timesheet', n: 'Timesheet calendar', to: '/timesheet?v=cal', ic: 'calendar', d: 'Your weeks at a glance, and the ones you have not started.' },
-      { k: 'timesheet', n: 'Timesheet history', to: '/timesheet?v=hist', ic: 'clock', d: 'Every week you have submitted.' },
+      { k: 'timesheet', n: 'Calendar', to: '/timesheet?v=cal', ic: 'calendar', d: 'Your weeks at a glance, and the ones you have not started.' },
+      { k: 'timesheet', n: 'History', to: '/timesheet?v=hist', ic: 'clock', d: 'Every week you have submitted.' },
       /*
        * The four below read somebody else's week, which the policy grants a
        * manager ('team') and an admin ('all') and an employee not at all. The
@@ -110,7 +112,7 @@ export const NAV: NavGroup[] = [
       { k: 'timesheet', n: 'Team timesheets', to: '/timesheet?v=team', ic: 'team', d: 'Your line’s weeks, with hours and status.', roles: ['manager', 'admin'] },
       { k: 'timesheet', n: 'Pending approvals', to: '/timesheet?v=appr', ic: 'done', d: 'Decide your team’s weeks.', roles: ['manager', 'admin'] },
       { k: 'timesheet', n: 'Projects', to: '/timesheet?v=proj', ic: 'projects', d: 'What time can be booked against.', roles: ['manager', 'admin'] },
-      { k: 'timesheet', n: 'Time reports', to: '/timesheet?v=rep', ic: 'chart', d: 'Utilisation and effort by project.', roles: ['manager', 'admin'] },
+      { k: 'timesheet', n: 'Reports', to: '/timesheet?v=rep', ic: 'chart', d: 'Utilisation and effort by project.', roles: ['manager', 'admin'] },
     ],
   },
 

@@ -19,11 +19,11 @@
  * carry a Save button and stored rows do not.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { EntryDraft, Timesheet, TimesheetProject, TSEntry } from '../../services';
+import { useEffect, useState } from 'react';
+import type { Timesheet, TimesheetProject, TSEntry } from '../../services';
 import { addDays, DOW, fmtD, fmtDS, mondayOf, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { TASK_TYPES } from '../../data/org';
-import { Avatar, Badge, Banner, Card, EmptyState, KV } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, KV } from '../../components/ui';
 import { Donut, Legend, PAL } from '../../components/charts';
 import { StatusBadge } from '../../components/common';
 import { useLayer } from '../../components/Layer';
@@ -32,12 +32,12 @@ import { PageActions } from '../../shell/PageActions';
 import {
   useAddEntry, useBookableProjects, useCopyPreviousWeek, useRecallSheet, useRemoveEntry,
   useSetComment,
-  useSheet, useSubmitSheet, useUpdateEntry,
+  useSheet, useSubmitSheet,
 } from './data';
+import { gridDays, rowsOf, WeekGrid } from './WeekGrid';
+import type { Row } from './WeekGrid';
 import { Icon } from '../../components/icons';
 
-/** The contracted week. Anything past this is overtime, and is labelled so. */
-export const STANDARD_WEEK = 40;
 
 const hrs = (n: number) => n.toFixed(2);
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
@@ -50,196 +50,6 @@ export function weekDays(weekStart: string) {
   });
 }
 
-/** Overtime is the excess over the contracted week, never a negative. */
-export const overtimeOf = (total: number) => Math.max(0, total - STANDARD_WEEK);
-
-/* ---------------- one editable line ---------------- */
-
-/** The fields a line exposes for editing — the draft shape, fully filled in. */
-type Line = Required<EntryDraft>;
-
-const lineOf = (e: TSEntry): Line => ({
-  date: e.date, proj: e.proj, task: e.task,
-  billable: e.billable, hours: e.hours, remarks: e.remarks,
-});
-
-const same = (a: Line, b: Line) =>
-  a.date === b.date && a.proj === b.proj && a.task === b.task
-  && a.billable === b.billable && a.hours === b.hours && a.remarks === b.remarks;
-
-type Days = ReturnType<typeof weekDays>;
-
-/**
- * The cells shared by a stored line and a draft one. Kept at module scope so
- * the inputs keep their DOM nodes between renders — an inline component would
- * remount on every keystroke and drop the caret.
- */
-function LineCells({
-  v, set, days, disabled, onCommit, projects,
-}: {
-  v: Line;
-  set: (patch: Partial<Line>) => void;
-  days: Days;
-  disabled?: boolean;
-  /** Called when a field is finished with — blur for typing, change for the rest. */
-  onCommit: (patch: Partial<Line>) => void;
-  /** From the API. A code the server does not hold is refused on save. */
-  projects: TimesheetProject[];
-}) {
-  const p = projects.find((x) => x.id === v.proj);
-  const dow = /^\d{4}-\d{2}-\d{2}$/.test(v.date) ? DOW[parseYmd(v.date).getDay()] : '—';
-
-  return (
-    <>
-      <td className="nowrap">
-        <select className="input sm" aria-label="Date" value={v.date} disabled={disabled}
-          onChange={(e) => { set({ date: e.target.value }); onCommit({ date: e.target.value }); }}>
-          {days.map((d) => <option key={d.date} value={d.date}>{fmtDS(d.date)}</option>)}
-        </select>
-      </td>
-      <td className="nowrap muted">{dow}</td>
-      <td>
-        <select className="input sm" aria-label="Project" value={v.proj} disabled={disabled}
-          onChange={(e) => {
-            /* Billability defaults from the project, and stays overridable. */
-            const chosen = projects.find((x) => x.id === e.target.value);
-            const next = { proj: e.target.value, billable: chosen?.billable ?? true };
-            set(next);
-            onCommit(next);
-          }}>
-          {projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-        </select>
-        <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>{p?.client ?? '—'}</div>
-      </td>
-      <td>
-        <input className="input sm" aria-label="Task or activity" list="ts-tasks"
-          value={v.task} disabled={disabled} placeholder="What was the work?"
-          onChange={(e) => set({ task: e.target.value })}
-          onBlur={(e) => onCommit({ task: e.target.value })} />
-      </td>
-      <td className="center">
-        <input type="checkbox" aria-label="Billable" checked={v.billable} disabled={disabled}
-          onChange={(e) => { set({ billable: e.target.checked }); onCommit({ billable: e.target.checked }); }} />
-      </td>
-      <td className="num">
-        <input className="input sm hrs" type="number" aria-label="Hours"
-          min="0" max="24" step="0.25" value={v.hours} disabled={disabled}
-          onChange={(e) => set({ hours: e.target.value === '' ? 0 : Number(e.target.value) })}
-          onBlur={(e) => onCommit({ hours: e.target.value === '' ? 0 : Number(e.target.value) })} />
-      </td>
-      <td>
-        <input className="input sm" aria-label="Remarks" value={v.remarks} disabled={disabled}
-          placeholder="Optional"
-          onChange={(e) => set({ remarks: e.target.value })}
-          onBlur={(e) => onCommit({ remarks: e.target.value })} />
-      </td>
-    </>
-  );
-}
-
-function StoredRow({
-  sheet, entry, days, editable, projects,
-}: {
-  sheet: Timesheet; entry: TSEntry; days: Days; editable: boolean;
-  projects: TimesheetProject[];
-}) {
-  const app = useApp();
-  const update = useUpdateEntry();
-  const remove = useRemoveEntry();
-
-  const [v, setV] = useState<Line>(() => lineOf(entry));
-  const [err, setErr] = useState('');
-
-  /*
-   * Re-sync only when the *server's* values actually changed. Every mutation
-   * anywhere refetches every query, so a blind sync would wipe out whatever
-   * somebody was halfway through typing in this row.
-   */
-  const seen = useRef<Line>(lineOf(entry));
-  useEffect(() => {
-    const next = lineOf(entry);
-    if (!same(next, seen.current)) { seen.current = next; setV(next); }
-  }, [entry]);
-
-  const commit = async (patch: Partial<Line>) => {
-    const next = { ...v, ...patch };
-    if (same(next, seen.current)) return;
-    try {
-      await update.mutate(sheet.id, entry.id, patch);
-      seen.current = next;
-      setErr('');
-    } catch (e) {
-      setErr(msg(e, 'Could not save that change'));
-      setV(seen.current);          /* put the refused value back */
-    }
-  };
-
-  const drop = async () => {
-    try {
-      await remove.mutate(sheet.id, entry.id);
-      app.toast('Line removed', 'ok');
-    } catch (e) {
-      app.toast(msg(e, 'Could not remove it'), 'err');
-    }
-  };
-
-  return (
-    <>
-      <tr>
-        <LineCells v={v} set={(p) => setV({ ...v, ...p })} days={days}
-          disabled={!editable} onCommit={commit} projects={projects} />
-        <td className="right nowrap">
-          {editable
-            ? <button className="btn ghost icon sm" title="Remove this line"
-              aria-label="Remove this line" onClick={drop}><Icon n="remove" size="lg" /> </button>
-            : <span className="muted">—</span>}
-        </td>
-      </tr>
-      {err && <tr className="ts-err"><td colSpan={8}><Icon n="warn" size="lg" /> {err}</td></tr>}
-    </>
-  );
-}
-
-function DraftRow({
-  sheet, draft, days, onDone, onDrop, projects,
-}: {
-  sheet: Timesheet;
-  projects: TimesheetProject[];
-  draft: { key: number; line: Line };
-  days: Days;
-  onDone: (key: number) => void;
-  onDrop: (key: number) => void;
-}) {
-  const app = useApp();
-  const add = useAddEntry();
-  const [v, setV] = useState<Line>(draft.line);
-  const [err, setErr] = useState('');
-
-  const save = async () => {
-    try {
-      await add.mutate(sheet.id, v);
-      app.toast('Line added', 'ok');
-      onDone(draft.key);
-    } catch (e) {
-      setErr(msg(e, 'Could not add that line'));
-    }
-  };
-
-  return (
-    <>
-      <tr className="ts-draft">
-        <LineCells v={v} set={(p) => setV({ ...v, ...p })} days={days}
-          onCommit={() => setErr('')} projects={projects} />
-        <td className="right nowrap">
-          <button className="btn primary sm" disabled={add.pending} onClick={save}>Save</button>{' '}
-          <button className="btn ghost icon sm" title="Discard this line"
-            aria-label="Discard this line" onClick={() => onDrop(draft.key)}>✕</button>
-        </td>
-      </tr>
-      {err && <tr className="ts-err"><td colSpan={8}><Icon n="warn" size="lg" /> {err}</td></tr>}
-    </>
-  );
-}
 
 /* ---------------- bulk entry ---------------- */
 
@@ -346,6 +156,84 @@ function BulkForm({ sheet, close, projects }: {
   );
 }
 
+/**
+ * What a row can be asked to do.
+ *
+ * A row is a set of entries sharing a project, a task and a billing flag, so
+ * every action here is that set acted on together. Nothing is offered that the
+ * service cannot do: there is no rename, because changing a task is changing
+ * the key those entries are stored under, which is a delete and an insert and
+ * would lose the hours if either half failed.
+ */
+function RowMenu({ sheet, row, editable, close }: {
+  sheet: Timesheet; row: Row; editable: boolean; close: () => void;
+}) {
+  const app = useApp();
+  const remove = useRemoveEntry();
+  const [busy, setBusy] = useState(false);
+
+  const entries = row.cells.filter((c): c is TSEntry => c !== null);
+
+  const clearRow = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      /* One call per entry — the service has no bulk delete, and inventing
+         one on the client would hide a partial failure. */
+      for (const e of entries) await remove.mutate(sheet.id, e.id);
+      app.toast('Row cleared', 'ok');
+      close();
+    } catch (e) {
+      app.toast(msg(e, 'Could not clear the row'), 'err');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="stack">
+      <KV rows={[
+        ['Task', row.task],
+        ['Billing', row.billable ? 'Billable' : 'Internal'],
+        ['Days logged', String(entries.length)],
+        ['Row total', hrs(row.total)],
+      ]} />
+
+      {entries.length > 0 && (
+        <div className="tbl-wrap">
+          <table className="tbl">
+            <thead><tr><th>Day</th><th className="num">Hours</th><th>Note</th></tr></thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id}>
+                  <td className="nowrap">{fmtD(e.date)}</td>
+                  <td className="num">{hrs(e.hours)}</td>
+                  <td className="muted">{e.remarks || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="muted" style={{ fontSize: 12 }}>
+        Hours are edited in the grid. A note belongs to one day&rsquo;s entry and is
+        shown above; the week&rsquo;s comment to your manager is below the grid.
+      </div>
+
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={close}>Close</button>
+        {editable && entries.length > 0 && (
+          <button className="btn danger" disabled={busy} onClick={clearRow}>
+            {busy
+              ? 'Clearing…'
+              : `Clear ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 /* ---------------- the week ---------------- */
 
 export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }) {
@@ -361,40 +249,43 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
   const submit = useSubmitSheet();
   const recall = useRecallSheet();
 
-  const [drafts, setDrafts] = useState<{ key: number; line: Line }[]>([]);
   /* What is in the box, and what the service last confirmed — the gap is "unsaved". */
   const [note, setNote] = useState('');
   const [savedNote, setSavedNote] = useState('');
-  const draftSeq = useRef(0);
 
-  /* Drafts belong to the week they were started in. */
-  useEffect(() => { setDrafts([]); }, [ws]);
 
   useEffect(() => {
     if (sheet && sheet.note !== savedNote) { setSavedNote(sheet.note); setNote(sheet.note); }
   }, [sheet, savedNote]);
 
-  const days = useMemo(() => weekDays(ws), [ws]);
 
   if (!sheet) {
     return <EmptyState msg={loading ? 'Loading your week…' : 'That week could not be loaded'} />;
   }
 
   const editable = sheet.status === 'Draft' || sheet.status === 'Returned';
-  const overtime = overtimeOf(sheet.total);
 
-  /* The first day with nothing on it — where somebody is most likely to type next. */
-  const nextDay = days.find((d) => !sheet.entries.some((e) => e.date === d.date))?.date ?? days[0].date;
+  /* Columns and rows for the grid. Rows group the week's entries by
+     project, task and billability — see WeekGrid for why all three. */
+  const gridCols = gridDays(ws);
+  const rows = rowsOf(sheet, gridCols);
 
-  const addRow = () => {
-    const p = projects[0];
-    if (!p) return;
-    draftSeq.current += 1;
-    setDrafts((d) => [...d, {
-      key: draftSeq.current,
-      line: { date: nextDay, proj: p.id, task: '', billable: p.billable, hours: 8, remarks: '' },
-    }]);
-  };
+  /*
+   * What a row offers. Only what the service can actually do: a row is a
+   * set of entries, so removing one is removing each of its entries, and
+   * there is nothing else to offer that would not be a pretend button.
+   */
+  const rowMenu = (row: Row) => layer.modal({
+    title: proj.name(row.proj),
+    sub: `${row.task} · ${row.billable ? 'Billable' : 'Internal'}`,
+    size: 'narrow',
+    body: (close: () => void) => (
+      <RowMenu sheet={sheet} row={row} editable={editable} close={close} />
+    ),
+    footer: null,
+  });
+
+
 
   const doCopy = async () => {
     try {
@@ -439,14 +330,7 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
           ['Total hours', <b>{hrs(sheet.total)}</b>],
           ['Billable', hrs(sheet.billable)],
           ['Non-billable', hrs(sheet.nonBillable)],
-          ...(overtime ? [['Overtime', hrs(overtime)] as [string, string]] : []),
         ]} />
-        {drafts.length > 0 && (
-          <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Unsaved lines">
-            {drafts.length} {drafts.length === 1 ? 'line has' : 'lines have'} not been saved,
-            and will not be submitted.
-          </Banner>
-        )}
       </div>
     ),
     footer: (close) => (
@@ -477,22 +361,53 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
         {TASK_TYPES.map((t) => <option key={t} value={t} />)}
       </datalist>
 
-      {/* ---- who, and how the week stands ---- */}
-      <div className="card ts-who">
-        <div className="ts-who-p">
-          <Avatar name={app.me.name} size="lg" />
-          <div style={{ minWidth: 0 }}>
-            <div className="ts-who-n">{app.me.name}</div>
-            <div className="muted" style={{ fontSize: 12.5 }}>{app.me.designation}</div>
-            <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }}>{app.me.code}</div>
+      {/* ---- the week, and how it stands ---- */}
+      <div className="card" style={{ padding: 16 }}>
+        <div className="ts-weekbar">
+          <div>
+            <h2 style={{ margin: 0, fontSize: 19, letterSpacing: '-0.01em' }}>My Timesheet</h2>
+            <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
+              {app.me.name} · {app.me.code}
+            </div>
+          </div>
+
+          <div className="ts-weekbar-mid">
+            <button className="btn icon" title="Previous week" aria-label="Previous week"
+              onClick={() => setWs(ymd(addDays(parseYmd(ws), -7)))}>‹</button>
+            <div className="ts-weekbar-range">
+              {fmtD(ws)} – {fmtD(ymd(addDays(parseYmd(ws), 6)))}
+            </div>
+            <button className="btn icon" title="Next week" aria-label="Next week"
+              onClick={() => setWs(ymd(addDays(parseYmd(ws), 7)))}>›</button>
+            <button className="btn sm" disabled={ws === ymd(mondayOf(TODAY))}
+              onClick={() => setWs(ymd(mondayOf(TODAY)))}>This week</button>
+          </div>
+
+          <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+            <span className="muted" style={{ fontSize: 12.5 }}>Status</span>
+            <StatusBadge status={sheet.status} />
           </div>
         </div>
-        <div className="ts-who-m">
-          <div><span>Total hours</span><b>{hrs(sheet.total)}</b></div>
-          <div><span>Billable</span><b>{hrs(sheet.billable)}</b></div>
-          <div><span>Non-billable</span><b>{hrs(sheet.nonBillable)}</b></div>
-          <div><span>Overtime</span><b>{hrs(overtime)}</b></div>
-          <div><span>Status</span><StatusBadge status={sheet.status} /></div>
+
+        {/*
+          * Four figures, and all four come back with the sheet. There is no
+          * regular-versus-overtime split and no leave in the timesheet model,
+          * so those are absent rather than computed against an assumed week —
+          * a number the payslip would not recognise is worse than none.
+          */}
+        <div className="ts-summary" style={{ marginTop: 14 }}>
+          <div className="tile"><span className="tile-l">Total hours</span>
+            <b className="tile-v">{hrs(sheet.total)}</b></div>
+          <div className="tile"><span className="tile-l">Billable</span>
+            <b className="tile-v">{hrs(sheet.billable)}</b></div>
+          <div className="tile"><span className="tile-l">Non-billable</span>
+            <b className="tile-v">{hrs(sheet.nonBillable)}</b></div>
+          <div className="tile"><span className="tile-l">Entries</span>
+            <b className="tile-v">{sheet.entries.length}</b></div>
+        </div>
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 9 }}>
+          Overtime and leave are managed separately; this screen reports only
+          what the timesheet records.
         </div>
       </div>
 
@@ -518,25 +433,26 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
         )}
       </PageActions>
 
-      {/* ---- which week ---- */}
-      <div className="toolbar">
-        <button className="btn icon" title="Previous week" aria-label="Previous week"
-          onClick={() => setWs(ymd(addDays(parseYmd(ws), -7)))}>‹</button>
-        <div style={{ fontWeight: 700, fontSize: 14, minWidth: 210, textAlign: 'center' }}>
-          {fmtD(ws)} – {fmtD(ymd(addDays(parseYmd(ws), 6)))}
+      {/* ---- what can be done to the week ---- */}
+      {editable && (
+        <div className="toolbar">
+          <button className="btn sm" disabled={copyPrev.pending} onClick={doCopy}>
+            <Icon n="swap" size="lg" /> Copy previous week
+          </button>
+          <button className="btn sm" onClick={bulk}>
+            <Icon n="goal" size="lg" /> Fill week
+          </button>
+          <div className="spacer" />
+          {/*
+            * No "Save draft". Every cell commits to the service as it is left,
+            * so there is nothing held back to save — a button implying
+            * otherwise would be the only thing on the page that lies.
+            */}
+          <span className="muted" style={{ fontSize: 12 }}>
+            Changes save as you make them.
+          </span>
         </div>
-        <button className="btn icon" title="Next week" aria-label="Next week"
-          onClick={() => setWs(ymd(addDays(parseYmd(ws), 7)))}>›</button>
-        <button className="btn sm" onClick={() => setWs(ymd(mondayOf(TODAY)))}>This week</button>
-        <div className="spacer" />
-        {editable && (
-          <>
-            <button className="btn sm" disabled={copyPrev.pending} onClick={doCopy}><Icon n="swap" size="lg" /> Copy previous week
-            </button>
-            <button className="btn sm" onClick={bulk}><Icon n="goal" size="lg" /> Bulk entry</button>
-          </>
-        )}
-      </div>
+      )}
 
       {sheet.status === 'Returned' && sheet.note && (
         <Banner kind="warn" icon={<Icon n="undo" size="lg" />} title="Returned for correction">{sheet.note}</Banner>
@@ -552,50 +468,26 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
 
       <div className="grid g-2-1">
         <div className="stack">
-          <Card title="Timesheet entry"
-            sub={`${sheet.entries.length} ${sheet.entries.length === 1 ? 'line' : 'lines'} this week`}
+          <Card
+            title="Week grid"
+            sub={`${rows.length} ${rows.length === 1 ? 'row' : 'rows'} · ${sheet.entries.length} ${sheet.entries.length === 1 ? 'entry' : 'entries'}`}
             flush
             actions={editable
-              ? <button className="btn sm" onClick={addRow}>+ Add row</button>
+              ? (
+                <div className="row" style={{ gap: 6 }}>
+                  <button className="btn sm" onClick={bulk}>+ Add project / task</button>
+                </div>
+              )
               : undefined}>
-            <div className="tbl-wrap">
-              <table className="tbl ts-entry">
-                <thead>
-                  <tr>
-                    <th>Date</th><th>Day</th><th>Project / Client</th><th>Task / Activity</th>
-                    <th className="center">Billable</th><th className="num">Hours</th>
-                    <th>Remarks</th><th className="right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sheet.entries.map((e) => (
-                    <StoredRow key={e.id} sheet={sheet} entry={e} days={days} editable={editable} projects={projects} />
-                  ))}
-                  {drafts.map((d) => (
-                    <DraftRow key={d.key} sheet={sheet} draft={d} days={days}
-                      onDone={(k) => setDrafts((s) => s.filter((x) => x.key !== k))}
-                      onDrop={(k) => setDrafts((s) => s.filter((x) => x.key !== k))}
-                      projects={projects} />
-                  ))}
-                  {!sheet.entries.length && !drafts.length && (
-                    <tr>
-                      <td colSpan={8}>
-                        <EmptyState icon={<Icon n="timer" size="lg" />}
-                          msg={editable
-                            ? 'Nothing logged yet — add a row, or copy last week'
-                            : 'No hours were logged this week'} />
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <th colSpan={5} className="right">Total hours</th>
-                    <th className="num">{hrs(sheet.total)}</th>
-                    <th colSpan={2} />
-                  </tr>
-                </tfoot>
-              </table>
+            <div style={{ padding: 12 }}>
+              <WeekGrid
+                sheet={sheet}
+                days={gridCols}
+                rows={rows}
+                editable={editable}
+                projects={projects}
+                onRowMenu={rowMenu}
+              />
             </div>
           </Card>
 
@@ -612,7 +504,7 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
         </div>
 
         <div className="stack">
-          <Card title="Weekly summary" sub={`Against the contracted ${STANDARD_WEEK} h week`}>
+          <Card title="Weekly summary" sub="As the service totals it">
             <div className="row" style={{ justifyContent: 'center', padding: '4px 0 10px' }}>
               <Donut slices={slices} center={hrs(sheet.total)} centerSub="Hours"
                 fmt={(v) => hrs(Number(v)) + ' h'} />
@@ -623,7 +515,7 @@ export function MyWeek({ ws, setWs }: { ws: string; setWs: (s: string) => void }
                 ['Total hours', <b>{hrs(sheet.total)}</b>],
                 ['Billable hours', hrs(sheet.billable)],
                 ['Non-billable hours', hrs(sheet.nonBillable)],
-                ['Overtime hours', hrs(overtime)],
+                ['Entries', String(sheet.entries.length)],
               ]} />
             </div>
           </Card>

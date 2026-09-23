@@ -192,6 +192,132 @@ console.log('\nthe lifecycle is the service’s, not the screen’s\n');
     !/status !== 'Approved' \? true/.test(week));
 }
 
+/* ------------------------------------------------------------------ *
+ * 4. Where the module sits, and what the week screen is made of
+ * ------------------------------------------------------------------ */
+
+console.log('\ntimesheet is its own place in the rail\n');
+
+{
+  const nav = readRaw('src/nav.ts');
+  ok('Timesheet is a top-level group', /group: 'Timesheet',/.test(nav),
+    'it was a section inside Time & attendance, which put one subject in two places');
+
+  /*
+   * An item left behind in another group offers the same view twice, from two
+   * rail entries — which is the thing moving it was meant to stop.
+   */
+  const groups = nav.split(/\n  \{\n    group: /).slice(1);
+  const strays = groups
+    .filter((g) => !g.startsWith("'Timesheet'"))
+    .filter((g) => g.includes("k: 'timesheet'"))
+    .map((g) => g.slice(0, g.indexOf(',')));
+  ok('no timesheet item is left in another group', strays.length === 0,
+    'still in: ' + strays.join(', '));
+}
+
+console.log('\nthe week screen has the parts a week needs\n');
+
+{
+  const week = read('src/modules/timesheet/MyWeek.tsx');
+  const grid = read('src/modules/timesheet/WeekGrid.tsx');
+
+  ok('My Timesheet names itself', /My Timesheet/.test(week));
+  ok('the week steps back, forward and to today',
+    /Previous week/.test(week) && /Next week/.test(week) && /This week/.test(week));
+  ok('the status shown is the sheet\u2019s', /StatusBadge status=\{sheet\.status\}/.test(week));
+  ok('the grid is mounted', /<WeekGrid/.test(week));
+
+  ok('the grid builds seven day columns', /length: 7/.test(grid));
+  ok('and a total column', /ts-col-total/.test(grid));
+  ok('a day column carries its weekday and date', /ts-dow/.test(grid) && /ts-dom/.test(grid));
+  ok('today is marked', /ts-today/.test(grid));
+  ok('a weekend is dimmed, not hidden', /ts-weekend/.test(grid));
+  ok('the work column is pinned for narrow windows', /ts-col-work/.test(grid));
+
+  /*
+   * A cell writes through whichever call matches what is already there.
+   * addEntry onto an existing cell merges on the unique key and *adds* the
+   * hours, which is right for "log some more" and wrong for "make it eight".
+   */
+  ok('an empty cell adds', /add\.mutate\(sheet\.id/.test(grid));
+  ok('a filled cell updates', /update\.mutate\(sheet\.id, entry\.id/.test(grid));
+  ok('a cleared cell removes', /remove\.mutate\(sheet\.id, entry\.id\)/.test(grid));
+  ok('the refusal shown is the server\u2019s wording',
+    /e instanceof Error \? e\.message/.test(grid));
+
+  ok('submit goes through a confirmation', /confirmSubmit/.test(week));
+  ok('recall is offered only once submitted', /sheet\.status === 'Submitted'/.test(week));
+  ok('copy previous week calls the service', /copyPrev\.mutate\(sheet\.id\)/.test(week));
+  ok('fill week goes through addEntry rather than a new endpoint',
+    /add\.mutate\(sheet\.id, \{ date, proj, task, billable/.test(week));
+  ok('a second submit is refused in the handler', /if \(busy\) return;/.test(grid));
+
+  /*
+   * There is no Save Draft. Every cell commits as it is left, so a button
+   * implying something is held back would be the only thing on the page that
+   * is not true.
+   */
+  ok('no Save Draft button is offered', !/Save draft|Save Draft/.test(week),
+    'nothing is held back to save; the cells commit as they are left');
+  ok('and the page says so instead', /Changes save as you make them/.test(week));
+}
+
+console.log('\nno payroll figure is computed in the browser\n');
+
+{
+  /*
+   * overtimeOf(total) = max(0, total - 40) was shown as "Overtime" on the week
+   * and in the approvals table. The timesheet model holds no contracted week,
+   * so it was a payroll number invented client-side against an assumed one.
+   */
+  for (const rel of [
+    'src/modules/timesheet/MyWeek.tsx',
+    'src/modules/timesheet/index.tsx',
+    'src/modules/timesheet/Views.tsx',
+    'src/modules/timesheet/WeekGrid.tsx',
+  ]) {
+    ok(rel.split('/').pop() + ' computes no overtime',
+      !/overtimeOf|STANDARD_WEEK/.test(read(rel)),
+      'there is no contracted week in the model to measure overtime against');
+  }
+}
+
+console.log('\nthe other views read the service\n');
+
+{
+  const views = read('src/modules/timesheet/Views.tsx');
+  ok('Team Timesheets reads the sheet list', /useSheets\(dir\.ids/.test(views));
+  ok('Time Entries reads the sheet list', /const rows = useMemo\(\(\) => sheets\.flatMap/.test(views));
+  ok('Projects reads the project service', /useBookableProjects\(\)/.test(views));
+  ok('Calendar reads the sheet list', /useSheets\(\[app\.meId\]/.test(views));
+  ok('every view has an empty state', (views.match(/EmptyState/g) ?? []).length >= 3);
+  ok('and a loading state', (views.match(/Loading…/g) ?? []).length >= 3);
+
+  /* Nothing in the module fabricates a sheet, an entry or an employee. */
+  for (const rel of [
+    'src/modules/timesheet/Views.tsx',
+    'src/modules/timesheet/WeekGrid.tsx',
+    'src/modules/timesheet/MyWeek.tsx',
+  ]) {
+    const src = read(rel);
+    ok(rel.split('/').pop() + ' invents no rows',
+      !/const (DEMO|SAMPLE|FAKE|MOCK)_/.test(src) && !/TS\b.*=.*\[\s*\{/.test(src));
+  }
+}
+
+console.log('\npayroll and the dashboard are untouched by this module\n');
+
+{
+  const files = execSync('git diff --name-only HEAD', { cwd: root, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+  const payroll = files.filter((f) => /payroll|compensation|migrations/i.test(f));
+  const dash = files.filter((f) => /dashboard/i.test(f));
+  ok('no payroll or migration file is modified', payroll.length === 0, payroll.join(', '));
+  ok('no dashboard file is modified', dash.length === 0, dash.join(', '));
+}
+
+
 console.log(failed
   ? `\n${failed} failed\n`
   : '\nprojects are real, and the team views are not offered to an employee\n');

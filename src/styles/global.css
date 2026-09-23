@@ -1078,36 +1078,18 @@ html[data-theme="dark"] .tipbox{background:#3a3a37;color:#fff}
 /* ---------- Timesheet ---------- */
 
 /* Who the week belongs to, and how it stands — one strip above the editor. */
-.ts-who{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 16px}
-.ts-who-p{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 220px}
-.ts-who-n{font-weight:750;font-size:15px;letter-spacing:-.2px}
-.ts-who-m{display:flex;flex-wrap:wrap;gap:10px 26px;align-items:center}
-.ts-who-m>div{display:flex;flex-direction:column;gap:3px;min-width:74px}
-.ts-who-m span{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
-.ts-who-m b{font-size:16px;font-weight:750;letter-spacing:-.3px;font-variant-numeric:tabular-nums}
 
 /* The editable line table. Inputs sit flush in the cell, not boxed twice. */
-.ts-entry td{padding:7px 10px;vertical-align:top}
-.ts-entry th{white-space:nowrap}
-.ts-entry .input.sm{width:100%;min-width:112px}
-.ts-entry td .input.sm[type=number],.ts-entry .input.hrs{width:76px;min-width:0;text-align:right}
-.ts-entry input[type=checkbox]{width:16px;height:16px;accent-color:var(--brand);cursor:pointer}
-.ts-entry tr.ts-draft>td{background:var(--brand-wash)}
-.ts-entry tfoot th{background:var(--surface-2);font-variant-numeric:tabular-nums}
 
 /* A refusal, said where the line that caused it is. */
-.ts-err>td{background:var(--crit-wash);color:var(--crit-text);font-size:12px;font-weight:600;padding:6px 12px}
 .ts-err-box{background:var(--crit-wash);color:var(--crit-text);font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:var(--r-sm);margin-bottom:12px}
 
 /* The employee's note to their manager, quoted back on the review sheet. */
 .ts-note{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;font-size:13px}
 .ts-note b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:4px}
 
-table.tbl td.center,table.tbl th.center{text-align:center}
 
 @media (max-width:820px){
-  .ts-who-m{gap:10px 18px}
-  .ts-entry .input.sm{min-width:96px}
 }
 
 /* ---------- Calendar ---------- */
@@ -2227,3 +2209,100 @@ button.chip:hover{border-color:var(--line-2)}
 }
 .denied h1{font-size:19px;font-weight:700;color:var(--ink);margin:0}
 .denied p{margin:0;max-width:46ch;font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+
+/* ---------------------------------------------------------------------------
+   The weekly timesheet grid.
+
+   Seven day columns plus a total do not fit a narrow window, and squashing
+   them is how a 4 reads as a 1. So the grid scrolls sideways inside its card
+   with the work column pinned — you can always see which row you are typing
+   into, which is the thing that goes wrong first when a grid scrolls.
+
+   Every colour is a token. The grid sits on the same surfaces as the rest of
+   the product and inherits both themes from them.
+   --------------------------------------------------------------------------- */
+
+.ts-grid-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.ts-grid{border-collapse:separate;border-spacing:0;width:100%;min-width:760px;font-size:13px}
+
+.ts-grid th,.ts-grid td{border-bottom:1px solid var(--line);padding:0}
+.ts-grid tfoot td,.ts-grid tfoot th{border-bottom:none}
+
+/* The pinned column. Its own background, or rows show through when scrolled. */
+.ts-grid .ts-col-work{
+  position:sticky;left:0;z-index:2;
+  background:var(--surface);
+  text-align:left;padding:10px 12px;min-width:220px;max-width:280px;
+  border-right:1px solid var(--line);
+}
+.ts-grid thead .ts-col-work,.ts-grid tfoot .ts-col-work{background:var(--surface-2);z-index:3}
+
+.ts-work-name{font-weight:600;color:var(--ink);line-height:1.35}
+.ts-work-task{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  font-size:12px;color:var(--ink-2);margin-top:3px;
+}
+.ts-work-client{font-size:11px;color:var(--ink-3);margin-top:2px}
+
+/* Day columns. Narrow enough that seven fit, wide enough for "12.25". */
+.ts-grid .ts-col-day{
+  background:var(--surface-2);
+  padding:6px 2px;width:74px;text-align:center;line-height:1.2;
+}
+.ts-dow{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
+.ts-dom{display:block;font-size:14px;font-weight:600;color:var(--ink);margin-top:1px}
+
+/* A weekend is dimmer, never hidden — people do work at weekends. */
+.ts-grid .ts-weekend{background:var(--surface-3,var(--surface-2))}
+.ts-grid td.ts-weekend{background:color-mix(in srgb,var(--surface-2) 45%,transparent)}
+
+/* Today, so the week reads against the calendar without counting columns. */
+.ts-grid .ts-today{box-shadow:inset 0 -2px 0 0 var(--brand)}
+.ts-grid thead .ts-today .ts-dom{color:var(--brand)}
+
+.ts-cell{padding:0;text-align:center;vertical-align:middle}
+.ts-cell-input{
+  width:100%;border:0;background:transparent;
+  padding:11px 5px;text-align:center;
+  font:inherit;font-variant-numeric:tabular-nums;color:var(--ink);
+  border-radius:0;
+}
+.ts-cell-input::placeholder{color:var(--ink-3);opacity:.55}
+.ts-cell-input:hover:not(:disabled){background:var(--brand-wash)}
+.ts-cell-input:focus{outline:2px solid var(--brand);outline-offset:-2px;background:var(--surface)}
+.ts-cell-input:disabled{color:var(--ink-3)}
+.ts-cell-read{display:block;padding:11px 5px;font-variant-numeric:tabular-nums}
+.ts-cell-empty{display:block;padding:11px 5px;color:var(--ink-3)}
+
+.ts-grid .ts-col-total{
+  text-align:center;padding:10px 12px;min-width:76px;
+  font-variant-numeric:tabular-nums;font-weight:600;
+  background:var(--surface-2);
+}
+.ts-row-total{color:var(--ink)}
+.ts-week-total{font-size:15px;color:var(--brand)}
+.ts-grid tfoot .ts-foot{background:var(--surface-2);font-weight:600;font-variant-numeric:tabular-nums;padding:6px 2px}
+.ts-grid .ts-col-menu{width:40px;text-align:center;background:var(--surface)}
+.ts-grid thead .ts-col-menu,.ts-grid tfoot .ts-col-menu{background:var(--surface-2)}
+
+.ts-grid-empty{padding:22px 24px;text-align:center;color:var(--ink-3);font-size:13px}
+
+/* A refusal, named against the cell that caused it. */
+.ts-grid-errors{border-top:1px solid var(--line);padding:3px 0}
+.ts-grid-error{
+  display:flex;align-items:flex-start;gap:8px;
+  background:var(--crit-wash);color:var(--crit-text);
+  font-size:12.5px;padding:9px 12px;
+}
+
+/* A summary tile row that stays readable when the window narrows. */
+.ts-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:820px){
+  .ts-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ts-grid .ts-col-work{min-width:170px}
+}
+
+/* The week stepper above the grid. */
+.ts-weekbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ts-weekbar-mid{display:flex;align-items:center;gap:10px}
+.ts-weekbar-range{font-size:15px;font-weight:600;color:var(--ink);min-width:200px;text-align:center}
