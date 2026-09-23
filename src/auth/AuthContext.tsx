@@ -29,7 +29,6 @@ export interface AuthState {
 
   signInWithPassword: (email: string, password: string) => Promise<void>;
   signInWithSso: (provider: SsoProvider) => Promise<void>;
-  sendMagicLink: (email: string) => Promise<void>;
   /**
    * Ends the session and records why.
    *
@@ -282,14 +281,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // On success the browser navigates away; nothing after this runs.
   }, []);
 
-  const sendMagicLink = useCallback(async (email: string) => {
-    if (!supabase) throw new Error('authentication is not configured for this build');
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirectTo() },
-    });
-    if (error) throw new Error(error.message);
-  }, []);
 
   const signOut = useCallback(async (reason: 'manual' | 'idle' = 'manual') => {
     if (!supabase) return;
@@ -330,7 +321,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ?? null,
     signInWithPassword,
     signInWithSso,
-    sendMagicLink,
     signOut,
     mfaRequired,
     refreshMfa,
@@ -341,7 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mfaEnrolmentRequired: mustEnrol,
     refreshPasswordStatus,
   }), [
-    ready, session, signInWithPassword, signInWithSso, sendMagicLink, signOut,
+    ready, session, signInWithPassword, signInWithSso, signOut,
     mfaRequired, refreshMfa, sendPasswordReset, setPassword, recovering, mustChange,
     mustEnrol, refreshPasswordStatus,
   ]);

@@ -177,13 +177,21 @@ export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
             </form>
 
             {/*
-              * Two different things, and they were one for a while: this
-              * button sent a magic *sign-in* link while My Account told people
-              * to use a "Forgot your password" control that did not exist.
-              * A link that signs you in does not change your password, and
-              * somebody locked out by a forgotten one needs the second.
+              * There was a second button here that emailed a sign-in link.
               *
-              * Both reuse the address above rather than having a page each.
+              * It called `signInWithOtp` without `shouldCreateUser: false`, so
+              * Supabase's default applied and *any* address typed into it got
+              * an auth user and an email — including one belonging to nobody
+              * who works here. The application still refused them (no
+              * membership means no tenant, and the session resolver throws),
+              * but an unauthenticated stranger could make rows in `auth.users`
+              * and send mail from this domain, which is not a door worth
+              * leaving open for a convenience.
+              *
+              * Password reset stays. It does not create users: an address with
+              * no account simply gets nothing, and the message below says the
+              * same thing either way so it cannot be used to find out who
+              * works here.
               */}
             <div className="login-alts">
               <button
@@ -199,17 +207,6 @@ export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
                 )}
               >
                 Forgot your password?
-              </button>
-              <button
-                type="button"
-                className="login-forgot"
-                disabled={busy || !email.trim()}
-                onClick={() => void run(
-                  () => auth.sendMagicLink(email.trim()),
-                  'Check your inbox for a sign-in link.',
-                )}
-              >
-                Email me a sign-in link instead
               </button>
             </div>
 

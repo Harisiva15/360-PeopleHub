@@ -15,6 +15,9 @@ globalThis.window = {
 globalThis.document = { documentElement: { dataset: {} }, addEventListener() {}, removeEventListener() {}, createElement: () => ({ style: {}, classList: { add() {}, remove() {}, contains: () => false }, remove() {} }), body: { appendChild() {} } } as never;
 Object.defineProperty(globalThis, 'navigator', { value: { geolocation: null }, configurable: true });
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { AppProvider } from '../src/state/AppContext';
@@ -27,11 +30,84 @@ import { loadAllRoutes } from '../src/modules';
 
 await loadAllRoutes();
 
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+let broken = 0;
+const fail = (label: string, cond: boolean, detail = '') => {
+  if (!cond) broken += 1;
+  console.log(`  ${cond ? 'ok  ' : 'FAIL'}  ${label}${cond ? '' : `
+        ${detail}`}`);
+};
+
+
+/* ------------------------------------------------------------------ *
+ * No sign-in path may create its own account
+ * ------------------------------------------------------------------ */
+
+/*
+ * The login page used to offer "Email me a sign-in link", which called
+ * `signInWithOtp` without `shouldCreateUser: false`. Supabase's default is
+ * true, so *any* address typed into it got an `auth.users` row and an email —
+ * including an address belonging to nobody who works here.
+ *
+ * The application still refused them: no membership means the session resolver
+ * throws and every request is 401. But an unauthenticated stranger could make
+ * rows in auth.users and send mail from this domain, and that is worth closing
+ * even though it never reached any data.
+ *
+ * This account model is invitation-only. An account exists because an
+ * administrator created one, never because somebody typed an address into a
+ * login form. These assertions are what keep that true.
+ */
+{
+  /*
+   * Comments stripped: the code that removed this call explains it by name,
+   * and a note saying why a thing is gone must not read as the thing.
+   */
+  const strip = (s: string) =>
+    s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const authSrc = strip(readFileSync(join(root, 'src/auth/AuthContext.tsx'), 'utf8'));
+  const loginSrc = strip(readFileSync(join(root, 'src/auth/LoginPage.tsx'), 'utf8'));
+
+  const otp = /signInWithOtp/.test(authSrc) || /signInWithOtp/.test(loginSrc);
+  fail(
+    'no sign-in path calls signInWithOtp',
+    !otp,
+    'signInWithOtp defaults to shouldCreateUser: true. If it is ever needed '
+    + 'again it must pass shouldCreateUser: false, and even then it only works '
+    + 'for somebody who already has an auth user.',
+  );
+
+  fail(
+    'the magic-link capability is not on the auth context',
+    !/sendMagicLink/.test(authSrc),
+    'leaving the function exported lets the next screen that wants a '
+    + 'convenience re-open the hole without anyone noticing it was closed',
+  );
+
+  /*
+   * Password reset stays, and must: it does not create users, and its message
+   * is deliberately identical whether or not the address has an account, so it
+   * cannot be used to find out who works here.
+   */
+  fail(
+    'password reset is still offered',
+    /sendPasswordReset/.test(loginSrc),
+    'somebody locked out of a real account needs a way back in',
+  );
+  fail(
+    'and it still refuses to say whether an address has an account',
+    /If that address has an account/.test(loginSrc),
+    'a different message for a known address turns this into a directory',
+  );
+}
+
 console.log(`authConfigured = ${authConfigured}`);
 if (!authConfigured) {
   console.log('\nSKIPPED: run with VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY set.');
   console.log('Without them this build is demo mode, which is what routecheck covers.');
-  process.exit(0);
+  console.log('The source assertions above still ran.');
+  process.exit(broken ? 1 : 0);
 }
 
 let leaked = 0;
@@ -59,4 +135,4 @@ for (const route of ALL_ROUTES) {
 console.log(leaked
   ? `\n${leaked} of ${ALL_ROUTES.length} routes rendered without a session`
   : `\nnone of ${ALL_ROUTES.length} routes render without a session`);
-process.exit(leaked ? 1 : 0);
+process.exit(leaked || broken ? 1 : 0);
