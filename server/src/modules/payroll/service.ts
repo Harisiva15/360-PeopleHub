@@ -33,7 +33,7 @@
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import {
-  currencyFor, dailyRateFor, hraExemption, monthlySlip, structureFor,
+  currencyFor, dailyRateFor, hraExemption, monthlySlip, refusalToProcess, structureFor,
 } from './rules.ts';
 import type { Country, Line, Structure } from './rules.ts';
 import { applyComponents } from './compensation.ts';
@@ -651,9 +651,19 @@ export async function processRun(caller: Caller, mk: string): Promise<PayRun> {
       'SELECT id, status, locked FROM pay_run WHERE period_month = $1::date FOR UPDATE',
       [firstOf(mk)]);
     if (!run.rows[0]) throw new PayrollError('no payroll cycle for that month', 'not_found');
-    if (run.rows[0].status === 'paid') {
-      throw new PayrollError('that cycle has already been paid', 'already_paid');
-    }
+
+    /*
+     * The row is held FOR UPDATE above, so this is the point at which a second
+     * request — a double click, a retried fetch, two people on the same screen
+     * — is still waiting. It reads the state the first one committed and is
+     * refused here rather than overwriting the payslips that one just wrote.
+     */
+    const refusal = refusalToProcess({
+      status: run.rows[0].status as string,
+      locked: Boolean(run.rows[0].locked),
+    });
+    if (refusal) throw new PayrollError(refusal.message, refusal.code);
+
     const runId = run.rows[0].id as string;
 
     const inputs = await offCycleFor(db, runId);
@@ -751,13 +761,22 @@ export async function processRun(caller: Caller, mk: string): Promise<PayRun> {
         [runId, kind, Math.round(amount), String(day)]);
     }
 
+    /*
+     * No FROM clause. Selecting the actor's name out of `employee` writes no
+     * row at all when that lookup misses, so a missing name became a missing
+     * audit entry — for the one action in this module that cannot be undone.
+     *
+     * `net` is the cycle's total, not anybody's salary. It is the figure an
+     * auditor needs to recognise the run they are looking at, and individual
+     * pay stays in `payslip` behind the payroll permission.
+     */
     await db.query(
       `INSERT INTO audit_log (category, action, severity, actor_employee_id, actor_label,
                               subject_table, subject_id, detail)
-       SELECT 'payroll', 'run_processed', 'notice', $1, COALESCE(e.full_name, 'system'),
+       SELECT 'payroll', 'run_processed', 'notice', $1,
+              COALESCE((SELECT full_name FROM employee WHERE id = $1), 'system'),
               'pay_run', $2, jsonb_build_object('month', $3::text, 'employees', $4::text,
-                                                'net', $5::text)
-         FROM employee e WHERE e.id = $1`,
+                                                'net', $5::text)`,
       [caller.employeeId, runId, mk, String(count), String(Math.round(net))]);
 
     const back = await db.query(`${RUN_PROJECTION} WHERE r.id = $1`, [runId]);

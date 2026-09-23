@@ -20,6 +20,7 @@ import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
 import { useShowPayslip } from './Payslip';
 import { useTabFromUrl } from '../tabParam';
+import { ProcessConfirmation } from './ProcessConfirm';
 import { CompensationPanel, ReviseForm } from './Compensation';
 import type { StructureRow } from '../../services';
 import { registerModule } from '../registry';
@@ -39,6 +40,7 @@ const TAX_RE = /Tax|TDS|PAYE/;
 
 function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
   const app = useApp();
+  const layer = useLayer();
   const { data: runs = [] } = usePayRuns();
   const { data: curRun } = useCurrentRun();
   const { data: cur } = usePayrollTotals(curRun?.mk ?? '');
@@ -75,21 +77,43 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
   const PAYRUNS = runs;
   const trend = runs.filter((r) => allTotals[r.mk]).map((r) => ({ mk: r.mk, t: allTotals[r.mk] }));
 
+  /*
+   * Processing is irreversible — it locks the cycle, freezes payslips and
+   * generates a bank advice — so it goes through a confirmation that names the
+   * month and the head count. It used to be one click, and a live September
+   * cycle was processed that way by accident.
+   *
+   * The dialog is not the protection. The server refuses a paid, locked,
+   * cancelled or in-progress cycle while holding the row, so a second request
+   * is declined rather than overwriting the first one's payslips.
+   */
+  const confirmProcess = (mk: string, totals: { count: number; gross: number; net: number }) =>
+    layer.modal({
+      title: 'Process payroll',
+      sub: monthLabelLong(mk),
+      size: 'narrow',
+      body: (close: () => void) => (
+        <ProcessConfirmation
+          run={{ mk, count: totals.count, gross: totals.gross, net: totals.net }}
+          close={close}
+          onConfirm={async () => {
+            await processRun.mutate(mk);
+            app.toast(`${monthLabelLong(mk)} payroll processed — bank advice generated`, 'ok');
+          }}
+        />
+      ),
+      footer: null,
+    });
+
   return (
     <div className="stack">
       <Banner kind={CUR_RUN.status === 'Paid' ? 'good' : 'info'}
         icon={<span style={{ fontSize: 19 }}>{CUR_RUN.status === 'Paid' ? '✅' : '🧾'}</span>}
         title={`${monthLabelLong(CUR_RUN.mk)} payroll — ${CUR_RUN.status}`}
-        actions={CUR_RUN.status !== 'Paid'
-          ? <button className="btn primary" disabled={processRun.pending} onClick={async () => {
-              try {
-                await processRun.mutate(CUR_RUN.mk);
-                app.toast(monthLabelLong(CUR_RUN.mk) + ' payroll processed — bank advice generated', 'ok');
-              } catch (err) {
-                app.toast(err instanceof Error ? err.message : 'Could not process the run', 'err');
-              }
-            }}>Process payroll</button>
-          : undefined}>
+        actions={CUR_RUN.locked || CUR_RUN.status === 'Paid'
+          ? <Badge kind="good"><Icon n="lock" /> Locked</Badge>
+          : <button className="btn primary" disabled={processRun.pending}
+              onClick={() => confirmProcess(CUR_RUN.mk, cur)}>Process payroll</button>}>
         {cur.count} employees · gross {inr(cur.gross)} · deductions {inr(cur.ded)} · <b>net payable {inr(cur.net)}</b>
         {CUR_RUN.status !== 'Paid' && (
           <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
@@ -157,7 +181,18 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
                     <td className="num">{inr(t.t.gross)}</td>
                     <td className="num">{inr(t.t.ded)}</td>
                     <td className="num strong">{inr(t.t.net)}</td>
-                    <td><StatusBadge status={r.status} /></td>
+                    <td className="nowrap">
+                      <StatusBadge status={r.status} />
+                      {/*
+                        * Locked is a separate fact from the status. The schema's
+                        * CHECK only runs one way — a paid run is always locked —
+                        * so a cycle can be closed without being paid, and a
+                        * screen showing only the status would not say so.
+                        */}
+                      {r.locked && (
+                        <> <Badge kind="good"><Icon n="lock" /> Locked</Badge></>
+                      )}
+                    </td>
                     <td>{r.runOn ? `${r.by} · ${fmtD(r.runOn)}` : '—'}</td>
                     <td className="right nowrap">
                       <button className="btn sm" onClick={() => goRegister(t.mk)}>Register</button>{' '}
@@ -165,6 +200,11 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
                         app.toast('Publishing payslips for ' + monthLabelLong(t.mk) + '…');
                         setTimeout(() => app.toast(t.t.count + ' payslips published to employee self-service', 'ok'), 700);
                       }}>Payslips</button>
+                      {/* Processing is offered per row only where it is possible. */}
+                      {!r.locked && r.status !== 'Paid' && (
+                        <> <button className="btn sm primary" disabled={processRun.pending}
+                          onClick={() => confirmProcess(t.mk, t.t)}>Process</button></>
+                      )}
                     </td>
                   </tr>
                 );

@@ -374,3 +374,73 @@ export function dailyRateFor(s: Structure): number {
   const hra = s.earnings[1]?.a ?? 0;
   return Math.round((s.country === 'IN' ? basic + hra : s.grossA) / 365);
 }
+
+/* ------------------------------------------------------------------ *
+ * Whether a cycle may be processed
+ * ------------------------------------------------------------------ */
+
+/** The four states `pay_run.status` may hold, per 0005. */
+export type RunStatus = 'draft' | 'processing' | 'paid' | 'cancelled';
+
+export interface RunState {
+  status: RunStatus | string;
+  locked: boolean;
+}
+
+export interface Refusal {
+  message: string;
+  /** Maps to an HTTP status in app.ts — anything but forbidden/not_found/invalid is 409. */
+  code: string;
+}
+
+/**
+ * Why this cycle may not be processed, or null if it may.
+ *
+ * Pure, and separate from the service, because this is the rule that stops a
+ * payslip being written twice and it should be testable without a database.
+ *
+ * **`locked` is checked on its own, not inferred from `paid`.** The schema's
+ * CHECK runs one way — a paid run is always locked — so a locked draft is a
+ * state the database permits and `processRun` used to walk straight past,
+ * overwriting the payslips of a cycle somebody had deliberately closed.
+ *
+ * **A cancelled cycle is not a draft.** It was also unguarded: processing one
+ * would have produced payslips and a bank advice for a month the company had
+ * decided not to pay.
+ *
+ * `processing` is refused too, which matters less than it looks — `processRun`
+ * takes `FOR UPDATE` on the row, so a second request blocks until the first
+ * commits and then sees `paid`. This covers the case where a previous attempt
+ * died after setting the status and before committing the rest.
+ */
+export function refusalToProcess(run: RunState): Refusal | null {
+  if (run.status === 'paid') {
+    return { message: 'that cycle has already been paid', code: 'already_paid' };
+  }
+  if (run.status === 'cancelled') {
+    return { message: 'that cycle was cancelled and cannot be processed', code: 'cancelled' };
+  }
+  if (run.locked) {
+    return {
+      message: 'that cycle is locked and cannot be processed again',
+      code: 'locked',
+    };
+  }
+  if (run.status === 'processing') {
+    return { message: 'that cycle is already being processed', code: 'in_progress' };
+  }
+  /*
+   * An allowlist, not a denylist. Only a draft processes; anything else is
+   * refused, including a status this function has never heard of. If a later
+   * migration adds a state — an approval step, say — and nobody updates this,
+   * the safe failure is a payroll that will not run, not one that runs on a
+   * cycle nobody approved.
+   */
+  if (run.status !== 'draft') {
+    return {
+      message: `a cycle in "${run.status}" cannot be processed`,
+      code: 'not_processable',
+    };
+  }
+  return null;
+}
