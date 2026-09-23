@@ -49,27 +49,6 @@ export const supabase: SupabaseClient | null = authConfigured
     })
   : null;
 
-/**
- * Which single-sign-on providers this deployment offers.
- *
- * Set VITE_SSO_PROVIDERS=google,azure. Each still has to be enabled and
- * configured in the Supabase dashboard — listing one here only decides whether
- * the button is drawn.
- */
-export type SsoProvider = 'google' | 'azure' | 'github';
-
-const PROVIDER_LABELS: Record<SsoProvider, string> = {
-  google: 'Google Workspace',
-  azure: 'Microsoft',
-  github: 'GitHub',
-};
-
-export const ssoProviders: SsoProvider[] = (import.meta.env.VITE_SSO_PROVIDERS ?? '')
-  .split(',')
-  .map((p: string) => p.trim().toLowerCase())
-  .filter((p: string): p is SsoProvider => p === 'google' || p === 'azure' || p === 'github');
-
-export const providerLabel = (p: SsoProvider): string => PROVIDER_LABELS[p];
 
 /**
  * Where the identity provider sends the browser back to.

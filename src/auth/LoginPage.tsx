@@ -8,13 +8,18 @@
  *
  * **Every control here is real.** A sign-in page is the worst possible place
  * for a button that does nothing: somebody who cannot get in will try all of
- * them. So the single-sign-on row renders only the providers this deployment
- * has configured — one button when one is set up, none at all when none is —
- * rather than a fixed row of logos where two are decoration.
+ * them.
  *
- * Single sign-on stays above the password fields because it is what a company
- * with a directory actually uses, and because it is the path where this app
- * never sees a password at all.
+ * **One way in: an email and a password.** Single sign-on and the emailed
+ * sign-in link both used to sit here and are both gone. Each of them could
+ * mint a Supabase auth user for an address nobody had invited — the
+ * application refused such a user everywhere, but this account model is
+ * invitation-only, and a login form should not be able to create the thing it
+ * authenticates.
+ *
+ * The consequence is deliberate and worth stating: somebody who has never
+ * signed in cannot get a credential from this page. An account is created by
+ * an administrator, and the password is set through the reset link below.
  */
 
 import { useState } from 'react';
@@ -22,16 +27,9 @@ import type { FormEvent } from 'react';
 import { LOGO_LIGHT } from '../assets/logo';
 import { ORG } from '../data/org';
 import { useAuth } from './AuthContext';
-import { providerLabel, ssoProviders } from './supabase';
-import type { SsoProvider } from './supabase';
 import { Icon } from '../components/icons';
 
 /** Drawn rather than fetched — a sign-in page should not wait on a CDN. */
-const PROVIDER_MARK: Record<SsoProvider, string> = {
-  google: 'G',
-  azure: '⊞',
-  github: '⌥',
-};
 
 /**
  * What the product does, in the customer's words rather than the module names.
@@ -210,25 +208,6 @@ export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
               </button>
             </div>
 
-            {ssoProviders.length > 0 && (
-              <>
-                <div className="login-or"><span>Or continue with</span></div>
-                <div className="login-ssos">
-                  {ssoProviders.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      className="btn login-sso"
-                      disabled={busy}
-                      onClick={() => void run(() => auth.signInWithSso(p))}
-                    >
-                      <span className="login-mark">{PROVIDER_MARK[p]}</span>
-                      {providerLabel(p)}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
 
             <p className="login-foot">
               New to {ORG.product}? Your HR administrator creates the account —

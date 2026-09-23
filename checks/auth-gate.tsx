@@ -86,9 +86,34 @@ const fail = (label: string, cond: boolean, detail = '') => {
   );
 
   /*
+   * Single sign-on went the same way, and for the same reason: OAuth mints an
+   * auth user on first use for whichever account the provider hands back, so
+   * anybody with a Google account could reach the same dead end.
+   */
+  fail(
+    'no sign-in path calls signInWithSso',
+    !/signInWithSso/.test(authSrc) && !/signInWithSso/.test(loginSrc),
+    'OAuth sign-in also creates an auth user on first use, for whichever '
+    + 'account the provider hands back',
+  );
+
+  fail(
+    'the login page offers no provider buttons',
+    !/ssoProviders/.test(loginSrc),
+    'a button that signs somebody in is a way in, whatever it is labelled',
+  );
+
+  fail(
+    'password sign-in is the way in',
+    /signInWithPassword/.test(loginSrc) && /signInWithPassword/.test(authSrc),
+    'removing the alternatives must not have removed the remaining one',
+  );
+
+  /*
    * Password reset stays, and must: it does not create users, and its message
    * is deliberately identical whether or not the address has an account, so it
-   * cannot be used to find out who works here.
+   * cannot be used to find out who works here. It is also now the only way a
+   * person sets a first password.
    */
   fail(
     'password reset is still offered',

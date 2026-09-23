@@ -16,7 +16,6 @@ import type { Session } from '@supabase/supabase-js';
 import { authConfigured, redirectTo, supabase } from './supabase';
 import { clearLastActivity } from './idle';
 import { assurance, blocksOn, mfaAvailable, usedFactor } from './mfa';
-import type { SsoProvider } from './supabase';
 
 export interface AuthState {
   /** False in demo mode: there is nothing to sign in to. */
@@ -28,7 +27,6 @@ export interface AuthState {
   displayName: string | null;
 
   signInWithPassword: (email: string, password: string) => Promise<void>;
-  signInWithSso: (provider: SsoProvider) => Promise<void>;
   /**
    * Ends the session and records why.
    *
@@ -271,15 +269,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(error.message);
   }, []);
 
-  const signInWithSso = useCallback(async (provider: SsoProvider) => {
-    if (!supabase) throw new Error('authentication is not configured for this build');
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: redirectTo() },
-    });
-    if (error) throw new Error(error.message);
-    // On success the browser navigates away; nothing after this runs.
-  }, []);
 
 
   const signOut = useCallback(async (reason: 'manual' | 'idle' = 'manual') => {
@@ -320,7 +309,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ?? session?.user.email
       ?? null,
     signInWithPassword,
-    signInWithSso,
     signOut,
     mfaRequired,
     refreshMfa,
@@ -331,7 +319,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mfaEnrolmentRequired: mustEnrol,
     refreshPasswordStatus,
   }), [
-    ready, session, signInWithPassword, signInWithSso, signOut,
+    ready, session, signInWithPassword, signOut,
     mfaRequired, refreshMfa, sendPasswordReset, setPassword, recovering, mustChange,
     mustEnrol, refreshPasswordStatus,
   ]);

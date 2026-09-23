@@ -1367,19 +1367,6 @@ kbd{font-family:var(--font)}
 .login-forgot:disabled{opacity:.45;cursor:default}
 .login-forgot:not(:disabled):hover{text-decoration:underline}
 
-.login-or{
-  display:flex;align-items:center;gap:12px;margin:22px 0 14px;
-  color:var(--ink-3);font-size:12.5px;
-}
-.login-or::before,.login-or::after{content:'';flex:1;height:1px;background:var(--line)}
-
-.login-ssos{display:grid;gap:9px}
-.login-sso{width:100%;height:46px;justify-content:center;gap:10px;font-weight:650;border-radius:var(--r)}
-.login-mark{
-  display:inline-grid;place-items:center;width:22px;height:22px;border-radius:var(--r-xs);
-  background:var(--surface-3);font-weight:800;font-size:12px;
-}
-
 .login-msg{font-size:12.5px;padding:10px 12px;border-radius:var(--r-md);margin:2px 0 10px}
 .login-msg.err{background:var(--crit-wash);color:var(--crit-text)}
 .login-msg.ok{background:var(--good-wash);color:var(--good-text)}
