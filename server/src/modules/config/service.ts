@@ -40,6 +40,15 @@ export interface Site {
   radius: number | null;
   tz: string;
   shift: string;
+  /**
+   * What kind of place this is (0044). Optional so that anything constructing
+   * a Site without it — the demo dataset, an older client — still typechecks.
+   */
+  kind?: 'headquarters' | 'office' | 'client' | 'remote' | undefined;
+  /** At most one per tenant, enforced by a partial unique index. */
+  headquarters?: boolean | undefined;
+  state?: string | undefined;
+  postcode?: string | undefined;
 }
 
 export interface Holiday {
@@ -62,6 +71,10 @@ const toSite = (r: Record<string, unknown>): Site => ({
   lat: r.latitude === null ? null : Number(r.latitude),
   lng: r.longitude === null ? null : Number(r.longitude),
   radius: r.fence_radius_m === null ? null : Number(r.fence_radius_m),
+  kind: r.kind as Site['kind'],
+  headquarters: Boolean(r.is_headquarters),
+  state: (r.state as string) ?? '',
+  postcode: (r.postal_code as string) ?? '',
   tz: (r.timezone as string) ?? 'Asia/Kolkata',
   shift: (r.shift_code as string) ?? 'GEN',
 });
@@ -70,7 +83,8 @@ export async function listSites(caller: Caller): Promise<Site[]> {
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
       `SELECT s.code, s.name, s.city, s.country, s.address, s.timezone,
-              s.latitude, s.longitude, s.fence_radius_m, sh.code AS shift_code
+              s.latitude, s.longitude, s.fence_radius_m, sh.code AS shift_code,
+              s.kind, s.is_headquarters, s.state, s.postal_code
          FROM site s
          LEFT JOIN shift sh ON sh.id = s.default_shift_id
         WHERE s.active

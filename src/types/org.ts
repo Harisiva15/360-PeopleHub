@@ -17,6 +17,18 @@ export interface Site {
   ptax: number;
   tz: string;
   shift: string;
+  /**
+   * What kind of place this is. Optional because the demo dataset predates the
+   * column and every screen that only names a site does not need it.
+   *
+   * CLIENT and WFH are deliberately not offices — somebody working from home is
+   * not at one, and a client's building is not ours.
+   */
+  kind?: 'headquarters' | 'office' | 'client' | 'remote';
+  /** At most one per company, enforced by a partial unique index (0044). */
+  headquarters?: boolean;
+  state?: string;
+  postcode?: string;
 }
 
 export interface Dept {
