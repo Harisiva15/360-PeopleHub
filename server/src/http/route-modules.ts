@@ -31,6 +31,7 @@ export const ROUTE_MODULE: Record<string, string> = {
   attendance: 'attendance',
   candidates: 'hiring',
   celebrations: 'celebrations',
+  compensation: 'compensation',
   config: 'settings',
   'dev-plans': 'devplans',
   documents: 'documents',

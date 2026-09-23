@@ -69,7 +69,7 @@ export const PERMS: Record<AppRole, string[]> = {
    * Managers used to be offered all five and got a page of refusals on each.
    */
   admin: [
-    'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
+    'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'compensation', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
     'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events', 'exports', 'customreports', 'integrations',
     'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users', 'account',

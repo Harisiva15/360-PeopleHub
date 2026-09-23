@@ -20,6 +20,8 @@ import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
 import { useShowPayslip } from './Payslip';
 import { useTabFromUrl } from '../tabParam';
+import { CompensationPanel, ReviseForm } from './Compensation';
+import type { StructureRow } from '../../services';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import type { Employee } from '../../types/employee';
@@ -43,6 +45,32 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
   const processRun = useProcessRun();
   const { data: allTotals = {} } = usePayrollTotalsFor(runs.map((r) => r.mk));
   if (!curRun || !cur) return <EmptyState msg="Loading payroll…" icon={<Icon n="rupee" size="lg" />} />;
+
+  /*
+   * Nothing processed yet, said plainly.
+   *
+   * A draft cycle's figures are a projection computed from today's structures
+   * and stored nowhere — that is deliberate, so finance can see the month
+   * before committing to it. But tiles reading "Net payable" over a cycle
+   * nobody has run describe a payment that is not going to happen, and a chart
+   * of zeros looks like a payroll that paid nothing rather than one that has
+   * not been run. So the projection is labelled, and a company with no
+   * employees to project from gets a sentence instead of a dashboard.
+   */
+  const nothingToPay = cur.count === 0;
+  if (nothingToPay) {
+    return (
+      <div className="stack">
+        <EmptyState
+          icon={<Icon n="rupee" size="lg" />}
+          msg={`No payroll records for ${monthLabelLong(curRun.mk)}. `
+            + 'Nobody is on the payroll for this period, so there is nothing to '
+            + 'process, project or pay.'}
+        />
+      </div>
+    );
+  }
+
   const CUR_RUN = curRun;
   const PAYRUNS = runs;
   const trend = runs.filter((r) => allTotals[r.mk]).map((r) => ({ mk: r.mk, t: allTotals[r.mk] }));
@@ -63,6 +91,13 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
             }}>Process payroll</button>
           : undefined}>
         {cur.count} employees · gross {inr(cur.gross)} · deductions {inr(cur.ded)} · <b>net payable {inr(cur.net)}</b>
+        {CUR_RUN.status !== 'Paid' && (
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
+            A projection from today&rsquo;s salary structures. Nothing is stored
+            until the cycle is processed, and the figures will move if a
+            compensation or an attendance record changes before then.
+          </div>
+        )}
       </Banner>
 
       <StatRow cols={5}>
@@ -662,6 +697,37 @@ function PyStructures() {
       body: <StructureTable e={e} s={salaryOf.get(e.id)!.salary} />,
     });
 
+  /*
+   * Compensation is a drawer rather than another column. What somebody is paid,
+   * what they were paid before and why it changed is a record in its own right,
+   * and squeezing it into the master table would flatten the history into a
+   * single current number — which is exactly the shape that made revising pay
+   * look like editing a field.
+   */
+  const revise = (e: Employee, current: StructureRow | undefined) =>
+    layer.modal({
+      title: `Revise compensation — ${e.name}`,
+      sub: 'A new version. The one in force is closed, not replaced.',
+      size: 'narrow',
+      body: (close: () => void) => (
+        <ReviseForm person={e} current={current} close={close} />
+      ),
+      footer: null,
+    });
+
+  const showCompensation = (e: Employee) =>
+    layer.drawer({
+      title: e.name,
+      sub: `${e.code} · ${deptOf(e.dept).name} · ${e.designation}`,
+      body: (
+        <CompensationPanel
+          person={e}
+          canRevise
+          onRevise={(current) => revise(e, current)}
+        />
+      ),
+    });
+
   return (
     <div className="stack">
       <StatRow cols={4}>
@@ -716,7 +782,10 @@ function PyStructures() {
                     <td className="num">{m(e, salaryOf.get(e.id)!.allowanceAnnual)}</td>
                     <td className="num">{m(e, sum(s.benefits, (b) => b.a))}</td>
                     <td className="num">{m(e, Math.round(s.grossA / 12))}</td>
-                    <td className="right"><button className="btn sm" onClick={() => showBreakup(e)}>Breakup</button></td>
+                    <td className="right nowrap">
+                      <button className="btn sm" onClick={() => showBreakup(e)}>Breakup</button>{' '}
+                      <button className="btn sm" onClick={() => showCompensation(e)}>Compensation</button>
+                    </td>
                   </tr>
                 );
               })}
@@ -785,6 +854,17 @@ function PyMyStructure() {
             .concat(s.benefits.map((x, i) => ({ k: x.k, c: PAL[i + 4] })))} />
         </Card>
       </div>
+
+      {/*
+        * Your own compensation and how it has changed.
+        *
+        * Read-only for everybody here, including an administrator looking at
+        * their own record: revising pay is done from the compensation master,
+        * where the act is visibly about somebody rather than about yourself.
+        * The service refuses it either way — this is so the button is not
+        * offered where it should not be pressed.
+        */}
+      <CompensationPanel person={e} canRevise={false} onRevise={() => {}} />
     </div>
   );
 }

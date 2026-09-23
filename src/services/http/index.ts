@@ -151,6 +151,15 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       approveAdvance: (id) => api.post(`/expenses/advances/${id}/approve`),
     },
 
+    compensation: {
+      components: () => api.get('/compensation/components'),
+      saveComponent: (draft) => api.post('/compensation/components', draft),
+      removeComponent: (code) => api.del(`/compensation/components/${code}`),
+      setStructure: (empId, draft) => api.post(`/compensation/${empId}`, draft),
+      /* Own history lives under payroll, which is where the `own` scope is. */
+      history: (empId) => api.get(`/payroll/structure/${empId}/history`),
+    },
+
     payroll: {
       runs: () => api.get('/payroll/runs'),
       currentRun: () => api.get('/payroll/runs/current'),

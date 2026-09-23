@@ -1394,6 +1394,109 @@ export interface FenceUpdate {
   radius: number;
 }
 
+/* ---------- compensation ---------- */
+
+export type ComponentKind = 'earning' | 'deduction' | 'employer_contribution' | 'reimbursement';
+
+/**
+ * One rule in the company's salary formula.
+ *
+ * A component is a percentage or a fixed amount, never both. `percentOf` names
+ * the component the percentage is taken of — "50% of BASIC" — and null means a
+ * percentage of CTC.
+ */
+export interface SalaryComponent {
+  code: string;
+  name: string;
+  kind: ComponentKind;
+  percentOf: string | null;
+  percent: number | null;
+  flat: number | null;
+  taxable: boolean;
+  order: number;
+  active: boolean;
+}
+
+export interface ComponentDraft {
+  code: string;
+  name: string;
+  kind: ComponentKind;
+  percentOf?: string | null;
+  percent?: number | null;
+  flat?: number | null;
+  taxable?: boolean;
+  order?: number;
+  active?: boolean;
+}
+
+/** One component applied to one CTC, with the arithmetic it came from. */
+export interface ComputedLine {
+  code: string;
+  name: string;
+  kind: ComponentKind;
+  /** How the figure was arrived at, e.g. "50% of BASIC". */
+  basis: string;
+  annual: number;
+  taxable: boolean;
+}
+
+export interface Reconciliation {
+  ctc: number;
+  lines: ComputedLine[];
+  /** Earnings plus employer contributions — what must equal CTC. */
+  counted: number;
+  difference: number;
+  balances: boolean;
+}
+
+/** One version of an employee's compensation. History, once superseded. */
+export interface StructureRow {
+  id: string;
+  empId: string;
+  validFrom: string;
+  validTo: string | null;
+  currency: string;
+  ctc: number;
+  gross: number;
+  reason: string;
+  current: boolean;
+  createdAt: string;
+  createdBy: string | null;
+}
+
+export interface StructureDraft {
+  ctc: number;
+  validFrom: string;
+  currency?: string;
+  reason?: string;
+}
+
+/**
+ * Managing what people are paid, and the formula it is built from.
+ *
+ * Separate from `PayrollService` because it is separately permitted: reading
+ * your own payslip and deciding somebody's salary are not the same act, and a
+ * tenant narrows them independently.
+ */
+export interface CompensationService {
+  /** The company's formula. Admin only. */
+  components(): Promise<SalaryComponent[]>;
+  /** Create or change a component, returning the whole list. Admin only. */
+  saveComponent(draft: ComponentDraft): Promise<SalaryComponent[]>;
+  /** Refused while another component is a percentage of this one. */
+  removeComponent(code: string): Promise<SalaryComponent[]>;
+  /**
+   * Record a new compensation, superseding whatever was in force.
+   *
+   * Never overwrites: the previous structure is closed the day before this one
+   * starts and both rows remain. Refused if the components do not reconcile to
+   * the CTC — nothing is rounded to make them fit.
+   */
+  setStructure(empId: string, draft: StructureDraft): Promise<StructureRow>;
+  /** One employee's compensation over time. Own, or admin. */
+  history(empId: string): Promise<StructureRow[]>;
+}
+
 /** A location being opened. `code` is its identity and cannot change after. */
 export interface SiteDraft {
   /** 2–10 letters or digits, such as BLR. Unique within the company. */
@@ -1599,6 +1702,7 @@ export interface Services {
   timesheet: TimesheetService;
   expenses: ExpenseService;
   payroll: PayrollService;
+  compensation: CompensationService;
   shifts: ShiftService;
   loans: LoanService;
   letters: LetterService;

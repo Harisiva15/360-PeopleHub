@@ -8,6 +8,7 @@
  */
 
 import { useMutation, useQuery } from '../../services/react';
+import type { StructureDraft } from '../../services';
 import { addDays, mondayOf, TODAY, ymd } from '../../lib/dates';
 
 /** Team-cost charts look back four weeks of logged effort. */
@@ -35,3 +36,13 @@ export const useApprovedClaims = () => useQuery((s) => s.expenses.claims({ statu
 export const useTeamTimesheets = (empIds: string[]) =>
   useQuery((s) => s.timesheet.list({ empIds, since: teamWindowStart() }), [empIds.join(",")]);
 export const useProcessRun = () => useMutation((s, mk: string) => s.payroll.processRun(mk));
+
+/* ---------- compensation ---------- */
+
+/** One employee's compensation over time. Own, or admin — the service decides. */
+export const useSalaryHistory = (empId: string) =>
+  useQuery((s) => s.compensation.history(empId), [empId]);
+export const useSalaryComponents = () => useQuery((s) => s.compensation.components(), []);
+export const useSetStructure = () =>
+  useMutation((s, empId: string, draft: StructureDraft) =>
+    s.compensation.setStructure(empId, draft));

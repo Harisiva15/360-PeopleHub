@@ -116,6 +116,21 @@ export const POLICY: Record<string, ModulePolicy> = {
    * admin-only and this records why.
    */
   payroll: rule(['own', 'none', 'none'], ['own', 'none', 'none'], ['all', 'all', 'all']),
+
+  /*
+   * Setting somebody's salary is its own module, not a corner of `payroll`.
+   *
+   * They are narrowed for different reasons. A tenant that wants finance to
+   * see the register but not to *change* what people are paid can take this
+   * away without also taking away everyone's own payslip, which is what
+   * narrowing `payroll` would do.
+   *
+   * Nothing below admin, and not by oversight: a manager who can revise their
+   * own report's pay is a manager who can give themselves a team of one. An
+   * employee reading their own compensation history goes through `payroll`
+   * with its `own` scope, not through here.
+   */
+  compensation: rule(NO, NO, ['all', 'all', 'all']),
   tax: rule(['own', 'own', 'none'], ['own', 'own', 'none'], ['all', 'all', 'all']),
   benefits: rule(['own', 'own', 'none'], ['own', 'own', 'none'], ['all', 'all', 'all']),
 

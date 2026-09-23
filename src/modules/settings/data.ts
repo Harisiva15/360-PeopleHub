@@ -6,7 +6,9 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import type { AppRole } from '../../types/employee';
-import type { FenceUpdate, GridPatch, SiteDraft, SitePatch } from '../../services';
+import type {
+  ComponentDraft, FenceUpdate, GridPatch, SiteDraft, SitePatch,
+} from '../../services';
 import { useCaller } from '../../services/people';
 
 export { usePeople, useVisiblePeople } from '../../services/people';
@@ -24,6 +26,14 @@ export const useUpdateSite = () =>
   useMutation((s, siteId: string, patch: SitePatch) => s.config.updateSite(siteId, patch));
 export const useSetSiteActive = () =>
   useMutation((s, siteId: string, active: boolean) => s.config.setSiteActive(siteId, active));
+
+/* ---------- compensation ---------- */
+
+export const useComponents = () => useQuery((s) => s.compensation.components(), []);
+export const useSaveComponent = () =>
+  useMutation((s, draft: ComponentDraft) => s.compensation.saveComponent(draft));
+export const useRemoveComponent = () =>
+  useMutation((s, code: string) => s.compensation.removeComponent(code));
 export const useHolidays = () => useQuery((s) => s.config.holidays(), []);
 export const useCompensation = () => useQuery((s) => s.payroll.compensation(), []);
 export const usePayRuns = () => useQuery((s) => s.payroll.runs(), []);

@@ -30,6 +30,10 @@ import {
   setSiteActive, updateFence, updateSite,
 } from '../modules/config/service.ts';
 import {
+  CompensationError, listComponents, removeComponent,
+  salaryHistory, saveComponent, setSalaryStructure,
+} from '../modules/payroll/compensation.ts';
+import {
   approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
 } from '../modules/joiners/service.ts';
 import {
@@ -910,6 +914,34 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       rejectJoiner(c, p.id!, (body as { note?: string } | undefined)?.note),
   },
+  /*
+   * Compensation sits on its own module rather than under `payroll`, so a
+   * tenant can narrow who manages salary without also hiding everybody's own
+   * payslip. Reading your *own* history stays on `payroll` for the same reason.
+   */
+  { method: 'GET', pattern: '/compensation/components', handler: (c) => listComponents(c) },
+  {
+    method: 'POST',
+    pattern: '/compensation/components',
+    handler: (c, _r, _p, body) => saveComponent(c, body as Parameters<typeof saveComponent>[1]),
+  },
+  {
+    method: 'DELETE',
+    pattern: '/compensation/components/:code',
+    handler: (c, _r, p) => removeComponent(c, p.code!),
+  },
+  {
+    method: 'POST',
+    pattern: '/compensation/:empId',
+    handler: (c, _r, p, body) =>
+      setSalaryStructure(c, p.empId!, body as Parameters<typeof setSalaryStructure>[2]),
+  },
+  {
+    method: 'GET',
+    pattern: '/payroll/structure/:empId/history',
+    handler: (c, _r, p) => salaryHistory(c, p.empId!),
+  },
+
   { method: 'GET', pattern: '/config/sites', handler: (c) => listSites(c) },
   { method: 'GET', pattern: '/config/holidays', handler: (c) => listHolidays(c) },
   {
@@ -1901,6 +1933,12 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof PlannerError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof CompensationError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;

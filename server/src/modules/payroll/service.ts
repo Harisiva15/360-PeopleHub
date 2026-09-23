@@ -36,6 +36,8 @@ import {
   currencyFor, dailyRateFor, hraExemption, monthlySlip, structureFor,
 } from './rules.ts';
 import type { Country, Line, Structure } from './rules.ts';
+import { applyComponents } from './compensation.ts';
+import type { ComponentKind } from './compensation.ts';
 
 export class PayrollError extends Error {
   readonly code: string;
@@ -134,19 +136,109 @@ const toPayEmployee = (r: Record<string, unknown>): EmployeePay => ({
 /**
  * The structure behind one person's pay.
  *
- * Derived from CTC rather than read from `salary_structure`, because that
- * table is written when a structure is *revised* and most employees have never
- * had one written. Deriving keeps a new joiner's payslip correct on day one;
- * a stored revision, when it exists, takes precedence.
+ * Prefers what has been configured and falls back to what can be derived, so a
+ * new joiner's payslip is right on the day they start and a company that has
+ * written its own rules down gets those instead. The order is spelled out
+ * below, because the fallback is the behaviour every existing employee has and
+ * it must not change underneath them.
  */
 async function structureOf(db: TenantClient, e: EmployeePay): Promise<Structure> {
   const stored = await db.query(
-    `SELECT annual_ctc FROM salary_structure
+    `SELECT annual_ctc, currency FROM salary_structure
       WHERE employee_id = $1 AND valid_to IS NULL
       ORDER BY valid_from DESC LIMIT 1`, [e.id]);
   const ctc = stored.rows[0] ? Number(stored.rows[0].annual_ctc) : e.ctc;
+
+  /*
+   * A configured structure beats the derived one, and only then.
+   *
+   * Three cases, in order. An employee with a stored structure *and* a company
+   * that has written its components down gets the company's own formula. An
+   * employee with a stored structure but no components gets the derived rules
+   * applied to the stored CTC — which is what this function already did, and
+   * is why seeding components changes nothing until somebody is given a
+   * structure. Everyone else gets the derived rules on `employee.ctc`.
+   *
+   * The derived rules are not going anywhere. They are the answer for a
+   * company that has not configured anything, which is every company on the
+   * day it starts.
+   */
+  if (stored.rows[0]) {
+    const comps = await db.query(
+      `SELECT code, name, kind, percent_of_code, percent, flat_amount, taxable,
+              display_order, active
+         FROM salary_component WHERE active ORDER BY display_order, code`);
+    if (comps.rowCount) {
+      return structureFromComponents(
+        comps.rows, ctc, String(stored.rows[0].currency).trim(), e.country);
+    }
+  }
   return structureFor(ctc, e.country);
 }
+
+/**
+ * The company's own components, in the shape the rest of payroll expects.
+ *
+ * `Structure` predates the component table and is what every payslip, letter
+ * and tax calculation reads, so the components are translated into it rather
+ * than the readers being changed. Earnings become earnings, employer
+ * contributions become benefits, and the three named figures payroll uses
+ * directly — employer PF, gratuity, medical insurance — are picked out by the
+ * kind and code the seed gives them, falling back to zero where a company has
+ * not defined one.
+ */
+function structureFromComponents(
+  rows: Record<string, unknown>[],
+  ctc: number,
+  currency: string,
+  country: Country,
+): Structure {
+  const comps = rows.map((r) => ({
+    code: r.code as string,
+    name: r.name as string,
+    kind: r.kind as ComponentKind,
+    percentOf: (r.percent_of_code as string | null) ?? null,
+    percent: r.percent === null ? null : Number(r.percent),
+    flat: r.flat_amount === null ? null : Number(r.flat_amount),
+    taxable: Boolean(r.taxable),
+    order: Number(r.display_order),
+    active: Boolean(r.active),
+  }));
+  const applied = applyComponents(comps, ctc);
+
+  const earnings = applied.lines
+    .filter((l) => l.kind === 'earning')
+    .map((l) => ({ k: l.name, a: l.annual, tag: TAG_FOR[l.code] ?? 'special' }));
+  const benefits = applied.lines
+    .filter((l) => l.kind === 'employer_contribution')
+    .map((l) => ({ k: l.name, a: l.annual }));
+  const pick = (code: string) => applied.lines.find((l) => l.code === code)?.annual ?? 0;
+
+  return {
+    ctc,
+    ccy: currency || (country === 'IN' ? 'INR' : 'USD'),
+    country,
+    earnings,
+    benefits,
+    grossA: earnings.reduce((s, x) => s + x.a, 0),
+    pfEmpr: pick('PF_ER'),
+    gratuity: pick('GRATUITY'),
+    medIns: pick('MEDINS'),
+  };
+}
+
+/*
+ * Which earning a component is, for the rules that treat them differently —
+ * HRA exemption needs to know which line is rent, and the tax code needs basic.
+ * A code this does not know is a special allowance, which is the residual
+ * category the tax rules already treat as fully taxable.
+ */
+const TAG_FOR: Record<string, Line['tag']> = {
+  BASIC: 'basic',
+  HRA: 'hra',
+  LTA: 'lta',
+  SPECIAL: 'special',
+};
 
 export async function salaryStructureOf(caller: Caller, empId: string): Promise<Structure> {
   assertOwnOrAdmin(caller, empId);

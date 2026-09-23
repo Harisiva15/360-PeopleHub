@@ -111,7 +111,14 @@ export const NAV: NavGroup[] = [
     desc: 'Pay, tax, benefits and what you are owed.',
     items: [
       { k: 'payroll', n: 'My payslips', to: '/payroll?v=me', ic: 'payslip', d: 'Download any month’s payslip.' },
-      { k: 'payroll', n: 'Salary details', to: '/payroll?v=struct', ic: 'money', d: 'How your package is made up.' },
+      { k: 'payroll', n: 'Salary details', to: '/payroll?v=struct', ic: 'money', d: 'How your package is made up.', roles: ['employee', 'manager'] },
+      /*
+       * The same tab, named for what an admin does there. For everyone else it
+       * shows their own package; for an admin it is the compensation master,
+       * where a salary is set and its history read. One route, two audiences,
+       * so the label says which one is reading.
+       */
+      { k: 'payroll', n: 'Compensation', to: '/payroll?v=struct', ic: 'money', d: 'Set salaries and read what they were before.', roles: ['admin'] },
       { k: 'tax', n: 'Tax declarations', ic: 'tax', d: 'Declare investments and claim exemptions.' },
       { k: 'benefits', n: 'Benefits & flexi', ic: 'gift', d: 'Allocate your flexible benefit pot.' },
       { k: 'expenses', n: 'Reimbursements', ic: 'invoice', d: 'Claim expenses and travel.' },

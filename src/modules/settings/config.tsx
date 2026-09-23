@@ -6,6 +6,8 @@ import { LOGO_LIGHT } from '../../assets/logo';
 
 import { BANKS, DEPTS, GRADES, LEAVE_TYPES, ORG, PROJECTS } from '../../data/org';
 import type { Site } from '../../types/org';
+import type { ComponentKind, SalaryComponent } from '../../services';
+import { applyComponents } from '../../lib/compensation';
 import type { CountryId } from '../../types/country';
 import { COUNTRIES } from '../../data/countries';
 
@@ -13,7 +15,7 @@ import { COUNTRIES } from '../../data/countries';
 
 
 
-import { Badge, Banner, Card, KV, Table, TableWrap } from '../../components/ui';
+import { Badge, Banner, Card, EmptyState, KV, Table, TableWrap } from '../../components/ui';
 import { Dot, ListRow } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
@@ -21,6 +23,7 @@ import { FenceForm } from './Fence';
 import {
   useAddHoliday, useAllEmployees, useAttendanceAll, useCandidates, useCompensation,
   useCreateSite, useHolidays, useLeaveAll, usePayRuns, useRequisitions,
+  useComponents, useRemoveComponent, useSaveComponent,
   useSetLeaveQuota, useSetSiteActive, useSites,
   useTimesheetsAll, useUpdateSite, useVisiblePeople,
 } from './data';
@@ -562,59 +565,289 @@ export function LeavePolicyTab() {
 
 /* ---------- Salary components ---------- */
 
-type CompKind = 'Earning' | 'Deduction' | 'Benefit';
 
 /** [component, kind, calculation, taxable, part of gross, PF applicable] */
-const COMPONENTS: [string, CompKind, string, string, string, string][] = [
-  ['Basic Salary', 'Earning', '40% of annual CTC', 'Yes', 'Yes', 'Yes'],
-  ['House Rent Allowance', 'Earning', '50% of Basic', 'Exempt u/s 10(13A)', 'Yes', 'No'],
-  ['Leave Travel Allowance', 'Earning', '8% of Basic', 'Exempt on claim', 'Yes', 'No'],
-  ['Special Allowance', 'Earning', 'Balancing figure', 'Yes', 'Yes', 'No'],
-  ['Employer PF', 'Benefit', '12% of Basic (capped ₹15,000/month)', 'No', 'No', '—'],
-  ['Gratuity accrual', 'Benefit', '4.81% of Basic', 'Exempt to ₹20 L', 'No', '—'],
-  ['Group Medical Insurance', 'Benefit', '₹12,000 per annum', 'No', 'No', '—'],
-  ['Employee PF', 'Deduction', '12% of Basic (capped ₹15,000/month)', '80C deduction', '—', '—'],
-  ['ESI (employee)', 'Deduction', '0.75% of gross if ≤ ₹21,000', 'No', '—', '—'],
-  ['Professional Tax', 'Deduction', 'State slab (₹200–₹208/month)', '16(iii) deduction', '—', '—'],
-  ['Income Tax (TDS)', 'Deduction', 'Section 192 monthly average', '—', '—', '—'],
-];
 
-const KIND_TONE: Record<CompKind, 'good' | 'crit' | 'info'> = { Earning: 'good', Deduction: 'crit', Benefit: 'info' };
+/* ---------- salary components ---------- */
+
+const COMP_KIND_LABEL: Record<ComponentKind, string> = {
+  earning: 'Earning',
+  deduction: 'Deduction',
+  employer_contribution: 'Employer cost',
+  reimbursement: 'Reimbursement',
+};
+const COMP_KIND_TONE: Record<ComponentKind, 'good' | 'crit' | 'info' | 'mute'> = {
+  earning: 'good',
+  deduction: 'crit',
+  employer_contribution: 'info',
+  reimbursement: 'mute',
+};
+
+/** How a component's figure is arrived at, in the words the table shows. */
+const basisOf = (c: SalaryComponent): string =>
+  c.flat !== null ? `Fixed ${inr(c.flat)} per annum`
+    : c.percentOf === null ? `${c.percent}% of annual CTC`
+      : `${c.percent}% of ${c.percentOf}`;
+
+/**
+ * Create a component, or change one.
+ *
+ * The code is the identity every other component refers to — HRA is "50% of
+ * BASIC" by code — so it is asked for once and shown thereafter.
+ */
+function ComponentForm({ close, existing, others }: {
+  close: () => void;
+  existing?: SalaryComponent;
+  others: SalaryComponent[];
+}) {
+  const app = useApp();
+  const save = useSaveComponent();
+  const editing = existing !== undefined;
+
+  const [code, setCode] = useState(existing?.code ?? '');
+  const [name, setName] = useState(existing?.name ?? '');
+  const [kind, setKind] = useState<ComponentKind>(existing?.kind ?? 'earning');
+  const [mode, setMode] = useState<'percent' | 'flat'>(existing?.flat !== null && existing !== undefined ? 'flat' : 'percent');
+  const [percent, setPercent] = useState(existing?.percent !== null && existing?.percent !== undefined ? String(existing.percent) : '');
+  const [flat, setFlat] = useState(existing?.flat !== null && existing?.flat !== undefined ? String(existing.flat) : '');
+  const [percentOf, setPercentOf] = useState(existing?.percentOf ?? '');
+  const [taxable, setTaxable] = useState(existing?.taxable ?? true);
+  const [active, setActive] = useState(existing?.active ?? true);
+  const [busy, setBusy] = useState(false);
+
+  /* Only a component that is itself a percentage of CTC may be a base. */
+  const bases = others.filter((c) => c.percentOf === null && c.flat === null && c.code !== existing?.code);
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await save.mutate({
+        code: code.trim().toUpperCase(),
+        name: name.trim(),
+        kind,
+        percentOf: mode === 'percent' && percentOf ? percentOf : null,
+        percent: mode === 'percent' ? Number(percent) : null,
+        flat: mode === 'flat' ? Number(flat) : null,
+        taxable,
+        active,
+        ...(existing ? { order: existing.order } : {}),
+      });
+      app.toast(editing ? 'Component saved' : 'Component added', 'ok');
+      close();
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not save the component', 'err');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="stack">
+      <div className="grid g2">
+        <label className="fld">
+          <span>Code</span>
+          <input className="input" value={code} disabled={editing} autoFocus={!editing}
+            placeholder="HRA" onChange={(e) => setCode(e.target.value.toUpperCase())} />
+          {editing && (
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              Other components refer to this one by its code, so it does not change.
+            </span>
+          )}
+        </label>
+        <label className="fld">
+          <span>Name</span>
+          <input className="input" value={name} autoFocus={editing}
+            placeholder="House Rent Allowance" onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label className="fld">
+          <span>Type</span>
+          <select className="input" value={kind}
+            onChange={(e) => setKind(e.target.value as ComponentKind)}>
+            {(Object.keys(COMP_KIND_LABEL) as ComponentKind[]).map((k) => (
+              <option key={k} value={k}>{COMP_KIND_LABEL[k]}</option>
+            ))}
+          </select>
+        </label>
+        <label className="fld">
+          <span>Calculated as</span>
+          <select className="input" value={mode}
+            onChange={(e) => setMode(e.target.value as 'percent' | 'flat')}>
+            <option value="percent">A percentage</option>
+            <option value="flat">A fixed annual amount</option>
+          </select>
+        </label>
+
+        {mode === 'percent' ? (
+          <>
+            <label className="fld">
+              <span>Percentage</span>
+              <input className="input" type="number" step="0.001" min="0" value={percent}
+                placeholder="40" onChange={(e) => setPercent(e.target.value)} />
+            </label>
+            <label className="fld">
+              <span>Of</span>
+              <select className="input" value={percentOf}
+                onChange={(e) => setPercentOf(e.target.value)}>
+                <option value="">Annual CTC</option>
+                {bases.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+              </select>
+            </label>
+          </>
+        ) : (
+          <label className="fld">
+            <span>Annual amount</span>
+            <input className="input" type="number" min="0" value={flat}
+              placeholder="12000" onChange={(e) => setFlat(e.target.value)} />
+          </label>
+        )}
+      </div>
+
+      <div className="row wrap" style={{ gap: 16 }}>
+        <label className="row" style={{ gap: 7, cursor: 'pointer' }}>
+          <input type="checkbox" checked={taxable} onChange={(e) => setTaxable(e.target.checked)} />
+          <span style={{ fontSize: 12.5 }}>Taxable</span>
+        </label>
+        <label className="row" style={{ gap: 7, cursor: 'pointer' }}>
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+          <span style={{ fontSize: 12.5 }}>Active</span>
+        </label>
+      </div>
+
+      {mode === 'flat' && (
+        <Banner kind="warn" title="A fixed amount cannot scale with CTC">
+          Percentages reconcile to any CTC; a fixed amount does not. Adding one
+          means the percentage components must be reduced so the total still
+          comes to each employee&rsquo;s CTC exactly, or the structure is refused.
+        </Banner>
+      )}
+
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={close}>Cancel</button>
+        <button className="btn primary" onClick={submit} disabled={busy}>
+          {busy ? 'Saving…' : editing ? 'Save component' : 'Add component'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The company's salary formula.
+ *
+ * This table used to be eleven hard-coded rows above a Save button that toasted
+ * and wrote nothing. The rows described what `structureFor` in payroll/rules.ts
+ * does, which was accurate and entirely unconnected to it — editing them was
+ * impossible and appearing to save them was misleading.
+ *
+ * The reconciliation line is the one that matters: components only take effect
+ * for an employee who has a stored compensation, and a structure is refused
+ * unless the earnings and employer costs come to exactly their CTC. Showing the
+ * total against 100% here means that refusal is never a surprise.
+ */
+function SalaryComponentsCard() {
+  const app = useApp();
+  const layer = useLayer();
+  const { data: components = [], loading } = useComponents();
+  const remove = useRemoveComponent();
+
+  /* The same arithmetic the server does, against a round number, so the
+     percentages can be read as a proportion of CTC rather than of each other. */
+  const SAMPLE = 1_000_000;
+  const check = applyComponents(components, SAMPLE);
+
+  const edit = (c?: SalaryComponent) => layer.modal({
+    title: c ? c.name : 'Add a salary component',
+    sub: c ? `Component ${c.code}` : 'One rule in the company’s salary formula',
+    size: 'narrow',
+    body: (close: () => void) => (
+      <ComponentForm close={close} existing={c} others={components} />
+    ),
+    footer: null,
+  });
+
+  const drop = async (c: SalaryComponent) => {
+    try {
+      await remove.mutate(c.code);
+      app.toast(`${c.name} removed`, 'ok');
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not remove the component', 'err');
+    }
+  };
+
+  return (
+    <Card
+      title="Salary components"
+      sub="How CTC is broken down. Applies to employees with a stored compensation."
+      actions={<button className="btn sm primary" onClick={() => edit()}>Add component</button>}
+      flush
+    >
+      {!loading && components.length === 0 ? (
+        <div style={{ padding: 16 }}>
+          <EmptyState icon={<Icon n="money" size="lg" />} msg="No components defined. Until one exists every payslip uses the built-in defaults — basic at 40% of CTC, HRA at half of basic. Add components to replace that with the company’s own structure." />
+        </div>
+      ) : (
+        <>
+          <TableWrap>
+            <Table>
+              <thead>
+                <tr>
+                  <th>Component</th><th>Code</th><th>Type</th><th>Calculation</th>
+                  <th className="num">On {inr(SAMPLE)}</th><th>Taxable</th><th>Status</th><th />
+                </tr>
+              </thead>
+              <tbody>
+                {components.map((c) => {
+                  const line = check.lines.find((l) => l.code === c.code);
+                  return (
+                    <tr key={c.code} style={c.active ? undefined : { opacity: 0.55 }}>
+                      <td><b>{c.name}</b></td>
+                      <td className="mono">{c.code}</td>
+                      <td><Badge kind={COMP_KIND_TONE[c.kind]}>{COMP_KIND_LABEL[c.kind]}</Badge></td>
+                      <td>{basisOf(c)}</td>
+                      <td className="num">{line ? inr(line.annual) : '—'}</td>
+                      <td>{c.taxable ? 'Yes' : 'No'}</td>
+                      <td>{c.active ? 'Active' : 'Inactive'}</td>
+                      <td className="nowrap" style={{ textAlign: 'right' }}>
+                        <button className="btn sm" onClick={() => edit(c)}>Edit</button>{' '}
+                        <button className="btn sm" onClick={() => drop(c)}>Remove</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </TableWrap>
+
+          <div style={{ padding: '10px 16px' }}>
+            {check.balances ? (
+              <div className="muted" style={{ fontSize: 12.5 }}>
+                Earnings and employer costs come to <b>{inr(check.counted)}</b> on a
+                CTC of {inr(SAMPLE)} — the formula reconciles, so a compensation can
+                be saved against it.
+              </div>
+            ) : (
+              <Banner kind="warn" title="The formula does not reconcile">
+                Earnings and employer costs come to {inr(check.counted)} against a CTC
+                of {inr(SAMPLE)} — {inr(Math.abs(check.difference))}{' '}
+                {check.difference > 0 ? 'more' : 'short'}. Saving a compensation will be
+                refused until they add up. Nothing is rounded to close the gap, because
+                a payslip that quietly disagrees with an offer letter is worse than one
+                that will not save.
+              </Banner>
+            )}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
 
 export function PayConfigTab() {
-  const app = useApp();
   const { data: comp = [] } = useCompensation();
   const everyone = comp.map((c) => c.employee);
   const grades = Object.keys(GRADES) as (keyof typeof GRADES)[];
 
   return (
     <div className="stack">
-      <Card
-        title="Salary components"
-        sub="How CTC is broken down for every employee"
-        actions={<button className="btn sm primary" onClick={() => app.toast('Settings saved', 'ok')}>Save</button>}
-        flush
-      >
-        <TableWrap>
-          <Table>
-            <thead>
-              <tr>
-                <th>Component</th><th>Type</th><th>Calculation</th>
-                <th>Taxable</th><th>Part of gross</th><th>PF applicable</th>
-              </tr>
-            </thead>
-            <tbody>
-              {COMPONENTS.map((r) => (
-                <tr key={r[0]}>
-                  <td><b>{r[0]}</b></td>
-                  <td><Badge kind={KIND_TONE[r[1]]}>{r[1]}</Badge></td>
-                  <td>{r[2]}</td><td>{r[3]}</td><td>{r[4]}</td><td>{r[5]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </TableWrap>
-      </Card>
+      <SalaryComponentsCard />
 
       <div className="grid g2">
         <Card title="Payroll configuration" sub="Cycle and cut-offs">

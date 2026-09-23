@@ -27,6 +27,10 @@ const src = readFileSync(new URL('../src/services/contracts.ts', import.meta.url
 /** The method that brings a new record into existence, per service. */
 const CREATES: Record<string, string> = {
   attendance: 'punchIn',
+  // setStructure, not saveComponent: a component is the company's formula and
+  // a structure is the record this service exists to write. Naming the
+  // component creator would let this pass while nobody's pay could be set.
+  compensation: 'setStructure',
   timesheet: 'forWeek',
   expenses: 'submitClaim',
   shifts: 'raiseOvertime',
