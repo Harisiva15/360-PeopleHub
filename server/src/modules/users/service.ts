@@ -369,8 +369,21 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
      * This is the difference between raising a request and creating a user,
      * and it is the whole reason a manager may touch this screen at all.
      */
+    /*
+     * An account nobody can sign into is not active.
+     *
+     * Creating one without an invitation used to mark it 'active', which put a
+     * usable-looking row in the list for a person who had never been given a
+     * way in — there is no Supabase user until they sign up, so nothing could
+     * authenticate as it. 0046 makes that state impossible; this makes it
+     * unnecessary.
+     *
+     * Both paths are 'invited'. The difference is whether an email went out,
+     * which is what invite_sent_at records — "create the account, I will tell
+     * them myself" is a choice about the message, not about the account.
+     */
     const status = caller.role === 'admin'
-      ? (d.sendInvitation === false ? 'active' : 'invited')
+      ? 'invited'
       : 'pending_approval';
 
     const { rows } = await db.query<{ id: string }>(

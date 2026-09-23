@@ -41,6 +41,21 @@ UPDATE site SET state = 'Telangana'  WHERE code = 'HYD' AND state IS NULL;
 UPDATE site SET active = true WHERE code IN ('BLR', 'CHN', 'HYD', 'PNQ');
 
 /*
+ * Names that would otherwise contradict the flag.
+ *
+ * The rows say "Chennai HQ" and "Bengaluru Office" — Chennai was head office
+ * before Bangalore was. Setting is_headquarters without touching these would
+ * leave a site named HQ that is not one, and the head office labelled an
+ * ordinary branch. A name is what people read; the flag is what reports count.
+ * They have to agree.
+ *
+ * Guarded on the current text so a tenant that has already renamed them is
+ * left alone.
+ */
+UPDATE site SET name = 'Bengaluru' WHERE code = 'BLR' AND name = 'Bengaluru Office';
+UPDATE site SET name = 'Chennai'   WHERE code = 'CHN' AND name = 'Chennai HQ';
+
+/*
  * Bangalore is head office.
  *
  * Clearing any other first, because site_one_headquarters permits exactly one
