@@ -596,6 +596,7 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       remove: (_c, id, typed) => api.post(`/users/${id}/delete`, { typed }),
       decide: (_c, id, decision, note) =>
         api.post(`/users/${id}/decide`, { decision, note }),
+      invite: (_c, id) => api.post(`/users/${id}/invite`),
       resendInvitation: (_c, id) => api.post(`/users/${id}/resend-invitation`),
       resetPassword: (_c, id, forceChange) =>
         api.post(`/users/${id}/reset-password`, { forceChange }),

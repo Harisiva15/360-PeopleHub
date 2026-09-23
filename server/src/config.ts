@@ -53,4 +53,32 @@ export const config = {
   /** Path to Supabase's CA certificate. Required in production. */
   sslRootCert: process.env.PGSSLROOTCERT ?? '',
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').filter(Boolean),
+
+  /**
+   * The key that can create auth users, and the one credential this server
+   * holds that Supabase treats as itself.
+   *
+   * Everything else here is either public (the project URL, the JWKS endpoint)
+   * or scoped by row-level security (`app_rw`). This is neither: it bypasses
+   * RLS and can mint accounts. It exists for exactly one caller —
+   * `auth/adminApi.ts`, which sends invitations — and it must never be read
+   * anywhere a response, a log line or a bundle could carry it.
+   *
+   * Optional on purpose. A deployment that does not send invitations should
+   * boot without it rather than be forced to hold a credential it has no use
+   * for; the invite path refuses clearly when it is absent.
+   */
+  supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
+
+  /**
+   * Where an invited person lands, and the only redirect this server will ask
+   * Supabase for.
+   *
+   * Supabase refuses a redirect that is not on its own allow-list, so this has
+   * to match an entry under Authentication -> URL Configuration. It is
+   * configured rather than derived because the API and the app are different
+   * hosts in production, and the Origin of the admin's request is the wrong
+   * answer — an invitation must not point wherever the caller happened to be.
+   */
+  appBaseUrl: (process.env.APP_BASE_URL ?? '').replace(/\/+$/, ''),
 } as const;

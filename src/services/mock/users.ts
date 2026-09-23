@@ -343,6 +343,8 @@ export const userService: UserService = {
     return ok(u);
   },
 
+  invite(c, id) { return this.resendInvitation(c, id); },
+
   resendInvitation(c, id) {
     const u = userOf(id);
     if (!u) return refuse('No such user');

@@ -1853,6 +1853,16 @@ export interface UserService {
   decide(
     c: Caller, id: string, decision: 'Approved' | 'Rejected', note?: string,
   ): Promise<UserAccount>;
+  /**
+   * Send the invitation this account has been waiting for.
+   *
+   * Creating a user and inviting them are separate acts: `create` writes the
+   * employee and a membership marked invited, and this is what tells them.
+   * Resolves only when the provider confirmed it accepted — a rejection throws,
+   * and nothing is recorded as sent.
+   */
+  invite(c: Caller, id: string): Promise<UserAccount>;
+  /** The same path. Kept apart so a screen can say which it is doing. */
   resendInvitation(c: Caller, id: string): Promise<UserAccount>;
   resetPassword(c: Caller, id: string, forceChange?: boolean): Promise<UserAccount>;
   bulkUpdate(c: Caller, ids: string[], patch: UserPatch): Promise<UserAccount[]>;

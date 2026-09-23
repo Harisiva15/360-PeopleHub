@@ -64,6 +64,12 @@ export const useDecideUser = () => {
     s.users.decide(c, id, decision, note));
 };
 
+/** Send the invitation for the first time. Same server path as a resend. */
+export const useInviteUser = () => {
+  const c = useCaller();
+  return useMutation((s, id: string) => s.users.invite(c, id));
+};
+
 export const useResendInvitation = () => {
   const c = useCaller();
   return useMutation((s, id: string) => s.users.resendInvitation(c, id));

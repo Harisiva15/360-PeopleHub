@@ -16,6 +16,7 @@ globalThis.document = { documentElement: { dataset: {} }, addEventListener() {},
 Object.defineProperty(globalThis, 'navigator', { value: { geolocation: null }, configurable: true });
 
 import { readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -124,6 +125,52 @@ const fail = (label: string, cond: boolean, detail = '') => {
     'and it still refuses to say whether an address has an account',
     /If that address has an account/.test(loginSrc),
     'a different message for a known address turns this into a directory',
+  );
+}
+
+
+/* ------------------------------------------------------------------ *
+ * The service-role key is a server secret and stays one
+ * ------------------------------------------------------------------ */
+
+/*
+ * `SUPABASE_SERVICE_ROLE_KEY` bypasses row-level security and can create auth
+ * users. Exactly one module reads it — `server/src/auth/adminApi.ts`, which
+ * sends invitations — and it must never reach anything the browser downloads.
+ *
+ * Vite inlines any `import.meta.env.VITE_*` it sees into the bundle, so the
+ * failure mode is a rename rather than a mistake: call it VITE_ANYTHING and it
+ * ships. These assertions are cheap and the thing they prevent is not.
+ */
+{
+  const KEY = 'SUPABASE_SERVICE_ROLE_KEY';
+
+  const frontend = execSync('git ls-files src', { cwd: root, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+  const leaked = frontend.filter((rel) => readFileSync(join(root, rel), 'utf8').includes(KEY));
+  fail(
+    'no frontend source names the service-role key',
+    leaked.length === 0,
+    `${leaked.join(', ')} — the browser must never see this value or its name`,
+  );
+
+  const vite = frontend.filter((rel) =>
+    /VITE_[A-Z_]*SERVICE|VITE_[A-Z_]*SECRET/.test(readFileSync(join(root, rel), 'utf8')));
+  fail(
+    'no VITE_ variable is named for a secret',
+    vite.length === 0,
+    `${vite.join(', ')} — Vite inlines VITE_* into the bundle`,
+  );
+
+  /* And only the one module reads it server-side. */
+  const serverFiles = execSync('git ls-files server/src', { cwd: root, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+  const readers = serverFiles.filter((rel) =>
+    /supabaseServiceKey|SUPABASE_SERVICE_ROLE_KEY/.test(readFileSync(join(root, rel), 'utf8')));
+  fail(
+    `only config and the admin API read it (${readers.length})`,
+    readers.every((r) => /config\.ts$|adminApi\.ts$/.test(r)),
+    readers.join(', '),
   );
 }
 

@@ -33,6 +33,7 @@ import {
   CompensationError, listComponents, removeComponent,
   salaryHistory, saveComponent, setSalaryStructure,
 } from '../modules/payroll/compensation.ts';
+import { AdminApiError } from '../auth/adminApi.ts';
 import { listProjects } from '../modules/projects/service.ts';
 import {
   approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
@@ -151,7 +152,7 @@ import {
 } from '../modules/recruitment/service.ts';
 import {
   listUsers, getUser, userStats, nextEmployeeCode, createUser, updateUser,
-  setUserStatus, removeUser, decideUser, resendInvitation, resetPassword,
+  setUserStatus, removeUser, decideUser, inviteUser, resendInvitation, resetPassword,
   bulkUpdateUsers, lastLoginNow, accountObligations, passwordChanged,
   setMfaRequired, UserError,
 } from '../modules/users/service.ts';
@@ -1513,6 +1514,17 @@ const routes: Route[] = [
     handler: (c, _r, p) => resendInvitation(c, p.id!),
   },
   {
+    /*
+     * Sending an invitation is the same act as resending one, and goes through
+     * the same service. Both are here because the screen distinguishes a first
+     * send from a repeat, and a route named for what it does reads better in a
+     * log than one named for the first time it happened to be used.
+     */
+    method: 'POST',
+    pattern: '/users/:id/invite',
+    handler: (c, _r, p) => inviteUser(c, p.id!),
+  },
+  {
     method: 'POST',
     pattern: '/users/:id/reset-password',
     handler: (c, _r, p, b) =>
@@ -1944,6 +1956,16 @@ function statusFor(error: unknown): { status: number; message: string } {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof AdminApiError) {
+    /*
+     * The provider refused, or this server is not set up to ask it. Neither is
+     * the caller's fault and neither says anything about the key, which never
+     * reaches a message.
+     */
+    const status = error.code === 'not_configured' ? 503
+      : error.code === 'not_authorised' ? 502 : 502;
     return { status, message: error.message };
   }
   if (error instanceof CompensationError) {

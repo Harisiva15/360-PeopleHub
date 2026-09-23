@@ -25,6 +25,7 @@
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
+import { authAdmin, inviteRedirect } from '../../auth/adminApi.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
 
@@ -604,23 +605,106 @@ export async function decideUser(
   });
 }
 
-export async function resendInvitation(caller: Caller, id: string): Promise<UserAccount> {
-  mayAdminister(caller);
+/**
+ * Send somebody the invitation their membership has been waiting for.
+ *
+ * Creating a user and inviting them are separate acts, and this is the second.
+ * `createUser` writes an employee and a membership marked `invited`; until this
+ * runs, nobody has been told. Splitting them means an administrator can set
+ * somebody up before they start and invite them on the day.
+ *
+ * **Only an open invitation may be sent.** The status must be exactly
+ * `invited`, which is the same rule `auth_claim_membership` applies at the
+ * other end (0049). A withdrawn membership is an administrator's decision that
+ * somebody should not have access, and re-sending is not a way to overturn it:
+ * even if a mail went out, the claim would refuse it. Refusing here as well
+ * means the administrator finds out now rather than the invitee finding out
+ * after following a link.
+ *
+ * **Sent is recorded only when it was sent.** `invite_sent_at` and
+ * `invited_count` move after the provider confirms, never before. The previous
+ * implementation incremented the counter and stamped the time without sending
+ * anything at all, so every account looked invited and none had been.
+ *
+ * **The address is the employee's.** It is read from the employee record
+ * inside the same transaction, never taken from the request, so an
+ * administrator cannot direct somebody else's invitation to an address of
+ * their choosing.
+ *
+ * **No role is assigned here.** The membership already carries the role the
+ * administrator chose, and the claim keeps it. An invitation is a message.
+ */
+export async function inviteUser(caller: Caller, id: string): Promise<UserAccount> {
+  /*
+   * Admin only, and explicitly rather than through `mayAdminister`, which
+   * admits a manager. Managing an account inside your own line is one thing;
+   * sending an invitation creates a sign-in for the whole tenant and is
+   * another. A manager raising a joiner still gets an account created — it
+   * lands as pending_approval and an administrator decides.
+   */
+  if (caller.role !== 'admin') {
+    throw new UserError('Only an administrator can send an invitation', 'forbidden');
+  }
+
   return withTenant(caller, async (db) => {
+    /*
+     * The row is locked for the length of the transaction, so two clicks — or
+     * two administrators — serialise here. The second waits, re-reads, and
+     * sees the count the first committed rather than racing it.
+     */
     const row = await load(db, caller, id);
-    if (row.status !== 'invited') {
-      throw new UserError('That account is not waiting on an invitation', 'invalid');
+    await db.query('SELECT 1 FROM tenant_membership WHERE id = $1 FOR UPDATE', [id]);
+    const fresh = await load(db, caller, id);
+
+    if (fresh.status !== 'invited') {
+      throw new UserError(
+        fresh.status === 'deleted'
+          ? 'That invitation was withdrawn. Create the account again to re-invite them.'
+          : `That account is ${FROM_DB[fresh.status] ?? fresh.status}, not waiting on an invitation`,
+        'invalid');
     }
+    if (!fresh.work_email) {
+      throw new UserError('That employee has no work email to invite', 'invalid');
+    }
+
+    /*
+     * The provider is called inside the transaction on purpose. If it fails,
+     * the throw rolls back the counter and the timestamp with it, so a refused
+     * send cannot leave a record saying one happened.
+     */
+    const outcome = await authAdmin().inviteToSetPassword(fresh.work_email, inviteRedirect());
+
     await db.query(
       `UPDATE tenant_membership
           SET invited_count = invited_count + 1, invite_sent_at = now()
         WHERE id = $1`, [id]);
-    await audit(db, caller, 'user.invite_resent', id, `attempt ${row.invited_count + 1}`);
+
+    /*
+     * The address is not in the detail: it is already on the employee record
+     * this row points at, and an audit log is read by more people than a user
+     * record is. Nothing here is a token, a password or a key.
+     */
+    await audit(db, caller, row.invite_sent_at ? 'user.invite_resent' : 'user.invited', id,
+      `${fresh.role} · attempt ${fresh.invited_count + 1} · `
+      + (outcome.kind === 'invited' ? 'new sign-in created' : 'existing sign-in, reset sent'));
+
     const after = await getUser(caller, id);
     if (!after) throw new UserError('No such account', 'not_found');
     return after;
   });
 }
+
+/**
+ * Send it again.
+ *
+ * The same path, because there is only one correct one. This used to increment
+ * a counter and stamp a time while sending nothing, which is how every account
+ * came to look invited without anybody having been told.
+ */
+export async function resendInvitation(caller: Caller, id: string): Promise<UserAccount> {
+  return inviteUser(caller, id);
+}
+
 
 /**
  * Mark an account for a password change.

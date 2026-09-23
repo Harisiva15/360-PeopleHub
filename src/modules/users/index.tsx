@@ -32,7 +32,8 @@ import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { useTabFromUrl } from '../tabParam';
 import {
-  useBulkUpdate, useDecideUser, useDeleteUser, useResendInvitation, useResetPassword,
+  useBulkUpdate, useDecideUser, useDeleteUser, useInviteUser, useResendInvitation,
+  useResetPassword,
   useSetUserStatus, useUserStats, useUsers, useVisiblePeople,
   useTenantLoginHistory,
   useSetMfaRequired,
@@ -163,6 +164,7 @@ function UsersView() {
   const remove = useDeleteUser();
   const decide = useDecideUser();
   const resend = useResendInvitation();
+  const invite = useInviteUser();
   const reset = useResetPassword();
   const mfaReq = useSetMfaRequired();
   const bulk = useBulkUpdate();
@@ -414,12 +416,30 @@ function UsersView() {
                               </>
                             )}
 
+                            {/*
+                              * Send and resend are the same server call; only
+                              * the label differs, and it differs on whether one
+                              * has ever gone out. Both go through `act`, which
+                              * says nothing until the promise resolves — the
+                              * server confirms the provider accepted before it
+                              * records a send, so a failure here is a real
+                              * failure and is shown as one.
+                              *
+                              * Offered only for an open invitation. A withdrawn
+                              * membership cannot be re-invited into life; the
+                              * service refuses it too, and this only avoids
+                              * offering a button that would be refused.
+                              */}
                             {u.status === 'Invitation Pending' && can('user.resend_invite') && (
                               <button className="menu-row" onClick={() => {
                                 close();
-                                act(() => resend.mutate(u.id), 'Invitation resent');
+                                act(
+                                  () => (u.inviteSentAt ? resend : invite).mutate(u.id),
+                                  u.inviteSentAt ? 'Invitation sent again' : 'Invitation sent',
+                                );
                               }}>
-                                <span className="gs-ic"><Icon n="mail" /></span> Resend invitation
+                                <span className="gs-ic"><Icon n="mail" /></span>{' '}
+                                {u.inviteSentAt ? 'Resend invitation' : 'Send invitation'}
                               </button>
                             )}
 
