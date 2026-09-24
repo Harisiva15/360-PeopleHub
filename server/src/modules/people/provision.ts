@@ -15,6 +15,7 @@
  */
 
 import type { TenantClient } from '../../tenancy/context.ts';
+import { recordEmployment } from './employment.ts';
 
 export class ProvisionError extends Error {
   readonly code: string;
@@ -39,6 +40,8 @@ export interface ProvisionSpec {
   employmentType?: string | null;
   /** Supplied by a request that carried one; generated otherwise. */
   code?: string | null;
+  /** Who approved this, for the employment record. Null for a system action. */
+  recordedBy?: string | null;
 }
 
 /**
@@ -96,6 +99,13 @@ export async function provisionEmployee(
   }
 
   await openLeaveBalances(db, id);
+
+  /*
+   * The first employment record, dated from the joining date rather than
+   * today: somebody provisioned a week before they start was hired on the day
+   * they start, and the lifecycle's probation branch counts from it.
+   */
+  await recordEmployment(db, id, 'hire', { on: spec.joinedOn, recordedBy: spec.recordedBy ?? null });
 
   return { id, code };
 }

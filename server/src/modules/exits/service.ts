@@ -21,6 +21,7 @@
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { PF_WAGE_CAP, dailyRateFor, structureFor, taxNewRegime } from '../payroll/rules.ts';
+import { closeEmployment } from '../people/employment.ts';
 import type { Country } from '../payroll/rules.ts';
 
 export class ExitError extends Error {
@@ -393,6 +394,15 @@ export async function settleExit(caller: Caller, exitId: string): Promise<ExitRe
     await db.query(
       "UPDATE employee SET status = 'exited', left_on = $2 WHERE id = $1",
       [exit.empId, exit.lwd]);
+
+    /*
+     * And their employment ends on the same date, in the same transaction.
+     *
+     * The open record is closed rather than a new one opened: somebody who has
+     * left has no current terms, and an open-ended row would answer "what is
+     * their department" as though they were still here.
+     */
+    await closeEmployment(db, exit.empId, exit.lwd, caller.employeeId);
 
     await db.query(
       `INSERT INTO audit_log (category, action, severity, actor_employee_id, actor_label,

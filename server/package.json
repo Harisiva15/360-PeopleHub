@@ -22,7 +22,7 @@
     "check:policy": "node --experimental-strip-types scripts/policy.test.mjs",
     "check:routemodules": "node --experimental-strip-types scripts/route-modules.test.mjs",
     "check:routes": "node scripts/check-routes.mjs",
-    "check": "npm run check:schema && npm run check:bootstrap && npm run check:schema:test && npm run check:ratelimit && npm run check:csv && npm run check:auth && npm run check:tenancy && npm run check:payrollrun && npm run check:payrollprereq && npm run check:claim && npm run check:invite && npm run check:profile && npm run check:survey && npm run check:kb && npm run check:departments && npm run check:hierarchy && npm run check:policy && npm run check:routemodules && npm run check:routes && npm run typecheck",
+    "check": "npm run check:schema && npm run check:bootstrap && npm run check:schema:test && npm run check:ratelimit && npm run check:csv && npm run check:auth && npm run check:tenancy && npm run check:payrollrun && npm run check:payrollprereq && npm run check:claim && npm run check:invite && npm run check:profile && npm run check:survey && npm run check:kb && npm run check:departments && npm run check:hierarchy && npm run check:employment && npm run check:policy && npm run check:routemodules && npm run check:routes && npm run typecheck",
     "inspect": "node scripts/inspect.mjs",
     "retention": "node scripts/retention.mjs",
     "verify:isolation": "node scripts/verify-isolation.mjs",
@@ -36,7 +36,8 @@
     "check:kb": "node --import=tsx/esm scripts/kb.test.mjs",
     "check:departments": "node --import=tsx/esm scripts/departments.test.mjs",
     "check:hierarchy": "node --import=tsx/esm scripts/hierarchy.test.mjs",
-    "check:payrollprereq": "node --import=tsx/esm scripts/payroll-prereq.test.mjs"
+    "check:payrollprereq": "node --import=tsx/esm scripts/payroll-prereq.test.mjs",
+    "check:employment": "node --import=tsx/esm scripts/employment.test.mjs"
   },
   "dependencies": {
     "jose": "^6.2.12",

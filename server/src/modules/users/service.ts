@@ -27,6 +27,8 @@
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 /* One creation path for leave entitlement, shared with joiners and onboarding. */
 import { openLeaveBalances } from '../people/provision.ts';
+/* One employment-history writer, shared with provisioning and exits. */
+import { recordEmployment, reasonForChange, termsOf } from '../people/employment.ts';
 import { authAdmin, inviteRedirect } from '../../auth/adminApi.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
@@ -384,6 +386,15 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
     await openLeaveBalances(db, emp[0]!.id);
 
     /*
+     * And the first employment record, dated from the joining date. Without it
+     * an account made here has no history at all, and the lifecycle screen
+     * shows a person who apparently began existing with no terms.
+     */
+    await recordEmployment(db, emp[0]!.id, 'hire', {
+      on: d.joinedOn ?? null, recordedBy: caller.employeeId,
+    });
+
+    /*
      * A manager's account lands pending_approval; an administrator's is live.
      * This is the difference between raising a request and creating a user,
      * and it is the whole reason a manager may touch this screen at all.
@@ -457,6 +468,13 @@ export async function updateUser(
       }
     }
 
+    /*
+     * The employment terms as they stand, before anything moves. Compared
+     * against the terms afterwards to decide whether this edit is history —
+     * a phone number is not, a department is.
+     */
+    const termsBefore = row.employee_id ? await termsOf(db, row.employee_id) : null;
+
     if (row.employee_id) {
       const sets: string[] = [];
       const params: unknown[] = [];
@@ -483,6 +501,28 @@ export async function updateUser(
       if (sets.length) {
         params.push(row.employee_id);
         await db.query(`UPDATE employee SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+      }
+    }
+
+    /*
+     * Employment history, if this edit actually changed the terms.
+     *
+     * In the same transaction as the change, so the two cannot disagree: a
+     * promotion that reached the employee row and not the history would look
+     * complete and be wrong. `reasonForChange` returns null for an edit that
+     * touched only a name, an email or a phone number, and nothing is written.
+     *
+     * The audit row below is not a substitute. It records who used the
+     * application; employment history records what somebody's job was.
+     */
+    if (row.employee_id && termsBefore) {
+      const termsAfter = await termsOf(db, row.employee_id);
+      const reason = termsAfter ? reasonForChange(termsBefore, termsAfter) : null;
+      if (reason) {
+        await recordEmployment(db, row.employee_id, reason, {
+          recordedBy: caller.employeeId,
+          note: Object.keys(patch).join(', '),
+        });
       }
     }
 
