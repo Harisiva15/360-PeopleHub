@@ -349,6 +349,232 @@ await withScratchTenant(db, async (ctx) => {
   ok('nothing was written for the stranger',
     (await history(strangerId)).length === 1,
     'only their hire record should exist');
+
+  /* ================================================================ *
+   * A. Probation confirmation
+   * ================================================================ */
+
+  console.log('\nA. probation is confirmed by a decision, not by a date passing\n');
+
+  const { account: prob, empId: probId } = await make(`ZZ Prob ${tag}`);
+
+  const beforeStage = (await lifecycle.listLifecycle(ADMIN, {}))
+    .find((r) => r.subject.id === probId);
+  ok('somebody new reads as Joined, with a probation review due',
+    beforeStage?.standing.stage === 'Joined'
+    && /[Pp]robation/.test(beforeStage?.standing.nextAction ?? ''),
+    `${beforeStage?.standing.stage} / ${beforeStage?.standing.nextAction}`);
+
+  const confirmed = await lifecycle.confirmProbation(ADMIN, probId, { note: 'ZZ passed' });
+  ok('an administrator can confirm it', confirmed !== null);
+
+  const ph = await history(probId);
+  ok('  a probation_confirmed record is written',
+    ph.some((r) => r.reason === 'probation_confirmed'), ph.map((r) => r.reason).join(', '));
+  ok('  and the employee column agrees',
+    (await db.query('SELECT on_probation FROM employee WHERE id = $1', [probId]))
+      .rows[0].on_probation === false,
+    'the column and the history must not disagree — one screen would say confirmed '
+    + 'and another still on probation');
+
+  const afterStage = (await lifecycle.listLifecycle(ADMIN, {}))
+    .find((r) => r.subject.id === probId);
+  ok('  and the stage is no longer Joined', afterStage?.standing.stage !== 'Joined',
+    `stage is ${afterStage?.standing.stage}`);
+  ok('  dated from the confirmation, not the joining date',
+    afterStage?.standing.since !== beforeStage?.standing.since,
+    `${beforeStage?.standing.since} then ${afterStage?.standing.since}`);
+
+  console.log('\n   and what confirmation refuses\n');
+
+  const twice = await attempt(() => lifecycle.confirmProbation(ADMIN, probId));
+  ok('confirming twice is refused', twice !== null);
+  ok('  saying when it was confirmed', /already confirmed on/.test(twice?.message ?? ''),
+    twice?.message);
+  ok('  and no second record was written',
+    (await history(probId)).filter((r) => r.reason === 'probation_confirmed').length === 1);
+
+  const { empId: futureId } = await make(`ZZ Future ${tag}`);
+  const ahead = await attempt(() => lifecycle.confirmProbation(
+    ADMIN, futureId, { on: '2099-01-01' }));
+  ok('confirming in advance is refused', ahead !== null);
+  ok('  because a confirmation records something that happened',
+    /in advance/.test(ahead?.message ?? ''), ahead?.message);
+
+  const early = await attempt(() => lifecycle.confirmProbation(
+    ADMIN, futureId, { on: '2000-01-01' }));
+  ok('confirming before the joining date is refused', early !== null);
+  ok('  naming the joining date', /joining date/.test(early?.message ?? ''), early?.message);
+  ok('  and neither refusal wrote anything',
+    (await history(futureId)).length === 1,
+    'only the hire record should exist');
+
+  const ghost = await attempt(() => lifecycle.confirmProbation(
+    ADMIN, '00000000-0000-0000-0000-000000000000'));
+  ok('an unknown person is refused', ghost !== null);
+  ok('  as not-found', ghost?.code === 'not_found', ghost?.code);
+
+  console.log('\n   who may confirm\n');
+
+  const { account: mine2, empId: mineId } = await make(`ZZ Mine ${tag}`, {});
+  await users.updateUser(ADMIN, mine2.id, { managerId: bossId });
+  const MGR2 = { role: 'manager', tenantId: ctx.tenant, employeeId: bossId, userId: null };
+  const EMP2 = { role: 'employee', tenantId: ctx.tenant, employeeId: mineId, userId: null };
+
+  const selfConfirm = await attempt(() => lifecycle.confirmProbation(EMP2, mineId));
+  ok('an employee cannot confirm their own probation', selfConfirm !== null);
+  ok('  refused as forbidden', selfConfirm?.code === 'forbidden', selfConfirm?.code);
+
+  const { empId: outsiderId } = await make(`ZZ Outsider ${tag}`);
+  const outOfScope = await attempt(() => lifecycle.confirmProbation(MGR2, outsiderId));
+  ok('a manager cannot confirm somebody outside their line', outOfScope !== null,
+    'the scope is the read, reused — somebody outside it does not exist here');
+
+  const byMgr = await attempt(() => lifecycle.confirmProbation(MGR2, mineId));
+  ok('but may confirm their own report', byMgr === null, byMgr?.message);
+  const mh = await history(mineId);
+  ok('  recorded against the manager who decided',
+    mh.find((r) => r.reason === 'probation_confirmed')?.recorded_by === bossId);
+
+  /* ================================================================ *
+   * B. Promotion
+   * ================================================================ */
+
+  console.log('\nB. a promotion is declared, never inferred\n');
+
+  const gradeIds = {};
+  for (const [code, rank] of [['ZZ1', 1], ['ZZ2', 2], ['ZZ3', 3]]) {
+    gradeIds[code] = (await db.query(
+      `INSERT INTO grade_band (tenant_id, code, label, rank) VALUES ($1,$2,$3,$4)
+       RETURNING id`, [ctx.tenant, code, `ZZ band ${code}`, rank])).rows[0].id;
+  }
+
+  const { account: promo, empId: promoId } = await make(`ZZ Promo ${tag}`);
+  await db.query('UPDATE employee SET grade_id = $2 WHERE id = $1',
+    [promoId, gradeIds.ZZ2]);
+
+  const promoted = await lifecycle.promote(ADMIN, promoId, {
+    gradeCode: 'ZZ3', designation: 'ZZ Principal Engineer', note: 'ZZ earned it',
+  });
+  ok('an administrator can promote somebody', promoted !== null);
+
+  const gh = await history(promoId);
+  const promoRow = gh.find((r) => r.reason === 'promotion');
+  ok('  a promotion record is written', Boolean(promoRow), gh.map((r) => r.reason).join(', '));
+  ok('  carrying the new title', promoRow?.designation === 'ZZ Principal Engineer');
+  ok('  and the employee row moved grade',
+    (await db.query('SELECT grade_id, designation FROM employee WHERE id = $1', [promoId]))
+      .rows[0].grade_id === gradeIds.ZZ3);
+
+  const promoStage = (await lifecycle.listLifecycle(ADMIN, {}))
+    .find((r) => r.subject.id === promoId);
+  ok('  and the stage reads Promotion', promoStage?.standing.stage === 'Promotion',
+    `stage is ${promoStage?.standing.stage} — this branch could never fire before`);
+
+  console.log('\n   and what promotion refuses\n');
+
+  const down = await attempt(() => lifecycle.promote(ADMIN, promoId, { gradeCode: 'ZZ1' }));
+  ok('a move to a lower grade is refused', down !== null);
+  ok('  and says to record it as a role change instead',
+    /not a promotion/.test(down?.message ?? ''), down?.message);
+
+  const same = await attempt(() => lifecycle.promote(ADMIN, promoId, { gradeCode: 'ZZ3' }));
+  ok('promoting to the grade they already hold is refused', same !== null, same?.message);
+
+  const nothing = await attempt(() => lifecycle.promote(ADMIN, promoId, {}));
+  ok('a promotion that changes nothing is refused', nothing !== null);
+
+  const noGrade = await attempt(() => lifecycle.promote(
+    ADMIN, promoId, { gradeCode: 'ZZNOPE' }));
+  ok('an unknown grade is refused', noGrade !== null);
+  ok('  naming it', /ZZNOPE/.test(noGrade?.message ?? ''), noGrade?.message);
+
+  ok('and none of those refusals wrote a record',
+    (await history(promoId)).filter((r) => r.reason === 'promotion').length === 1);
+
+  const empPromo = await attempt(() => lifecycle.promote(
+    EMP2, mineId, { designation: 'ZZ Chief' }));
+  ok('an employee cannot promote anybody', empPromo !== null);
+  ok('  refused as forbidden', empPromo?.code === 'forbidden', empPromo?.code);
+
+  const mgrOutside = await attempt(() => lifecycle.promote(
+    MGR2, outsiderId, { designation: 'ZZ Chief' }));
+  ok('a manager cannot promote outside their line', mgrOutside !== null);
+
+  console.log('\n   ordinary title changes are still role changes\n');
+
+  const { account: lateral } = await make(`ZZ Lateral ${tag}`);
+  await users.updateUser(ADMIN, lateral.id, { designation: 'ZZ Other Engineer' });
+  const lh = await history((await db.query(
+    'SELECT employee_id FROM tenant_membership WHERE id = $1', [lateral.id])).rows[0].employee_id);
+  ok('updateUser still records role_change, not promotion',
+    lh.at(-1)?.reason === 'role_change', lh.at(-1)?.reason);
+
+  /* ================================================================ *
+   * E. Same-day and effective-date integrity
+   * ================================================================ */
+
+  console.log('\nE. effective dates stay valid however many changes land\n');
+
+  const { account: busy, empId: busyId } = await make(`ZZ Busy ${tag}`);
+  await users.updateUser(ADMIN, busy.id, { designation: 'ZZ One' });
+  const firstToday = await history(busyId);
+  ok('the first change today supersedes the backdated hire',
+    firstToday.length === 2, `${firstToday.length} records`);
+
+  await users.updateUser(ADMIN, busy.id, { designation: 'ZZ Two' });
+  await lifecycle.promote(ADMIN, busyId, { designation: 'ZZ Three' });
+  await lifecycle.confirmProbation(ADMIN, busyId);
+  const busyHistory = await history(busyId);
+
+  ok('further changes the same day amend rather than stack',
+    busyHistory.length === 2, `${busyHistory.length} records`);
+  ok('  exactly one record is open',
+    busyHistory.filter((r) => r.valid_to === null).length === 1);
+  ok('  no record ends before it starts',
+    busyHistory.every((r) => r.valid_to === null || r.valid_to >= r.valid_from),
+    JSON.stringify(busyHistory.map((r) => [r.valid_from, r.valid_to])));
+  ok('  no two records claim the same day',
+    new Set(busyHistory.map((r) => r.valid_from)).size === busyHistory.length);
+  ok('  and the open one carries the last thing that happened',
+    busyHistory.at(-1)?.reason === 'probation_confirmed', busyHistory.at(-1)?.reason);
+
+  /* A change dated in the past opens its own slice rather than amending. */
+  const { account: back, empId: backId } = await make(`ZZ Back ${tag}`);
+  await lifecycle.promote(ADMIN, backId, {
+    designation: 'ZZ Backdated', on: daysAgo(30),
+  });
+  const bh = await history(backId);
+  ok('a backdated change opens its own record', bh.length === 2, `${bh.length} records`);
+  ok('  starting on the date given', bh[1]?.valid_from === daysAgo(30), bh[1]?.valid_from);
+  ok('  and the hire closes the day before',
+    bh[0]?.valid_to < bh[1]?.valid_from, `${bh[0]?.valid_to} then ${bh[1]?.valid_from}`);
+
+  /* ================================================================ *
+   * D. What the two creation paths leave behind
+   * ================================================================ */
+
+  console.log('\nD. both creation paths leave a valid minimum state\n');
+
+  const { empId: freshId } = await make(`ZZ Fresh ${tag}`);
+  const fresh = (await db.query(
+    `SELECT e.code, e.status, e.currency, e.grade_id, e.department_id, e.site_id,
+            e.legal_entity_id, e.shift_id, e.joined_on,
+            (SELECT count(*)::int FROM leave_balance WHERE employee_id = e.id) balances,
+            (SELECT count(*)::int FROM employment_record WHERE employee_id = e.id) history
+       FROM employee e WHERE e.id = $1`, [freshId])).rows[0];
+
+  ok('createUser sets a currency', fresh.currency !== null,
+    'provisionEmployee derives it from the entity; this path left it null, so two '
+    + 'people at one entity carried different currencies by which screen made them');
+  ok('  matching the employing entity', fresh.currency === 'INR', fresh.currency);
+  ok('createUser sets the legal entity', fresh.legal_entity_id !== null);
+  ok('createUser sets a shift', fresh.shift_id !== null);
+  ok('createUser opens leave balances', fresh.balances > 0, `${fresh.balances}`);
+  ok('createUser opens an employment record', fresh.history === 1, `${fresh.history}`);
+  ok('grade is absent, as it is in both paths', fresh.grade_id === null,
+    'optional in provisionEmployee too — the onboarding flow supplies none either');
+
 });
 } catch (e) {
   fatal = e;

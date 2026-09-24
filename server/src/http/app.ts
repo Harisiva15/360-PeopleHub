@@ -122,6 +122,7 @@ import {
 import {
   listLifecycle, getLifecycle, lifecycleStats, addLifecycleTask,
   setLifecycleTaskDone, removeLifecycleTask, LifecycleError,
+  confirmProbation, promote,
 } from '../modules/lifecycle/service.ts';
 import {
   listSoftware, getSoftware, mySoftware, softwareStats, softwareRenewals,
@@ -1274,6 +1275,23 @@ const routes: Route[] = [
   },
   { method: 'GET', pattern: '/lifecycle/stats', handler: (c) => lifecycleStats(c) },
   { method: 'GET', pattern: '/lifecycle/:id', handler: (c, _r, p) => getLifecycle(c, p.id!) },
+  {
+    /*
+     * Confirming probation. A POST because it records a decision rather than
+     * editing a field; the body carries only when it took effect.
+     */
+    method: 'POST',
+    pattern: '/lifecycle/:id/probation/confirm',
+    handler: (c, _r, p, body) =>
+      confirmProbation(c, p.id!, (body ?? {}) as Parameters<typeof confirmProbation>[2]),
+  },
+  {
+    /* The only thing in the product that records a promotion. */
+    method: 'POST',
+    pattern: '/lifecycle/:id/promote',
+    handler: (c, _r, p, body) =>
+      promote(c, p.id!, (body ?? {}) as Parameters<typeof promote>[2]),
+  },
   {
     method: 'POST',
     pattern: '/lifecycle/:id/tasks',

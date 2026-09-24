@@ -329,8 +329,8 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
      * The legal entity is the tenant's default — there is one per company in
      * the ordinary case, and the flag says which when there are several.
      */
-    const { rows: entity } = await db.query<{ id: string }>(
-      'SELECT id FROM legal_entity ORDER BY is_default DESC, code LIMIT 1');
+    const { rows: entity } = await db.query<{ id: string; country: string }>(
+      'SELECT id, country FROM legal_entity ORDER BY is_default DESC, code LIMIT 1');
     if (!entity[0]) {
       throw new UserError(
         'This company has no legal entity configured, so an employee record '
@@ -357,17 +357,29 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
         'invalid');
     }
 
+    /*
+     * Currency comes from the employing entity, as `provisionEmployee` derives
+     * it. This path left the column null, so two people at the same entity
+     * carried different currencies depending on which screen created them —
+     * and the mapper coalesces null to INR, which is silently wrong the day
+     * there is a non-Indian entity.
+     *
+     * `grade_id` is deliberately *not* copied across from that path. It is
+     * optional in both (the onboarding flow supplies none either), so its
+     * absence here is the same absence rather than a divergence.
+     */
     const { rows: emp } = await db.query<{ id: string }>(
       `INSERT INTO employee
          (code, full_name, work_email, phone, department_id, site_id, designation,
           manager_id, employment_type, joined_on, status, app_role,
-          legal_entity_id, shift_id)
+          legal_entity_id, shift_id, currency)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10::date, CURRENT_DATE),'active',$11,
-               $12,$13)
+               $12,$13,
+               CASE WHEN $14::text = 'IN' THEN 'INR' ELSE 'USD' END)
        RETURNING id`,
       [code, d.name.trim(), d.email.trim(), d.phone ?? '', dept[0].id, site[0].id,
         d.designation, d.managerId ?? null, d.empType ?? 'permanent',
-        d.joinedOn ?? null, d.role, entity[0].id, shift[0].id]);
+        d.joinedOn ?? null, d.role, entity[0].id, shift[0].id, entity[0].country]);
 
     /*
      * Open this leave year's balances.

@@ -21,6 +21,8 @@
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
+/* The one employment-history writer, shared with provisioning, users and exits. */
+import { recordEmployment } from '../people/employment.ts';
 
 export class LifecycleError extends Error {
   readonly code: string;
@@ -522,4 +524,211 @@ export async function removeLifecycleTask(
     if (!rows[0]) throw new LifecycleError('No such task', 'not_found');
     return toTask(rows[0]);
   });
+}
+
+/* ------------------------------------------------------------------ *
+ * Explicit lifecycle operations
+ * ------------------------------------------------------------------ */
+
+/**
+ * Confirming probation.
+ *
+ * The derivation has always had the branch: somebody with no
+ * `probation_confirmed` record who joined within 180 days reads as **Joined**,
+ * with "Probation review due" as the next action. The screen asked for the
+ * action and there was no action to take — the stage simply expired at 180
+ * days, and everybody became Active from their joining date rather than from
+ * the day somebody decided they had passed.
+ *
+ * It is deliberately explicit. Confirmation is not "180 days elapsed", and it
+ * is not implied by a title change or a new manager: it is a decision somebody
+ * makes and is accountable for, which is why the record carries who made it.
+ *
+ * `on` lets a confirmation be recorded on the date the decision was actually
+ * taken rather than the date it was typed in. It cannot precede the joining
+ * date — a record of employment terms cannot begin before the employment — and
+ * it cannot be in the future, because a confirmation is a record of something
+ * that has happened.
+ */
+export async function confirmProbation(
+  caller: Caller,
+  empId: string,
+  opts: { on?: string | null; note?: string | null } = {},
+): Promise<LifecycleDetail> {
+  if (caller.role === 'employee') {
+    throw new LifecycleError('Your role cannot confirm probation', 'forbidden');
+  }
+
+  /* Scope, by reusing the read. Somebody outside it does not exist here. */
+  const subject = await getLifecycle(caller, empId);
+  if (!subject) throw new LifecycleError('No such person', 'not_found');
+
+  await withTenant(caller, async (db) => {
+    const { rows } = await db.query<{ joined_on: string; status: string }>(
+      `SELECT joined_on::text AS joined_on, status FROM employee
+        WHERE id = $1 FOR UPDATE`, [empId]);
+    const emp = rows[0];
+    if (!emp) throw new LifecycleError('No such person', 'not_found');
+    if (emp.status === 'exited') {
+      throw new LifecycleError('That person has left', 'invalid');
+    }
+
+    /*
+     * Once. A second confirmation would put a second `probation_confirmed`
+     * record on the timeline for something that happens once, and the
+     * derivation reads the most recent — so the date would silently move.
+     */
+    const { rows: already } = await db.query<{ was: string }>(
+      `SELECT valid_from::text AS was FROM employment_record
+        WHERE employee_id = $1 AND reason = 'probation_confirmed'
+        ORDER BY valid_from DESC LIMIT 1`, [empId]);
+    if (already[0]) {
+      throw new LifecycleError(
+        `Probation was already confirmed on ${already[0].was}`, 'conflict');
+    }
+
+    const { rows: dateRow } = await db.query<{ d: string; ahead: boolean }>(
+      `SELECT COALESCE($1::date, CURRENT_DATE)::text AS d,
+              (COALESCE($1::date, CURRENT_DATE) > CURRENT_DATE) AS ahead`,
+      [opts.on ?? null]);
+    const on = dateRow[0]!.d;
+
+    if (dateRow[0]!.ahead) {
+      throw new LifecycleError('Probation cannot be confirmed in advance', 'invalid');
+    }
+    if (on < emp.joined_on) {
+      throw new LifecycleError(
+        `Probation cannot be confirmed before the joining date (${emp.joined_on})`,
+        'invalid');
+    }
+
+    /*
+     * The column and the history move together. `on_probation` is what the
+     * employee record says; the employment record is what the timeline reads.
+     * Letting them disagree is how somebody shows as confirmed on one screen
+     * and on probation on another.
+     */
+    await db.query('UPDATE employee SET on_probation = false WHERE id = $1', [empId]);
+    await recordEmployment(db, empId, 'probation_confirmed', {
+      on, recordedBy: caller.employeeId, note: opts.note ?? null,
+    });
+  });
+
+  const after = await getLifecycle(caller, empId);
+  if (!after) throw new LifecycleError('No such person', 'not_found');
+  return after;
+}
+
+/** What a promotion moves. At least one of these has to change. */
+export interface PromotionDraft {
+  /** A grade band code, as the company has defined them. */
+  gradeCode?: string | null;
+  designation?: string | null;
+  on?: string | null;
+  note?: string | null;
+}
+
+/**
+ * Promoting somebody.
+ *
+ * Ordinary changes of title or reporting line go through `updateUser` and are
+ * recorded as `role_change`, which is right: deciding that a new title is a
+ * promotion rather than a lateral move is a judgement about grade and pay, and
+ * inferring it would put "Promotion" on somebody's record because their team
+ * was restructured.
+ *
+ * So a promotion is declared rather than detected. This is that declaration,
+ * and the only thing in the product that writes `reason = 'promotion'`.
+ *
+ * The domain already supports it. `grade_band` carries a `rank`,
+ * `employee.grade_id` points at one, and `employment_record.grade_id` records
+ * which band the terms belonged to. A promotion is a move up that ladder, a
+ * change of title, or both — no new field and no new policy.
+ *
+ * A move to a *lower* band is refused rather than recorded. There is no
+ * `demotion` reason, and filing one as a promotion would make the record say
+ * something untrue; `updateUser` records that as the role change it is.
+ */
+export async function promote(
+  caller: Caller,
+  empId: string,
+  draft: PromotionDraft,
+): Promise<LifecycleDetail> {
+  if (caller.role === 'employee') {
+    throw new LifecycleError('Your role cannot promote somebody', 'forbidden');
+  }
+  const wantsGrade = Boolean(draft.gradeCode?.trim());
+  const wantsTitle = Boolean(draft.designation?.trim());
+  if (!wantsGrade && !wantsTitle) {
+    throw new LifecycleError('A promotion changes a grade, a title, or both', 'invalid');
+  }
+
+  const subject = await getLifecycle(caller, empId);
+  if (!subject) throw new LifecycleError('No such person', 'not_found');
+
+  await withTenant(caller, async (db) => {
+    const { rows } = await db.query<{
+      joined_on: string; status: string; designation: string | null;
+      grade_id: string | null; rank: number | null;
+    }>(
+      `SELECT e.joined_on::text AS joined_on, e.status, e.designation, e.grade_id, g.rank
+         FROM employee e LEFT JOIN grade_band g ON g.id = e.grade_id
+        WHERE e.id = $1 FOR UPDATE OF e`, [empId]);
+    const emp = rows[0];
+    if (!emp) throw new LifecycleError('No such person', 'not_found');
+    if (emp.status === 'exited') {
+      throw new LifecycleError('That person has left', 'invalid');
+    }
+
+    let gradeId: string | null = null;
+    if (wantsGrade) {
+      const code = draft.gradeCode!.trim();
+      const { rows: band } = await db.query<{ id: string; rank: number }>(
+        'SELECT id, rank FROM grade_band WHERE code = $1', [code]);
+      if (!band[0]) throw new LifecycleError(`No such grade: ${code}`, 'invalid');
+      gradeId = band[0].id;
+
+      if (emp.rank !== null && band[0].rank < emp.rank) {
+        throw new LifecycleError(
+          `${code} is below their current grade. A move down is not a promotion — `
+          + 'record it as a change of role instead.',
+          'invalid');
+      }
+      if (gradeId === emp.grade_id && !wantsTitle) {
+        throw new LifecycleError('They are already on that grade', 'invalid');
+      }
+    }
+
+    if (wantsTitle && !wantsGrade
+      && draft.designation!.trim() === (emp.designation ?? '')) {
+      throw new LifecycleError('They already hold that title', 'invalid');
+    }
+
+    const { rows: dateRow } = await db.query<{ d: string }>(
+      'SELECT COALESCE($1::date, CURRENT_DATE)::text AS d', [draft.on ?? null]);
+    const on = dateRow[0]!.d;
+    if (on < emp.joined_on) {
+      throw new LifecycleError(
+        `A promotion cannot take effect before the joining date (${emp.joined_on})`,
+        'invalid');
+    }
+
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (gradeId) { params.push(gradeId); sets.push(`grade_id = $${params.length}`); }
+    if (wantsTitle) {
+      params.push(draft.designation!.trim());
+      sets.push(`designation = $${params.length}`);
+    }
+    params.push(empId);
+    await db.query(`UPDATE employee SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+
+    await recordEmployment(db, empId, 'promotion', {
+      on, recordedBy: caller.employeeId, note: draft.note ?? null,
+    });
+  });
+
+  const after = await getLifecycle(caller, empId);
+  if (!after) throw new LifecycleError('No such person', 'not_found');
+  return after;
 }
