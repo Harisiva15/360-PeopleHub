@@ -94,7 +94,24 @@ function assertOwnOrAdmin(caller: Caller, empId: string): void {
 }
 
 const mkOf = (periodMonth: string): string => periodMonth.slice(0, 7);
-const firstOf = (mk: string): string => `${mk}-01`;
+/**
+ * The first of a month, from a `YYYY-MM` key.
+ *
+ * Validated rather than trusted. This is string concatenation straight into a
+ * `::date` cast, so an unrecognised month reached PostgreSQL as
+ * `'not-a-month-01'` and came back as `invalid input syntax for type date` — a
+ * raw driver error, which the HTTP layer cannot map to a status because it is
+ * not one of ours. The caller got a 500 naming a PostgreSQL type.
+ *
+ * Every route that takes a month passes it through here, so refusing here
+ * covers all seven of them.
+ */
+const firstOf = (mk: string): string => {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mk)) {
+    throw new PayrollError(`${mk} is not a month — expected YYYY-MM`, 'invalid');
+  }
+  return `${mk}-01`;
+};
 const daysInMonth = (mk: string): number => {
   const [y, m] = mk.split('-').map(Number);
   return new Date(y!, m!, 0).getDate();
@@ -665,6 +682,55 @@ export async function processRun(caller: Caller, mk: string): Promise<PayRun> {
     if (refusal) throw new PayrollError(refusal.message, refusal.code);
 
     const runId = run.rows[0].id as string;
+
+    /*
+     * Nobody is paid from a CTC nobody set.
+     *
+     * `structureOf` answers in three ways, in order: the company's components
+     * against a stored structure, the derived rules against a stored
+     * structure, or the derived rules against `employee.ctc`. All three are
+     * legitimate — a company that has configured nothing still has to run
+     * payroll on the day it starts.
+     *
+     * What is not legitimate is the fourth case, which had no guard. An
+     * employee with neither a stored structure nor a CTC falls through to
+     * `structureFor(0)`, where every percentage component is zero and the flat
+     * medical insurance is not, so the balancing line absorbs it:
+     *
+     *     special = 0 - 0 - 0 - 0 - 0 - 0 - 12000
+     *
+     * That is a payslip with a gross of -12000, and nothing refused it. The
+     * run completed, locked, and produced a bank advice. It reached nobody
+     * only because the one employee on file had a CTC from the seed; an
+     * account created through User Management has neither column set.
+     *
+     * The whole run is refused rather than the person skipped. This locks and
+     * produces a disbursal file, so a run missing somebody is a person not
+     * paid — which is no better than a person paid the wrong amount, and
+     * harder to notice. Recording their compensation is one action, and the
+     * refusal says exactly whose.
+     */
+    const { rows: unpriced } = await db.query<{ code: string; name: string }>(
+      `SELECT e.code, e.full_name AS name
+         FROM employee e
+        WHERE e.status <> 'exited'
+          AND e.joined_on <= (date_trunc('month', $1::date)
+              + interval '1 month' - interval '1 day')::date
+          AND COALESCE(e.ctc, 0) <= 0
+          AND NOT EXISTS (
+            SELECT 1 FROM salary_structure s
+             WHERE s.employee_id = e.id AND s.valid_to IS NULL
+          )
+        ORDER BY e.code`, [firstOf(mk)]);
+
+    if (unpriced.length) {
+      const who = unpriced.map((r) => `${r.name} (${r.code})`).join(', ');
+      throw new PayrollError(
+        `${unpriced.length === 1 ? 'one person has' : `${unpriced.length} people have`} `
+        + `no compensation on file: ${who}. Record it under Compensation before `
+        + 'processing — payroll cannot decide what somebody is owed.',
+        'incomplete');
+    }
 
     const inputs = await offCycleFor(db, runId);
     const { rows } = await db.query(

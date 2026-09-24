@@ -126,13 +126,18 @@ export async function withScratchTenant(db, body) {
      * An administrator to act as. Every service takes a Caller, and the audit
      * writer joins the actor to `employee`, so this has to be a real row rather
      * than an invented uuid.
+     *
+     * They carry a CTC because an administrator in a real company is an
+     * employee who is paid. Without one they are themselves an employee with no
+     * compensation on file, and payroll — correctly — refuses to process a
+     * cycle containing them.
      */
     const admin = await one(
       `INSERT INTO employee
          (tenant_id, code, full_name, work_email, status, app_role,
-          department_id, site_id, legal_entity_id, shift_id, joined_on, currency)
+          department_id, site_id, legal_entity_id, shift_id, joined_on, currency, ctc)
        VALUES ($1, 'ZZ001', 'ZZ Scratch Admin', $2, 'active', 'admin',
-               $3, $4, $5, $6, CURRENT_DATE, 'INR')
+               $3, $4, $5, $6, CURRENT_DATE, 'INR', 1200000)
        RETURNING id`,
       [`zz-scratch-admin-${suffix}@360.technology`, dept.id, site.id, entity.id, shift.id]);
 
