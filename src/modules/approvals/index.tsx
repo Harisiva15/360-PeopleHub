@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { sum } from '../../lib/collections';
 import { fmtD, fmtDS, fmtTime } from '../../lib/dates';
 import { inr } from '../../lib/format';
@@ -21,6 +22,8 @@ import { TITLES } from '../titles';
 
 function Approvals() {
   const app = useApp();
+  /* Guards the bulk approve against a second click while the first is in flight. */
+  const [bulk, setBulk] = useState(false);
   const dir = useVisiblePeople();
   const ids = dir.ids.filter((i) => i !== app.meId);
   const isAdmin = app.role === 'admin';
@@ -225,12 +228,26 @@ function Approvals() {
       {cl.length > 0 && (
         <Card title="Expense claims" sub={`${cl.length} pending`} flush
           actions={
-            <button className="btn sm primary" onClick={() => {
-              /* only claims with every line inside policy are bulk-approved */
+            <button className="btn sm primary" disabled={bulk} onClick={async () => {
+              /*
+               * Only claims with every line inside policy are bulk-approved.
+               *
+               * This used to fire them with forEach and announce the count on
+               * the next line — before a single one had resolved. Every failure
+               * was swallowed by the un-awaited promise, so a run the server
+               * refused outright still reported them all approved. The count is
+               * now of approvals that actually came back.
+               */
               const within = cl.filter((c) => !c.items.some((i) => i.overLimit));
-              within.forEach(approveClaim);
-              app.toast(`${within.length} claims approved within policy`, 'ok');
-            }}>Approve all within policy</button>
+              setBulk(true);
+              const done = await Promise.allSettled(within.map((c) => doApproveClaim.mutate(c.id, app.meId)));
+              setBulk(false);
+              const won = done.filter((r) => r.status === 'fulfilled').length;
+              const lost = done.length - won;
+              app.bump();
+              if (won) app.toast(`${won} claim${won === 1 ? '' : 's'} approved within policy`, 'ok');
+              if (lost) app.toast(`${lost} could not be approved`, 'err');
+            }}>{bulk ? 'Approving…' : 'Approve all within policy'}</button>
           }>
           <ClaimTable list={cl} showEmp actions onApprove={approveClaim} onReject={rejectClaim} onPay={payClaim} />
         </Card>

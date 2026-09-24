@@ -485,3 +485,233 @@ export async function addHoliday(
     return rows.map((r) => ({ d: r.observed_on as string, n: r.name as string, opt: r.optional as boolean }));
   });
 }
+
+/* ------------------------------------------------------------------ *
+ * Departments
+ * ------------------------------------------------------------------ */
+
+/**
+ * The department list, and the four operations on it.
+ *
+ * The `department` table has been there since 0002 and eight rows sit in it,
+ * referenced by employees, job titles, requisitions and six other tables.
+ * Nothing exposed it. The Settings screen rendered `DEPTS` from
+ * `src/data/org.ts` instead — a client-side constant that happened to look
+ * plausible and had no connection to what the company actually has. A screen
+ * showing eight invented departments beside a database holding eight real ones
+ * is the kind of wrong that never announces itself.
+ */
+export interface Department {
+  id: string;
+  code: string;
+  name: string;
+  colour: string | null;
+  headId: string | null;
+  headName: string;
+  parentId: string | null;
+  active: boolean;
+  /** Active employees in it. What makes a delete unsafe. */
+  headcount: number;
+}
+
+export interface DepartmentDraft {
+  code: string;
+  name: string;
+  colour?: string | null;
+  headId?: string | null;
+  parentId?: string | null;
+}
+
+const DEPT_COLUMNS = `
+  SELECT d.id, d.code, d.name, d.colour, d.head_employee_id, d.parent_id, d.active,
+         COALESCE(h.full_name, '') AS head_name,
+         (SELECT count(*)::int FROM employee e
+           WHERE e.department_id = d.id AND e.status <> 'exited') AS headcount
+    FROM department d
+    LEFT JOIN employee h ON h.id = d.head_employee_id`;
+
+const toDepartment = (r: Record<string, unknown>): Department => ({
+  id: r.id as string,
+  code: r.code as string,
+  name: r.name as string,
+  colour: (r.colour as string | null) ?? null,
+  headId: (r.head_employee_id as string | null) ?? null,
+  headName: r.head_name as string,
+  parentId: (r.parent_id as string | null) ?? null,
+  active: Boolean(r.active),
+  headcount: Number(r.headcount),
+});
+
+export async function listDepartments(caller: Caller): Promise<Department[]> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(`${DEPT_COLUMNS} ORDER BY d.name`);
+    return rows.map(toDepartment);
+  });
+}
+
+/** Shaping the organisation is an administrator's, as the rest of settings is. */
+function mayShape(caller: Caller, verb: string) {
+  if (caller.role !== 'admin') {
+    throw new ConfigError(`only an admin may ${verb} a department`, 'forbidden');
+  }
+}
+
+function checkDepartment(d: Partial<DepartmentDraft>, patching: boolean) {
+  if (!patching || d.code !== undefined) {
+    if (!d.code?.trim()) throw new ConfigError('a department needs a code', 'invalid');
+    if (!/^[A-Z0-9_-]{2,12}$/.test(d.code.trim().toUpperCase())) {
+      throw new ConfigError(
+        'a department code is 2-12 characters: letters, digits, hyphen or underscore',
+        'invalid');
+    }
+  }
+  if (!patching || d.name !== undefined) {
+    if (!d.name?.trim()) throw new ConfigError('a department needs a name', 'invalid');
+  }
+}
+
+async function deptAudit(
+  db: { query: (sql: string, params?: unknown[]) => Promise<unknown> },
+  caller: Caller,
+  action: string,
+  code: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO audit_log (category, action, actor_employee_id, actor_label,
+                            subject_table, detail)
+     SELECT 'config', $2, $1, COALESCE(e.full_name, 'system'), 'department',
+            $4::jsonb || jsonb_build_object('department', $3::text)
+       FROM employee e WHERE e.id = $1`,
+    [caller.employeeId, action, code, JSON.stringify(detail)]);
+}
+
+export async function createDepartment(
+  caller: Caller,
+  draft: DepartmentDraft,
+): Promise<Department> {
+  mayShape(caller, 'add');
+  checkDepartment(draft, false);
+  const code = draft.code.trim().toUpperCase();
+
+  return withTenant(caller, async (db) => {
+    const clash = await db.query('SELECT 1 FROM department WHERE code = $1', [code]);
+    if (clash.rowCount) throw new ConfigError(`${code} is already a department`, 'conflict');
+
+    const { rows } = await db.query(
+      `INSERT INTO department (code, name, colour, head_employee_id, parent_id, active)
+       VALUES ($1, $2, $3, $4, $5, true) RETURNING id`,
+      [code, draft.name.trim(), draft.colour ?? null,
+        draft.headId ?? null, draft.parentId ?? null]);
+
+    await deptAudit(db, caller, 'department_created', code, { name: draft.name.trim() });
+    const back = await db.query(`${DEPT_COLUMNS} WHERE d.id = $1`, [rows[0]!.id]);
+    return toDepartment(back.rows[0]!);
+  });
+}
+
+export async function updateDepartment(
+  caller: Caller,
+  code: string,
+  patch: Partial<DepartmentDraft> & { active?: boolean },
+): Promise<Department> {
+  mayShape(caller, 'change');
+  checkDepartment(patch, true);
+
+  return withTenant(caller, async (db) => {
+    const { rows: [found] } = await db.query(
+      'SELECT id FROM department WHERE code = $1', [code]);
+    if (!found) throw new ConfigError('no such department', 'not_found');
+
+    /*
+     * A department cannot be its own parent, at any depth. Without this a
+     * two-step cycle detaches a branch from the tree, and the org chart
+     * recurses over it until it gives up.
+     */
+    if (patch.parentId) {
+      if (patch.parentId === found.id) {
+        throw new ConfigError('a department cannot report to itself', 'invalid');
+      }
+      const { rows: loop } = await db.query(
+        `WITH RECURSIVE up AS (
+           SELECT id, parent_id FROM department WHERE id = $1
+           UNION ALL
+           SELECT d.id, d.parent_id FROM department d JOIN up ON d.id = up.parent_id
+         ) SELECT 1 FROM up WHERE parent_id = $2`, [patch.parentId, found.id]);
+      if (loop.length) {
+        throw new ConfigError('that would make the department report to itself', 'invalid');
+      }
+    }
+
+    await db.query(
+      `UPDATE department
+          SET name   = COALESCE($2, name),
+              colour = CASE WHEN $5::boolean THEN $3 ELSE colour END,
+              head_employee_id = CASE WHEN $6::boolean THEN $4 ELSE head_employee_id END,
+              parent_id = CASE WHEN $8::boolean THEN $7 ELSE parent_id END,
+              active = COALESCE($9, active)
+        WHERE id = $1`,
+      [found.id, patch.name?.trim() ?? null, patch.colour ?? null, patch.headId ?? null,
+        patch.colour !== undefined, patch.headId !== undefined,
+        patch.parentId ?? null, patch.parentId !== undefined, patch.active ?? null]);
+
+    await deptAudit(db, caller, 'department_updated', code, { ...patch });
+    const back = await db.query(`${DEPT_COLUMNS} WHERE d.id = $1`, [found.id]);
+    return toDepartment(back.rows[0]!);
+  });
+}
+
+/**
+ * Remove a department, but only when nothing depends on it.
+ *
+ * Ten tables carry a department reference and none of them cascade, so a
+ * delete would either fail on a constraint deep inside the transaction or,
+ * where the column is nullable, quietly strip the department off employment
+ * records and requisitions that still mean it.
+ *
+ * The dependents are therefore counted first and the refusal names them. This
+ * is what "semantically safe" comes to: a department nobody is in and nothing
+ * points at is a typo worth removing; one with people in it is an
+ * organisational change, and the way to record that is to move the people and
+ * deactivate it, which is what `active` is for. The refusal says so rather
+ * than leaving the administrator to guess.
+ */
+export async function removeDepartment(caller: Caller, code: string): Promise<Department> {
+  mayShape(caller, 'remove');
+
+  return withTenant(caller, async (db) => {
+    const { rows: [found] } = await db.query(`${DEPT_COLUMNS} WHERE d.code = $1`, [code]);
+    if (!found) throw new ConfigError('no such department', 'not_found');
+    const dept = toDepartment(found);
+
+    /* Every table that points at a department, counted in one round trip. */
+    const { rows: [deps] } = await db.query(
+      `SELECT
+         (SELECT count(*)::int FROM employee            WHERE department_id = $1) AS employees,
+         (SELECT count(*)::int FROM employment_record   WHERE department_id = $1) AS history_records,
+         (SELECT count(*)::int FROM job_title           WHERE department_id = $1) AS job_titles,
+         (SELECT count(*)::int FROM requisition         WHERE department_id = $1) AS requisitions,
+         (SELECT count(*)::int FROM onboarding_journey  WHERE department_id = $1) AS onboarding_journeys,
+         (SELECT count(*)::int FROM joining_request     WHERE department_id = $1) AS joining_requests,
+         (SELECT count(*)::int FROM announcement        WHERE department_id = $1) AS announcements,
+         (SELECT count(*)::int FROM ticket_category     WHERE owning_department_id = $1) AS ticket_queues,
+         (SELECT count(*)::int FROM survey_response     WHERE department_id = $1) AS survey_responses,
+         (SELECT count(*)::int FROM department          WHERE parent_id = $1) AS child_departments`,
+      [dept.id]);
+
+    const blocking = Object.entries(deps as Record<string, number>)
+      .filter(([, n]) => Number(n) > 0)
+      .map(([what, n]) => `${n} ${what.replace(/_/g, ' ')}`);
+
+    if (blocking.length) {
+      throw new ConfigError(
+        `${code} still has ${blocking.join(', ')}. Move them first, or deactivate the `
+        + 'department instead of removing it, which keeps its history readable.',
+        'conflict');
+    }
+
+    await db.query('DELETE FROM department WHERE id = $1', [dept.id]);
+    await deptAudit(db, caller, 'department_removed', code, { name: dept.name });
+    return dept;
+  });
+}

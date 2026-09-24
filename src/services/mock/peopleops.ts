@@ -19,7 +19,7 @@ import { FBP, FBP_COMPONENTS, fbpTotal, INSURANCE } from '../../data/benefits';
 import { ACTIVE, DEMO_EMP, DEMO_MGR, EMAP } from '../../data/employees';
 import type {
   FbpPlan, FbpRow,
-  BenefitsService, CheckIn, EngagementService, Goal, HelpdeskService, LearningService,
+  BenefitsService, CheckIn, EngagementService, Goal, HelpdeskService, KbArticle, LearningService,
   NoticeboardService, PerformanceService,
 } from '../contracts';
 import { ok } from './util';
@@ -166,9 +166,54 @@ export const learningService: LearningService = {
   },
 };
 
+/*
+ * The demo knowledge base, as articles.
+ *
+ * `KB` in the dataset predates ids and the published flag — it was a display
+ * list, never something to edit. Derived once here so the demo can create,
+ * edit and remove like the server does.
+ */
+const ARTICLES: KbArticle[] = KB.map((k, i) => ({
+  id: 'KB' + (i + 1), cat: k.cat, q: k.q, a: k.a,
+  published: true, updatedAt: new Date().toISOString(),
+}));
+
 export const helpdeskService: HelpdeskService = {
   tickets(empIds) { return ok(scoped(TICKETS, empIds)); },
-  knowledgeBase() { return ok(KB.slice()); },
+  knowledgeBase() { return ok(ARTICLES.slice()); },
+
+  createArticle(draft) {
+    if (!draft.q?.trim() || !draft.a?.trim()) {
+      return Promise.reject(new Error('An article needs a question and an answer'));
+    }
+    const a = {
+      id: 'KB' + (ARTICLES.length + 1), cat: draft.cat ?? '', q: draft.q.trim(), a: draft.a.trim(),
+      published: draft.published ?? true, updatedAt: new Date().toISOString(),
+    };
+    ARTICLES.unshift(a);
+    return ok(a);
+  },
+
+  updateArticle(id, patch) {
+    const a = ARTICLES.find((x) => x.id === id);
+    if (!a) return Promise.reject(new Error('No such article: ' + id));
+    if (patch.q !== undefined && !patch.q.trim()) return Promise.reject(new Error('An article needs a question'));
+    if (patch.a !== undefined && !patch.a.trim()) return Promise.reject(new Error('An article needs an answer'));
+    Object.assign(a, {
+      ...(patch.cat !== undefined ? { cat: patch.cat ?? '' } : {}),
+      ...(patch.q !== undefined ? { q: patch.q.trim() } : {}),
+      ...(patch.a !== undefined ? { a: patch.a.trim() } : {}),
+      ...(patch.published !== undefined ? { published: patch.published } : {}),
+      updatedAt: new Date().toISOString(),
+    });
+    return ok(a);
+  },
+
+  removeArticle(id) {
+    const i = ARTICLES.findIndex((x) => x.id === id);
+    if (i < 0) return Promise.reject(new Error('No such article: ' + id));
+    return ok(ARTICLES.splice(i, 1)[0]!);
+  },
 
   raise(t) {
     const row = {
@@ -221,6 +266,34 @@ export const engagementService: EngagementService = {
     return sv ? ok(enpsOf(sv)) : Promise.reject(new Error('No such survey: ' + surveyId));
   },
   enpsHistory() { return ok(ENPS_HISTORY.slice()); },
+
+  /*
+   * The demo dataset carries question *means*, not question rows, so ids are
+   * derived from position. That is enough for the form to render and submit
+   * against itself; the server keeps real ids.
+   */
+  surveyQuestions(surveyId) {
+    const sv = SURVEYS.find((x) => x.id === surveyId);
+    if (!sv) return Promise.reject(new Error('No such survey: ' + surveyId));
+    if (sv.type === 'eNPS') {
+      return ok([{ id: surveyId + ':nps', prompt: 'How likely are you to recommend us as a place to work?', kind: 'nps' as const }]);
+    }
+    return ok((sv.questions ?? []).map((q, i) => ({
+      id: `${surveyId}:q${i}`, prompt: q.q, kind: 'scale' as const,
+    })));
+  },
+
+  respondToSurvey(surveyId, answers) {
+    const sv = SURVEYS.find((x) => x.id === surveyId);
+    if (!sv) return Promise.reject(new Error('No such survey: ' + surveyId));
+    if (sv.status !== 'Live') return Promise.reject(new Error('That survey is not open'));
+    if (sv.answered) return Promise.reject(new Error('You have already answered this survey'));
+    if (!answers.length) return Promise.reject(new Error('A response needs at least one answer'));
+    /* The demo keeps the same shape the server does: a count and a flag. */
+    sv.responded = Math.min(sv.responded + 1, sv.sent);
+    sv.answered = true;
+    return ok(sv);
+  },
 };
 
 const EMPTY_PLAN: FbpPlan = { pool: 0, alloc: {}, status: 'Not declared', lockedOn: null };

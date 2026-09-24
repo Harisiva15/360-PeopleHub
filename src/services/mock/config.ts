@@ -8,11 +8,11 @@
  */
 
 import { ACTIVE } from '../../data/employees';
-import { HOLIDAYS, HOLIDAY_MAP, ltOf, SITES } from '../../data/org';
+import { DEPTS, HOLIDAYS, HOLIDAY_MAP, ltOf, SITES } from '../../data/org';
 import { LEAVE_BAL } from '../../data/leave';
 import { PERMS } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
-import type { ConfigService, GridPatch, ModuleGrid, PermScope } from '../contracts';
+import type { ConfigService, Department, GridPatch, ModuleGrid, PermScope } from '../contracts';
 import type { Site } from '../../types/org';
 import { ok } from './util';
 
@@ -84,6 +84,25 @@ function nominate(code: string): void {
   if (next) { next.headquarters = true; next.kind = 'headquarters'; }
 }
 
+/*
+ * The demo departments.
+ *
+ * `DEPTS` is a display constant with no id, headcount or active flag — it was
+ * never something to edit. Derived once here so the demo supports the same
+ * four operations the server does.
+ */
+const DEPARTMENTS: Department[] = DEPTS.map((d) => ({
+  id: d.id,
+  code: d.id,
+  name: d.name,
+  colour: d.color ?? null,
+  headId: d.head ?? null,
+  headName: '',
+  parentId: null,
+  active: true,
+  headcount: ACTIVE().filter((e) => e.dept === d.id).length,
+}));
+
 export const configService: ConfigService = {
   permissions(c) {
     if (c.role !== 'admin') return Promise.reject(new Error('Only an administrator can read this'));
@@ -121,6 +140,57 @@ export const configService: ConfigService = {
   },
 
   sites() { return ok(SITES.slice()); },
+
+  /*
+   * Departments, from the same constant the Settings screen used to render
+   * directly. Held in a mutable list here so the demo can add and remove, the
+   * way the server does.
+   */
+  departments() { return ok(DEPARTMENTS.slice()); },
+
+  createDepartment(draft) {
+    const code = draft.code?.trim().toUpperCase() ?? '';
+    if (!code) return Promise.reject(new Error('A department needs a code'));
+    if (!draft.name?.trim()) return Promise.reject(new Error('A department needs a name'));
+    if (DEPARTMENTS.some((d) => d.code === code)) {
+      return Promise.reject(new Error(code + ' is already a department'));
+    }
+    const d = {
+      id: code, code, name: draft.name.trim(), colour: draft.colour ?? null,
+      headId: draft.headId ?? null, headName: '', parentId: draft.parentId ?? null,
+      active: true, headcount: 0,
+    };
+    DEPARTMENTS.push(d);
+    return ok(d);
+  },
+
+  updateDepartment(code, patch) {
+    const d = DEPARTMENTS.find((x) => x.code === code);
+    if (!d) return Promise.reject(new Error('No such department: ' + code));
+    if (patch.name !== undefined && !patch.name.trim()) {
+      return Promise.reject(new Error('A department needs a name'));
+    }
+    Object.assign(d, {
+      ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+      ...(patch.colour !== undefined ? { colour: patch.colour } : {}),
+      ...(patch.headId !== undefined ? { headId: patch.headId } : {}),
+      ...(patch.parentId !== undefined ? { parentId: patch.parentId } : {}),
+      ...(patch.active !== undefined ? { active: patch.active } : {}),
+    });
+    return ok(d);
+  },
+
+  removeDepartment(code) {
+    const i = DEPARTMENTS.findIndex((x) => x.code === code);
+    if (i < 0) return Promise.reject(new Error('No such department: ' + code));
+    const d = DEPARTMENTS[i]!;
+    if (d.headcount > 0) {
+      return Promise.reject(new Error(
+        `${code} still has ${d.headcount} employees. Move them first, or deactivate `
+        + 'the department instead of removing it.'));
+    }
+    return ok(DEPARTMENTS.splice(i, 1)[0]!);
+  },
   holidays() { return ok(HOLIDAYS.slice()); },
 
   updateFence(siteId, patch) {

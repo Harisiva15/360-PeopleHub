@@ -63,6 +63,10 @@ walk('src/shell');
 walk('src/auth');
 const src = files.map((f) => readFileSync(f, 'utf8')).join('\n');
 
+/* Every line, with the file it came from, for the guard test below. */
+const lines: { file: string; text: string }[] = files.flatMap((f) =>
+  readFileSync(f, 'utf8').split('\n').map((text) => ({ file: f, text })));
+
 const mock = mockServices as unknown as Record<string, Record<string, unknown>>;
 const live = createHttpServices(mockServices) as unknown as Record<string, Record<string, unknown>>;
 
@@ -84,6 +88,42 @@ for (const name of unreachable) {
     failed += 1;
     console.error(`  FAIL  ${name} is live on the server and no screen calls it`);
   }
+}
+
+/*
+ * A live method may not be reached only through `unbacked`.
+ *
+ * `unbacked(run, empty)` returns `empty` without calling `run` whenever the
+ * API is configured. That is right for a method the server does not back — the
+ * panel shows nothing rather than the mock's invented rows — and wrong the
+ * moment the server does back it, because the screen then answers from the
+ * wrapper forever and never asks.
+ *
+ * It hid exactly that for `documents.documents` and `documents.documentTypes`:
+ * both went live, the wrapper stayed, and the repository read as empty against
+ * a real tenant. The test above could not see it, because the wrapped line
+ * still contains `.documents.documents(` and so counts as a call.
+ *
+ * The discriminating property is liveness, which is why this loop runs over
+ * live methods only: `documents.letterContext` is wrapped for the original
+ * reason and is not live, so it is not flagged.
+ */
+const guarded: string[] = [];
+for (const svc of Object.keys(mock).sort()) {
+  for (const k of Object.keys(mock[svc]!)) {
+    if (live[svc]![k] === mock[svc]![k]) continue;
+    const calls = lines.filter((l) => l.text.includes(`.${svc}.${k}(`));
+    if (!calls.length) continue;
+    if (!calls.every((l) => l.text.includes('unbacked('))) continue;
+    guarded.push(`${svc}.${k}`);
+    failed += 1;
+    console.error(`  FAIL  ${svc}.${k} is live but every call is wrapped in unbacked() —`
+      + ` a configured build never asks the server`);
+    for (const l of calls) console.error(`          ${l.file}`);
+  }
+}
+if (!guarded.length) {
+  console.log('\nno live method is reached only through unbacked()');
 }
 
 /* A reason that has outlived its method is a reason nobody will notice is stale. */

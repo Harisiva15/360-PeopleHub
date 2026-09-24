@@ -8,6 +8,7 @@ import { ORG } from '../../data/org';
 import { CYCLES, NINEBOX, RATINGS, ratingOf, REVIEW_PHASES, VALUES } from '../../data/performance';
 import type { Goal, Review } from '../../services';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
 import { Divide, Dot, ListRow, StatusBadge } from '../../components/common';
 import { Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -600,7 +601,8 @@ function PfCalib() {
             {app.role === 'admin' && (
               <ListRow>
                 <button className="btn primary sm" style={{ width: '100%' }}
-                  onClick={() => app.toast('Increment letters released to employees', 'ok')}>Release increment letters</button>
+                  {...notBacked('a revision is recorded against the employee in Compensation; there is no letter run yet')}
+                >Release increment letters</button>
               </ListRow>
             )}
           </Card>

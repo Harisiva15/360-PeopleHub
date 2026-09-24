@@ -8,15 +8,17 @@ import { TICKET_CATS, tCat } from '../../data/helpdesk';
 import type { Ticket } from '../../services';
 import { deptOf } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
 import { Divide, ListRow } from '../../components/common';
 import { BarChart, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
 import {
-  useCommentOnTicket, useKnowledgeBase, useRaiseTicket, useResolveTicket,
-  useTickets, useVisiblePeople,
+  useCommentOnTicket, useCreateArticle, useKnowledgeBase, useRaiseTicket,
+  useRemoveArticle, useResolveTicket, useTickets, useUpdateArticle, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
+import type { KbArticle, KbDraft } from '../../services';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
@@ -425,12 +427,140 @@ function HdSla() {
 
 /* ---------------- Knowledge base ---------------- */
 
+/**
+ * The article editor.
+ *
+ * Uncontrolled inputs writing through `onChange` into the caller's draft, the
+ * same shape the other modals in this product use — the dialog owns the draft
+ * so the footer's Save can read it without lifting state through the layer.
+ */
+function ArticleForm({ initial, onChange }: {
+  initial: KbDraft;
+  onChange: (v: KbDraft) => void;
+}) {
+  const [v, setV] = useState<KbDraft>(initial);
+  const set = (patch: Partial<KbDraft>) => {
+    const next = { ...v, ...patch };
+    setV(next);
+    onChange(next);
+  };
+
+  return (
+    <div className="stack">
+      <div className="field">
+        <label htmlFor="kb-cat">Category</label>
+        <select id="kb-cat" className="input" value={v.cat ?? ''}
+          onChange={(e) => set({ cat: e.target.value || null })}>
+          <option value="">Uncategorised</option>
+          {TICKET_CATS.map((c) => <option key={c.id} value={c.id}>{c.n}</option>)}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="kb-q">Question</label>
+        <input id="kb-q" className="input" value={v.q} maxLength={300}
+          placeholder="What someone would actually ask"
+          onChange={(e) => set({ q: e.target.value })} />
+      </div>
+      <div className="field">
+        <label htmlFor="kb-a">Answer</label>
+        <textarea id="kb-a" className="input" style={{ minHeight: 160 }} value={v.a}
+          placeholder="The answer, and where to go next"
+          onChange={(e) => set({ a: e.target.value })} />
+      </div>
+      <label className="row" style={{ gap: 8, cursor: 'pointer' }}>
+        <input type="checkbox" checked={v.published ?? true}
+          onChange={(e) => set({ published: e.target.checked })} />
+        <span>Published — visible to everyone. Clear this to keep it a draft.</span>
+      </label>
+    </div>
+  );
+}
+
+/**
+ * The company's policies and how-to answers.
+ *
+ * This was read-only, over a service that returned a literal empty list — so
+ * the policy library could neither show a policy nor be given one. It reads
+ * `kb_article` now, and an administrator or a manager can write to it.
+ *
+ * Authoring is gated twice on purpose. The service refuses anyone else outright;
+ * this hides the controls, because offering a button that will be refused is a
+ * worse way to learn your role than not being offered it.
+ */
 function HdKb() {
-  const { data: KB = [] } = useKnowledgeBase();
   const app = useApp();
+  const layer = useLayer();
+  const { data: KB = [], refetch } = useKnowledgeBase();
   const raise = useNewTicket();
+  const create = useCreateArticle();
+  const update = useUpdateArticle();
+  const remove = useRemoveArticle();
   const [q, setQ] = useState('');
   const list = q ? KB.filter((k) => (k.q + k.a).toLowerCase().includes(q.toLowerCase())) : KB;
+
+  const mayEdit = app.role === 'admin' || app.role === 'manager';
+
+  const edit = (existing?: KbArticle) => {
+    let draft: KbDraft = {
+      cat: existing?.cat ?? '', q: existing?.q ?? '', a: existing?.a ?? '',
+      published: existing?.published ?? true,
+    };
+    layer.modal({
+      title: existing ? 'Edit article' : 'New article',
+      size: 'wide',
+      body: <ArticleForm initial={draft} onChange={(v) => { draft = v; }} />,
+      footer: (close) => (
+        <>
+          <button className="btn" onClick={close}>Cancel</button>
+          <button className="btn primary" onClick={async () => {
+            if (!draft.q.trim() || !draft.a.trim()) {
+              app.toast('An article needs a question and an answer', 'err');
+              return;
+            }
+            try {
+              if (existing) await update.mutate(existing.id, draft);
+              else await create.mutate(draft);
+              close();
+              refetch();
+              app.toast(existing ? 'Article updated' : 'Article published', 'ok');
+            } catch (e) {
+              app.toast(e instanceof Error ? e.message : 'Could not save the article', 'err');
+            }
+          }}>{existing ? 'Save' : 'Publish'}</button>
+        </>
+      ),
+    });
+  };
+
+  const del = (k: KbArticle) => layer.modal({
+    title: 'Remove this article?',
+    size: 'narrow',
+    body: (
+      <div className="stack">
+        <div style={{ fontWeight: 650 }}>{k.q}</div>
+        <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+          This removes the article for everyone and cannot be undone. If you only
+          want it out of sight while you rework it, edit it and clear
+          “Published” instead.
+        </div>
+      </div>
+    ),
+    footer: (close) => (
+      <>
+        <button className="btn" onClick={close}>Cancel</button>
+        <button className="btn danger" onClick={async () => {
+          try {
+            await remove.mutate(k.id);
+            close();
+            refetch();
+            app.toast('Article removed', 'ok');
+          } catch (e) {
+            app.toast(e instanceof Error ? e.message : 'Could not remove the article', 'err');
+          }
+        }}>Remove</button>
+      </>
+    ),
+  });
 
   return (
     <div className="stack">
@@ -439,27 +569,48 @@ function HdKb() {
           <input className="input" placeholder="Search the knowledge base…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="spacer" />
+        {mayEdit && <button className="btn primary" onClick={() => edit()}>New article</button>}
         <button className="btn" onClick={raise}>Still stuck? Raise a ticket</button>
       </div>
 
       <div className="grid g2">
         {list.map((k, i) => (
-          <Card key={i}>
+          <Card key={k.id || i}>
             <div className="row" style={{ gap: 8, marginBottom: 7 }}>
               <Badge kind="info"><Icon n={tCat(k.cat).ic} size="sm" /> {tCat(k.cat).n}</Badge>
+              {!k.published && <Badge kind="warn">Draft — not visible to employees</Badge>}
+              <div className="spacer" />
+              {mayEdit && (
+                <>
+                  <button className="btn sm ghost" onClick={() => edit(k)}>Edit</button>
+                  <button className="btn sm ghost" onClick={() => del(k)}>Remove</button>
+                </>
+              )}
             </div>
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>{k.q}</div>
             <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>{k.a}</div>
             <div className="row" style={{ marginTop: 11, gap: 7 }}>
               <span className="muted" style={{ fontSize: 11.5 }}>Was this helpful?</span>
-              <button className="btn sm ghost" onClick={() => app.toast('Thanks for the feedback', 'ok')}>👍</button>
-              <button className="btn sm ghost" onClick={() => app.toast('Thanks — we will improve this answer')}>👎</button>
+              {/* Nothing records article feedback yet, so neither button claims it does. */}
+              <button className="btn sm ghost" {...notBacked('article feedback is not collected yet')}><Icon n="thumbsUp" size="sm" /></button>
+              <button className="btn sm ghost" {...notBacked('article feedback is not collected yet')}><Icon n="thumbsDown" size="sm" /></button>
             </div>
           </Card>
         ))}
       </div>
 
-      {!list.length && <Card><EmptyState msg="Nothing matches that search" icon={<Icon n="search" size="lg" />} /></Card>}
+      {!list.length && (
+        <Card>
+          <EmptyState
+            msg={q
+              ? 'Nothing matches that search'
+              : mayEdit
+                ? 'No articles yet — publish the first one'
+                : 'No articles have been published yet'}
+            icon={<Icon n={q ? 'search' : 'policy'} size="lg" />}
+          />
+        </Card>
+      )}
     </div>
   );
 }

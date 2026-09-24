@@ -375,7 +375,16 @@ const AUDIT_SEV_KIND: Record<Severity, 'crit' | 'warn' | 'mute'> = { high: 'crit
 /** The table caps at this many rows; the export carries the full trail. */
 const AUDIT_PAGE = 200;
 
-function AuditTab() {
+/**
+ * The audit trail, from the audit_log table.
+ *
+ * Exported because Settings had its own "Audit log" tab rendering a hard-coded
+ * list — invented actions, attributed to named people, with invented IP
+ * addresses — while this one read the real thing. Two audit logs where one is
+ * fabricated is worse than one, and the fabricated one was the one filed under
+ * Settings, where an administrator would look for it.
+ */
+export function AuditTab() {
   const [cat, setCat] = useState('');
   const [sev, setSev] = useState('');
   const { data: AUDIT = [] } = useAudit();

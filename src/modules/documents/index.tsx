@@ -9,6 +9,7 @@ import { LETTER_TYPES } from '../../data/letters';
 import { HBar, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { Badge, Banner, Card, EmptyState, PersonCell, Table, TableWrap, Tabs, Tile, StatRow } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
 import { Chip, ListRow } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
@@ -123,7 +124,9 @@ function MineTab() {
                   <div className="muted" style={{ fontSize: 11.5 }}>Uploaded {fmtD(d.on)}</div>
                 </div>
                 <Badge kind={d.verified ? 'good' : 'warn'}>{d.verified ? 'Verified' : 'Pending'}</Badge>
-                <button className="btn sm ghost" onClick={() => app.toast(d.type + ' downloaded', 'ok')}>⤓</button>
+                <button className="btn sm ghost"
+                  {...notBacked('the repository records that a document exists; the file itself is not stored yet')}
+                >⤓</button>
               </ListRow>
             ))
           ) : (
@@ -271,7 +274,6 @@ function QueueTab() {
 /* ---------- Document repository ---------- */
 
 function RepoTab() {
-  const app = useApp();
   const showEmp = useShowEmployee();
   const { data: DOCS = [] } = useDocuments();
   const { data: DOC_TYPES = [] } = useDocumentTypes();
@@ -294,7 +296,9 @@ function RepoTab() {
           title="Employees with missing documents"
           sub={`${missing.length} people`}
           actions={
-            <button className="btn sm" onClick={() => app.toast('Reminder emails sent to employees with incomplete files', 'ok')}>
+            <button className="btn sm"
+              {...notBacked('there is no path from here to the mail server yet')}
+            >
               <Icon n="mail" size="lg" /> Send reminders
             </button>
           }

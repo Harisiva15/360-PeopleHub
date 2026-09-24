@@ -10,13 +10,17 @@ export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
 
 /*
- * The document repository and the letter context are the parts of this module
- * with no server behind them — collection and letters both have one. Empty in
- * a configured build, so the repository does not list files nobody uploaded.
+ * The repository reads the API. It did not always: both calls were wrapped in
+ * `unbacked` when no server held documents, and the wrapper stayed after
+ * `GET /documents` and `GET /documents/types` went live — so a configured
+ * build returned an empty list without ever asking the server. The screen
+ * looked empty and correct, which is why it survived so long.
+ *
+ * The letter context is genuinely still unmapped, and stays wrapped below.
  */
 export const useDocuments = (empIds?: string[]) =>
-  useQuery(unbacked((s) => s.documents.documents(empIds), []), [empIds ? empIds.join(',') : 'all']);
-export const useDocumentTypes = () => useQuery(unbacked((s) => s.documents.documentTypes(), []), []);
+  useQuery((s) => s.documents.documents(empIds), [empIds ? empIds.join(',') : 'all']);
+export const useDocumentTypes = () => useQuery((s) => s.documents.documentTypes(), []);
 export const useLetterRequests = () => useQuery((s) => s.letters.requests(), []);
 export const useAllEmployees = () => useQuery((s) => s.employees.active(), []);
 export const useIssueLetter = () => useMutation((s, id: string) => s.letters.issue(id));

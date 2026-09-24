@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { sortBy, sum, uniq } from '../../lib/collections';
-import { addDays, DOW, fmtD, MON, monthLabelLong, parseYmd, TODAY, ymd } from '../../lib/dates';
+import { addDays, DOW, MON, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh } from '../../lib/format';
 import { LOGO_LIGHT } from '../../assets/logo';
 
-import { BANKS, DEPTS, GRADES, LEAVE_TYPES, ORG, PROJECTS } from '../../data/org';
+import { BANKS, GRADES, LEAVE_TYPES, ORG, PROJECTS } from '../../data/org';
 import type { Site } from '../../types/org';
 import type { ComponentKind, SalaryComponent } from '../../services';
 import { applyComponents } from '../../lib/compensation';
@@ -16,9 +16,12 @@ import { COUNTRIES } from '../../data/countries';
 
 
 import { Badge, Banner, Card, EmptyState, KV, Table, TableWrap } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
+import { AuditTab } from '../security';
 import { Dot, ListRow } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
+import type { Department, DepartmentDraft } from '../../services';
 import { FenceForm } from './Fence';
 import {
   useAddHoliday, useAllEmployees, useAttendanceAll, useCandidates, useCompensation,
@@ -26,6 +29,7 @@ import {
   useComponents, useRemoveComponent, useSaveComponent,
   useSetLeaveQuota, useSetSiteActive, useSites,
   useTimesheetsAll, useUpdateSite, useVisiblePeople,
+  useDepartments, useCreateDepartment, useUpdateDepartment, useRemoveDepartment,
 } from './data';
 import { Icon } from '../../components/icons';
 
@@ -464,12 +468,18 @@ export function LeavePolicyTab() {
     });
   };
 
+  /*
+   * The card has no Save button. Each quota persists the moment it changes,
+   * through setLeaveQuota, which reports how many balances it repriced. A Save
+   * button beside that would claim to commit the rest of the card too —
+   * carry-forward, caps, encashment — and those have no endpoint, which is why
+   * they are shown read-only rather than as inputs.
+   */
   return (
     <div className="stack">
       <Card
         title="Leave types & entitlement"
         sub={`${ORG.fy} · effective 1 April`}
-        actions={<button className="btn sm primary" onClick={() => app.toast('Settings saved', 'ok')}>Save policy</button>}
         flush
       >
         <TableWrap>
@@ -908,41 +918,200 @@ export function PayConfigTab() {
 
 /* ---------- Org structure ---------- */
 
+/**
+ * The department editor.
+ *
+ * The code is the department's identity — every employee, job title and
+ * requisition joins on it — so it is set once and locked afterwards. Renaming
+ * is what the name field is for.
+ */
+function DeptForm({ initial, people, lockCode, onChange }: {
+  initial: DepartmentDraft;
+  people: { id: string; name: string }[];
+  lockCode: boolean;
+  onChange: (v: DepartmentDraft) => void;
+}) {
+  const [v, setV] = useState<DepartmentDraft>(initial);
+  const set = (patch: Partial<DepartmentDraft>) => {
+    const next = { ...v, ...patch };
+    setV(next);
+    onChange(next);
+  };
+
+  return (
+    <div className="stack">
+      <div className="field">
+        <label htmlFor="dept-code">Code</label>
+        <input id="dept-code" className="input" value={v.code} disabled={lockCode}
+          maxLength={12} placeholder="ENG"
+          onChange={(e) => set({ code: e.target.value.toUpperCase() })} />
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          {lockCode
+            ? 'The code is what every employee and job title joins on, so it cannot change.'
+            : '2–12 characters: letters, digits, hyphen or underscore. It cannot be changed later.'}
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="dept-name">Name</label>
+        <input id="dept-name" className="input" value={v.name}
+          placeholder="Engineering"
+          onChange={(e) => set({ name: e.target.value })} />
+      </div>
+      <div className="field">
+        <label htmlFor="dept-head">Head of department</label>
+        <select id="dept-head" className="input" value={v.headId ?? ''}
+          onChange={(e) => set({ headId: e.target.value || null })}>
+          <option value="">Nobody yet</option>
+          {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 export function OrgTab() {
   const app = useApp();
+  const layer = useLayer();
   const { data: everyone = [] } = useAllEmployees();
   const { data: sites = [] } = useSites();
   const { data: reqs = [] } = useRequisitions();
   const { data: sheets = [] } = useTimesheetsAll(everyone.map((e) => e.id));
+  const { data: depts = [], loading: deptsLoading, refetch: refetchDepts } = useDepartments();
+  const createDept = useCreateDepartment();
+  const updateDept = useUpdateDepartment();
+  const removeDept = useRemoveDepartment();
   const dir = useVisiblePeople();
+
+  const editDept = (existing?: Department) => {
+    let draft: DepartmentDraft = {
+      code: existing?.code ?? '', name: existing?.name ?? '',
+      colour: existing?.colour ?? null, headId: existing?.headId ?? null,
+    };
+    layer.modal({
+      title: existing ? `Edit ${existing.name}` : 'Add a department',
+      size: 'narrow',
+      body: (
+        <DeptForm initial={draft} people={everyone} lockCode={Boolean(existing)}
+          onChange={(v) => { draft = v; }} />
+      ),
+      footer: (close) => (
+        <>
+          <button className="btn" onClick={close}>Cancel</button>
+          <button className="btn primary" onClick={async () => {
+            try {
+              if (existing) await updateDept.mutate(existing.code, draft);
+              else await createDept.mutate(draft);
+              close();
+              refetchDepts();
+              app.toast(existing ? 'Department updated' : 'Department added', 'ok');
+            } catch (e) {
+              app.toast(e instanceof Error ? e.message : 'Could not save the department', 'err');
+            }
+          }}>{existing ? 'Save' : 'Add'}</button>
+        </>
+      ),
+    });
+  };
+
+  /*
+   * Removal is refused by the server whenever anything still points at the
+   * department, and the refusal names what. So this does not try to predict
+   * it — it asks, and shows what comes back.
+   */
+  const delDept = (d: Department) => layer.modal({
+    title: `Remove ${d.name}?`,
+    size: 'narrow',
+    body: (
+      <div className="stack">
+        <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+          A department can only be removed when nothing references it — no
+          employees, job titles, requisitions or history. If anything does, the
+          server will say what, and deactivating it is the right move instead:
+          the department stops being offered and its history stays readable.
+        </div>
+        {d.headcount > 0 && (
+          <Banner kind="warn" icon={<Icon n="warn" size="lg" />}>
+            {d.headcount} {d.headcount === 1 ? 'person is' : 'people are'} in this department.
+          </Banner>
+        )}
+      </div>
+    ),
+    footer: (close) => (
+      <>
+        <button className="btn" onClick={close}>Cancel</button>
+        <button className="btn" onClick={async () => {
+          try {
+            await updateDept.mutate(d.code, { active: false });
+            close();
+            refetchDepts();
+            app.toast(`${d.name} deactivated`, 'ok');
+          } catch (e) {
+            app.toast(e instanceof Error ? e.message : 'Could not deactivate', 'err');
+          }
+        }}>Deactivate instead</button>
+        <button className="btn danger" onClick={async () => {
+          try {
+            await removeDept.mutate(d.code);
+            close();
+            refetchDepts();
+            app.toast(`${d.name} removed`, 'ok');
+          } catch (e) {
+            app.toast(e instanceof Error ? e.message : 'Could not remove the department', 'err');
+          }
+        }}>Remove</button>
+      </>
+    ),
+  });
+
   return (
     <div className="stack">
       <div className="grid g2">
         <Card
           title="Departments"
-          sub={`${DEPTS.length} configured`}
-          actions={
-            <button className="btn sm" onClick={() => app.toast('Department creation requires CEO approval in this configuration')}>
+          sub={depts.length ? `${depts.length} configured` : 'None configured'}
+          actions={app.role === 'admin' && (
+            <button className="btn sm" onClick={() => editDept()}>
               <Icon n="add" size="lg" /> Add
             </button>
-          }
+          )}
           flush
         >
           <TableWrap>
             <Table>
               <thead>
-                <tr><th>Department</th><th>Head</th><th className="num">Headcount</th><th className="num">Annual cost</th><th className="num">Open roles</th></tr>
+                <tr>
+                  <th>Department</th><th>Head</th><th className="num">Headcount</th>
+                  <th className="num">Annual cost</th><th className="num">Open roles</th>
+                  {app.role === 'admin' && <th className="right">&nbsp;</th>}
+                </tr>
               </thead>
               <tbody>
-                {DEPTS.map((d) => (
-                  <tr key={d.id}>
-                    <td><Dot color={d.color} /> <b>{d.name}</b></td>
-                    <td className="nowrap">{dir.name(d.head)}</td>
-                    <td className="num">{everyone.filter((e) => e.dept === d.id).length}</td>
-                    <td className="num">{lakh(sum(everyone.filter((e) => e.dept === d.id), (e) => e.ctc))}</td>
-                    <td className="num">{sum(reqs.filter((r) => r.dept === d.id && r.status === 'Open'), (r) => r.openings - r.filled)}</td>
+                {depts.map((d) => (
+                  <tr key={d.code}>
+                    <td>
+                      <Dot color={d.colour ?? 'var(--s1)'} /> <b>{d.name}</b>
+                      {!d.active && <> <Badge kind="mute">Inactive</Badge></>}
+                    </td>
+                    <td className="nowrap">{d.headName || dir.name(d.headId)}</td>
+                    <td className="num">{d.headcount}</td>
+                    <td className="num">{lakh(sum(everyone.filter((e) => e.dept === d.code), (e) => e.ctc))}</td>
+                    <td className="num">{sum(reqs.filter((r) => r.dept === d.code && r.status === 'Open'), (r) => r.openings - r.filled)}</td>
+                    {app.role === 'admin' && (
+                      <td className="right nowrap">
+                        <button className="btn sm ghost" onClick={() => editDept(d)}>Edit</button>{' '}
+                        <button className="btn sm ghost" onClick={() => delDept(d)}>Remove</button>
+                      </td>
+                    )}
                   </tr>
                 ))}
+                {!depts.length && (
+                  <tr><td colSpan={app.role === 'admin' ? 6 : 5}>
+                    <EmptyState
+                      msg={deptsLoading ? 'Loading departments…' : 'No departments configured yet'}
+                      icon={<Icon n="building" size="lg" />}
+                    />
+                  </td></tr>
+                )}
               </tbody>
             </Table>
           </TableWrap>
@@ -1010,8 +1179,9 @@ const INTEGRATIONS: [string, string, 'good' | 'mute'][] = [
 ];
 
 export function CompanyTab() {
-  const app = useApp();
   const { data: everyone = [] } = useAllEmployees();
+  /* "Live system counts" said Departments from a constant. It counts them now. */
+  const { data: depts = [] } = useDepartments();
   const { data: sites = [] } = useSites();
   const { data: runs = [] } = usePayRuns();
   const { data: reqs = [] } = useRequisitions();
@@ -1025,7 +1195,9 @@ export function CompanyTab() {
       <Card
         title="Company profile"
         sub="Used on payslips, offer letters and statutory filings"
-        actions={<button className="btn sm primary" onClick={() => app.toast('Settings saved', 'ok')}>Save</button>}
+        actions={<button className="btn sm primary"
+          {...notBacked('the company profile is not editable from here yet — these fields read the configured entity')}
+        >Save</button>}
       >
         <div className="grid g2" style={{ gap: '0 14px' }}>
           <div className="field"><label>Product name</label><input className="input" defaultValue={ORG.product} /></div>
@@ -1062,7 +1234,7 @@ export function CompanyTab() {
           <KV
             rows={[
               ['Active employees', everyone.length],
-              ['Departments', DEPTS.length],
+              ['Departments', depts.length],
               ['Locations', `${sites.filter((s) => !s.remote).length} offices + remote`],
               ['Attendance records', attendance.length.toLocaleString('en-IN')],
               ['Timesheets', sheets.length.toLocaleString('en-IN')],
@@ -1094,58 +1266,15 @@ export function CompanyTab() {
  * The configuration-change log, distinct from the full security audit trail:
  * it records who changed the system's settings, not who used it.
  */
-const CONFIG_ACTIONS: [string, string, string, number][] = [
-  ['Payroll', '', 'Balaji Srinivasan', 0],
-  ['Access', 'Role changed to Manager for 2 users', 'Priya Raghavan', 1],
-  ['Attendance', 'Bengaluru geo-fence radius updated 200 m → 220 m', 'Karthik Shetty', 2],
-  ['Hiring', 'Requisition JR-2603 approved (Engineering Manager — Platform)', 'Vikram Sundaram', 3],
-  ['Payroll', 'Salary revision applied to 14 employees', 'Priya Raghavan', 5],
-  ['Leave', 'Leave policy updated — EL carry-forward cap set to 30 days', 'Priya Raghavan', 8],
-  ['Employee', '3 employees added via onboarding automation', 'System', 9],
-  ['Compliance', 'Form 24Q Q1 filed with the Income Tax Department', 'Balaji Srinivasan', 12],
-  ['Security', 'Two-factor authentication enforced for admin role', 'System', 15],
-  ['Attendance', 'Bulk regularisation approved (biometric outage, 22 records)', 'Anitha Menon', 18],
-];
 
-export function ConfigAuditTab() {
-  const app = useApp();
-  const { data: runs = [] } = usePayRuns();
-  const rows = CONFIG_ACTIONS.map((a, i) => ({
-    cat: a[0],
-    /* The first row names the last locked payroll cycle. */
-    action: a[1] || (runs.length > 1 ? 'Payroll run locked for ' + monthLabelLong(runs[runs.length - 2].mk) : 'Payroll run locked'),
-    by: a[2],
-    on: fmtD(addDays(TODAY, -a[3])),
-    at: `${9 + (i % 9)}:${String(10 + i * 5).padStart(2, '0')}`,
-    ip: `10.4.${1 + i}.${2 + i * 7}`,
-  }));
-
-  return (
-    <Card
-      title="Audit log"
-      sub="Configuration and privileged actions · last 30 days"
-      actions={<button className="btn sm" onClick={() => app.toast('Audit log exported', 'ok')}><Icon n="download" size="lg" /> Export</button>}
-      flush
-    >
-      <TableWrap>
-        <Table>
-          <thead>
-            <tr><th>When</th><th>Category</th><th>Action</th><th>Performed by</th><th>IP</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((a, i) => (
-              <tr key={i}>
-                <td className="nowrap">{a.on} {a.at}</td>
-                <td><Badge kind="info">{a.cat}</Badge></td>
-                <td>{a.action}</td>
-                <td className="nowrap">{a.by}</td>
-                <td className="mono muted">{a.ip}</td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      </TableWrap>
-    </Card>
-  );
-}
+/**
+ * The audit log tab.
+ *
+ * It used to build its own rows from a constant — eight invented actions with
+ * invented IP addresses, attributed to named colleagues — while `security.audit()`
+ * had been live the whole time and the Security module was already reading it.
+ * An administrator looking at a fabricated audit trail is worse served than one
+ * looking at none, so this renders the real one rather than a second opinion.
+ */
+export const ConfigAuditTab = AuditTab;
 

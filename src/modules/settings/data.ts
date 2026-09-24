@@ -6,6 +6,7 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import type { AppRole } from '../../types/employee';
+import type { DepartmentDraft } from '../../services';
 import type {
   ComponentDraft, FenceUpdate, GridPatch, SiteDraft, SitePatch,
 } from '../../services';
@@ -73,3 +74,19 @@ export const useResetPermissions = () => {
   const c = useCaller();
   return useMutation((s, module: string) => s.config.resetPermissions(c, module));
 };
+
+/* ---------- departments ---------- */
+
+/*
+ * The organisation structure screen rendered `DEPTS` from `src/data/org.ts` —
+ * a client-side constant with no connection to the `department` table the rest
+ * of the product joins against. These read and write the real thing.
+ */
+export const useDepartments = () => useQuery((s) => s.config.departments(), []);
+export const useCreateDepartment = () =>
+  useMutation((s, draft: DepartmentDraft) => s.config.createDepartment(draft));
+export const useUpdateDepartment = () =>
+  useMutation((s, code: string, patch: Partial<DepartmentDraft> & { active?: boolean }) =>
+    s.config.updateDepartment(code, patch));
+export const useRemoveDepartment = () =>
+  useMutation((s, code: string) => s.config.removeDepartment(code));

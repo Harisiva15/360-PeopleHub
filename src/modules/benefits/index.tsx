@@ -8,6 +8,7 @@ import { LOAN_TYPES } from '../../data/loans';
 import type { Loan } from '../../services';
 import { GRADES, ORG } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
 import { Divide, ListRow } from '../../components/common';
 import { Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useApp } from '../../state/AppContext';
@@ -60,7 +61,9 @@ function BnMine() {
 
       <div className="grid g-2-1">
         <Card title="Insurance cover" sub={'Premium fully paid by ' + ORG.name} flush
-          actions={<button className="btn sm" onClick={() => app.toast('E-cards downloaded', 'ok')}><Icon n="card" size="lg" /> Download e-cards</button>}>
+          actions={<button className="btn sm"
+            {...notBacked('insurance e-cards come from the insurer and are not held here')}
+          ><Icon n="card" size="lg" /> Download e-cards</button>}>
           <div className="tbl-wrap">
             <table className="tbl">
               <thead>

@@ -131,27 +131,17 @@ export async function getTeam(
   );
 }
 
-export interface EmployeeProfile {
-  employee: Employee;
-  managerName: string;
-  reports: Employee[];
-}
-
-/** The composite behind the profile drawer — one response, not fourteen calls. */
-export async function getEmployeeProfile(
-  caller: Caller,
-  id: string,
-): Promise<EmployeeProfile | null> {
-  const employee = await getEmployee(caller, id);
-  if (!employee) return null;
-
-  const [manager, reports] = await Promise.all([
-    employee.managerId ? getEmployee(caller, employee.managerId) : Promise.resolve(null),
-    getTeam(caller, id),
-  ]);
-
-  return { employee, managerName: manager?.name ?? '', reports };
-}
+/*
+ * The composite behind the profile drawer lives in `./profile.ts`.
+ *
+ * It answered three fields here for a while — employee, manager, reports —
+ * against a contract asking for eighteen, which is why the frontend never
+ * mapped the method. Moving it out is what let it import payroll, leave,
+ * assets and the rest without this file, which they all sit beneath, having to
+ * know about any of them.
+ */
+export type { EmployeeProfile } from './profile.ts';
+export { buildEmployeeProfile as getEmployeeProfile } from './profile.ts';
 
 /**
  * Change someone's role.

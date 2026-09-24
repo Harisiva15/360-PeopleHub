@@ -285,14 +285,162 @@ export async function resolveTicket(
 }
 
 /**
- * The knowledge base.
+ * The knowledge base — the company's policies and how-to answers.
  *
- * Stored as resolved tickets marked as reusable would be the clever answer;
- * this deployment has no such table, so the honest one is an empty list rather
- * than the prototype's invented articles.
+ * This returned a literal empty list, with a comment saying the deployment had
+ * no table for it. The table has existed since 0007: `kb_article`, with a
+ * category, a question, an answer and a published flag. The comment was
+ * written when that was true and was never revisited, so the screen showed
+ * nothing and there was no way to add anything — a policy library that could
+ * not hold a policy.
+ *
+ * Unpublished drafts are visible to the people who may edit them and to nobody
+ * else. An employee reading the knowledge base sees published articles only.
  */
-export async function knowledgeBase(
-  _caller: Caller,
-): Promise<{ cat: string; q: string; a: string }[]> {
-  return [];
+export interface KbArticle {
+  id: string;
+  /** Category *code* — ATT, PAY, IT. The screens resolve it to a name. */
+  cat: string;
+  q: string;
+  a: string;
+  published: boolean;
+  updatedAt: string;
+}
+
+export interface KbDraft {
+  /** Category *code* — ATT, PAY, IT and so on. Optional. */
+  cat?: string | null;
+  q: string;
+  a: string;
+  published?: boolean;
+}
+
+/**
+ * Who may write an article.
+ *
+ * The helpdesk module grants an employee `write: 'own'` so they can raise and
+ * comment on their own ticket. An article is not their own anything — it is
+ * what the company tells everybody — so authoring is narrowed here to the two
+ * roles that speak for the company. Narrowing inside a service is always
+ * allowed; widening would not be.
+ */
+function mayAuthor(caller: Caller) {
+  if (caller.role !== 'admin' && caller.role !== 'manager') {
+    throw new HelpdeskError('only an administrator or a manager may edit the knowledge base', 'forbidden');
+  }
+}
+
+const KB_PROJECTION = `
+  SELECT k.id, COALESCE(c.code, '') AS cat, k.question, k.answer,
+         k.published, k.updated_at
+    FROM kb_article k
+    LEFT JOIN ticket_category c ON c.id = k.category_id`;
+
+const toArticle = (r: Record<string, unknown>): KbArticle => ({
+  id: r.id as string,
+  cat: r.cat as string,
+  q: r.question as string,
+  a: r.answer as string,
+  published: Boolean(r.published),
+  updatedAt: (r.updated_at as Date | null)?.toISOString() ?? '',
+});
+
+export async function knowledgeBase(caller: Caller): Promise<KbArticle[]> {
+  const editor = caller.role === 'admin' || caller.role === 'manager';
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `${KB_PROJECTION}
+        ${editor ? '' : 'WHERE k.published'}
+        ORDER BY COALESCE(c.name, ''), k.question`);
+    return rows.map(toArticle);
+  });
+}
+
+/** Resolve a category code to its id, refusing one that does not exist. */
+async function categoryId(db: TenantClient, code: string | null | undefined) {
+  if (!code) return null;
+  const { rows } = await db.query(
+    'SELECT id FROM ticket_category WHERE code = $1', [code]);
+  if (!rows[0]) throw new HelpdeskError(`no such category: ${code}`, 'invalid');
+  return rows[0].id as string;
+}
+
+/** The rules an article must satisfy, in one place so create and edit agree. */
+function validate(d: Partial<KbDraft>) {
+  if (d.q !== undefined) {
+    if (!d.q.trim()) throw new HelpdeskError('an article needs a question', 'invalid');
+    if (d.q.trim().length > 300) {
+      throw new HelpdeskError('the question is too long — keep it under 300 characters', 'invalid');
+    }
+  }
+  if (d.a !== undefined && !d.a.trim()) {
+    throw new HelpdeskError('an article needs an answer', 'invalid');
+  }
+}
+
+export async function createArticle(caller: Caller, draft: KbDraft): Promise<KbArticle> {
+  mayAuthor(caller);
+  validate(draft);
+  if (!draft.q?.trim() || !draft.a?.trim()) {
+    throw new HelpdeskError('an article needs a question and an answer', 'invalid');
+  }
+
+  return withTenant(caller, async (db) => {
+    const cat = await categoryId(db, draft.cat);
+    const { rows } = await db.query(
+      `INSERT INTO kb_article (category_id, question, answer, published)
+       VALUES ($1, $2, $3, COALESCE($4, true)) RETURNING id`,
+      [cat, draft.q.trim(), draft.a.trim(), draft.published ?? null]);
+
+    const { rows: [back] } = await db.query(
+      `${KB_PROJECTION} WHERE k.id = $1`, [rows[0]!.id]);
+    return toArticle(back!);
+  });
+}
+
+export async function updateArticle(
+  caller: Caller,
+  id: string,
+  patch: Partial<KbDraft>,
+): Promise<KbArticle> {
+  mayAuthor(caller);
+  validate(patch);
+
+  return withTenant(caller, async (db) => {
+    const { rows: [exists] } = await db.query('SELECT id FROM kb_article WHERE id = $1', [id]);
+    if (!exists) throw new HelpdeskError('no such article', 'not_found');
+
+    const cat = patch.cat === undefined ? undefined : await categoryId(db, patch.cat);
+    const updated = await db.query(
+      `UPDATE kb_article
+          SET question   = COALESCE($2, question),
+              answer     = COALESCE($3, answer),
+              published  = COALESCE($4, published),
+              category_id = CASE WHEN $6::boolean THEN $5 ELSE category_id END,
+              updated_at = now()
+        WHERE id = $1`,
+      [id, patch.q?.trim() ?? null, patch.a?.trim() ?? null,
+        patch.published ?? null, cat ?? null, patch.cat !== undefined]);
+    if (updated.rowCount === 0) throw new HelpdeskError('no such article', 'not_found');
+
+    const { rows: [back] } = await db.query(`${KB_PROJECTION} WHERE k.id = $1`, [id]);
+    return toArticle(back!);
+  });
+}
+
+/**
+ * Remove an article.
+ *
+ * A hard delete, because nothing references `kb_article` — no ticket, no
+ * comment, no audit subject. Unpublishing is the softer option and is one
+ * `published: false` away, which is why it is not done here as well.
+ */
+export async function removeArticle(caller: Caller, id: string): Promise<KbArticle> {
+  mayAuthor(caller);
+  return withTenant(caller, async (db) => {
+    const { rows: [gone] } = await db.query(`${KB_PROJECTION} WHERE k.id = $1`, [id]);
+    if (!gone) throw new HelpdeskError('no such article', 'not_found');
+    await db.query('DELETE FROM kb_article WHERE id = $1', [id]);
+    return toArticle(gone);
+  });
 }

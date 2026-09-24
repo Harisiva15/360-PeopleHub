@@ -43,14 +43,16 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put<Employee>(`/employees/${id}/role`, { role }),
 
       /*
-       * `profile` is deliberately NOT here.
+       * `profile` waited on payroll. The route existed all along but answered
+       * three of the contract's eighteen fields, so claiming it here would
+       * have rendered blank rows — worse than not claiming it. Compensation
+       * landed, the server composite now fills all eighteen, and the drawer
+       * reads it.
        *
-       * The contract's EmployeeProfile carries the salary structure, monthly
-       * split and tax status — payroll data this deployment does not hold yet.
-       * A partial response would typecheck and render blank fields, so the
-       * profile drawer stays on the mock until payroll exists. Claiming a
-       * method the server cannot honour is worse than not claiming it.
+       * Pay comes back empty rather than refused for a manager reading a
+       * report; `canSeeComp` in the drawer already declined to render it.
        */
+      profile: (id: string) => api.get(`/employees/${id}/profile`),
     },
 
     attendance: {
@@ -128,6 +130,9 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       tickets: (empIds) =>
         api.get(`/helpdesk/tickets${qs({ empIds: empIds?.join(',') })}`),
       knowledgeBase: () => api.get('/helpdesk/kb'),
+      createArticle: (draft) => api.post('/helpdesk/kb', draft),
+      updateArticle: (id, patch) => api.put(`/helpdesk/kb/${id}`, patch),
+      removeArticle: (id) => api.del(`/helpdesk/kb/${id}`),
       raise: (t) => api.post('/helpdesk/tickets', t),
       /* `by` is ignored: the author is the session, not a name in the body. */
       comment: (id, _by, text) => api.post(`/helpdesk/tickets/${id}/comments`, { text }),
@@ -245,6 +250,9 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       surveys: () => api.get('/surveys'),
       enpsOf: (surveyId) => api.get(`/surveys/${surveyId}/enps`),
       enpsHistory: () => api.get('/surveys/enps-history'),
+      surveyQuestions: (surveyId) => api.get(`/surveys/${surveyId}/questions`),
+      respondToSurvey: (surveyId, answers) =>
+        api.post(`/surveys/${surveyId}/responses`, { answers }),
     },
 
     learning: {
@@ -376,6 +384,10 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
 
     config: {
       sites: () => api.get('/config/sites'),
+      departments: () => api.get('/config/departments'),
+      createDepartment: (draft) => api.post('/config/departments', draft),
+      updateDepartment: (code, patch) => api.put(`/config/departments/${code}`, patch),
+      removeDepartment: (code) => api.del(`/config/departments/${code}`),
       holidays: () => api.get('/config/holidays'),
       /*
        * `PUT /config/sites/:code/fence` had been routed and guarded on the

@@ -6,7 +6,6 @@
  */
 
 import { useMutation, useQuery } from '../../services/react';
-import { unbacked } from '../../services/unbacked';
 import type { AppRole } from '../../types/employee';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
@@ -15,17 +14,15 @@ export type { Directory } from '../../services/people';
 /**
  * The profile composite.
  *
- * Still on the mock, and the one composite that cannot simply be moved: it
- * pulls together documents, learning, loans and the lifecycle trail, and those
- * services have no server behind them yet. Half of it would be real and half
- * invented, on the same screen, with nothing to tell them apart.
+ * It was the last method on the mock, and it waited on the services it pulls
+ * together — documents, learning, loans and the lifecycle trail. Those went
+ * live, compensation landed, and the server now assembles all eighteen fields
+ * from the modules that own them, each already scoped to the caller.
  *
- * So in a configured build it resolves to null and the drawer says why. The
- * header — name, designation, code — comes from `employees.byId`, which is
- * live, so clicking a person still does something truthful.
+ * Null now means what it says: no such person, or not one this caller may see.
  */
 export function useProfile(id: string) {
-  return useQuery(unbacked((s) => s.employees.profile(id), null), [id]);
+  return useQuery((s) => s.employees.profile(id), [id]);
 }
 
 export function useAllEmployees() {

@@ -37,14 +37,16 @@ function ProfileBody({ id, jump }: { id: string; jump: (nextId: string) => void 
   if (p) return <ProfileView p={p} jump={jump} />;
   if (loading) return <div className="muted">Loading profile…</div>;
   /*
-   * Not an error, and not an empty result — the composite is not built against
-   * this deployment yet. Saying so beats a spinner that never resolves.
+   * The composite is live now, so null has one meaning left: the server would
+   * not hand this person over. That is either no such record or somebody
+   * outside what this caller may see, and the two are deliberately not
+   * distinguished here — telling them apart is how a drawer becomes a way to
+   * find out who exists.
    */
   return (
-    <Banner kind="info" icon={<Icon n="person" size="lg" />} title="The full profile is not available yet">
-      Salary, documents, learning and the lifecycle trail are assembled from
-      services this deployment does not run yet. What is on file is in the
-      module for it — attendance, leave, payroll and assets all work.
+    <Banner kind="info" icon={<Icon n="person" size="lg" />} title="This profile is not available to you">
+      Either there is no such record, or it belongs to somebody outside the
+      people your role can see.
     </Banner>
   );
 }

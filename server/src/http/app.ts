@@ -26,7 +26,7 @@ import {
   cancelLeave, listLeave, rejectLeave,
 } from '../modules/leave/service.ts';
 import {
-  addHoliday, ConfigError, createSite, listHolidays, listSites, setLeaveQuota,
+  addHoliday, ConfigError, createDepartment, listDepartments, removeDepartment, updateDepartment, createSite, listHolidays, listSites, setLeaveQuota,
   setSiteActive, updateFence, updateSite,
 } from '../modules/config/service.ts';
 import {
@@ -70,7 +70,7 @@ import {
   reimburseClaim, rejectClaim, requestAdvance, submitClaim,
 } from '../modules/expenses/service.ts';
 import {
-  comment, HelpdeskError, knowledgeBase, listTickets, raiseTicket, resolveTicket,
+  comment, createArticle, HelpdeskError, removeArticle, updateArticle, knowledgeBase, listTickets, raiseTicket, resolveTicket,
 } from '../modules/helpdesk/service.ts';
 import {
   addGoal, calibrateReview, currentCycle, givePraise, listCheckins, listGoals,
@@ -176,7 +176,7 @@ import {
   courses, enrol, enrolments, LearningError, setProgress,
 } from '../modules/learning/service.ts';
 import {
-  EngagementError, enpsHistory, enpsOf, surveys,
+  EngagementError, enpsHistory, enpsOf, respondToSurvey, surveyQuestions, surveys,
 } from '../modules/engagement/service.ts';
 import {
   BenefitsError, declareFbp, fbpPlan, fbpRows, fbpTotals, insuranceCover,
@@ -543,6 +543,23 @@ const routes: Route[] = [
       calibrateReview(c, p.empId!, (body ?? {}) as Parameters<typeof calibrateReview>[2]),
   },
   { method: 'GET', pattern: '/helpdesk/kb', handler: (c) => knowledgeBase(c) },
+  {
+    method: 'POST',
+    pattern: '/helpdesk/kb',
+    handler: (c, _r, _p, body) =>
+      createArticle(c, (body ?? {}) as Parameters<typeof createArticle>[1]),
+  },
+  {
+    method: 'PUT',
+    pattern: '/helpdesk/kb/:id',
+    handler: (c, _r, p, body) =>
+      updateArticle(c, p.id!, (body ?? {}) as Parameters<typeof updateArticle>[2]),
+  },
+  {
+    method: 'DELETE',
+    pattern: '/helpdesk/kb/:id',
+    handler: (c, _r, p) => removeArticle(c, p.id!),
+  },
   {
     method: 'GET',
     pattern: '/helpdesk/tickets',
@@ -951,6 +968,33 @@ const routes: Route[] = [
    */
   { method: 'GET', pattern: '/projects', handler: (c) => listProjects(c) },
 
+  {
+    /*
+     * Departments. The table has been there since 0002; nothing read it, and
+     * the Settings screen rendered a client-side constant instead.
+     */
+    method: 'GET',
+    pattern: '/config/departments',
+    handler: (c) => listDepartments(c),
+  },
+  {
+    method: 'POST',
+    pattern: '/config/departments',
+    handler: (c, _r, _p, body) =>
+      createDepartment(c, (body ?? {}) as Parameters<typeof createDepartment>[1]),
+  },
+  {
+    method: 'PUT',
+    pattern: '/config/departments/:code',
+    handler: (c, _r, p, body) =>
+      updateDepartment(c, p.code!, (body ?? {}) as Parameters<typeof updateDepartment>[2]),
+  },
+  {
+    /* Refuses with 409 when anything still points at the department. */
+    method: 'DELETE',
+    pattern: '/config/departments/:code',
+    handler: (c, _r, p) => removeDepartment(c, p.code!),
+  },
   { method: 'GET', pattern: '/config/sites', handler: (c) => listSites(c) },
   { method: 'GET', pattern: '/config/holidays', handler: (c) => listHolidays(c) },
   {
@@ -1816,6 +1860,22 @@ const routes: Route[] = [
   /* ---- engagement. Literal before the parameter. ---- */
   { method: 'GET', pattern: '/surveys', handler: (c) => surveys(c) },
   { method: 'GET', pattern: '/surveys/enps-history', handler: (c) => enpsHistory(c) },
+  {
+    method: 'GET',
+    pattern: '/surveys/:id/questions',
+    handler: (c, _r, p) => surveyQuestions(c, p.id!),
+  },
+  {
+    /*
+     * Answering. A POST because it writes, and scoped to the survey in the
+     * path so a response cannot be aimed at a question in another one — the
+     * service checks that again against the survey's own question list.
+     */
+    method: 'POST',
+    pattern: '/surveys/:id/responses',
+    handler: (c, _r, p, body) =>
+      respondToSurvey(c, p.id!, ((body ?? {}) as { answers?: unknown }).answers as never),
+  },
   {
     method: 'GET',
     pattern: '/surveys/:id/enps',

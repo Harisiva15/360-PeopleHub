@@ -5,17 +5,19 @@ import { pct } from '../../lib/format';
 
 
 import type { Survey } from '../../services';
-import { DEPTS, ORG } from '../../data/org';
+import { DEPTS } from '../../data/org';
 import { Avatar, Badge, Banner, Card, EmptyState, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, ListRow } from '../../components/common';
 import { Donut, HBar, Legend, LineChart, PAL, Ring } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { useAllEmployees, useEnpsHistory, useEnps, usePraise, useSurveys, useVisiblePeople } from './data';
+import { useEnpsHistory, useEnps, usePraise, useRespondToSurvey, useSurveyQuestions, useSurveys, useVisiblePeople } from './data';
+import type { SurveyAnswer } from '../../services';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { Icon } from '../../components/icons';
+import { notBacked } from '../../components/NotBacked';
 
 const SCALE = ['Strongly disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly agree'];
 
@@ -42,62 +44,112 @@ const driverColor = (v: number) =>
 
 /* ---------------- survey form ---------------- */
 
+/**
+ * Answering a survey.
+ *
+ * This used to be a form over hard-coded questions whose Submit button did
+ * exactly three things: increment `s.responded` on the object in memory,
+ * close the dialog, and say "your response has been recorded". Nothing was
+ * sent anywhere. The count went up on screen and back down on reload.
+ *
+ * It renders `surveyQuestions` now — the questions as asked, each with the id
+ * the answer is filed against. The previous source, `s.questions`, is the
+ * aggregate: means, withheld below the response floor, so a fresh survey
+ * showed no questions at all and there was nothing to submit even in
+ * principle.
+ */
 function SurveyForm({ s, close }: { s: Survey; close: () => void }) {
   const app = useApp();
-  const [answers, setAnswers] = useState<Record<string, number>>({});
+  const { data: questions = [], loading, error } = useSurveyQuestions(s.id);
+  const respond = useRespondToSurvey();
+  const [scores, setScores] = useState<Record<string, number>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
-  const pick = (group: string, value: number) => setAnswers((a) => ({ ...a, [group]: value }));
+  const pick = (qid: string, value: number) => setScores((a) => ({ ...a, [qid]: value }));
+
+  /* Every scale question needs an answer; free text is optional throughout. */
+  const scaled = questions.filter((q) => q.kind === 'scale' || q.kind === 'nps');
+  const unanswered = scaled.filter((q) => scores[q.id] === undefined);
+  const ready = scaled.length > 0 && unanswered.length === 0;
+
+  const submit = async () => {
+    const answers: SurveyAnswer[] = questions
+      .map((q) => ({
+        questionId: q.id,
+        score: scores[q.id] ?? null,
+        text: (notes[q.id] ?? '').trim() || null,
+      }))
+      .filter((a) => a.score !== null || a.text !== null);
+
+    try {
+      await respond.mutate(s.id, answers);
+      close();
+      app.toast('Thank you — your response has been recorded', 'ok');
+      app.bump();
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not record your response', 'err');
+    }
+  };
+
+  if (loading) return <div className="muted">Loading the questions…</div>;
+  if (error) {
+    return (
+      <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="The questions could not be loaded">
+        {error instanceof Error ? error.message : 'Try again in a moment.'}
+      </Banner>
+    );
+  }
+  if (!questions.length) {
+    return (
+      <Banner kind="info" icon={<Icon n="vote" size="lg" />} title="This survey has no questions yet">
+        Nothing has been set up to answer.
+      </Banner>
+    );
+  }
 
   return (
     <>
-      {s.type === 'eNPS' ? (
-        <>
-          <div className="field">
-            <label>How likely are you to recommend {ORG.name} as a place to work? (0 = not at all, 10 = extremely likely)</label>
+      {questions.map((q, i) => (
+        <div className="field" key={q.id}>
+          <label>{questions.length > 1 ? `${i + 1}. ` : ''}{q.prompt}</label>
+          {q.kind === 'nps' && (
             <div className="row wrap" style={{ gap: 5, marginTop: 6 }}>
-              {Array.from({ length: 11 }, (_, i) => (
-                <button key={i} type="button" className={'chip x' + (answers.nps === i ? ' on' : '')}
-                  style={{ minWidth: 38, justifyContent: 'center' }} onClick={() => pick('nps', i)}>{i}</button>
+              {Array.from({ length: 11 }, (_, n) => (
+                <button key={n} type="button" className={'chip x' + (scores[q.id] === n ? ' on' : '')}
+                  style={{ minWidth: 38, justifyContent: 'center' }}
+                  onClick={() => pick(q.id, n)}>{n}</button>
               ))}
             </div>
-          </div>
-          <div className="field">
-            <label>What is the main reason for your score?</label>
-            <textarea className="input" style={{ minHeight: 90 }} />
-          </div>
-        </>
-      ) : (
-        <>
-          {(s.questions || []).map((q, i) => (
-            <div className="field" key={i}>
-              <label>{i + 1}. {q.q}</label>
-              <div className="row wrap" style={{ gap: 5, marginTop: 6 }}>
-                {SCALE.map((x, j) => (
-                  <button key={j} type="button" className={'chip x' + (answers['q' + i] === j ? ' on' : '')}
-                    onClick={() => pick('q' + i, j)}>{x}</button>
-                ))}
-              </div>
+          )}
+          {q.kind === 'scale' && (
+            <div className="row wrap" style={{ gap: 5, marginTop: 6 }}>
+              {SCALE.map((x, j) => (
+                <button key={j} type="button" className={'chip x' + (scores[q.id] === j + 1 ? ' on' : '')}
+                  onClick={() => pick(q.id, j + 1)}>{x}</button>
+              ))}
             </div>
-          ))}
-          <div className="field">
-            <label>Anything else you want leadership to know?</label>
-            <textarea className="input" />
-          </div>
-        </>
-      )}
+          )}
+          {(q.kind === 'text' || q.kind === 'choice') && (
+            <textarea className="input" style={{ minHeight: 80 }}
+              value={notes[q.id] ?? ''}
+              onChange={(e) => setNotes((n) => ({ ...n, [q.id]: e.target.value }))} />
+          )}
+        </div>
+      ))}
 
       <Banner kind="good" icon={<Icon n="lock" size="lg" />}>
-        {s.anonymous ? 'Your identity is not attached to this response.' : 'Your name is visible to HR for this survey.'}
+        {s.anonymous
+          ? 'Your identity is not attached to this response. That a person answered is '
+            + 'recorded separately, so nobody can be matched to what they said.'
+          : 'Your name is visible to HR for this survey.'}
       </Banner>
 
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 14 }}>
-        <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" onClick={() => {
-          s.responded++;
-          close();
-          app.toast('Thank you — your response has been recorded', 'ok');
-          app.bump();
-        }}>Submit response</button>
+        <button className="btn" onClick={close} disabled={respond.pending}>Cancel</button>
+        <button className="btn primary" onClick={submit}
+          disabled={!ready || respond.pending}
+          title={ready ? '' : `Answer ${unanswered.length} more question${unanswered.length === 1 ? '' : 's'}`}
+        >{respond.pending ? 'Recording…' : 'Submit response'}</button>
       </div>
     </>
   );
@@ -247,7 +299,6 @@ function EnResults() {
 /* ---------------- Manage ---------------- */
 
 function EnManage() {
-  const { data: everyone = [] } = useAllEmployees();
   const app = useApp();
   const layer = useLayer();
 
@@ -285,10 +336,15 @@ function EnManage() {
       footer: (close) => (
         <>
           <button className="btn" onClick={close}>Cancel</button>
-          <button className="btn primary" onClick={() => {
-            close();
-            app.toast('Survey sent to ' + everyone.length + ' employees', 'ok');
-          }}>Send survey</button>
+          {/*
+            * Creating and sending a survey is admin-only in the policy and has
+            * no endpoint behind it — `/surveys` is read plus the response
+            * path. Until it does, this says so rather than claiming to have
+            * mailed everybody.
+            */}
+          <button className="btn primary"
+            {...notBacked('a survey is created in the database directly; there is no send path yet')}
+          >Send survey</button>
         </>
       ),
     });

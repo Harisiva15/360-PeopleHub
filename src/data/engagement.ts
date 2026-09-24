@@ -20,6 +20,10 @@ export interface Survey {
   sent: number;
   responded: number;
   anonymous: boolean;
+  /** Responses needed before any result is shown. Withheld below it. */
+  floor?: number;
+  /** Whether the person reading has answered. Their own, and only their own. */
+  answered?: boolean;
   questions?: SurveyQuestion[];
   /* eNPS surveys carry a promoter/passive/detractor split instead of questions */
   promoters?: number;

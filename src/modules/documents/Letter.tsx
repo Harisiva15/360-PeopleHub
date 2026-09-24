@@ -8,8 +8,8 @@ import { useLetterContext, useVisiblePeople } from './data';
 import { deptOf, GRADES, ORG, siteOf } from '../../data/org';
 import { LETTER_TYPES } from '../../data/letters';
 import { useLayer } from '../../components/Layer';
-import { useApp } from '../../state/AppContext';
 import { Icon } from '../../components/icons';
+import { notBacked } from '../../components/NotBacked';
 
 const letterType = (id: string) => LETTER_TYPES.find((t) => t.id === id);
 
@@ -321,7 +321,6 @@ function LetterDoc({ type, empId, docRef }: { type: string; empId: string; docRe
  */
 export function useShowLetter() {
   const layer = useLayer();
-  const app = useApp();
   const dir = useVisiblePeople();
 
   return (type: string, empId: string) => {
@@ -339,7 +338,8 @@ export function useShowLetter() {
       footer: (close) => (
         <>
           <button className="btn" onClick={close}>Close</button>
-          <button className="btn" onClick={() => { close(); app.toast('Letter emailed to ' + e.email, 'ok'); }}>
+          {/* Print / Save PDF beside this is the working way to hand the letter over. */}
+          <button className="btn" {...notBacked('there is no path from here to the mail server yet')}>
             ✉️ Email to employee
           </button>
           <button className="btn primary" onClick={() => window.print()}><Icon n="print" size="lg" /> Print / Save PDF</button>

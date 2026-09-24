@@ -165,8 +165,23 @@ export const POLICY: Record<string, ModulePolicy> = {
   reports: rule(NO, ['team', 'none', 'none'], ['all', 'none', 'none']),
   /* An exit is raised by HR or the manager and settled by finance. */
   exit: rule(NO, ['team', 'team', 'none'], ['all', 'all', 'all']),
-  /* Survey results are withheld below the response floor regardless of role. */
-  engagement: rule(NO, ['all', 'none', 'none'], ['all', 'all', 'none']),
+  /*
+   * Survey results are withheld below the response floor regardless of role.
+   *
+   * This sat at NO for an employee, under the manager's-line heading, because
+   * it was read as a reporting module. Answering a survey is not reporting: it
+   * is the one thing in here every employee is *meant* to do, and the menu has
+   * always offered them "Surveys & polls — open questions waiting on you". The
+   * Submit button did nothing, so the contradiction never surfaced.
+   *
+   * So an employee reads and writes their own response, and a manager does the
+   * same — a manager is an employee with reports, and had no way to answer a
+   * pulse either. What stays admin-only is `write: 'all'`: creating and
+   * sending a survey. What protects the results is unchanged and is not a
+   * permission at all — the floor in the service withholds them from every
+   * role alike.
+   */
+  engagement: rule(['all', 'own', 'none'], ['all', 'own', 'none'], ['all', 'all', 'none']),
 
   /* ---- the tenant ---- */
 

@@ -10,6 +10,7 @@ import type { ExitRecord } from '../../services';
 
 import { DEPTS, deptOf } from '../../data/org';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
 import { Chip, Divide, ListRow, StatusBadge } from '../../components/common';
 import { HBar, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -355,7 +356,9 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
                 <ListRow key={d}>
                   <span><Icon n="document" size="lg" /> </span>
                   <div style={{ flex: 1, fontWeight: 650, fontSize: 12.5 }}>{d}</div>
-                  <button className="btn sm" onClick={() => app.toast(d + ' generated', 'ok')}>Generate</button>
+                  <button className="btn sm"
+                    {...notBacked('exit documents are not generated here yet')}
+                  >Generate</button>
                 </ListRow>
               ))}
             </Card>

@@ -5,6 +5,7 @@ import { inr } from '../../lib/format';
 import { SHIFTS, shiftOf } from '../../data/shifts';
 import type { Overtime } from '../../services';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
 import { Dot, StatusBadge } from '../../components/common';
 import { Legend } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -66,7 +67,9 @@ function ShMy() {
       </StatRow>
 
       <Card title="My roster" sub={`4-week view · ${fmtD(ymd(days[0]))} – ${fmtD(ymd(days[27]))}`}
-        actions={<button className="btn sm" onClick={() => app.toast('Swap request sent to your shift lead', 'ok')}>⇄ Request a swap</button>}>
+        actions={<button className="btn sm"
+          {...notBacked('a shift swap has no request to raise against yet — ask your shift lead directly')}
+        >⇄ Request a swap</button>}>
         <div className="cal">
           {DOW.map((d) => <div className="dow" key={d}>{d[0]}</div>)}
           {Array.from({ length: lead }, (_, i) => <div className="day mut" key={'l' + i} />)}

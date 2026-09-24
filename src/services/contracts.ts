@@ -766,13 +766,57 @@ export interface NewTicket {
   priority: string;
 }
 
+/**
+ * One knowledge-base article — a company policy or a how-to answer.
+ *
+ * `id` and `published` are what turned this from a read-only list into
+ * something that can be maintained: there was no id to edit against, and no
+ * way to keep a draft out of an employee's view.
+ */
+export interface KbArticle {
+  id: string;
+  /** Category *code* — ATT, PAY, IT. The screens resolve it to a name. */
+  cat: string;
+  q: string;
+  a: string;
+  published: boolean;
+  updatedAt: string;
+}
+
+/** What an article is written from. `cat` is a category *code*, not its name. */
+export interface KbDraft {
+  cat?: string | null;
+  q: string;
+  a: string;
+  published?: boolean;
+}
+
 export interface HelpdeskService {
   tickets(empIds?: string[]): Promise<Ticket[]>;
-  knowledgeBase(): Promise<{ cat: string; q: string; a: string }[]>;
+  /** Published articles, plus unpublished drafts for whoever may edit them. */
+  knowledgeBase(): Promise<KbArticle[]>;
+  /** Authoring is an administrator's or a manager's; the service refuses others. */
+  createArticle(draft: KbDraft): Promise<KbArticle>;
+  updateArticle(id: string, patch: Partial<KbDraft>): Promise<KbArticle>;
+  removeArticle(id: string): Promise<KbArticle>;
   raise(t: NewTicket): Promise<Ticket>;
   /** A comment moves an open ticket into progress — that is the SLA clock. */
   comment(id: string, by: string, text: string): Promise<Ticket>;
   resolve(id: string, csat?: number): Promise<Ticket>;
+}
+
+/** One question, as it is put to somebody answering. */
+export interface SurveyFormQuestion {
+  id: string;
+  prompt: string;
+  kind: 'scale' | 'nps' | 'text' | 'choice';
+}
+
+/** One answer to one question. A score, free text, or both. */
+export interface SurveyAnswer {
+  questionId: string;
+  score?: number | null;
+  text?: string | null;
 }
 
 export interface EngagementService {
@@ -788,6 +832,21 @@ export interface EngagementService {
   enpsOf(surveyId: string): Promise<number | null>;
   /** eNPS by quarter, oldest first. */
   enpsHistory(): Promise<{ k: string; v: number }[]>;
+  /**
+   * The questions of a survey, as asked rather than as reported.
+   *
+   * `Survey.questions` carries means, which cannot be answered against: they
+   * have no question id, and a survey nobody has answered yet has none at all.
+   */
+  surveyQuestions(surveyId: string): Promise<SurveyFormQuestion[]>;
+  /**
+   * Record the caller's answers. Returns the survey as it now stands.
+   *
+   * Anonymity is the server's to keep: on an anonymous survey no respondent is
+   * written beside the answer, and participation is recorded in a separate
+   * table that cannot be joined back to it.
+   */
+  respondToSurvey(surveyId: string, answers: SurveyAnswer[]): Promise<Survey>;
 }
 
 /** One employee's flexible-benefit plan, with what they have allocated. */
@@ -1543,8 +1602,45 @@ export type SitePatch = Partial<Omit<SiteDraft, 'code'>>;
  * entitlement reprices every open balance, which is exactly why it belongs on
  * a server rather than in a save handler.
  */
+/**
+ * A department, as the organisation holds it.
+ *
+ * `headcount` rides along because every screen that lists departments wants
+ * it and because it is what makes a removal unsafe — the service refuses to
+ * delete a department anything still points at.
+ */
+export interface Department {
+  id: string;
+  code: string;
+  name: string;
+  colour: string | null;
+  headId: string | null;
+  headName: string;
+  parentId: string | null;
+  active: boolean;
+  headcount: number;
+}
+
+export interface DepartmentDraft {
+  code: string;
+  name: string;
+  colour?: string | null;
+  headId?: string | null;
+  parentId?: string | null;
+}
+
 export interface ConfigService {
   sites(): Promise<Site[]>;
+  /** The organisation's departments, with headcount. */
+  departments(): Promise<Department[]>;
+  /** Admin only. The code is the department's identity and cannot move. */
+  createDepartment(draft: DepartmentDraft): Promise<Department>;
+  updateDepartment(code: string, patch: Partial<DepartmentDraft> & { active?: boolean }): Promise<Department>;
+  /**
+   * Remove a department. Refused with a conflict when anything still
+   * references it — deactivate it instead, which keeps its history readable.
+   */
+  removeDepartment(code: string): Promise<Department>;
   holidays(): Promise<Holiday[]>;
   /** Move a site's geo-fence. Does not touch anyone's shift. */
   updateFence(siteId: string, patch: FenceUpdate): Promise<Site>;

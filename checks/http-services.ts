@@ -24,11 +24,17 @@ check('every service still present',
 check('a mapped method is replaced',
   merged.employees.visible !== mockServices.employees.visible);
 
-// `profile` is deliberately not mapped — its contract shape carries payroll
-// data the server does not hold yet — which makes it the right probe for
-// "the merge left everything else alone".
+// The probe for "the merge left everything else alone" has to name a method
+// that is genuinely unmapped, so it moves as the migration finishes. It was
+// `employees.profile` until the server composite filled all eighteen contract
+// fields and the drawer started reading it.
+//
+// `documents.letterContext` is what is left: it carries the salary a letter
+// quotes, and printing one with a blank figure is worse than not offering it.
+// When that goes live this assertion needs a new probe — and if none remains,
+// the migration is done and this check can assert that instead.
 check('an unmapped method on the same service is untouched',
-  merged.employees.profile === mockServices.employees.profile);
+  merged.documents.letterContext === mockServices.documents.letterContext);
 
 /*
  * There used to be a third assertion here: that a service nobody had mapped

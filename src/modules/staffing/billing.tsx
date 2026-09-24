@@ -7,8 +7,8 @@ import { mbS, money, toBase } from '../../data/countries';
 import { clientOf, invAgeing } from '../../data/staffing';
 import { useClients, useInvoices, useKpi, usePayRuns, usePlacements, useVisiblePeople } from './data';
 import { Badge, Banner, Card, EmptyState, Tabs, Tile, StatRow } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
 import { HBar } from '../../components/charts';
-import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { monthlyUnits } from './shared';
@@ -114,7 +114,6 @@ function BlAr() {
   const { data: INVOICES = [] } = useInvoices();
   const { data: CLIENTS = [] } = useClients();
   const owners = useVisiblePeople();
-  const app = useApp();
   const open = INVOICES.filter((i) => OPEN(i.status));
 
   const rows = BUCKETS.map((b, i) => ({
@@ -175,7 +174,7 @@ function BlAr() {
                     </td>
                     <td className="nowrap">{owners.name(c.ownerId)}</td>
                     <td className="right">
-                      <button className="btn sm" onClick={() => app.toast('Chase sent to ' + c.contacts[1].n, 'ok')}>Chase</button>
+                      <button className="btn sm" {...notBacked('there is no path from here to the mail server yet')}>Chase</button>
                     </td>
                   </tr>
                 );
@@ -194,7 +193,6 @@ function BlGen() {
   const { data: PLACEMENTS = [] } = usePlacements();
   const { data: PAYRUNS = [] } = usePayRuns();
   const { data: INVOICES = [] } = useInvoices();
-  const app = useApp();
   const [mk, setMk] = useState(monthKey(addDays(TODAY, -30)));
   const pls = PLACEMENTS.filter((p) => ['Active', 'Ending Soon', 'Completed'].includes(p.status) && p.start.slice(0, 7) <= mk);
   const byClient = groupBy(pls, (p) => p.clientId);
@@ -206,7 +204,9 @@ function BlGen() {
           {PAYRUNS.map((r) => <option key={r.mk} value={r.mk}>{monthLabelLong(r.mk)}</option>)}
         </select>
         <div className="spacer" />
-        <button className="btn primary" onClick={() => app.toast(`Draft invoices generated for ${monthLabel(mk)}`, 'ok')}>
+        <button className="btn primary"
+          {...notBacked('invoices are raised outside the product; there is no generator behind this yet')}
+        >
           ⚡ Generate invoices for {monthLabel(mk)}
         </button>
       </div>

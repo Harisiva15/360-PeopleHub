@@ -8,6 +8,7 @@ import { courseOf } from '../../data/learning';
 import type { Course, Enrollment } from '../../services';
 import { DEPTS, deptOf } from '../../data/org';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
 import { Chip, Divide, ListRow } from '../../components/common';
 import { HBar } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -155,7 +156,7 @@ function LnMy() {
           <Card title="Certificates" sub={`${done.length} earned`} flush>
             <div style={{ maxHeight: 300, overflow: 'auto' }}>
               {done.length ? done.map((x) => (
-                <ListRow key={x.courseId} onClick={() => app.toast(`Certificate for "${courseOf(x.courseId).t}" downloaded`, 'ok')}>
+                <ListRow key={x.courseId}>
                   <span><Icon n="award" size="lg" /> </span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 650, fontSize: 12.5 }}>{courseOf(x.courseId).t}</div>
@@ -262,7 +263,6 @@ function LnComp() {
   const { data: ENROLL = [] } = useEnrolments();
   const { data: everyone = [] } = useAllEmployees();
   const dir = useVisiblePeople();
-  const app = useApp();
   const showEmp = useShowEmployee();
   const mand = COURSES.filter((c) => c.mandatory);
   const active = everyone;
@@ -290,7 +290,9 @@ function LnComp() {
 
       <div className="grid g-2-1">
         <Card title="Employees below 100%" sub={`${laggards.length} people`} flush
-          actions={<button className="btn sm" onClick={() => app.toast('Reminder emails sent to all employees below 100%', 'ok')}><Icon n="mail" size="lg" /> Send reminders</button>}>
+          actions={<button className="btn sm"
+            {...notBacked('there is no path from here to the mail server yet')}
+          ><Icon n="mail" size="lg" /> Send reminders</button>}>
           <div style={{ maxHeight: 520, overflow: 'auto' }} className="tbl-wrap">
             <table className="tbl">
               <thead>

@@ -190,8 +190,13 @@ function Celebrations() {
 
   const canPost = app.role === 'admin' || app.role === 'manager';
 
+  /*
+   * Nothing sends a message. There is no notification path out of the product
+   * yet, so this opens the person's record instead of claiming to have wished
+   * them anything — the useful half of the action, honestly.
+   */
   const wish = (o: Occasion) =>
-    app.toast(`Wishes sent to ${o.label} ${KIND[o.kind].icon}`, 'ok');
+    app.toast(`Say something to ${o.label} ${KIND[o.kind].icon} — this does not send a message yet`);
 
   /*
    * "Add celebration" posts to the noticeboard, which is a real record people
@@ -287,7 +292,7 @@ function Announcements() {
      * pressed and says so — it does not pretend to have filed anything.
      */
     setAcked((s) => ({ ...s, [a.id]: true }));
-    app.toast('Acknowledged', 'ok');
+    app.toast('Noted on this device — acknowledgements are not recorded yet');
   };
 
   const pin = async (a: Announcement) => {

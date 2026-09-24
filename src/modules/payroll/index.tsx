@@ -16,6 +16,7 @@ import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, St
 import { ListRow, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, LineChart, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
+import { notBacked } from '../../components/NotBacked';
 import { useApp } from '../../state/AppContext';
 import { useShowEmployee } from '../employees/Profile';
 import { useShowPayslip } from './Payslip';
@@ -196,10 +197,9 @@ function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
                     <td>{r.runOn ? `${r.by} · ${fmtD(r.runOn)}` : '—'}</td>
                     <td className="right nowrap">
                       <button className="btn sm" onClick={() => goRegister(t.mk)}>Register</button>{' '}
-                      <button className="btn sm" onClick={() => {
-                        app.toast('Publishing payslips for ' + monthLabelLong(t.mk) + '…');
-                        setTimeout(() => app.toast(t.t.count + ' payslips published to employee self-service', 'ok'), 700);
-                      }}>Payslips</button>
+                      <button className="btn sm"
+                        {...notBacked('a payslip is visible to its owner as soon as the cycle is processed — there is no separate publish step')}
+                      >Payslips</button>
                       {/* Processing is offered per row only where it is possible. */}
                       {!r.locked && r.status !== 'Paid' && (
                         <> <button className="btn sm primary" disabled={processRun.pending}
@@ -478,7 +478,9 @@ function PyBank() {
     <div className="stack">
       <Banner kind={CUR_RUN.status === 'Paid' ? 'good' : 'info'} icon={<span style={{ fontSize: 19 }}>🏦</span>}
         title={'Salary disbursal — ' + monthLabelLong(CUR_RUN.mk)}
-        actions={<button className="btn primary" onClick={() => app.toast('Bank advice generated', 'ok')}><Icon n="download" size="lg" /> Generate bank advice</button>}>
+        actions={<button className="btn primary"
+          {...notBacked('the advice is built when the cycle is processed, and appears in the history below')}
+        ><Icon n="download" size="lg" /> Generate bank advice</button>}>
         {CUR_RUN.status === 'Paid'
           ? `Bank advice uploaded to ${BANKS[0]} · ${curTotals.count} beneficiaries · ${inr(curTotals.net)} credited`
           : `Payroll is still in draft. Process the run to generate the NEFT advice file for ${curTotals.count} beneficiaries.`}
@@ -513,7 +515,21 @@ function PyBank() {
                     <td className="mono muted">{b.utr || '—'}</td>
                     <td><StatusBadge status={b.status} /></td>
                     <td className="right">
-                      <button className="btn sm" onClick={() => app.toast('Advice file downloaded', 'ok')}>⤓</button>
+                      {/*
+                        * The batch summary, not the NEFT file. What is held is
+                        * one row per cycle — bank, mode, count, amount, UTR —
+                        * so that is what downloads and what the label says.
+                        * Calling it the advice file would promise the payment
+                        * instruction itself, which is not stored here.
+                        */}
+                      <button className="btn sm" title="Download this batch as CSV"
+                        onClick={() => {
+                          downloadCSV(`bank_batch_${b.mk}.csv`, [
+                            ['Period', 'Bank', 'Mode', 'Beneficiaries', 'Amount', 'Value date', 'UTR', 'Status'],
+                            [monthLabelLong(b.mk), b.bank, b.mode, b.count, b.amount, b.valueDate ?? '', b.utr || '', b.status],
+                          ]);
+                          app.toast('Batch summary downloaded', 'ok');
+                        }}>⤓</button>
                     </td>
                   </tr>
                 ))}
@@ -544,7 +560,6 @@ function PyBank() {
 /* ---------------- Compliance payments ---------------- */
 
 function PyComply() {
-  const app = useApp();
   const { data: pays = [] } = useCompliancePayments();
   const { data: runs = [] } = usePayRuns();
   const rows = sortBy(pays, (c) => c.dueDate, 'desc');
@@ -588,7 +603,9 @@ function PyComply() {
                   <td className="right">
                     {c.status === 'Paid'
                       ? <span className="muted">{fmtD(c.paidOn)}</span>
-                      : <button className="btn sm primary" onClick={() => app.toast('Challan generated for ' + c.name, 'ok')}>Pay</button>}
+                      : <button className="btn sm primary"
+                          {...notBacked('remittance is recorded outside the product; there is no challan generator yet')}
+                        >Pay</button>}
                   </td>
                 </tr>
               ))}

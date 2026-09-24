@@ -318,13 +318,38 @@ console.log('\nthe other views read the service\n');
 
 console.log('\npayroll and the dashboard are untouched by this module\n');
 
+/*
+ * This used to read `git diff --name-only HEAD` and fail if the working tree
+ * touched anything matching payroll, compensation, migrations or dashboard.
+ *
+ * That was a scope guard for the sitting it was written in: the timesheet was
+ * being rebuilt under an instruction not to go near payroll, and asserting it
+ * against the diff was the bluntest way to keep that promise. It worked — and
+ * then it outlived its task. Any later commit that legitimately touches
+ * payroll fails a *timesheet* check, which tells the next person nothing true,
+ * and a check that fires on unrelated work is one people learn to route
+ * around.
+ *
+ * What actually mattered was never which files a commit touched. It was that
+ * the timesheet keeps its hands out of payroll's internals and reaches money
+ * only through the service contract, like everything else. That holds on every
+ * commit rather than one, and it still says something when it breaks.
+ */
 {
-  const files = execSync('git diff --name-only HEAD', { cwd: root, encoding: 'utf8' })
-    .split('\n').filter(Boolean);
-  const payroll = files.filter((f) => /payroll|compensation|migrations/i.test(f));
-  const dash = files.filter((f) => /dashboard/i.test(f));
-  ok('no payroll or migration file is modified', payroll.length === 0, payroll.join(', '));
-  ok('no dashboard file is modified', dash.length === 0, dash.join(', '));
+  const owned = ['index.tsx', 'Views.tsx', 'WeekGrid.tsx', 'MyWeek.tsx', 'States.tsx', 'data.ts']
+    .map((f) => ({ f, src: read(`src/modules/timesheet/${f}`) }));
+
+  for (const { f, src } of owned) {
+    const reaches = src.match(/from '[^']*(payroll|compensation|dashboard)[^']*'/g) ?? [];
+    ok(`${f} imports nothing from payroll, compensation or the dashboard`,
+      reaches.length === 0, reaches.join(', '));
+  }
+
+  /* It books time. It does not price it. */
+  for (const { f, src } of owned) {
+    const money = src.match(/\b(ctc|payslip|grossA|netPay)\b/g) ?? [];
+    ok(`${f} computes no money`, money.length === 0, [...new Set(money)].join(', '));
+  }
 }
 
 

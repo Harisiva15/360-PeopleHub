@@ -8,8 +8,8 @@ import { clientOf, conOf, reqOf2, subStage, vendorOf } from '../../data/staffing
 import type { Vendor } from '../../services';
 import { useConsultants, usePlacements, useSubmissions, useVendors } from './data';
 import { Badge, Banner, Card, Tabs, Tile, StatRow } from '../../components/ui';
+import { notBacked } from '../../components/NotBacked';
 import { HBar } from '../../components/charts';
-import { useApp } from '../../state/AppContext';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import { TierBadge } from './shared';
@@ -167,11 +167,12 @@ function VnScore() {
 
 function VnComp() {
   const { data: VENDORS = [] } = useVendors();
-  const app = useApp();
   return (
     <div className="stack">
       <Card title="Vendor compliance" sub="Contract and insurance status" flush
-        actions={<button className="btn sm" onClick={() => app.toast('Chase emails sent to non-compliant vendors', 'ok')}><Icon n="mail" size="lg" /> Chase missing documents</button>}>
+        actions={<button className="btn sm"
+          {...notBacked('there is no path from here to the mail server yet')}
+        ><Icon n="mail" size="lg" /> Chase missing documents</button>}>
         <div className="tbl-wrap">
           <table className="tbl">
             <thead>

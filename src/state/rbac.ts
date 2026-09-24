@@ -48,6 +48,10 @@ export const PERMS: Record<AppRole, string[]> = {
     'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
     'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
     'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events',
+    // Answering a survey is an employee's, and was the one thing in Engagement
+    // they were meant to do. The module sat manager-and-above because it reads
+    // as reporting; the Submit button did nothing, so nobody noticed.
+    'engagement',
     'account',
   ],
 
