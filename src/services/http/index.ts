@@ -625,6 +625,7 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         : api.get('/users/me/login-history')),
       tenantLoginHistory: () => api.get('/users/login-history'),
       accountStatus: () => api.get('/users/me/account-status'),
+      me: () => api.get('/me/permissions'),
       setMfaRequired: (_c, id, required) =>
         api.put(`/users/${id}/mfa-required`, { required }),
       passwordChanged: () => api.post('/users/me/password-changed'),

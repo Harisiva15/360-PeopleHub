@@ -154,7 +154,7 @@ import {
 import {
   listUsers, getUser, userStats, nextEmployeeCode, createUser, updateUser,
   setUserStatus, removeUser, decideUser, inviteUser, resendInvitation, resetPassword,
-  bulkUpdateUsers, lastLoginNow, accountObligations, passwordChanged,
+  bulkUpdateUsers, lastLoginNow, accountObligations, passwordChanged, whoAmI,
   setMfaRequired, UserError,
 } from '../modules/users/service.ts';
 import {
@@ -1804,6 +1804,16 @@ const routes: Route[] = [
     handler: async (c) => {
       const overrides = await overridesFor(c);
       const modules = effectiveModulesFor(c.role, overrides);
+      /*
+       * Identity travels with the permissions.
+       *
+       * This is already the "who am I and what may I do" route, and it was
+       * answering only the second half — so the frontend had nowhere to learn
+       * which employee it was drawing and fell back to the demo dataset. One
+       * call on session settle now seeds both, rather than a second endpoint
+       * and a second round trip saying who.
+       */
+      const identity = await whoAmI(c);
       return {
         role: c.role,
         summary: ROLE_SUMMARY[c.role],
@@ -1811,6 +1821,7 @@ const routes: Route[] = [
         rules: Object.fromEntries(
           modules.map((m) => [m, effectiveRule(c.role, m, overrides)]),
         ),
+        identity,
       };
     },
   },

@@ -58,6 +58,31 @@ jobs:
         #
         # `vite.config.ts` still honours BASE_PATH, so a project-site build is
         # one variable away if this ever needs to serve from a sub-path again.
+        #
+        # These three decide whether the build is the product or the demo.
+        # `authConfigured` (src/auth/supabase.ts) and `apiConfigured`
+        # (src/services/http/client.ts) are computed from them, and between
+        # them they control the sign-in gate, the DEMO badge, the role
+        # switcher, and whether 325 service methods reach the API or the
+        # in-memory dataset. With none of them set the deploy is a demo — which
+        # is a legitimate thing to publish, and was what this workflow built.
+        #
+        # All three are browser-safe. The publishable key is the anon key: it
+        # is meant to ship, and every request it makes is still subject to
+        # row-level security. Nothing server-side belongs here, and
+        # checks/auth-gate.tsx fails the build if a VITE_ variable is ever
+        # named for a secret.
+        #
+        # Set them as repository *variables* (Settings -> Secrets and variables
+        # -> Actions -> Variables), not secrets: a secret would be masked in
+        # the logs for no benefit and cannot be read back when you need to
+        # check it. An unset variable is an empty string, and an empty string
+        # is exactly what makes this build a demo — so a missing value degrades
+        # rather than breaks.
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: npm run build
 
       # enablement turns Pages on with the workflow's own token, so nobody has

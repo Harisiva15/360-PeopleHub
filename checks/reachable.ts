@@ -61,6 +61,14 @@ walk('src/shell');
  * running on every login.
  */
 walk('src/auth');
+/*
+ * And the app's own state. `AppContext` resolves who is signed in through
+ * users.me() on session settle — the call that stops a configured build
+ * drawing the demo dataset's person. It is not a screen and it is what every
+ * screen reads its identity from, so leaving it out reported that method as
+ * built-and-unreachable while it was running on every sign-in.
+ */
+walk('src/state');
 const src = files.map((f) => readFileSync(f, 'utf8')).join('\n');
 
 /* Every line, with the file it came from, for the guard test below. */

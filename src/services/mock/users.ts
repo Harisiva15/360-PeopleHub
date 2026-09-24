@@ -15,9 +15,10 @@
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
 import { EMAP } from '../../data/employees';
+import { ORG } from '../../data/org';
 import { LOGIN_HISTORY, USERS, loginHistoryFor, userOf } from '../../data/users';
 import type { LoginEvent, LoginMethod, UserAccount, UserStatus } from '../../data/users';
-import { actionScope, may, mayAssignRole } from '../../state/rbac';
+import { actionScope, may, mayAssignRole, PERMS } from '../../state/rbac';
 import type { UserAction } from '../../state/rbac';
 import { visibleIds } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
@@ -458,6 +459,34 @@ export const userService: UserService = {
       return refuse('You can only see your own sign-in history');
     }
     return ok(loginHistoryFor(target));
+  },
+
+  /*
+   * The demo's answer, so the same code path runs in both builds. It reports
+   * the dataset's own person rather than pretending nobody is signed in — the
+   * demo *is* signed in, as whichever role the switcher last chose.
+   */
+  me(c) {
+    const u = USERS.find((x) => x.empId === c.meId);
+    const e = EMAP[c.meId];
+    return ok({
+      role: c.role,
+      summary: '',
+      modules: PERMS[c.role] ?? [],
+      rules: {},
+      identity: {
+        membershipId: u?.id ?? c.meId,
+        empId: c.meId,
+        name: e?.name ?? u?.name ?? '',
+        email: e?.email ?? u?.email ?? '',
+        code: e?.code ?? '',
+        designation: e?.designation ?? '',
+        dept: e?.dept ?? '',
+        site: e?.site ?? '',
+        tenantName: ORG.name,
+        tenantSlug: 'demo',
+      },
+    });
   },
 
   accountStatus(c) {

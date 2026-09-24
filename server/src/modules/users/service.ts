@@ -968,3 +968,79 @@ export async function setMfaRequired(
     return after;
   });
 }
+
+/**
+ * Who the caller is, for the screen that is about to draw them.
+ *
+ * The frontend seeds its own identity — the name in the top bar, the employee
+ * id behind "my leave" and "my timesheet" — from `ACCOUNTS()` in
+ * `src/state/rbac.ts`, which is the demo dataset. That is right for the demo
+ * build and wrong the moment a real session exists: it would show a colleague
+ * from the sample data and ask for *their* leave.
+ *
+ * It was never a security hole, because the server ignores whatever caller a
+ * request claims and rebuilds it from the token. But it is the difference
+ * between an application and a screenshot, so identity has to come from here.
+ *
+ * Read from the membership and the employee, on the caller the token resolved
+ * to. Nothing is taken from the request.
+ */
+export interface Identity {
+  /** The membership, which is what an account *is* in this schema. */
+  membershipId: string;
+  /** The employee they act as. Null for a login with no payroll record. */
+  empId: string | null;
+  name: string;
+  email: string;
+  code: string;
+  designation: string;
+  dept: string;
+  site: string;
+  /** The company, as it should be shown. */
+  tenantName: string;
+  tenantSlug: string;
+}
+
+export async function whoAmI(caller: Caller): Promise<Identity | null> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `SELECT m.id AS membership_id, m.employee_id,
+              COALESCE(e.full_name, '') AS full_name,
+              COALESCE(e.work_email, '') AS work_email,
+              COALESCE(e.code, '') AS code,
+              COALESCE(e.designation, '') AS designation,
+              COALESCE(d.code, '') AS dept_code,
+              COALESCE(s.code, '') AS site_code,
+              t.display_name AS tenant_name, t.slug AS tenant_slug
+         FROM tenant_membership m
+         JOIN tenant t ON t.id = m.tenant_id
+         LEFT JOIN employee e ON e.id = m.employee_id
+         LEFT JOIN department d ON d.id = e.department_id
+         LEFT JOIN site s ON s.id = e.site_id
+        WHERE m.employee_id IS NOT DISTINCT FROM $1
+          AND m.tenant_id = current_tenant_id()
+        LIMIT 1`,
+      [caller.employeeId]);
+
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      membershipId: r.membership_id as string,
+      empId: (r.employee_id as string | null) ?? null,
+      name: r.full_name as string,
+      /*
+       * The work email, not the address they signed in with. They can differ —
+       * an account may be invited at one address and the employee record carry
+       * another — and the one the company knows them by is the right one to
+       * show beside their name.
+       */
+      email: r.work_email as string,
+      code: r.code as string,
+      designation: r.designation as string,
+      dept: r.dept_code as string,
+      site: r.site_code as string,
+      tenantName: r.tenant_name as string,
+      tenantSlug: String(r.tenant_slug),
+    };
+  });
+}

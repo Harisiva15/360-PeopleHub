@@ -1916,6 +1916,31 @@ export interface UserStats {
  * `mustEnrolMfa` is false once a factor exists — asking somebody who has
  * already enrolled to enrol again is a loop with no way out.
  */
+/** The caller, as the server sees them. */
+export interface MeIdentity {
+  membershipId: string;
+  /** The employee they act as. Null for a login with no payroll record. */
+  empId: string | null;
+  name: string;
+  email: string;
+  code: string;
+  designation: string;
+  dept: string;
+  site: string;
+  tenantName: string;
+  tenantSlug: string;
+}
+
+export interface Me {
+  role: AppRole;
+  summary: string;
+  /** Modules this role may reach, after the tenant's narrowing. */
+  modules: string[];
+  rules: Record<string, { read: string; write: string; approve: string }>;
+  /** Null when the account has no membership in this tenant. */
+  identity: MeIdentity | null;
+}
+
 export interface AccountObligations {
   mustChangePassword: boolean;
   mustEnrolMfa: boolean;
@@ -1993,6 +2018,16 @@ export interface UserService {
    * worth attacking.
    */
   accountStatus(c: Caller): Promise<AccountObligations>;
+
+  /**
+   * Who the caller is, and what their role may reach.
+   *
+   * One call on session settle, so a configured build stops seeding its
+   * identity from the demo dataset. The role here is the *effective* one —
+   * policy.ts narrowed by the tenant's own overrides — and the server derives
+   * every field from the token, so nothing a client sends can widen it.
+   */
+  me(c: Caller): Promise<Me>;
   /** Clears the password flag once a new one has been set. */
   passwordChanged(c: Caller): Promise<{ ok: true }>;
   /**

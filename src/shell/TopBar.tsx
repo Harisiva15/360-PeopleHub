@@ -201,6 +201,8 @@ export function TopBar({ mobile, onMenu, actionRef }: {
   const accounts = ACCOUNTS();
 
   const ctx = { role: app.role, meId: app.meId, me: app.me };
+  /* The server's answer where there is one; the dataset's row otherwise. */
+  const who = app.identity ?? app.me;
 
   /* What is waiting on this person, module by module, heaviest first. */
   const waiting = dests
@@ -284,11 +286,20 @@ export function TopBar({ mobile, onMenu, actionRef }: {
           )}
         </Menu>
 
+        {/*
+          * The signed-in person, from the server where there is a session.
+          *
+          * `app.identity` is what `users.me()` returned: name, designation and
+          * employee code as the database holds them. `app.me` is the demo
+          * dataset's row, which is the right answer in a build with no
+          * authentication and the wrong one beside a real session — it would
+          * put a colleague from the sample data in the corner of the screen.
+          */}
         <Menu label="Your account" width={252} trigger={(
           <span className="who">
-            <Avatar name={app.me.name} />
+            <Avatar name={who.name} />
             <span className="who-t">
-              <b>{app.me.name}</b>
+              <b>{who.name}</b>
               <i>{ROLE_LABEL[app.role]}</i>
             </span>
           </span>
@@ -296,11 +307,11 @@ export function TopBar({ mobile, onMenu, actionRef }: {
           {(close) => (
             <>
               <div className="menu-id">
-                <Avatar name={app.me.name} size="lg" />
+                <Avatar name={who.name} size="lg" />
                 <div style={{ minWidth: 0 }}>
-                  <b>{app.me.name}</b>
-                  <i>{app.me.designation}</i>
-                  <i className="mono">{app.me.code}</i>
+                  <b>{who.name}</b>
+                  <i>{who.designation}</i>
+                  <i className="mono">{who.code}</i>
                 </div>
               </div>
 
