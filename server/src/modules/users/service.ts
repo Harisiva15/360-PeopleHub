@@ -25,6 +25,8 @@
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
+/* One creation path for leave entitlement, shared with joiners and onboarding. */
+import { openLeaveBalances } from '../people/provision.ts';
 import { authAdmin, inviteRedirect } from '../../auth/adminApi.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
@@ -364,6 +366,22 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
       [code, d.name.trim(), d.email.trim(), d.phone ?? '', dept[0].id, site[0].id,
         d.designation, d.managerId ?? null, d.empType ?? 'permanent',
         d.joinedOn ?? null, d.role, entity[0].id, shift[0].id]);
+
+    /*
+     * Open this leave year's balances.
+     *
+     * The joiner and onboarding flows have always done this through
+     * `provisionEmployee`; this path wrote its own INSERT and did not, so
+     * anybody created from User Management — which is how an administrator
+     * actually creates an account — got no entitlement.
+     *
+     * Nothing failed at the time. They could apply for leave, the request
+     * landed pending, and their manager got "no leave balance for that type
+     * and year" on pressing approve: a refusal at the last step, on a
+     * different person's screen, for a reason neither could act on. It took a
+     * second and third real account to see it.
+     */
+    await openLeaveBalances(db, emp[0]!.id);
 
     /*
      * A manager's account lands pending_approval; an administrator's is live.

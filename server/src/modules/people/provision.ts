@@ -95,7 +95,29 @@ export async function provisionEmployee(
     throw e;
   }
 
-  // Opening leave balances, or their first application has nothing to debit.
+  await openLeaveBalances(db, id);
+
+  return { id, code };
+}
+
+/**
+ * Open this leave year's balances for somebody who has none.
+ *
+ * Exported because a third creation path appeared and did not do it. The
+ * header above warned about exactly this — "one opening leave balances, the
+ * other leaving a new joiner unable to apply for leave" — and then
+ * `users.createUser`, which is how an administrator actually creates an
+ * account, grew its own INSERT outside this file and skipped the step.
+ *
+ * The failure was invisible until there were two people. The employee applies
+ * and it works; the row lands `pending`; the manager presses approve and gets
+ * "no leave balance for that type and year" — a refusal at the last moment, on
+ * somebody else's screen, for a reason neither of them can act on.
+ *
+ * So it is one function called by all three rather than a fourth copy. Idempotent
+ * via ON CONFLICT, so calling it for somebody who already has balances is safe.
+ */
+export async function openLeaveBalances(db: TenantClient, employeeId: string): Promise<void> {
   await db.query(
     `INSERT INTO leave_balance (employee_id, leave_type_id, year_start, quota)
      SELECT $1, lt.id,
@@ -106,7 +128,5 @@ export async function provisionEmployee(
             lt.annual_quota
        FROM leave_type lt, tenant t
       WHERE lt.active AND t.id = current_tenant_id()
-      ON CONFLICT DO NOTHING`, [id]);
-
-  return { id, code };
+      ON CONFLICT DO NOTHING`, [employeeId]);
 }
