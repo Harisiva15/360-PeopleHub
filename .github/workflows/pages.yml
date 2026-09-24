@@ -73,16 +73,19 @@ jobs:
         # checks/auth-gate.tsx fails the build if a VITE_ variable is ever
         # named for a secret.
         #
-        # Set them as repository *variables* (Settings -> Secrets and variables
-        # -> Actions -> Variables), not secrets: a secret would be masked in
-        # the logs for no benefit and cannot be read back when you need to
-        # check it. An unset variable is an empty string, and an empty string
-        # is exactly what makes this build a demo — so a missing value degrades
-        # rather than breaks.
+        # Read from `secrets`, which is where these are stored. `vars` and
+        # `secrets` are separate namespaces and an unset one is an empty
+        # string, not an error — so reading the wrong one produces a build that
+        # succeeds, deploys, and is silently still the demo. That is worth
+        # knowing if these ever move: change both the storage and this line.
+        #
+        # Masking is the only real difference here. These three end up in the
+        # bundle by design, so hiding them in the log protects nothing; it just
+        # means you cannot read back what you set. Either namespace works.
         env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: npm run build
 
       # enablement turns Pages on with the workflow's own token, so nobody has
