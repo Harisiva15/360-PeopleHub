@@ -217,10 +217,16 @@ export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
         </section>
       </div>
 
+      {/*
+        * The registered entity and its address used to sign this page. A sign-in
+        * screen is not a letterhead: the copyright line and the office address
+        * say nothing to the person trying to get in, and the address is one more
+        * detail on a page anybody can reach without an account.
+        *
+        * What is worth saying is whose product this is.
+        */}
       <footer className="login-legal">
-        <span>© {new Date().getFullYear()} {ORG.legal}</span>
-        <span className="login-legal-sep">·</span>
-        <span>{ORG.addr.split(',').slice(-2).join(',').trim()}</span>
+        <span>A product of 360 Technology</span>
       </footer>
     </div>
   );
