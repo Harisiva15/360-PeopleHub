@@ -47,9 +47,17 @@ jobs:
           VITE_SUPABASE_URL=https://ci.invalid VITE_SUPABASE_PUBLISHABLE_KEY=ci npm run check:gate
 
       - name: Build
-        # A project site is served from /<repo>/, not the domain root.
-        env:
-          BASE_PATH: /${{ github.event.repository.name }}/
+        # No BASE_PATH: the site is served from the root of its own domain.
+        #
+        # This used to set `/<repo>/`, which is right for a project site at
+        # harisiva15.github.io/360-PeopleHub/ and wrong the moment a custom
+        # domain is attached. Every asset was requested from
+        # 360peoplehub.com/360-PeopleHub/assets/… — a path that does not exist
+        # there — so the HTML loaded, every script and stylesheet 404'd, and
+        # the page rendered blank with no error of its own.
+        #
+        # `vite.config.ts` still honours BASE_PATH, so a project-site build is
+        # one variable away if this ever needs to serve from a sub-path again.
         run: npm run build
 
       # enablement turns Pages on with the workflow's own token, so nobody has
