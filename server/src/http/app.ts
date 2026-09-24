@@ -26,7 +26,7 @@ import {
   cancelLeave, listLeave, rejectLeave,
 } from '../modules/leave/service.ts';
 import {
-  addHoliday, ConfigError, createDepartment, listDepartments, removeDepartment, updateDepartment, createSite, listHolidays, listSites, setLeaveQuota,
+  addHoliday, ConfigError, createDepartment, listGrades, listDepartments, removeDepartment, updateDepartment, createSite, listHolidays, listSites, setLeaveQuota,
   setSiteActive, updateFence, updateSite,
 } from '../modules/config/service.ts';
 import {
@@ -996,6 +996,7 @@ const routes: Route[] = [
     pattern: '/config/departments/:code',
     handler: (c, _r, p) => removeDepartment(c, p.code!),
   },
+  { method: 'GET', pattern: '/config/grades', handler: (c) => listGrades(c) },
   { method: 'GET', pattern: '/config/sites', handler: (c) => listSites(c) },
   { method: 'GET', pattern: '/config/holidays', handler: (c) => listHolidays(c) },
   {

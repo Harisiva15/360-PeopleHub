@@ -715,3 +715,44 @@ export async function removeDepartment(caller: Caller, code: string): Promise<De
     return dept;
   });
 }
+
+/* ------------------------------------------------------------------ *
+ * Grade bands
+ * ------------------------------------------------------------------ */
+
+/**
+ * The company's grade ladder.
+ *
+ * Read-only, and it exists because the promotion form needs the real bands.
+ * The frontend has a `GRADES` constant in `src/data/org.ts` that was the only
+ * source until now, and it had already drifted: it puts L4 at a maximum of
+ * 3,400,000 where the database says 3,500,000, and L6 at 9,000,000 against
+ * 12,000,000. Offering those on a form that then posts a grade *code* would
+ * show the wrong band and, for a company that had renamed one, offer a code
+ * the server would refuse.
+ *
+ * Everyone may read it. A band is not confidential — it is on the job advert —
+ * and the employee's own profile already shows which one they are on.
+ */
+export interface GradeBand {
+  code: string;
+  label: string;
+  rank: number;
+  minCtc: number | null;
+  maxCtc: number | null;
+}
+
+export async function listGrades(caller: Caller): Promise<GradeBand[]> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `SELECT code, label, rank, min_ctc, max_ctc
+         FROM grade_band ORDER BY rank, code`);
+    return rows.map((r) => ({
+      code: r.code as string,
+      label: r.label as string,
+      rank: Number(r.rank),
+      minCtc: r.min_ctc === null ? null : Number(r.min_ctc),
+      maxCtc: r.max_ctc === null ? null : Number(r.max_ctc),
+    }));
+  });
+}

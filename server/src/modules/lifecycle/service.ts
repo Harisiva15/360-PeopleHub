@@ -57,6 +57,10 @@ export interface LifecycleSubject {
   managerId: string | null;
   startOn: string;
   onPayroll: boolean;
+  /** Grade band code, or null where none has been recorded. */
+  grade: string | null;
+  /** The employee column, which confirming probation clears. */
+  onProbation: boolean;
 }
 
 export interface Standing {
@@ -173,6 +177,7 @@ const BASE = `
   FROM employee e
   LEFT JOIN department d ON d.id = e.department_id
   LEFT JOIN site s ON s.id = e.site_id
+  LEFT JOIN grade_band gb ON gb.id = e.grade_id
   LEFT JOIN LATERAL (
     SELECT xr.id, xr.status, xr.resigned_on, xr.last_working_day
       FROM exit_record xr
@@ -226,6 +231,7 @@ interface Row {
   id: string; name: string; code: string; dept_code: string | null;
   designation: string; site_code: string | null; manager_id: string | null;
   joined_on: string; on_payroll: boolean;
+  grade_code: string | null; on_probation: boolean;
   stage: string; since: string; days: string; next_action: string | null;
   open_tasks: string;
 }
@@ -241,6 +247,8 @@ const toRow = (r: Row): LifecycleRow => ({
     managerId: r.manager_id,
     startOn: r.joined_on,
     onPayroll: r.on_payroll,
+    grade: r.grade_code,
+    onProbation: r.on_probation,
   },
   standing: {
     empId: r.id,
@@ -265,6 +273,12 @@ const SINCE = `LEAST((${caseOver('since')}), CURRENT_DATE)`;
 const PROJECTION = `
   SELECT e.id, e.full_name AS name, e.code, d.code AS dept_code, e.designation,
          s.code AS site_code, e.manager_id, e.joined_on::text,
+         /*
+          * Null where none is recorded, deliberately. The employee mapper
+          * coalesces a missing grade to L1, which on a promotion form would
+          * tell somebody they hold a band nobody has given them.
+          */
+         gb.code AS grade_code, e.on_probation,
          /*
           * Everybody in this table is on the payroll. The demo's population
           * also carries candidates and joiners, who have no employee row —

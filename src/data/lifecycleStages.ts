@@ -275,6 +275,10 @@ export interface LifecycleSubject {
   startOn: string;
   /** False while they are still a joiner rather than an employee. */
   onPayroll: boolean;
+  /** Grade band code, or null where none has been recorded. */
+  grade?: string | null;
+  /** The employee column that confirming probation clears. */
+  onProbation?: boolean;
 }
 
 export const lifecyclePopulation = (): LifecycleSubject[] => [

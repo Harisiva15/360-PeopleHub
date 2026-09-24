@@ -8,7 +8,7 @@
  */
 
 import { ACTIVE } from '../../data/employees';
-import { DEPTS, HOLIDAYS, HOLIDAY_MAP, ltOf, SITES } from '../../data/org';
+import { DEPTS, GRADES, HOLIDAYS, HOLIDAY_MAP, ltOf, SITES } from '../../data/org';
 import { LEAVE_BAL } from '../../data/leave';
 import { PERMS } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
@@ -147,6 +147,16 @@ export const configService: ConfigService = {
    * way the server does.
    */
   departments() { return ok(DEPARTMENTS.slice()); },
+
+  /*
+   * The demo's grade ladder, from the same constant the screens used to read
+   * directly. Ranked by position, which is what the promotion rule compares.
+   */
+  grades() {
+    return ok(Object.entries(GRADES).map(([code, g], i) => ({
+      code, label: g.label, rank: i + 1, minCtc: g.min, maxCtc: g.max,
+    })));
+  },
 
   createDepartment(draft) {
     const code = draft.code?.trim().toUpperCase() ?? '';

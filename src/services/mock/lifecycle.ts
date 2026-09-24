@@ -17,6 +17,7 @@
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
 import { uid } from '../../lib/rng';
+import { GRADES } from '../../data/org';
 import { EMAP } from '../../data/employees';
 import { LIFECYCLE } from '../../data/lifecycle';
 import {
@@ -167,5 +168,67 @@ export const lifecycleService: LifecycleService = {
     recordAudit.write(c, 'lifecycle.task_removed', 'employee', t.empId,
       `${subjectOf(t.empId)?.name ?? t.empId} · ${t.n}`);
     return ok(t);
+  },
+
+  /*
+   * The two explicit lifecycle decisions.
+   *
+   * The demo keeps the same refusals the server makes, so a reviewer clicking
+   * through the demo meets the same rules rather than a friendlier version of
+   * them. The dataset has no employment_record, so these move the subject and
+   * report what would have been written.
+   */
+  confirmProbation(c, empId, opts = {}) {
+    if (c.role === 'employee') return refuse('Your role cannot confirm probation');
+    const row = inScope(c).find((r) => r.subject.id === empId);
+    if (!row) return refuse('No such person');
+    if (row.subject.onProbation === false && row.standing.stage !== 'Joined') {
+      return refuse('Probation was already confirmed');
+    }
+    const on = opts.on ?? ymd(TODAY);
+    if (on > ymd(TODAY)) return refuse('Probation cannot be confirmed in advance');
+    if (on < row.subject.startOn) {
+      return refuse(`Probation cannot be confirmed before the joining date (${row.subject.startOn})`);
+    }
+    row.subject.onProbation = false;
+    row.standing.stage = 'Active';
+    row.standing.since = on;
+    recordAudit.write(c, 'lifecycle.probation_confirmed', 'employee', empId,
+      row.subject.name);
+    return this.get(c, empId) as Promise<LifecycleDetail>;
+  },
+
+  promote(c, empId, draft) {
+    if (c.role === 'employee') return refuse('Your role cannot promote somebody');
+    const wantsGrade = Boolean(draft.gradeCode?.trim());
+    const wantsTitle = Boolean(draft.designation?.trim());
+    if (!wantsGrade && !wantsTitle) {
+      return refuse('A promotion changes a grade, a title, or both');
+    }
+    const row = inScope(c).find((r) => r.subject.id === empId);
+    if (!row) return refuse('No such person');
+
+    if (wantsGrade) {
+      const code = draft.gradeCode!.trim();
+      const order = Object.keys(GRADES);
+      const next = order.indexOf(code);
+      if (next < 0) return refuse(`No such grade: ${code}`);
+      const now = row.subject.grade ? order.indexOf(row.subject.grade) : -1;
+      if (now >= 0 && next < now) {
+        return refuse(
+          `${code} is below their current grade. A move down is not a promotion — `
+          + 'record it as a change of role instead.');
+      }
+      if (now >= 0 && next === now && !wantsTitle) {
+        return refuse('They are already on that grade');
+      }
+      row.subject.grade = code;
+    }
+    if (wantsTitle) row.subject.designation = draft.designation!.trim();
+
+    row.standing.stage = 'Promotion';
+    row.standing.since = draft.on ?? ymd(TODAY);
+    recordAudit.write(c, 'lifecycle.promoted', 'employee', empId, row.subject.name);
+    return this.get(c, empId) as Promise<LifecycleDetail>;
   },
 };

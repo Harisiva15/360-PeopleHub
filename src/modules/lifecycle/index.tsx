@@ -19,7 +19,7 @@ import { downloadCSV } from '../../lib/csv';
 import { DEPTS, SITES, deptOf } from '../../data/org';
 import { CORE_PATH, LIFECYCLE_STAGES } from '../../services';
 import type {
-  LifecycleFilter, LifecycleRow, LifecycleStage, LifecycleTaskDraft,
+  LifecycleDetail, LifecycleFilter, LifecycleRow, LifecycleStage, LifecycleTaskDraft,
 } from '../../services';
 import {
   Avatar, Badge, Banner, Card, EmptyState, KV, StatRow, Tabs, Tile,
@@ -31,7 +31,8 @@ import { PageActions } from '../../shell/PageActions';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import {
-  useAddTask, useLifecycle, useLifecycleStats, useLifecycleRow, useRemoveTask,
+  useAddTask, useConfirmProbation, useGrades, useLifecycle, useLifecycleStats,
+  useLifecycleRow, usePromote, useRemoveTask,
   useSetTaskDone, useVisiblePeople,
 } from './data';
 
@@ -82,6 +83,179 @@ function Journey({ current }: { current: LifecycleStage }) {
 }
 
 /* ---------------- the detail ---------------- */
+
+/**
+ * Confirming probation.
+ *
+ * The date is bounded in the browser to the same window the service enforces —
+ * not before they joined, not after today — so the common mistakes are caught
+ * where they are made. Both limits exist on the server too, and the banner
+ * below shows whatever it says: the input is a convenience, the refusal is the
+ * rule.
+ */
+function ConfirmProbationForm({ d, close, done }: {
+  d: LifecycleDetail;
+  close: () => void;
+  done: () => void;
+}) {
+  const app = useApp();
+  const confirm = useConfirmProbation();
+  const today = ymd(TODAY);
+  const [on, setOn] = useState(today);
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState('');
+
+  const save = async () => {
+    setErr('');
+    try {
+      await confirm.mutate(d.subject.id, { on, note: note.trim() || null });
+      app.toast(`${d.subject.name} confirmed`, 'ok');
+      close();
+      done();
+    } catch (e) {
+      setErr(msg(e, 'Could not confirm probation'));
+    }
+  };
+
+  return (
+    <div className="stack">
+      {err && (
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Not confirmed">{err}</Banner>
+      )}
+      <Banner kind="info" icon={<Icon n="info" size="lg" />}>
+        This records that {d.subject.name} has passed probation. It is written to
+        their employment history and cannot be undone from here.
+      </Banner>
+      <div className="field">
+        <label htmlFor="prob-on">Effective from <span className="req">*</span></label>
+        <input id="prob-on" className="input" type="date" value={on}
+          min={d.subject.startOn} max={today}
+          onChange={(e) => setOn(e.target.value)} />
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          Between their joining date ({fmtD(d.subject.startOn)}) and today. A
+          confirmation records something that has happened, so it cannot be dated ahead.
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="prob-note">Note</label>
+        <input id="prob-note" className="input" value={note} placeholder="Optional"
+          onChange={(e) => setNote(e.target.value)} />
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
+        <button className="btn" onClick={close} disabled={confirm.pending}>Cancel</button>
+        <button className="btn primary" onClick={save} disabled={confirm.pending || !on}>
+          {confirm.pending ? 'Confirming…' : 'Confirm probation'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Recording a promotion.
+ *
+ * Deliberately not the ordinary edit form. A title change made in User
+ * Management is a `role_change`, and that is the right record for it — this
+ * exists so that calling something a promotion is a thing somebody chose to
+ * do, and it is the only screen that writes one.
+ *
+ * The bands come from the API rather than from `GRADES` in `data/org.ts`,
+ * which had already drifted from the database. Bands below the current one are
+ * shown disabled rather than hidden: it explains why a demotion is not on
+ * offer here instead of leaving somebody hunting for it.
+ */
+function PromoteForm({ d, close, done }: {
+  d: LifecycleDetail;
+  close: () => void;
+  done: () => void;
+}) {
+  const app = useApp();
+  const promote = usePromote();
+  const { data: bands = [], loading } = useGrades();
+  const today = ymd(TODAY);
+  const [gradeCode, setGradeCode] = useState('');
+  const [designation, setDesignation] = useState('');
+  const [on, setOn] = useState(today);
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState('');
+
+  const currentRank = bands.find((b) => b.code === d.subject.grade)?.rank ?? null;
+  const changesSomething = Boolean(gradeCode || designation.trim());
+
+  const save = async () => {
+    setErr('');
+    try {
+      await promote.mutate(d.subject.id, {
+        gradeCode: gradeCode || null,
+        designation: designation.trim() || null,
+        on,
+        note: note.trim() || null,
+      });
+      app.toast(`${d.subject.name} promoted`, 'ok');
+      close();
+      done();
+    } catch (e) {
+      setErr(msg(e, 'Could not record the promotion'));
+    }
+  };
+
+  return (
+    <div className="stack">
+      {err && (
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Not recorded">{err}</Banner>
+      )}
+      <KV rows={[
+        ['Current grade', d.subject.grade
+          ? (bands.find((b) => b.code === d.subject.grade)?.label ?? d.subject.grade)
+          : <span className="muted">None recorded</span>],
+        ['Current title', d.subject.designation || '—'],
+      ]} />
+      <div className="field">
+        <label htmlFor="promo-grade">New grade</label>
+        <select id="promo-grade" className="input" value={gradeCode}
+          onChange={(e) => setGradeCode(e.target.value)}>
+          <option value="">{loading ? 'Loading grades…' : 'Unchanged'}</option>
+          {bands.map((b) => (
+            <option key={b.code} value={b.code}
+              disabled={currentRank !== null && b.rank < currentRank}>
+              {b.label}{currentRank !== null && b.rank < currentRank ? ' — lower band' : ''}
+            </option>
+          ))}
+        </select>
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          A move to a lower band is not a promotion. Record that as a change of
+          role from User management instead.
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="promo-title">New title</label>
+        <input id="promo-title" className="input" value={designation}
+          placeholder={d.subject.designation || 'Unchanged'}
+          onChange={(e) => setDesignation(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="promo-on">Effective from <span className="req">*</span></label>
+        <input id="promo-on" className="input" type="date" value={on}
+          min={d.subject.startOn}
+          onChange={(e) => setOn(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="promo-note">Note</label>
+        <input id="promo-note" className="input" value={note} placeholder="Optional"
+          onChange={(e) => setNote(e.target.value)} />
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
+        <button className="btn" onClick={close} disabled={promote.pending}>Cancel</button>
+        <button className="btn primary" onClick={save}
+          disabled={promote.pending || !changesSomething || !on}
+          title={changesSomething ? '' : 'A promotion changes a grade, a title, or both'}>
+          {promote.pending ? 'Recording…' : 'Record promotion'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 function AddTaskForm({ empId, close }: { empId: string; close: () => void }) {
   const app = useApp();
@@ -145,7 +319,7 @@ function LifecycleDetailView({ id }: { id: string }) {
   const app = useApp();
   const layer = useLayer();
   const dir = useVisiblePeople();
-  const { data: d, loading, error } = useLifecycleRow(id);
+  const { data: d, loading, error, refetch } = useLifecycleRow(id);
   const setDone = useSetTaskDone();
   const removeTask = useRemoveTask();
   const [tab, setTab] = useState<'journey' | 'tasks' | 'history'>('journey');
@@ -181,6 +355,42 @@ function LifecycleDetailView({ id }: { id: string }) {
         <Banner kind="info" icon={<Icon n="next" size="lg" />} title="Next action">
           {d.standing.nextAction}
         </Banner>
+      )}
+
+      {/*
+        * The two explicit lifecycle decisions.
+        *
+        * Hidden from an employee and from a manager outside the person's line —
+        * but only as a convenience. The service refuses both regardless, and the
+        * dialogs show whatever it says rather than a message of their own.
+        *
+        * Probation confirmation appears only while there is a probation to
+        * confirm: the derivation puts somebody in "Joined" until a
+        * probation_confirmed record exists, so that stage is the condition.
+        */}
+      {app.role !== 'employee' && d.standing.stage !== 'Alumni' && (
+        <div className="row" style={{ gap: 9, flexWrap: 'wrap' }}>
+          {d.standing.stage === 'Joined' && (
+            <button className="btn sm primary" onClick={() => layer.modal({
+              title: 'Confirm probation',
+              sub: d.subject.name,
+              size: 'narrow',
+              body: (close) => <ConfirmProbationForm d={d} close={close} done={refetch} />,
+              footer: null,
+            })}>
+              <Icon n="verified" size="lg" /> Confirm probation
+            </button>
+          )}
+          <button className="btn sm" onClick={() => layer.modal({
+            title: 'Record a promotion',
+            sub: d.subject.name,
+            size: 'narrow',
+            body: (close) => <PromoteForm d={d} close={close} done={refetch} />,
+            footer: null,
+          })}>
+            <Icon n="up" size="lg" /> Record promotion
+          </button>
+        </div>
       )}
 
       <Tabs

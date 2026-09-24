@@ -1633,6 +1633,8 @@ export interface ConfigService {
   sites(): Promise<Site[]>;
   /** The organisation's departments, with headcount. */
   departments(): Promise<Department[]>;
+  /** The grade ladder. Read-only, and readable by everyone. */
+  grades(): Promise<GradeBand[]>;
   /** Admin only. The code is the department's identity and cannot move. */
   createDepartment(draft: DepartmentDraft): Promise<Department>;
   updateDepartment(code: string, patch: Partial<DepartmentDraft> & { active?: boolean }): Promise<Department>;
@@ -2132,6 +2134,43 @@ export interface LifecycleService {
   /** An employee may complete a task assigned to them, and nothing else. */
   setTaskDone(c: Caller, taskId: string, done: boolean): Promise<LifecycleTask>;
   removeTask(c: Caller, taskId: string): Promise<LifecycleTask>;
+
+  /**
+   * Confirm somebody has passed probation.
+   *
+   * A decision, recorded once. Never inferred from elapsed time, a title
+   * change or a new manager — the server refuses a second confirmation, a
+   * future date, and a date before the joining date.
+   */
+  confirmProbation(
+    c: Caller, empId: string, opts?: { on?: string | null; note?: string | null },
+  ): Promise<LifecycleDetail>;
+
+  /**
+   * Record a promotion.
+   *
+   * The only thing that writes `reason = 'promotion'`. Ordinary title and
+   * reporting changes go through `users.update` and stay `role_change`; the
+   * server refuses a move to a lower grade rather than filing it as this.
+   */
+  promote(c: Caller, empId: string, draft: PromotionDraft): Promise<LifecycleDetail>;
+}
+
+/** What a promotion moves. At least one of these has to change. */
+export interface PromotionDraft {
+  gradeCode?: string | null;
+  designation?: string | null;
+  on?: string | null;
+  note?: string | null;
+}
+
+/** One rung of the company's grade ladder, as the database holds it. */
+export interface GradeBand {
+  code: string;
+  label: string;
+  rank: number;
+  minCtc: number | null;
+  maxCtc: number | null;
 }
 
 /* ---------------- software estate ---------------- */

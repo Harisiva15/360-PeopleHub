@@ -385,6 +385,7 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
     config: {
       sites: () => api.get('/config/sites'),
       departments: () => api.get('/config/departments'),
+      grades: () => api.get('/config/grades'),
       createDepartment: (draft) => api.post('/config/departments', draft),
       updateDepartment: (code, patch) => api.put(`/config/departments/${code}`, patch),
       removeDepartment: (code) => api.del(`/config/departments/${code}`),
@@ -492,6 +493,9 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       setTaskDone: (_c, taskId, done) =>
         api.put(`/lifecycle/tasks/${taskId}/done`, { done }),
       removeTask: (_c, taskId) => api.del(`/lifecycle/tasks/${taskId}`),
+      confirmProbation: (_c, empId, opts = {}) =>
+        api.post(`/lifecycle/${empId}/probation/confirm`, opts),
+      promote: (_c, empId, draft) => api.post(`/lifecycle/${empId}/promote`, draft),
     },
 
     software: {
