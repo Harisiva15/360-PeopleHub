@@ -10,16 +10,30 @@
  * So this builds the hierarchy through the product's own creation path and
  * then asks the services, not the screens, what each role can do:
  *
- *     Admin (the existing account)
+ *     Admin
  *       └── Manager
  *             └── Employee
+ *
+ * ## Where it happens
+ *
+ * In a scratch tenant, created for this run and dropped at the end — see
+ * `lib/scratch-tenant.mjs`. The live tenant is not written to at all, so its
+ * row counts are identical afterwards because nothing addressed it, rather
+ * than because something tidied up.
+ *
+ * That replaces a hand-maintained teardown which deleted from eight tables in
+ * order. The list drifted the first time this file met a real defect — it knew
+ * `audit_log` referenced the employee as a subject and not that it also
+ * referenced it as an actor — and five employees stayed in the live database
+ * until somebody looked. Every tenant-scoped table cascades from `tenant`, so
+ * dropping the tenant needs no list and cannot be incomplete.
  *
  * ## Why these are fixtures and not the real test accounts
  *
  * The two people this hierarchy needs are real colleagues with real mailboxes,
  * and creating them is a separate, deliberate act that ends in somebody
  * receiving an email and choosing a password. These rows are not that. They
- * are created, exercised and removed inside this file, and they are never
+ * are created, exercised and dropped with their tenant, and they are never
  * mailed: the auth provider is replaced with a recording stub, exactly as
  * `invite.test.mjs` does, so nothing leaves the building.
  *
@@ -65,6 +79,7 @@ const leave = await import('../src/modules/leave/service.ts');
 const timesheets = await import('../src/modules/timesheet/service.ts');
 const config = await import('../src/modules/config/service.ts');
 const helpdesk = await import('../src/modules/helpdesk/service.ts');
+const { withScratchTenant, sweepScratchTenants } = await import('./lib/scratch-tenant.mjs');
 
 let failed = 0;
 const ok = (label, cond, detail = '') => {
@@ -103,56 +118,48 @@ const admin = new pg.Client({
 });
 await admin.connect();
 
+/*
+ * The live tenant's counts, taken before and compared after.
+ *
+ * Nothing below writes to it — the run happens inside a scratch tenant — so
+ * these are expected to be identical rather than restored. A difference means
+ * something addressed the live tenant that should not have.
+ */
 const census = async () => (await admin.query(`
   SELECT (SELECT count(*)::int FROM employee) e,
          (SELECT count(*)::int FROM tenant_membership) m,
          (SELECT count(*)::int FROM audit_log) a,
          (SELECT count(*)::int FROM leave_request) l,
          (SELECT count(*)::int FROM timesheet) t,
-         (SELECT count(*)::int FROM timesheet_entry) te`)).rows[0];
+         (SELECT count(*)::int FROM timesheet_entry) te,
+         (SELECT count(*)::int FROM tenant) tenants`)).rows[0];
 const before = await census();
 
-const ctx = (await admin.query(`
-  SELECT t.id tenant, e.id emp, e.code,
-         (SELECT code FROM department ORDER BY code LIMIT 1) dept,
-         (SELECT code FROM site WHERE active ORDER BY code LIMIT 1) site,
-         (SELECT code FROM leave_type WHERE active ORDER BY code LIMIT 1) leave_type,
-         (SELECT code FROM project WHERE active ORDER BY code LIMIT 1) project
-    FROM tenant t JOIN employee e ON e.tenant_id = t.id
-   WHERE t.slug = '360vhm' AND e.code = 'VHM004'`)).rows[0];
+/* Anything a killed run left behind, before this one adds to it. */
+const swept = await sweepScratchTenants(admin);
+if (swept.length) {
+  console.log(`
+swept ${swept.length} scratch tenant(s) from an earlier run: ${swept.join(', ')}`);
+}
+
+let fatal = null;
+try {
+await withScratchTenant(admin, async (ctx) => {
 
 const caller = (role, employeeId) =>
   ({ role, tenantId: ctx.tenant, employeeId, userId: null });
 
-const ADMIN = caller('admin', ctx.emp);
+const ADMIN = caller('admin', ctx.adminEmployeeId);
 const tag = Math.random().toString(36).slice(2, 7);
-const made = { emps: [], mems: [] };
-
-/* Track what we create so cleanup is exact rather than a pattern sweep. */
-const remember = async (account) => {
-  made.mems.push(account.id);
-  const { rows } = await admin.query(
-    'SELECT employee_id FROM tenant_membership WHERE id = $1', [account.id]);
-  made.emps.push(rows[0].employee_id);
-  return rows[0].employee_id;
-};
 
 /*
- * Why this is try/catch and not try/finally.
- *
- * A `finally` looks like enough and is not. When an await inside the body
- * rejects and nothing catches it, Node tears the process down as the rejection
- * propagates, and the awaits inside `finally` never finish — so a run that
- * fails halfway leaves its employees, memberships and audit rows behind in a
- * live database. That is exactly how fixtures from earlier crashed runs were
- * found stranded in this project, and it happened again the first time this
- * file hit a real defect.
- *
- * Catching first means the failure is recorded, cleanup completes, and only
- * then does the process exit non-zero with the reason.
+ * The employee behind an account. This used to also record the id for
+ * teardown; nothing needs recording now, because the scratch tenant’s single
+ * DELETE takes whatever was created with it.
  */
-let fatal = null;
-try {
+const employeeOf = async (account) => (await admin.query(
+  'SELECT employee_id FROM tenant_membership WHERE id = $1', [account.id])).rows[0].employee_id;
+
   /* ================================================================ *
    * STEP 4 — build the organisation through the product's own path
    * ================================================================ */
@@ -165,7 +172,7 @@ try {
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Engineering Manager',
     role: 'manager',
   });
-  const MGR_ID = await remember(mgrAccount);
+  const MGR_ID = await employeeOf(mgrAccount);
   ok('an admin creates a manager', Boolean(MGR_ID));
   ok('  with the manager role on the membership', mgrAccount.role === 'manager', mgrAccount.role);
 
@@ -175,7 +182,7 @@ try {
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Software Engineer',
     role: 'employee', managerId: MGR_ID,
   });
-  const EMP_ID = await remember(empAccount);
+  const EMP_ID = await employeeOf(empAccount);
   ok('an admin creates an employee reporting to that manager', Boolean(EMP_ID));
 
   const MGR = caller('manager', MGR_ID);
@@ -226,7 +233,7 @@ try {
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Analyst', role: 'employee',
     managerId: MGR_ID,
   });
-  await remember(byManager);
+  await employeeOf(byManager);
   ok('a manager may request an account', Boolean(byManager.id));
   ok('  but it lands awaiting approval, not invited',
     byManager.status === 'Pending Approval', byManager.status);
@@ -333,7 +340,7 @@ try {
   };
 
   const request = await leave.applyForLeave(EMP, {
-    employeeId: EMP_ID, typeCode: ctx.leave_type,
+    employeeId: EMP_ID, typeCode: ctx.leaveType,
     startsOn: day(30), endsOn: day(30), days: 1, reason: 'ZZ probe leave',
   });
   ok('an employee submits their own leave', Boolean(request.id));
@@ -341,7 +348,7 @@ try {
 
   await refused('an employee cannot apply on somebody else’s behalf',
     () => leave.applyForLeave(EMP, {
-      employeeId: MGR_ID, typeCode: ctx.leave_type,
+      employeeId: MGR_ID, typeCode: ctx.leaveType,
       startsOn: day(31), endsOn: day(31), days: 1, reason: 'ZZ nope',
     }), /your own/i);
 
@@ -421,13 +428,13 @@ try {
     name: `ZZ Probe Manager B ${tag}`, email: `zz-hier-mgb-${tag}@360.technology`,
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Manager', role: 'manager',
   });
-  const OTHER_MGR_ID = await remember(otherMgr);
+  const OTHER_MGR_ID = await employeeOf(otherMgr);
   const otherEmp = await users.createUser(ADMIN, {
     name: `ZZ Probe Employee B ${tag}`, email: `zz-hier-emb-${tag}@360.technology`,
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Engineer', role: 'employee',
     managerId: OTHER_MGR_ID,
   });
-  const OTHER_EMP_ID = await remember(otherEmp);
+  const OTHER_EMP_ID = await employeeOf(otherEmp);
   const OTHER = caller('manager', OTHER_MGR_ID);
 
   ok('manager A cannot see manager B’s report',
@@ -436,7 +443,7 @@ try {
     (await buildEmployeeProfile(MGR, OTHER_EMP_ID)) === null);
 
   const foreign = await leave.applyForLeave(caller('employee', OTHER_EMP_ID), {
-    employeeId: OTHER_EMP_ID, typeCode: ctx.leave_type,
+    employeeId: OTHER_EMP_ID, typeCode: ctx.leaveType,
     startsOn: day(40), endsOn: day(40), days: 1, reason: 'ZZ other probe',
   });
   await refused('manager A cannot approve manager B’s report’s leave',
@@ -451,7 +458,7 @@ try {
    * in their own line, so only the explicit check refuses this.
    */
   const ownLeave = await leave.applyForLeave(OTHER, {
-    employeeId: OTHER_MGR_ID, typeCode: ctx.leave_type,
+    employeeId: OTHER_MGR_ID, typeCode: ctx.leaveType,
     startsOn: day(41), endsOn: day(41), days: 1, reason: 'ZZ self',
   });
   await refused('nobody approves their own leave',
@@ -485,38 +492,21 @@ try {
   const profile = await buildEmployeeProfile(ADMIN, EMP_ID);
   ok('the profile names the manager', profile.managerName.includes('Probe Manager'),
     profile.managerName);
+});
 } catch (e) {
+  /*
+   * The safety fallback, kept.
+   *
+   * `withScratchTenant` drops the tenant in its own finally, so the rows are
+   * already gone by the time this runs. It stays because the guarantee worth
+   * having is that a failure is *reported* rather than thrown into the void:
+   * an unhandled rejection at top level tears the process down mid-teardown,
+   * which is how five fixtures were once left in the live tenant.
+   */
   fatal = e;
   failed += 1;
-  console.log(`\n  FAIL  the run stopped: ${e.message}`);
-} finally {
-  /* Exact cleanup: only the ids this run created. */
-  if (made.emps.length) {
-    await admin.query(
-      `DELETE FROM timesheet_entry WHERE timesheet_id IN
-         (SELECT id FROM timesheet WHERE employee_id = ANY($1::uuid[]))`, [made.emps]);
-    await admin.query('DELETE FROM timesheet WHERE employee_id = ANY($1::uuid[])', [made.emps]);
-    await admin.query('DELETE FROM leave_ledger WHERE employee_id = ANY($1::uuid[])', [made.emps]);
-    await admin.query('DELETE FROM leave_request WHERE employee_id = ANY($1::uuid[])', [made.emps]);
-    await admin.query('DELETE FROM leave_balance WHERE employee_id = ANY($1::uuid[])', [made.emps]);
-    /*
-     * Audit rows where a fixture is the *actor*, not only the subject.
-     *
-     * `audit_log` references the employee on a composite (tenant_id,
-     * actor_employee_id) with ON DELETE SET NULL, so removing an employee who
-     * has acted tries to null both columns — and `tenant_id` is NOT NULL. The
-     * delete fails with 23502 and the fixtures strand. Production never meets
-     * this because removing a user there is a status change, not a DELETE.
-     */
-    await admin.query(
-      `DELETE FROM audit_log
-        WHERE subject_id = ANY($1::uuid[]) OR actor_employee_id = ANY($1::uuid[])`,
-      [made.emps]);
-    await admin.query('DELETE FROM audit_log WHERE subject_id = ANY($1::uuid[])', [made.mems]);
-    await admin.query('DELETE FROM tenant_membership WHERE employee_id = ANY($1::uuid[])', [made.emps]);
-    await admin.query('UPDATE employee SET manager_id = NULL WHERE id = ANY($1::uuid[])', [made.emps]);
-    await admin.query('DELETE FROM employee WHERE id = ANY($1::uuid[])', [made.emps]);
-  }
+  console.log(`
+  FAIL  the run stopped: ${e.message}`);
 }
 
 /* ================================================================ *
@@ -532,6 +522,17 @@ ok(`audit rows ${after.a}`, after.a === before.a, `was ${before.a}`);
 ok(`leave requests ${after.l}`, after.l === before.l, `was ${before.l}`);
 ok(`timesheets ${after.t}`, after.t === before.t, `was ${before.t}`);
 ok(`timesheet entries ${after.te}`, after.te === before.te, `was ${before.te}`);
+ok(`tenants ${after.tenants}`, after.tenants === before.tenants,
+  `was ${before.tenants} — a scratch tenant survived the run`);
+
+const leftovers = (await admin.query(
+  "SELECT slug FROM tenant WHERE slug LIKE 'zz-scratch-%'")).rows;
+ok('no scratch tenant remains', leftovers.length === 0,
+  leftovers.map((t) => t.slug).join(', '));
+
+const strays = (await admin.query(
+  "SELECT count(*)::int n FROM employee WHERE full_name LIKE 'ZZ%'")).rows[0].n;
+ok('and no test employee remains anywhere', strays === 0, `${strays} found`);
 
 const adminStill = (await admin.query(
   `SELECT e.code, e.app_role, m.status FROM employee e
@@ -549,7 +550,7 @@ ok('payroll is still paid and locked',
 await admin.end();
 
 if (fatal) {
-  console.log(`\nthe run stopped early, but the fixtures were removed first:\n  ${fatal.stack}`);
+  console.log(`\nthe run stopped early, but its tenant was dropped regardless:\n  ${fatal.stack}`);
 }
 
 console.log(failed
