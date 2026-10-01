@@ -308,18 +308,38 @@ export function exportKPI(scope: ExportRun[] = EXPORT_LOG, asOf = ymd(TODAY)) {
 
   for (let i = 0; i < 34; i++) {
     /*
-     * Weighted towards administrators, because they are the ones with anything
-     * much to take. A register where every role exports equally would misread
-     * the risk it exists to show.
-     */
-    const who = chance(0.7) || !managers.length ? pick(admins) : pick(managers);
-    const allowed = DATASETS.filter((d) => d.roles.includes(who.role));
-    /*
      * Some runs are refusals — a manager reaching for payroll-shaped data. The
      * register is more useful for holding those than for holding only the
      * successes, and a log with no refusals in it has usually been filtered.
+     *
+     * Four of the thirty-four, by position rather than by chance, and decided
+     * before the actor. Both halves of that are deliberate.
+     *
+     * *Before the actor*, because only a manager can be refused: an
+     * administrator may export every dataset, so the old order — pick the
+     * actor, then draw for a refusal — asked for a refusal on an admin row and
+     * silently got a success. The nominal twelve per cent was really twelve
+     * per cent of the manager rows, nearer four, and it rounded to *none* in
+     * about thirty per cent of cases.
+     *
+     * *By position*, because which cases those are moves with the calendar.
+     * Every generator in src/data draws from one stream, several of them loop
+     * up to TODAY, and so the alignment this one sees shifts as dates roll
+     * over. A property the register is checked for cannot be left to that:
+     * `check:exports` asserts the seeded register holds a refusal, and on
+     * 2026-10-01 it held none and the build went red having changed nothing.
+     * Positions make it four every day.
      */
-    const refusal = chance(0.12);
+    const refusal = i % 9 === 4 && managers.length > 0;
+    /*
+     * Otherwise weighted towards administrators, because they are the ones
+     * with anything much to take. A register where every role exports equally
+     * would misread the risk it exists to show.
+     */
+    const who = refusal
+      ? pick(managers)
+      : (chance(0.7) || !managers.length ? pick(admins) : pick(managers));
+    const allowed = DATASETS.filter((d) => d.roles.includes(who.role));
     const d = refusal
       ? pick(DATASETS.filter((x) => !x.roles.includes(who.role))) ?? pick(allowed)
       : pick(allowed);
