@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 import { ACCOUNTS, can, SCOPE, visibleIds } from './rbac';
 import { EMAP } from '../data/employees';
-import { subscribe } from '../services/react';
+import { onQueryFailure, subscribe } from '../services/react';
 import { apiConfigured } from '../services/http';
 import { authConfigured } from '../auth/supabase';
 import type { MeIdentity } from '../services';
@@ -223,6 +223,32 @@ export function AppProvider({ children, initialRole = 'admin' }: { children: Rea
   /* Screens still reading the dataset directly need a nudge when a service
      mutation changes it. Removable once every module is on the service layer. */
   useEffect(() => subscribe(bump), [bump]);
+
+  /*
+   * Say so when a read fails.
+   *
+   * 366 of the 384 query call sites in src/modules destructure only `data`,
+   * with a default of `[]` or `0`. Without this, a 403, a 500 or a dropped
+   * connection renders as a working screen reporting nothing to show, which is
+   * why the demo-id defect survived in production: every sign-in failed and the
+   * app looked merely empty.
+   *
+   * A toast, not a takeover: one failed panel should not remove a page that is
+   * otherwise working. De-duplicated by message, because a screen mounting ten
+   * queries against a server that is down should say one thing, ten times over.
+   */
+  useEffect(() => onQueryFailure(({ message }) => {
+    const id = ++toastSeq;
+    setToasts((ts) => (ts.some((t) => t.msg === message)
+      ? ts
+      : [...ts, { id, msg: message, kind: 'err' as const }]));
+    /*
+     * Longer than the 2.8s a confirmation gets. Something went wrong and the
+     * sentence is worth reading — but it still goes, because a toast that never
+     * leaves becomes furniture, and ten of them stack into a wall.
+     */
+    setTimeout(() => setToasts((ts) => ts.filter((t) => t.id !== id)), 6000);
+  }), []);
 
   /*
    * The demo build's role switcher. It picks a person out of the sample data,

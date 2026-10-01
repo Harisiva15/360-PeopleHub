@@ -21,7 +21,7 @@
  *
  * ## What this holds
  *
- * Three things, and the first is the one that matters.
+ * Four things, and the first is the one that matters.
  *
  * 1. **The seed.** In API mode nothing in `AppProvider` may come from
  *    `ACCOUNTS()`, `EMAP` or any other `src/data` export — not even for one
@@ -36,6 +36,11 @@
  *    value or a body, in the one function every request passes through. The
  *    net, not the fix — but it is what turns "we found all the call sites" into
  *    something a build can check.
+ *
+ * 4. **Audibility.** A failed read is announced rather than swallowed. This is
+ *    here rather than in a file of its own because it is the reason the demo
+ *    ids survived: 366 of 384 query call sites discard `error`, so every one
+ *    of those failing requests rendered as a working, empty screen.
  *
  * Comments are stripped before every assertion. This file names the very
  * identifiers it forbids, and so does the code it reads; a check that matches
@@ -203,6 +208,50 @@ console.log('\nthe guard is wired into the one place every request passes\n');
     client.indexOf('assertNoDemoIds(method') < client.indexOf('await bearerToken()'));
   ok('  and before fetch',
     client.indexOf('assertNoDemoIds(method') < client.indexOf('await fetch('));
+}
+
+
+/*
+ * ---------------------------------------------------------------------------
+ * A failed read is never silent.
+ *
+ * Separate concern from the demo ids above, and it lives here because it is the
+ * reason that one survived in production for so long: 366 of the 384 query call
+ * sites in `src/modules` destructure only `data`, defaulting to `[]` or `0`, so
+ * every failing request rendered as a working screen with nothing to show. Each
+ * sign-in was sending E008 to Postgres, each of those requests failed, and the
+ * only evidence anywhere was in the database log.
+ *
+ * Teaching 366 call sites to render an error state is a design change to 37
+ * modules. Announcing the failure once, from the hook, is not — and it is what
+ * turns an invisible failure into a visible one. These assertions hold that
+ * wiring in place.
+ * ---------------------------------------------------------------------------
+ */
+console.log('\na failed read is announced, not swallowed\n');
+
+{
+  const reactSrc = read('src/services/react.tsx');
+  ok('useQuery announces a failure', /announceFailure\(err\)/.test(reactSrc),
+    'without this, a rejected query is indistinguishable from an empty result');
+  ok('  from the rejection handler, not the success path',
+    /setError\(err\);[\s\S]{0,260}announceFailure\(err\)/.test(reactSrc));
+  ok('  and a signed-out error is not announced',
+    /not signed in/.test(reactSrc),
+    'the auth layer already redirects; a toast per in-flight query on top of '
+    + 'that is noise');
+  ok('onQueryFailure is exported for a listener', /export function onQueryFailure/.test(reactSrc));
+
+  const ctx = read('src/state/AppContext.tsx');
+  ok('AppProvider listens for it', /onQueryFailure\(\(\{ message \}\)/.test(ctx),
+    'the publisher is useless without the subscriber');
+  ok('  shows it as an error toast', /kind: 'err'/.test(ctx));
+  ok('  de-duplicated by message',
+    /ts\.some\(\(t\) => t\.msg === message\)/.test(ctx),
+    'ten queries against a down server must say one thing, not ten');
+  ok('  and the toast is dismissed',
+    /setToasts\(\(ts\) => ts\.filter\(\(t\) => t\.id !== id\)\)/.test(ctx),
+    'a toast that never leaves becomes furniture');
 }
 
 console.log(failed

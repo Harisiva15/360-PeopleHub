@@ -285,6 +285,58 @@ for (const v of views) {
   }
 }
 
+/* ---- invariant 6: a tenant table created after 0010 is actually isolated -- */
+/*
+ * Invariant 1 says every table carries a `tenant_id`. That is the column, not
+ * the policy, and the two are applied by different mechanisms.
+ *
+ * Migration 0010 loops over every `public` table holding a `tenant_id` and
+ * gives each one ENABLE + FORCE ROW LEVEL SECURITY, a `tenant_isolation` policy
+ * with both USING and WITH CHECK, a `current_tenant_id()` default and the
+ * `app_rw` grants. That covers everything existing at the time, and nothing
+ * afterwards — a table added in a later migration has to say
+ * `SELECT apply_tenant_isolation('its_name')` for itself.
+ *
+ * Forgetting that line is silent and total. The table has a `tenant_id`, so
+ * invariant 1 passes; it has `UNIQUE (tenant_id, id)`, so invariant 2 passes;
+ * its foreign keys carry the tenant, so invariant 3 passes. The application
+ * writes the column by hand in most queries, so the rows even look right. What
+ * is missing is the policy, so `app_rw` — which is NOBYPASSRLS precisely so
+ * that the policy is the boundary — reads and writes every tenant's rows in
+ * that one table, and no test that stays inside a single tenant can see it.
+ *
+ * So the line is required rather than remembered. 0010 is the cutoff because
+ * tables at or before it were swept by the loop.
+ */
+const RLS_SWEEP = '0010';
+const isolationCalls = new Set();
+for (const file of files) {
+  /*
+   * Comments stripped first. A commented-out `apply_tenant_isolation` is
+   * precisely the state this invariant exists to catch — somebody disabling the
+   * line while debugging and leaving it — and the first version of this code
+   * counted it as present, so the invariant passed on a table with no policy.
+   * It was caught by deliberately commenting out 0050's call and finding the
+   * check still green, which is the only reason to run that test.
+   */
+  const sql = readFileSync(join(MIGRATIONS, file), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/--.*$/gm, '');
+  for (const m of sql.matchAll(/apply_tenant_isolation\(\s*'([a-z0-9_]+)'/g)) {
+    isolationCalls.add(m[1]);
+  }
+}
+for (const [name, t] of tables) {
+  if (!isScoped(name)) continue;
+  /* Swept by 0010's loop. */
+  if (!t.file || t.file.slice(0, 4) <= RLS_SWEEP) continue;
+  if (!isolationCalls.has(name)) {
+    fail(t.file, `${name} was created after ${RLS_SWEEP} and never calls `
+      + `apply_tenant_isolation('${name}') — it has a tenant_id column but no policy, `
+      + 'so app_rw reads and writes every tenant in it');
+  }
+}
+
 /* ---- report -------------------------------------------------------------- */
 const scoped = [...tables.keys()].filter(isScoped).length;
 console.log(`${files.length} migrations, ${statements} statements, ${tables.size} tables `
