@@ -141,6 +141,47 @@ export function AuthGate({ children }: { children: ReactNode }) {
    */
   if (auth.mfaEnrolmentRequired) return <RequireMfa />;
 
+  /*
+   * And finally: who are you?
+   *
+   * A session proves the browser holds a valid token. It does not say which
+   * employee that token belongs to, and every screen asks for "my" leave, "my"
+   * claims, "my" week the moment it mounts. Until this session's own commit,
+   * `AppProvider` answered that question from the demo dataset while the real
+   * answer was in flight — so for one render `meId` was `E008` and
+   * `me.managerId` was `E001`, and those went out to a Postgres that quite
+   * correctly refused them as malformed uuids, on every sign-in.
+   *
+   * Waiting here is the fix, rather than patching the screens that happened to
+   * query first. There is no provisional identity to leak if nothing renders
+   * until the real one is in hand, and a new screen cannot reintroduce the bug
+   * by being written the obvious way.
+   *
+   * Costs a moment after sign-in. In the demo build `identityReady` is true
+   * from the first render, so this is not in that path at all.
+   */
+  if (!app.identityReady) {
+    if (app.identityError) {
+      return (
+        <div className="login-shell">
+          <div className="stack" style={{ maxWidth: 420, textAlign: 'center', gap: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>We could not tell who you are</div>
+            <div className="muted" style={{ fontSize: 13 }}>{app.identityError}</div>
+            <div className="row gap" style={{ justifyContent: 'center' }}>
+              <button className="btn primary" onClick={app.retryIdentity}>Try again</button>
+              <button className="btn" onClick={() => void auth.signOut()}>Sign out</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="login-shell">
+        <div className="muted" style={{ fontSize: 13 }}>Loading your profile…</div>
+      </div>
+    );
+  }
+
   return <>{children}</>;
 }
 

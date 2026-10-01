@@ -37,8 +37,13 @@ import { mockServices } from '../src/services/mock';
 const ALLOWED: Record<string, string> = {
   /* plumbing */
   'employees.visible': 'called through services/people.ts, which every module shares',
-  'employees.byIds': 'called through services/people.ts to resolve a directory in bulk',
-
+  /*
+   * `employees.byIds` used to sit here, reached only through
+   * `services/people.ts`. `AppContext` now calls it by name to read the
+   * signed-in person's own employee row — which is what makes `app.me` the
+   * server's record rather than a lookup into the demo dataset — and
+   * `src/state` is walked, so the entry went stale and this check said so.
+   */
 };
 
 const files: string[] = [];
