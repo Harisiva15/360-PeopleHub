@@ -480,7 +480,82 @@ console.log('\nnothing here invents leave, a holiday or a capacity\n');
 }
 
 
+/*
+ * The project writes, through the service seam.
+ *
+ * These run against the mock, which is the point: the server's own suite
+ * (`check:projects`) needs a database and CI has none in the job that runs this
+ * file, so without this the validation rules would be proven nowhere that runs
+ * on a push. The mock mirrors the server's rules deliberately — a form refused
+ * in a configured build must be refused in the demo too — so checking one
+ * checks the shape of both.
+ *
+ * It also covers the bug the feature exists for: starting from no projects, a
+ * created project is immediately bookable.
+ */
+console.log('\na project can be created, and the rules are the server\'s\n');
+
+{
+  const { mockServices } = await import('../src/services/mock');
+  const ts = mockServices.timesheet;
+
+  const before = (await ts.projects()).length;
+  ok('the demo starts with projects', before > 0, `${before}`);
+
+  const made = await ts.createProject({ code: 'p-chk', name: 'Check Project' });
+  ok('a project can be created', made.id === 'P-CHK', made.id);
+  ok('  the code is upper-cased', made.id === made.id.toUpperCase(), made.id);
+  ok('  it is open', made.active === true);
+  ok('  with no client it reads as Internal', made.client === 'Internal', made.client);
+  ok('  and it is in the list', (await ts.projects()).some((p) => p.id === 'P-CHK'));
+
+  const refuse = async (label: string, run: () => Promise<unknown>, expect: RegExp) => {
+    let message = '';
+    try { await run(); } catch (e) { message = e instanceof Error ? e.message : String(e); }
+    ok(label, message !== '', 'it was accepted');
+    if (message) ok('  and says why', expect.test(message), message);
+  };
+
+  await refuse('a project needs a code',
+    () => ts.createProject({ name: 'No code' }), /needs a code/i);
+  await refuse('a project needs a name',
+    () => ts.createProject({ code: 'P-Q' }), /needs a name/i);
+  await refuse('a code with a space is refused',
+    () => ts.createProject({ code: 'P Q', name: 'n' }), /2–16 letters/i);
+  await refuse('a one-character code is refused',
+    () => ts.createProject({ code: 'P', name: 'n' }), /2–16 letters/i);
+  await refuse('the same code twice is refused',
+    () => ts.createProject({ code: 'P-CHK', name: 'Again' }), /already a project/i);
+  await refuse('an end before the start is refused',
+    () => ts.createProject({
+      code: 'P-R', name: 'n', startsOn: '2026-06-01', endsOn: '2026-05-31',
+    }), /cannot end before it starts/i);
+  await refuse('a start that is not a date is refused',
+    () => ts.createProject({ code: 'P-R', name: 'n', startsOn: 'soon' }), /is a date/i);
+  await refuse('changing one that does not exist is refused',
+    () => ts.updateProject('P-NOPE', { name: 'x' }), /no such project/i);
+
+  const edited = await ts.updateProject('p-chk', { name: 'Renamed', billable: false });
+  ok('a project can be renamed', edited.name === 'Renamed', edited.name);
+  ok('  matched case-insensitively', edited.id === 'P-CHK', edited.id);
+  ok('  and billing turned off', edited.billable === false);
+
+  const closed = await ts.setProjectStatus('P-CHK', false);
+  ok('a project can be closed', closed.active === false);
+  ok('  a closed project leaves the bookable list',
+    !(await ts.projects()).filter((p) => p.active).some((p) => p.id === 'P-CHK'));
+  ok('  and stays in the full list, so old entries resolve',
+    (await ts.projects()).some((p) => p.id === 'P-CHK'),
+    'a closed project must still name the hours booked against it');
+  ok('it can be reopened', (await ts.setProjectStatus('P-CHK', true)).active === true);
+
+  /* Put the demo dataset back as it was found. */
+  PROJECTS.splice(PROJECTS.findIndex((p) => p.id === 'P-CHK'), 1);
+  ok('the check left the demo project list as it found it',
+    (await ts.projects()).length === before, `${(await ts.projects()).length} vs ${before}`);
+}
+
 console.log(failed
   ? `\n${failed} failed\n`
-  : '\nprojects are real, and the team views are not offered to an employee\n');
+  : '\nprojects are real and manageable, and the team views are not offered to an employee\n');
 process.exit(failed ? 1 : 0);

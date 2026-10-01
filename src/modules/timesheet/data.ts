@@ -9,7 +9,7 @@
  */
 
 import { useMutation, useQuery } from '../../services/react';
-import type { EntryDraft, TSStatus } from '../../services';
+import type { EntryDraft, TimesheetProjectDraft, TSStatus } from '../../services';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
@@ -78,6 +78,18 @@ export const useCopyPreviousWeek = () =>
 
 export const useSubmitSheet = () => useMutation((s, id: string) => s.timesheet.submit(id));
 export const useRecallSheet = () => useMutation((s, id: string) => s.timesheet.recall(id));
+
+/*
+ * Shaping the project list. Admin only on the server; the screen hides the
+ * controls from everyone else, which is convenience, not the enforcement.
+ */
+export const useCreateProject = () =>
+  useMutation((s, draft: TimesheetProjectDraft) => s.timesheet.createProject(draft));
+export const useUpdateProject = () =>
+  useMutation((s, code: string, draft: TimesheetProjectDraft) =>
+    s.timesheet.updateProject(code, draft));
+export const useSetProjectStatus = () =>
+  useMutation((s, code: string, active: boolean) => s.timesheet.setProjectStatus(code, active));
 
 /** Approve, return for correction, or refuse. The approver is the session. */
 export const useDecideSheet = () =>

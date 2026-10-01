@@ -354,6 +354,11 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
 
     timesheet: {
       projects: () => api.get('/projects'),
+      createProject: (draft) => api.post('/projects', draft),
+      updateProject: (code, draft) =>
+        api.put(`/projects/${encodeURIComponent(code)}`, draft),
+      setProjectStatus: (code, active) =>
+        api.put(`/projects/${encodeURIComponent(code)}/status`, { active }),
       list: (q) => api.get(`/timesheets${qs({
         empIds: q.empIds?.join(','), weekStart: q.weekStart, since: q.since, status: q.status,
       })}`),

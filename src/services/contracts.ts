@@ -274,8 +274,13 @@ export interface EntryDraft {
 /**
  * A project work can be booked against.
  *
- * Keyed by code, because that is what an entry carries. Read-only here:
- * creating a project is delivery administration, not timekeeping.
+ * Keyed by code, because that is what an entry carries.
+ *
+ * This used to be read-only, on the reasoning that creating a project is
+ * delivery administration rather than timekeeping. True, and it left the only
+ * project source as the demo seed — so a production tenant had none, and
+ * `addEntry` refused every line with "choose a project". The writes below are
+ * admin-only, which keeps the distinction without making the module unusable.
  */
 export interface TimesheetProject {
   id: string;
@@ -288,6 +293,22 @@ export interface TimesheetProject {
   endsOn: string | null;
 }
 
+/**
+ * What the project editor sends.
+ *
+ * `client` is a client *code*, not a name: a code is what the Clients screen
+ * shows, and the server resolves it, so a typo is refused rather than quietly
+ * stored as no client at all. Empty or null means the project is internal.
+ */
+export interface TimesheetProjectDraft {
+  code?: string;
+  name?: string;
+  client?: string | null;
+  billable?: boolean;
+  startsOn?: string | null;
+  endsOn?: string | null;
+}
+
 export interface TimesheetService {
   list(q: TimesheetQuery): Promise<Timesheet[]>;
   /**
@@ -295,6 +316,21 @@ export interface TimesheetService {
    * name. Pickers offer the active ones — the same rule the server applies.
    */
   projects(): Promise<TimesheetProject[]>;
+  /** Admin only. The code is normalised to upper case. */
+  createProject(draft: TimesheetProjectDraft): Promise<TimesheetProject>;
+  /**
+   * Admin only. Every field in the draft is written, not merged — the editor
+   * sends the whole form. The code is the key and cannot be changed.
+   */
+  updateProject(code: string, draft: TimesheetProjectDraft): Promise<TimesheetProject>;
+  /**
+   * Open or close a project. Admin only.
+   *
+   * Closing is how a project ends; there is no delete. Booked hours reference
+   * the project, and `active` is what both the server and every picker filter
+   * on, so a closed project takes no new time and still names old entries.
+   */
+  setProjectStatus(code: string, active: boolean): Promise<TimesheetProject>;
   /**
    * The sheet for one person's week, created as an empty draft if they have
    * not started it. Creation belongs here rather than in the editor, which

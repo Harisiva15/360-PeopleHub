@@ -26,6 +26,51 @@ const nextId = () => `TSE-${seq += 1}`;
 const find = (id: string): Timesheet | undefined => TS.find((t) => t.id === id);
 const missing = (id: string) => Promise.reject(new Error('No such timesheet: ' + id));
 
+/** A refusal, in the shape every one of these methods returns. */
+const fail = (message: string): Promise<never> => Promise.reject(new Error(message));
+
+/**
+ * The three project fields the demo array has no column for.
+ *
+ * `src/data/org.ts` holds a project's code, name, client, billable flag and
+ * colour — the shape every other demo screen reads. Rather than widen that for
+ * the sake of this service, `active` and the two dates live here, keyed by
+ * code. An absent entry means an open project with no dates, which is what all
+ * eight seeded ones are.
+ */
+const STATE = new Map<string, {
+  active: boolean;
+  startsOn: string | null;
+  endsOn: string | null;
+}>();
+
+type DemoProject = { id: string; name: string; client: string; billable: boolean };
+
+const asProject = (p: DemoProject) => {
+  const s = STATE.get(p.id);
+  return {
+    id: p.id,
+    name: p.name,
+    client: p.client,
+    billable: p.billable,
+    active: s?.active ?? true,
+    startsOn: s?.startsOn ?? null,
+    endsOn: s?.endsOn ?? null,
+  };
+};
+
+/** The server's date rules, so a form refused there is refused here too. */
+const badDates = (d: { startsOn?: string | null; endsOn?: string | null }): string | null => {
+  const pairs = [[d.startsOn, 'a start'], [d.endsOn, 'an end']] as const;
+  for (const [v, which] of pairs) {
+    if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return `${which} is a date, as 2026-04-01`;
+  }
+  if (d.startsOn && d.endsOn && d.endsOn < d.startsOn) {
+    return 'a project cannot end before it starts';
+  }
+  return null;
+};
+
 /** Totals are recomputed from the entries after every write. */
 function recalc(t: Timesheet): Timesheet {
   Object.assign(t, totalsOf(t.entries));
@@ -87,15 +132,74 @@ export const timesheetService: TimesheetService = {
    * the two lists drift.
    */
   projects() {
-    return ok(PROJECTS.map((p) => ({
-      id: p.id,
-      name: p.name,
-      client: p.client,
-      billable: p.billable,
+    return ok(PROJECTS.map(asProject));
+  },
+
+  /*
+   * The demo's projects are editable too, so the Projects screen is the same
+   * screen in both builds rather than one that only works when configured.
+   *
+   * `PROJECTS` carries name, client and billable; `STATE` carries the three
+   * fields the demo array has no column for. Keeping them apart means the demo
+   * dataset stays the shape every other screen reads it as.
+   */
+  createProject(draft) {
+    const code = (draft.code ?? '').trim().toUpperCase();
+    if (!code) return fail('a project needs a code');
+    if (!/^[A-Z0-9][A-Z0-9-]{1,15}$/.test(code)) {
+      return fail('a code is 2–16 letters, digits or hyphens, such as P-ATLAS');
+    }
+    if (!draft.name?.trim()) return fail('a project needs a name');
+    if (PROJECTS.some((p) => p.id === code)) return fail(`${code} is already a project`);
+    const bad = badDates(draft);
+    if (bad) return fail(bad);
+
+    PROJECTS.push({
+      id: code,
+      name: draft.name.trim(),
+      client: draft.client?.trim() || 'Internal',
+      billable: draft.billable ?? true,
+      /* The palette the seeded eight use, continued rather than restarted. */
+      color: `var(--s${(PROJECTS.length % 8) + 1})`,
+    });
+    STATE.set(code, {
       active: true,
-      startsOn: null,
-      endsOn: null,
-    })));
+      startsOn: draft.startsOn || null,
+      endsOn: draft.endsOn || null,
+    });
+    return ok(asProject(PROJECTS[PROJECTS.length - 1]!));
+  },
+
+  updateProject(code, draft) {
+    const key = code.trim().toUpperCase();
+    const p = PROJECTS.find((x) => x.id === key);
+    if (!p) return fail('no such project');
+    if (!draft.name?.trim()) return fail('a project needs a name');
+    const bad = badDates(draft);
+    if (bad) return fail(bad);
+
+    p.name = draft.name.trim();
+    p.client = draft.client?.trim() || 'Internal';
+    p.billable = draft.billable ?? true;
+    STATE.set(key, {
+      active: STATE.get(key)?.active ?? true,
+      startsOn: draft.startsOn || null,
+      endsOn: draft.endsOn || null,
+    });
+    return ok(asProject(p));
+  },
+
+  setProjectStatus(code, active) {
+    const key = code.trim().toUpperCase();
+    const p = PROJECTS.find((x) => x.id === key);
+    if (!p) return fail('no such project');
+    const was = STATE.get(key);
+    STATE.set(key, {
+      active,
+      startsOn: was?.startsOn ?? null,
+      endsOn: was?.endsOn ?? null,
+    });
+    return ok(asProject(p));
   },
 
   list(q) {

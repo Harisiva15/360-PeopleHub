@@ -25,15 +25,25 @@
 
 import { useMemo, useState } from 'react';
 import { addDays, fmtD, mondayOf, parseYmd, TODAY, ymd } from '../../lib/dates';
-import { Badge, Card, PersonCell, StatRow, Table, TableWrap, Tile } from '../../components/ui';
+import {
+  Badge, Banner, Card, PersonCell, StatRow, Table, TableWrap, Tile,
+} from '../../components/ui';
 import { StatusBadge } from '../../components/common';
+import { Icon } from '../../components/icons';
+import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import type { Timesheet, TSStatus } from '../../services';
-import { useBookableProjects, useSheets, useVisiblePeople } from './data';
+import type { Timesheet, TimesheetProject, TSStatus } from '../../services';
+import {
+  useBookableProjects, useCreateProject, useSetProjectStatus, useSheets,
+  useUpdateProject, useVisiblePeople,
+} from './data';
 import type { Directory } from './data';
 import { CalendarSkeleton, CardSkeleton, Loaded, Nothing, TableSkeleton } from './States';
 
 const hrs = (n: number) => n.toFixed(2);
+
+/** A server message if there is one, a plain sentence if there is not. */
+const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
 const STATUSES: TSStatus[] = ['Draft', 'Submitted', 'Approved', 'Returned', 'Rejected'];
 
@@ -345,21 +355,215 @@ export function TimeEntries({ scope, onOpenWeek }: {
  * ------------------------------------------------------------------ */
 
 /**
+ * Add or change a project.
+ *
+ * One form for both, because the fields are the same and the only difference is
+ * whether the code may still be chosen. On an edit it cannot: the code is what
+ * every booked entry names, and renaming it would leave those entries pointing
+ * at something that no longer answers to that name.
+ *
+ * `client` is a client *code*, and the server refuses one that names no client
+ * rather than quietly storing no client at all — so a typo here is an error
+ * message, not a project that silently became Internal.
+ */
+function ProjectForm({ existing, close, done }: {
+  existing: TimesheetProject | null;
+  close: () => void;
+  done: () => void;
+}) {
+  const app = useApp();
+  const create = useCreateProject();
+  const update = useUpdateProject();
+
+  const [code, setCode] = useState(existing?.id ?? '');
+  const [name, setName] = useState(existing?.name ?? '');
+  /* 'Internal' is what the server renders for no client, not a code to send back. */
+  const [client, setClient] = useState(
+    existing && existing.client !== 'Internal' ? existing.client : '');
+  const [billable, setBillable] = useState(existing?.billable ?? true);
+  const [startsOn, setStartsOn] = useState(existing?.startsOn ?? '');
+  const [endsOn, setEndsOn] = useState(existing?.endsOn ?? '');
+  const [err, setErr] = useState('');
+
+  const pending = create.pending || update.pending;
+
+  const save = async () => {
+    setErr('');
+    const draft = {
+      name: name.trim(),
+      client: client.trim() || null,
+      billable,
+      startsOn: startsOn || null,
+      endsOn: endsOn || null,
+    };
+    try {
+      if (existing) {
+        await update.mutate(existing.id, draft);
+        app.toast(`${name.trim()} saved`, 'ok');
+      } else {
+        await create.mutate({ ...draft, code: code.trim().toUpperCase() });
+        app.toast(`${code.trim().toUpperCase()} created`, 'ok');
+      }
+      close();
+      done();
+    } catch (e) {
+      setErr(msg(e, existing ? 'Could not save the project' : 'Could not create the project'));
+    }
+  };
+
+  return (
+    <div className="stack">
+      {err && (
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Not saved">{err}</Banner>
+      )}
+
+      <div className="field">
+        <label htmlFor="proj-code">Code <span className="req">*</span></label>
+        <input id="proj-code" className="input mono" value={code} disabled={Boolean(existing)}
+          placeholder="P-ATLAS" onChange={(e) => setCode(e.target.value.toUpperCase())} />
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          {existing
+            ? 'The code cannot change — booked entries refer to the project by it.'
+            : 'Two to sixteen letters, digits or hyphens. This is what people pick '
+              + 'when they book time, so keep it short and recognisable.'}
+        </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="proj-name">Name <span className="req">*</span></label>
+        <input id="proj-name" className="input" value={name}
+          placeholder="Atlas Core Platform" onChange={(e) => setName(e.target.value)} />
+      </div>
+
+      <div className="field">
+        <label htmlFor="proj-client">Client code</label>
+        <input id="proj-client" className="input mono" value={client}
+          placeholder="Leave empty for internal work"
+          onChange={(e) => setClient(e.target.value)} />
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          A code from the Clients screen. Empty means internal, which is what
+          “Internal” in the list means.
+        </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="proj-billable">Billing</label>
+        <select id="proj-billable" className="input" value={billable ? 'yes' : 'no'}
+          onChange={(e) => setBillable(e.target.value === 'yes')}>
+          <option value="yes">Billable</option>
+          <option value="no">Internal — not billable</option>
+        </select>
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          This sets the default on each line booked against the project. Somebody
+          entering time can still mark an individual line differently.
+        </div>
+      </div>
+
+      <div className="row gap wrap">
+        <div className="field" style={{ flex: '1 1 160px' }}>
+          <label htmlFor="proj-from">Starts on</label>
+          <input id="proj-from" className="input" type="date" value={startsOn}
+            onChange={(e) => setStartsOn(e.target.value)} />
+        </div>
+        <div className="field" style={{ flex: '1 1 160px' }}>
+          <label htmlFor="proj-to">Ends on</label>
+          <input id="proj-to" className="input" type="date" value={endsOn}
+            onChange={(e) => setEndsOn(e.target.value)} />
+        </div>
+      </div>
+      <div className="muted" style={{ fontSize: 11.5 }}>
+        Both are optional and neither restricts booking — they are there to say
+        when the engagement runs. Closing the project is what stops new time.
+      </div>
+
+      <div className="row end gap">
+        <button className="btn" onClick={close} disabled={pending}>Cancel</button>
+        <button className="btn primary" onClick={() => void save()}
+          disabled={pending || !name.trim() || (!existing && !code.trim())}>
+          {pending ? 'Saving…' : existing ? 'Save project' : 'Create project'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The projects time can be booked against.
  *
- * Read-only, because nothing in this product creates a project — the table is
- * populated by the seed and `GET /projects` is the only thing that reads it
- * out. Saying so is better than a disabled Add button implying otherwise.
+ * An administrator maintains this list here. It used to be read-only, on the
+ * reasoning that creating a project is delivery administration rather than
+ * timekeeping — which was true, and meant the only thing that ever created one
+ * was the demo seed. A production tenant therefore had none, every line was
+ * refused with "choose a project", and the whole module was unusable with no way
+ * to fix it from inside the product.
  *
- * Every project currently reports its client as "Internal" because
- * `project.client_id` is null on every row. That is the truthful fallback the
- * service applies, not a placeholder this screen invented.
+ * The controls are hidden from anyone who is not an admin. That is convenience:
+ * the server refuses the write regardless of what this screen shows.
+ *
+ * A project is closed, never deleted. Booked hours point at it, so removing one
+ * would either fail on the reference or take the hours with it; `active = false`
+ * stops new bookings and leaves old entries resolving to a name.
  */
 export function TimesheetProjects() {
+  const app = useApp();
+  const layer = useLayer();
   const proj = useBookableProjects();
   const dir = useVisiblePeople();
   const q = useSheets(dir.ids, { since: windowStart() });
   const sheets = q.data ?? [];
+  const mayShape = app.role === 'admin';
+  const status = useSetProjectStatus();
+
+  const edit = (existing: TimesheetProject | null) => layer.modal({
+    title: existing ? `Edit ${existing.id}` : 'New project',
+    sub: existing ? existing.name : 'Something time can be booked against',
+    body: (close) => (
+      <ProjectForm existing={existing} close={close} done={() => void proj.refetch()} />
+    ),
+    footer: null,
+  });
+
+  /* Closing asks first: it takes the project out of every picker at once. */
+  const setOpenState = (p: TimesheetProject) => {
+    if (p.active) {
+      layer.modal({
+        title: `Close ${p.id}?`,
+        sub: p.name,
+        body: () => (
+          <div className="stack">
+            <Banner kind="info" icon={<Icon n="info" size="lg" />}>
+              No new time can be booked against a closed project. Hours already
+              booked are untouched and the project keeps appearing on them.
+            </Banner>
+            <p className="muted" style={{ fontSize: 12.5 }}>
+              You can reopen it here at any time.
+            </p>
+          </div>
+        ),
+        footer: (close) => (
+          <>
+            <button className="btn" onClick={close}>Cancel</button>
+            <button className="btn primary" onClick={async () => {
+              try {
+                await status.mutate(p.id, false);
+                app.toast(`${p.id} closed`, 'ok');
+                void proj.refetch();
+              } catch (e) { app.toast(msg(e, 'Could not close the project'), 'err'); }
+              close();
+            }}>Close project</button>
+          </>
+        ),
+      });
+      return;
+    }
+    void (async () => {
+      try {
+        await status.mutate(p.id, true);
+        app.toast(`${p.id} reopened`, 'ok');
+        void proj.refetch();
+      } catch (e) { app.toast(msg(e, 'Could not reopen the project'), 'err'); }
+    })();
+  };
 
   const [text, setText] = useState('');
   const [open, setOpen] = useState<'' | 'open' | 'closed'>('');
@@ -390,23 +594,28 @@ export function TimesheetProjects() {
         sub={`${proj.all.length} · ${proj.list.length} open for booking`}
         flush
         actions={
-          <Filters active={active} onClear={clear}>
-            <input className="input sm" placeholder="Search name, code or client"
-              aria-label="Search" style={{ width: 200 }}
-              value={text} onChange={(e) => setText(e.target.value)} />
-            <select className="input sm" aria-label="Status" value={open}
-              onChange={(e) => setOpen(e.target.value as '' | 'open' | 'closed')}>
-              <option value="">Any status</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-            </select>
-            <select className="input sm" aria-label="Billing" value={billing}
-              onChange={(e) => setBilling(e.target.value as '' | 'yes' | 'no')}>
-              <option value="">Billable or not</option>
-              <option value="yes">Billable</option>
-              <option value="no">Internal</option>
-            </select>
-          </Filters>
+          <>
+            <Filters active={active} onClear={clear}>
+              <input className="input sm" placeholder="Search name, code or client"
+                aria-label="Search" style={{ width: 200 }}
+                value={text} onChange={(e) => setText(e.target.value)} />
+              <select className="input sm" aria-label="Status" value={open}
+                onChange={(e) => setOpen(e.target.value as '' | 'open' | 'closed')}>
+                <option value="">Any status</option>
+                <option value="open">Open</option>
+                <option value="closed">Closed</option>
+              </select>
+              <select className="input sm" aria-label="Billing" value={billing}
+                onChange={(e) => setBilling(e.target.value as '' | 'yes' | 'no')}>
+                <option value="">Billable or not</option>
+                <option value="yes">Billable</option>
+                <option value="no">Internal</option>
+              </select>
+            </Filters>
+            {mayShape && (
+              <button className="btn primary sm" onClick={() => edit(null)}>New project</button>
+            )}
+          </>
         }>
         <Loaded
           q={proj}
@@ -415,11 +624,18 @@ export function TimesheetProjects() {
           empty={shown.length === 0}
           emptyState={
             <Nothing
-              msg={proj.all.length === 0 ? 'No projects available.' : 'No projects match these filters.'}
+              msg={proj.all.length === 0 ? 'No projects yet.' : 'No projects match these filters.'}
               sub={proj.all.length === 0
-                ? 'Time cannot be booked until a project exists. Projects are maintained outside this module.'
+                ? (mayShape
+                  ? 'Time cannot be booked until a project exists. Create the first one.'
+                  : 'Time cannot be booked until a project exists. Ask an administrator '
+                    + 'to add one.')
                 : undefined}
-              {...(active ? { action: { label: 'Clear filters', onClick: clear } } : {})}
+              {...(active
+                ? { action: { label: 'Clear filters', onClick: clear } }
+                : proj.all.length === 0 && mayShape
+                  ? { action: { label: 'New project', onClick: () => edit(null) } }
+                  : {})}
             />
           }>
           <TableWrap>
@@ -428,6 +644,7 @@ export function TimesheetProjects() {
                 <tr>
                   <th>Project</th><th>Code</th><th>Client</th><th>Billing</th>
                   <th>Runs</th><th className="num">Hours booked</th><th>Status</th>
+                  {mayShape && <th aria-label="Actions" />}
                 </tr>
               </thead>
               <tbody>
@@ -448,6 +665,15 @@ export function TimesheetProjects() {
                     </td>
                     <td className="num">{booked.get(p.id) ? hrs(booked.get(p.id)!) : '—'}</td>
                     <td>{p.active ? 'Open' : <Badge kind="warn">Closed</Badge>}</td>
+                    {mayShape && (
+                      <td className="nowrap">
+                        <button className="btn sm ghost" onClick={() => edit(p)}>Edit</button>
+                        <button className="btn sm ghost" disabled={status.pending}
+                          onClick={() => setOpenState(p)}>
+                          {p.active ? 'Close' : 'Reopen'}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -459,6 +685,8 @@ export function TimesheetProjects() {
         Hours booked counts only the weeks you may see, over the last {WINDOW} weeks.
         Assigned team is not shown: the project record holds no membership, and the
         only people it could be inferred from are those who happen to have booked time.
+        {mayShape && ' A project is closed rather than deleted, because booked hours'
+          + ' refer to it.'}
       </div>
     </div>
   );

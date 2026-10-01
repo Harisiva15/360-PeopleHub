@@ -34,7 +34,10 @@ import {
   salaryHistory, saveComponent, setSalaryStructure,
 } from '../modules/payroll/compensation.ts';
 import { AdminApiError } from '../auth/adminApi.ts';
-import { listProjects } from '../modules/projects/service.ts';
+import {
+  createProject, listProjects, ProjectError, setProjectStatus, updateProject,
+} from '../modules/projects/service.ts';
+import type { ProjectDraft } from '../modules/projects/service.ts';
 import {
   approveJoiner, JoinerError, listJoiners, rejectJoiner, requestJoiner,
 } from '../modules/joiners/service.ts';
@@ -966,8 +969,30 @@ const routes: Route[] = [
    * Projects, so a timesheet can offer one the server will accept. Mapped to
    * the timesheet module rather than a module of its own: it exists for the
    * screens that book time, and an employee filling in their own week needs it.
+   *
+   * The writes share that module for the same reason — they are the same table
+   * — and are admin-only inside the service, because the `timesheet` rule lets
+   * an employee write their own sheet and that must not extend to deciding
+   * which projects exist. A closed project is `active = false`, never a delete:
+   * booked hours still point at it.
    */
   { method: 'GET', pattern: '/projects', handler: (c) => listProjects(c) },
+  {
+    method: 'POST',
+    pattern: '/projects',
+    handler: (c, _r, _p, body) => createProject(c, (body ?? {}) as ProjectDraft),
+  },
+  {
+    method: 'PUT',
+    pattern: '/projects/:code',
+    handler: (c, _r, p, body) => updateProject(c, p.code!, (body ?? {}) as ProjectDraft),
+  },
+  {
+    method: 'PUT',
+    pattern: '/projects/:code/status',
+    handler: (c, _r, p, body) =>
+      setProjectStatus(c, p.code!, (body as { active?: boolean } | null)?.active ?? false),
+  },
 
   {
     /*
@@ -2215,6 +2240,12 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof JoinerError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404
+        : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof ProjectError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
