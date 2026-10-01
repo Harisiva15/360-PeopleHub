@@ -24,6 +24,61 @@
  * when they cannot find something, so a plausible entry that goes nowhere is
  * worse than an absent one — they stop trusting the menu. Views the product
  * does not have yet are simply not listed.
+ *
+ * ## The information architecture
+ *
+ * Fourteen groups, ordered by how often somebody opens them rather than by how
+ * the system is built. Each one has a single audience, which is what decides
+ * where a new view belongs:
+ *
+ * | Group             | Key           | Audience        | Holds                          |
+ * |-------------------|---------------|-----------------|--------------------------------|
+ * | Dashboard         | dashboard     | everyone        | the landing view               |
+ * | People            | employees     | everyone        | records, org, lifecycle, docs  |
+ * | Time & attendance | attendance    | everyone        | presence, leave, roster        |
+ * | Timesheet         | timesheet     | everyone        | booked effort and its approval |
+ * | Compensation      | payroll       | everyone        | pay, tax, benefits, claims     |
+ * | Assets            | assets        | everyone        | hardware and software issued   |
+ * | Performance       | performance   | everyone        | goals, reviews, growth         |
+ * | Work              | planner       | everyone        | the planner board              |
+ * | Recruitment       | recruitment   | **admin only**  | client-facing staffing         |
+ * | Internal hiring   | hiring        | manager + admin | hiring for ourselves           |
+ * | Engagement        | engagement    | everyone        | surveys, recognition, notices  |
+ * | Company           | helpdesk      | everyone        | support and company info       |
+ * | Reports           | reports       | manager + admin | reporting and exports          |
+ * | Administration    | settings      | **admin only**  | configuration and security     |
+ *
+ * ### Recruitment and Internal hiring stay separate
+ *
+ * They look like duplicates — both have requisitions, candidates, interviews,
+ * offers and reports — and merging them would be wrong. Their audiences differ:
+ * Recruitment is `roles: ['admin']` and holds client and vendor data, Internal
+ * hiring is `roles: ['manager', 'admin']` so a line manager can hire into their
+ * own team. One group cannot have two audiences, because `Shell` gates a whole
+ * group on `can(g.k)` — so a merge would either take internal hiring away from
+ * managers or hand them the client book. Both are authorisation changes
+ * disguised as a tidy-up.
+ *
+ * What was actually wrong was the labelling: six labels appeared twice in a rail
+ * that shows both groups at once, so the sidebar could not say which was which.
+ * The client side is now prefixed *Client*, the internal side *Internal* or
+ * named for what it is (Applicants, Interview panels, Hiring tracker). The tab
+ * labels *inside* each screen are unchanged — once you are in Recruitment there
+ * is nothing to disambiguate against.
+ *
+ * ### Two entries can share a screen
+ *
+ * `bench` and `placements` both load `staffing/bench`, and `Give recognition`
+ * and `Recognition wall` are different tabs of different modules. An entry is a
+ * route plus a tab, not a file, so this is a property of the map rather than a
+ * fault in it.
+ *
+ * ### Nothing here is a permission
+ *
+ * `can(role, k)` reads `PERMS` and `LIVE_MODULES` in `state/rbac.ts`. Moving an
+ * item between groups, renaming it, or reordering the rail cannot widen or
+ * narrow access, and this file must never become the place where that is
+ * decided.
  */
 
 import type { IconName } from './components/icons';
@@ -164,7 +219,7 @@ export const NAV: NavGroup[] = [
     items: [
       { k: 'performance', n: 'My goals', to: '/performance?v=goals', ic: 'target', d: 'What you are working towards.' },
       { k: 'performance', n: 'Performance reviews', to: '/performance?v=review', ic: 'note', d: 'Write and read review cycles.' },
-      { k: 'performance', n: 'Recognition', to: '/performance?v=praise', ic: 'trophy', d: 'Praise colleagues, and read yours.' },
+      { k: 'performance', n: 'Give recognition', to: '/performance?v=praise', ic: 'trophy', d: 'Praise colleagues, and read yours.' },
       { k: 'performance', n: 'Team goals', to: '/performance?v=team', ic: 'team', d: 'Where your line stands.', roles: ['manager', 'admin'] },
       { k: 'performance', n: 'Calibration', to: '/performance?v=calib', ic: 'chart', d: 'Compare ratings across the team.', roles: ['manager', 'admin'] },
       { k: 'performance', n: 'Review cycle', to: '/performance?v=cycle', ic: 'schedule', d: 'Where the current cycle has got to.' },
@@ -195,12 +250,12 @@ export const NAV: NavGroup[] = [
     roles: ['admin'],
     items: [
       { k: 'recruitment', n: 'Recruitment dashboard', to: '/recruitment?v=dash', ic: 'chart', d: 'Open demand, the funnel and what is late.' },
-      { k: 'recruitment', n: 'Job requisitions', to: '/recruitment?v=reqs', ic: 'goal', d: 'Every order, its SLA and its desk.' },
+      { k: 'recruitment', n: 'Client job orders', to: '/recruitment?v=reqs', ic: 'goal', d: 'Every order, its SLA and its desk.' },
       { k: 'recruitment', n: 'My assigned jobs', to: '/recruitment?v=mine', ic: 'person', d: 'The orders on your desk.' },
-      { k: 'recruitment', n: 'Candidates', to: '/recruitment?v=cands', ic: 'people', d: 'People you can put forward.' },
+      { k: 'recruitment', n: 'Client candidates', to: '/recruitment?v=cands', ic: 'people', d: 'People you can put forward.' },
       { k: 'recruitment', n: 'Candidate submissions', to: '/recruitment?v=subs', ic: 'submission', d: 'Profiles with the client.' },
-      { k: 'recruitment', n: 'Interviews', to: '/recruitment?v=ivs', ic: 'schedule', d: 'Booked, done and awaiting feedback.' },
-      { k: 'recruitment', n: 'Offers', to: '/recruitment?v=offers', ic: 'mail', d: 'Released, accepted and declined.' },
+      { k: 'recruitment', n: 'Client interviews', to: '/recruitment?v=ivs', ic: 'schedule', d: 'Booked, done and awaiting feedback.' },
+      { k: 'recruitment', n: 'Client offers', to: '/recruitment?v=offers', ic: 'mail', d: 'Released, accepted and declined.' },
       { k: 'placements', n: 'Placements', ic: 'done', d: 'Consultants on assignment.' },
       { k: 'recruitment', n: 'Recruiter activity', to: '/recruitment?v=activity', ic: 'timer', d: 'What each desk has produced.' },
       { k: 'recruitment', n: 'Talent pool', to: '/recruitment?v=pool', ic: 'star', d: 'People worth going back to.' },
@@ -209,7 +264,7 @@ export const NAV: NavGroup[] = [
       { k: 'bench', n: 'Bench & consultants', ic: 'briefcase', d: 'Who is available, and for how long.' },
       { k: 'billing', n: 'Billing & AR', ic: 'invoice', d: 'Invoices raised and money owed.' },
       { k: 'vendors', n: 'Vendors', ic: 'building', d: 'Supplier panel and their performance.' },
-      { k: 'requirements', n: 'Requirements (legacy)', ic: 'document', d: 'The earlier requirements view.' },
+      { k: 'requirements', n: 'Requirements (legacy)', ic: 'document', d: 'Superseded by Client job orders — kept so older requirements stay readable.' },
     ],
   },
 
@@ -220,12 +275,12 @@ export const NAV: NavGroup[] = [
     desc: 'Filling our own roles, rather than a client’s.',
     roles: ['manager', 'admin'],
     items: [
-      { k: 'hiring', n: 'Job requisitions', to: '/hiring?v=reqs', ic: 'goal', d: 'Roles we are hiring for ourselves.' },
-      { k: 'hiring', n: 'Candidates', to: '/hiring?v=cands', ic: 'people', d: 'Applicants and where they are.' },
+      { k: 'hiring', n: 'Internal requisitions', to: '/hiring?v=reqs', ic: 'goal', d: 'Roles we are hiring for ourselves.' },
+      { k: 'hiring', n: 'Applicants', to: '/hiring?v=cands', ic: 'people', d: 'Applicants and where they are.' },
       { k: 'hiring', n: 'Pipeline board', to: '/hiring?v=pipe', ic: 'grid', d: 'The funnel, stage by stage.' },
-      { k: 'hiring', n: 'Interviews', to: '/hiring?v=ivs', ic: 'schedule', d: 'Panels, slots and feedback.' },
-      { k: 'hiring', n: 'Offers', to: '/hiring?v=offers', ic: 'mail', d: 'Offers out and their outcomes.' },
-      { k: 'hiring', n: 'Hiring reports', to: '/hiring?v=track', ic: 'reports', d: 'Time to hire and source quality.' },
+      { k: 'hiring', n: 'Interview panels', to: '/hiring?v=ivs', ic: 'schedule', d: 'Panels, slots and feedback.' },
+      { k: 'hiring', n: 'Internal offers', to: '/hiring?v=offers', ic: 'mail', d: 'Offers out and their outcomes.' },
+      { k: 'hiring', n: 'Hiring tracker', to: '/hiring?v=track', ic: 'reports', d: 'Time to hire and source quality.' },
     ],
   },
 
@@ -241,7 +296,7 @@ export const NAV: NavGroup[] = [
       { k: 'announcements', n: 'Announcements', ic: 'announcements', d: 'What the company is telling everyone.' },
       { k: 'engagement', n: 'Engagement overview', to: '/engagement?v=results', ic: 'chart', d: 'How the last survey landed.' },
       { k: 'engagement', n: 'Surveys & polls', to: '/engagement?v=open', ic: 'vote', d: 'Open questions waiting on you.' },
-      { k: 'engagement', n: 'Recognition', to: '/engagement?v=recog', ic: 'applause', d: 'Who has been thanked lately.' },
+      { k: 'engagement', n: 'Recognition wall', to: '/engagement?v=recog', ic: 'applause', d: 'Who has been thanked lately.' },
     ],
   },
 
