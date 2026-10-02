@@ -100,3 +100,70 @@ jobs:
         env:
           DATABASE_URL: postgresql://app_rw:ci@localhost:5432/peoplehub
         run: npm run verify:isolation
+
+      # The behavioural suites, against a real database.
+      #
+      # All eleven. They existed and ran nowhere: each skips itself when
+      # DATABASE_URL and MIGRATE_DATABASE_URL are unset, which is every
+      # environment except a developer's laptop, so 488 assertions about how the
+      # services actually behave were written, run once by hand, and then
+      # guarded nothing. This job already had the database they needed — it was
+      # standing one up for the migrations and the isolation check and then
+      # throwing it away.
+      #
+      # What makes them safe to run against a seeded database is that the ones
+      # which write build a scratch tenant, work inside it, and drop it in a
+      # single DELETE that cascades through all 126 tenant-scoped tables. Each
+      # proves that at the end by comparing the surrounding row counts before and
+      # after; after a full pass the seeded tenant is untouched and no scratch
+      # tenant or ZZ-prefixed employee remains.
+      #
+      # TEST_ADMIN_CODE and TEST_TENANT_SLUG point the suites at what this job
+      # seeded. Their defaults are the live tenant's own '360vhm' and 'VHM004',
+      # so a developer's run against production is unchanged; here they name the
+      # seed's admin, which is VHM001 unless `--code` says otherwise.
+      #
+      # Ordered cheapest-first within reason, so a broken schema fails before
+      # the 117-assertion suite spends two minutes proving it.
+      - name: Behavioural suites
+        env:
+          MIGRATE_DATABASE_URL: postgresql://postgres:ci@localhost:5432/peoplehub
+          DATABASE_URL: postgresql://app_rw:ci@localhost:5432/peoplehub
+          TEST_ADMIN_CODE: VHM001
+          TEST_TENANT_SLUG: '360vhm'
+        run: |
+          npm run check:tenancy
+          npm run check:claim
+          npm run check:profile
+          npm run check:kb
+          npm run check:survey
+          npm run check:departments
+          npm run check:invite
+          npm run check:payrollprereq
+          npm run check:projects
+          npm run check:hierarchy
+          npm run check:employment
+
+      # A suite that cannot reach the database skips itself and exits 0, which is
+      # indistinguishable from passing. That is acceptable on a laptop and not
+      # here, because this job exists to be the place these actually run: a
+      # typo in a connection string above would turn all eleven into silent
+      # no-ops and the job would still be green.
+      #
+      # So the absence of a skip is asserted, rather than assumed.
+      - name: No suite silently skipped
+        env:
+          MIGRATE_DATABASE_URL: postgresql://postgres:ci@localhost:5432/peoplehub
+          DATABASE_URL: postgresql://app_rw:ci@localhost:5432/peoplehub
+          TEST_ADMIN_CODE: VHM001
+          TEST_TENANT_SLUG: '360vhm'
+        run: |
+          set -e
+          for s in tenancy claim profile kb survey departments invite \
+                   payrollprereq projects hierarchy employment; do
+            if npm run --silent "check:$s" | grep -q SKIPPED; then
+              echo "check:$s skipped itself — it did not reach the database"
+              exit 1
+            fi
+          done
+          echo "all eleven suites reached the database"

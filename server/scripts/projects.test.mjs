@@ -55,6 +55,7 @@ if (!process.env.MIGRATE_DATABASE_URL || !process.env.DATABASE_URL) {
 process.env.PG_POOL_MAX = process.env.PG_POOL_MAX ?? '2';
 
 const { default: pg } = await import('pg');
+const { sslConfig } = await import('./ssl.mjs');
 const projects = await import('../src/modules/projects/service.ts');
 const timesheets = await import('../src/modules/timesheet/service.ts');
 const { withScratchTenant, sweepScratchTenants } = await import('./lib/scratch-tenant.mjs');
@@ -77,9 +78,18 @@ const refused = async (label, fn, expect = /only an admin/i) => {
   }
 };
 
+/*
+ * TLS through the shared helper rather than a hard-coded `rejectUnauthorized`.
+ *
+ * Identical against Supabase, which needs TLS: with no PGSSLROOTCERT set it
+ * still returns { rejectUnauthorized: false }. The difference is CI, where
+ * PGSSLMODE=disable and the helper returns false — a stock postgres:17 service
+ * container offers no TLS at all, so insisting on it fails to connect, and
+ * these suites could not run there.
+ */
 const admin = new pg.Client({
   connectionString: process.env.MIGRATE_DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslConfig(),
 });
 await admin.connect();
 

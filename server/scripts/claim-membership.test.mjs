@@ -44,6 +44,18 @@ if (!url) {
 }
 
 const { default: pg } = await import('pg');
+const { sslConfig } = await import('./ssl.mjs');
+
+/**
+ * Which tenant and which administrator this suite reads.
+ *
+ * These were the literals '360vhm' and 'VHM004' — the live tenant's own slug and
+ * its HR head's employee code — so the suite could only run against that one
+ * database. Defaults unchanged, so production behaves exactly as before; CI
+ * points them at what it seeded.
+ */
+const TENANT_SLUG = process.env.TEST_TENANT_SLUG ?? '360vhm';
+const ADMIN_CODE = process.env.TEST_ADMIN_CODE ?? 'VHM004';
 
 let failed = 0;
 const ok = (label, cond, detail = '') => {
@@ -51,8 +63,17 @@ const ok = (label, cond, detail = '') => {
   console.log(`  ${cond ? 'ok  ' : 'FAIL'}  ${label}${cond ? '' : `\n        ${detail}`}`);
 };
 
+/*
+ * TLS through the shared helper rather than a hard-coded `rejectUnauthorized`.
+ *
+ * Identical against Supabase, which needs TLS: with no PGSSLROOTCERT set the
+ * helper still returns { rejectUnauthorized: false }. The difference is CI,
+ * where PGSSLMODE=disable makes it return false — a stock postgres:17 service
+ * container offers no TLS at all, so insisting on it fails to connect, and this
+ * suite could not run there.
+ */
 const connect = async () => {
-  const c = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+  const c = new pg.Client({ connectionString: url, ssl: sslConfig() });
   await c.connect();
   return c;
 };
@@ -83,12 +104,14 @@ async function withCase(email, setup) {
     await c.query('BEGIN');
     const one = async (sql, p = []) => (await c.query(sql, p)).rows[0];
 
-    const tenant = (await one("SELECT id FROM tenant WHERE slug = '360vhm'")).id;
+    const tenant = (await one(
+      'SELECT id FROM tenant WHERE slug = $1', [TENANT_SLUG])).id;
     const dept = (await one('SELECT id FROM department LIMIT 1')).id;
     const site = (await one("SELECT id FROM site WHERE active LIMIT 1")).id;
     const entity = (await one('SELECT id FROM legal_entity LIMIT 1')).id;
     const shift = (await one('SELECT id FROM shift LIMIT 1')).id;
-    const admin = (await one("SELECT id FROM employee WHERE code = 'VHM004'")).id;
+    const admin = (await one(
+      'SELECT id FROM employee WHERE code = $1', [ADMIN_CODE])).id;
 
     const emp = (await one(
       `INSERT INTO employee (tenant_id, code, full_name, work_email, status, app_role,
@@ -202,16 +225,37 @@ console.log('\nwhat a first sign-in may claim\n');
   try {
     const admin = (await c.query(`
       SELECT m.user_id, m.role, m.status FROM tenant_membership m
-        JOIN employee e ON e.id = m.employee_id WHERE e.code = 'VHM004'`)).rows[0];
-    ok('6. the existing administrator is active with a user',
-      admin.status === 'active' && admin.user_id !== null && admin.role === 'admin',
-      `status=${admin.status} role=${admin.role}`);
+        JOIN employee e ON e.id = m.employee_id WHERE e.code = $1`, [ADMIN_CODE])).rows[0];
 
-    /* auth_membership is what a returning session uses; the claim is not
-       called for somebody who already has one. */
-    const live = await c.query('SELECT * FROM auth_membership($1)', [admin.user_id]);
-    ok('   and auth_membership still resolves them', live.rows.length === 1,
-      `returned ${live.rows.length} rows`);
+    /*
+     * Only where there is a signed-in administrator to check.
+     *
+     * This asserted that the administrator is `active` with a `user_id`, which is
+     * true of the live tenant and of no freshly seeded database: `npm run seed`
+     * creates the admin *employee*, and without `--link` there is no auth user to
+     * attach, so `tenant_membership_user_once_usable` would refuse an active
+     * membership with a null user. The suite read `.status` off undefined and
+     * died after eight passing assertions.
+     *
+     * The five cases above are the subject — what `auth_claim_membership` admits
+     * — and each builds and rolls back its own fixture. This last one is a
+     * sanity check on the database it happened to run against, so it says so
+     * rather than failing.
+     */
+    if (!admin) {
+      console.log('  --    6. no membership for '
+        + `${ADMIN_CODE} in this database, so there is no live session to check`);
+    } else {
+      ok('6. the existing administrator is active with a user',
+        admin.status === 'active' && admin.user_id !== null && admin.role === 'admin',
+        `status=${admin.status} role=${admin.role}`);
+
+      /* auth_membership is what a returning session uses; the claim is not
+         called for somebody who already has one. */
+      const live = await c.query('SELECT * FROM auth_membership($1)', [admin.user_id]);
+      ok('   and auth_membership still resolves them', live.rows.length === 1,
+        `returned ${live.rows.length} rows`);
+    }
     ok('   with the admin role', live.rows[0]?.role === 'admin');
   } finally {
     await c.end();

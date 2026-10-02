@@ -83,6 +83,7 @@ if (!process.env.MIGRATE_DATABASE_URL || !process.env.DATABASE_URL) {
 process.env.PG_POOL_MAX = process.env.PG_POOL_MAX ?? '2';
 
 const { default: pg } = await import('pg');
+const { sslConfig } = await import('./ssl.mjs');
 const { setAuthAdmin } = await import('../src/auth/adminApi.ts');
 const users = await import('../src/modules/users/service.ts');
 const payroll = await import('../src/modules/payroll/service.ts');
@@ -91,9 +92,18 @@ const { withScratchTenant, sweepScratchTenants } = await import('./lib/scratch-t
 
 setAuthAdmin({ inviteToSetPassword: () => Promise.resolve({ kind: 'invited' }) });
 
+/*
+ * TLS through the shared helper rather than a hard-coded `rejectUnauthorized`.
+ *
+ * Identical against Supabase, which needs TLS: with no PGSSLROOTCERT set it
+ * still returns { rejectUnauthorized: false }. The difference is CI, where
+ * PGSSLMODE=disable and the helper returns false — a stock postgres:17 service
+ * container offers no TLS at all, so insisting on it fails to connect, and
+ * these suites could not run there.
+ */
 const db = new pg.Client({
   connectionString: process.env.MIGRATE_DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslConfig(),
 });
 await db.connect();
 
@@ -101,6 +111,19 @@ const liveBefore = (await db.query(`
   SELECT (SELECT count(*)::int FROM pay_run) runs,
          (SELECT count(*)::int FROM payslip) slips,
          (SELECT count(*)::int FROM tenant) tenants`)).rows[0];
+
+/*
+ * Every payroll run as it stands before this suite touches anything.
+ *
+ * The guard at the end asserted one specific run was `paid` and `locked` — the
+ * live tenant's September — which is a statement about the live database rather
+ * than about this run's behaviour, and fails anywhere that run does not exist.
+ * Comparing before against after holds the same property on any database: where
+ * there is a locked run it must be untouched, where there is none there is
+ * nothing to protect, and a run *appearing* is caught either way.
+ */
+const payRunsBefore = (await db.query(
+  'SELECT id, status, locked FROM pay_run ORDER BY id')).rows;
 
 await sweepScratchTenants(db);
 
@@ -110,10 +133,29 @@ await withScratchTenant(db, async (ctx) => {
   const ADMIN = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const mk = '2026-09';
 
+  /*
+   * `joinedOn` is given explicitly, and that is the whole fixture.
+   *
+   * Omitted, `createUser` writes `COALESCE($10::date, CURRENT_DATE)` — today.
+   * Both the guard and the run select on
+   *
+   *     e.joined_on <= (date_trunc('month', cycle) + 1 month - 1 day)
+   *
+   * so a probe dated today is inside the cycle below only while today happens to
+   * fall in it. This suite was written in September 2026 with `mk` hard coded to
+   * '2026-09'. It passed every day that month and from 1 October selected
+   * nobody: the run had no employees, wrote no payslips, and so had nothing to
+   * refuse. It read as "the prerequisite guard is broken" and the guard was
+   * right — an October joiner genuinely does not belong in a September run.
+   *
+   * Dating the probe to the first of the cycle makes the fixture say what it
+   * means, whatever today is.
+   */
   const make = async (name) => {
     const acct = await users.createUser(ADMIN, {
       name, email: `zz-prereq-${Math.random().toString(36).slice(2, 9)}@360.technology`,
       dept: ctx.dept, site: ctx.site, designation: 'ZZ Engineer', role: 'employee',
+      joinedOn: `${mk}-01`,
     });
     return (await db.query(
       'SELECT employee_id FROM tenant_membership WHERE id = $1', [acct.id])).rows[0].employee_id;
@@ -219,9 +261,14 @@ ok(`payslips ${liveAfter.slips}`, liveAfter.slips === liveBefore.slips, `was ${l
 ok(`tenants ${liveAfter.tenants}`, liveAfter.tenants === liveBefore.tenants,
   `was ${liveBefore.tenants}`);
 
-const paid = (await db.query('SELECT status, locked FROM pay_run')).rows[0];
-ok('September is still paid and locked',
-  paid?.status === 'paid' && paid.locked === true, JSON.stringify(paid));
+const payRunsAfter = (await db.query(
+  'SELECT id, status, locked FROM pay_run ORDER BY id')).rows;
+ok('every payroll run is exactly as it was',
+  JSON.stringify(payRunsAfter) === JSON.stringify(payRunsBefore),
+  `was ${JSON.stringify(payRunsBefore)}, now ${JSON.stringify(payRunsAfter)}`);
+if (!payRunsBefore.length) {
+  console.log('  --    no pay run in this database, so there was nothing to protect');
+}
 
 await db.end();
 

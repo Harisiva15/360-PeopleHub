@@ -69,8 +69,20 @@ if (!process.env.MIGRATE_DATABASE_URL || !process.env.DATABASE_URL) {
 }
 
 process.env.PG_POOL_MAX = process.env.PG_POOL_MAX ?? '2';
+/**
+ * The administrator this run must leave alone.
+ *
+ * VHM004 is the live tenant's own employee code, and these guards exist to prove
+ * the run did not touch the real account. A fresh database — CI's, or a new
+ * deployment's — numbers its admin differently, so the code is a default rather
+ * than a constant. The guards compare before against after, so pointing this at
+ * a code that does not exist weakens nothing: there is simply nothing to protect.
+ */
+const ADMIN_CODE = process.env.TEST_ADMIN_CODE ?? 'VHM004';
+
 
 const { default: pg } = await import('pg');
+const { sslConfig } = await import('./ssl.mjs');
 const { setAuthAdmin } = await import('../src/auth/adminApi.ts');
 const users = await import('../src/modules/users/service.ts');
 const employees = await import('../src/modules/employees/service.ts');
@@ -112,9 +124,18 @@ setAuthAdmin({
   },
 });
 
+/*
+ * TLS through the shared helper rather than a hard-coded `rejectUnauthorized`.
+ *
+ * Identical against Supabase, which needs TLS: with no PGSSLROOTCERT set it
+ * still returns { rejectUnauthorized: false }. The difference is CI, where
+ * PGSSLMODE=disable and the helper returns false — a stock postgres:17 service
+ * container offers no TLS at all, so insisting on it fails to connect, and
+ * these suites could not run there.
+ */
 const admin = new pg.Client({
   connectionString: process.env.MIGRATE_DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslConfig(),
 });
 await admin.connect();
 
@@ -134,6 +155,28 @@ const census = async () => (await admin.query(`
          (SELECT count(*)::int FROM timesheet_entry) te,
          (SELECT count(*)::int FROM tenant) tenants`)).rows[0];
 const before = await census();
+
+/*
+ * The administrator and the payroll this run must not disturb, as they are
+ * *before* it starts.
+ *
+ * These were asserted against literals — `app_role === 'admin'`, exactly one pay
+ * run that is `paid` and `locked` — which amounts to "the live database looks
+ * like the live database", and fails anywhere it does not. A fresh CI database
+ * has a seeded admin and no pay run, so this suite could not run there.
+ *
+ * Before against after is portable and stricter: nothing to compare where there
+ * is nothing to damage, and where there is, any change at all is caught —
+ * including a second run appearing, which counting to one would have missed.
+ */
+const guardedBefore = {
+  admin: (await admin.query(
+    `SELECT e.code, e.app_role, m.status FROM employee e
+       JOIN tenant_membership m ON m.employee_id = e.id WHERE e.code = $1`,
+    [ADMIN_CODE])).rows[0] ?? null,
+  payRuns: (await admin.query(
+    'SELECT id, status, locked FROM pay_run ORDER BY id')).rows,
+};
 
 /* Anything a killed run left behind, before this one adds to it. */
 const swept = await sweepScratchTenants(admin);
@@ -536,16 +579,23 @@ ok('and no test employee remains anywhere', strays === 0, `${strays} found`);
 
 const adminStill = (await admin.query(
   `SELECT e.code, e.app_role, m.status FROM employee e
-     JOIN tenant_membership m ON m.employee_id = e.id WHERE e.code = 'VHM004'`)).rows[0];
-ok('the existing administrator is untouched',
-  adminStill?.code === 'VHM004' && adminStill.app_role === 'admin' && adminStill.status === 'active',
-  JSON.stringify(adminStill));
+     JOIN tenant_membership m ON m.employee_id = e.id WHERE e.code = $1`,
+  [ADMIN_CODE])).rows[0] ?? null;
+ok(`the existing administrator (${ADMIN_CODE}) is untouched`,
+  JSON.stringify(adminStill) === JSON.stringify(guardedBefore.admin),
+  `was ${JSON.stringify(guardedBefore.admin)}, now ${JSON.stringify(adminStill)}`);
+if (!guardedBefore.admin) {
+  console.log(`  --    no ${ADMIN_CODE} in this database, so there was nothing to protect`);
+}
 
-const payroll = (await admin.query(
-  "SELECT status, locked FROM pay_run")).rows;
-ok('payroll is still paid and locked',
-  payroll.length === 1 && payroll[0].status === 'paid' && payroll[0].locked === true,
-  JSON.stringify(payroll));
+const payAfter = (await admin.query(
+  'SELECT id, status, locked FROM pay_run ORDER BY id')).rows;
+ok('every payroll run is exactly as it was',
+  JSON.stringify(payAfter) === JSON.stringify(guardedBefore.payRuns),
+  `was ${JSON.stringify(guardedBefore.payRuns)}, now ${JSON.stringify(payAfter)}`);
+if (!guardedBefore.payRuns.length) {
+  console.log('  --    no pay run in this database, so there was nothing to protect');
+}
 
 await admin.end();
 

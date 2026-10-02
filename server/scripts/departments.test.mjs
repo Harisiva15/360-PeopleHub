@@ -35,8 +35,24 @@ if (!process.env.MIGRATE_DATABASE_URL || !process.env.DATABASE_URL) {
 }
 
 process.env.PG_POOL_MAX = process.env.PG_POOL_MAX ?? '2';
+/**
+ * Which tenant and which administrator this suite reads.
+ *
+ * These were the literals '360vhm' and 'VHM004' — the live tenant's own slug and
+ * its HR head's employee code — so the suite could only run against that one
+ * database. A seeded database numbers its admin differently (`npm run seed`
+ * makes VHM001), and the suite found no context row, dereferenced undefined and
+ * died before its first assertion.
+ *
+ * Defaults unchanged, so running this against production behaves exactly as
+ * before; CI points them at what it seeded.
+ */
+const TENANT_SLUG = process.env.TEST_TENANT_SLUG ?? '360vhm';
+const ADMIN_CODE = process.env.TEST_ADMIN_CODE ?? 'VHM004';
+
 
 const { default: pg } = await import('pg');
+const { sslConfig } = await import('./ssl.mjs');
 const { listDepartments, createDepartment, updateDepartment, removeDepartment } =
   await import('../src/modules/config/service.ts');
 
@@ -49,9 +65,18 @@ const attempt = async (fn) => {
   try { await fn(); return null; } catch (e) { return e; }
 };
 
+/*
+ * TLS through the shared helper rather than a hard-coded `rejectUnauthorized`.
+ *
+ * Identical against Supabase, which needs TLS: with no PGSSLROOTCERT set it
+ * still returns { rejectUnauthorized: false }. The difference is CI, where
+ * PGSSLMODE=disable and the helper returns false — a stock postgres:17 service
+ * container offers no TLS at all, so insisting on it fails to connect, and
+ * these suites could not run there.
+ */
 const admin = new pg.Client({
   connectionString: process.env.MIGRATE_DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslConfig(),
 });
 await admin.connect();
 
@@ -67,7 +92,7 @@ const ctx = (await admin.query(`
          (SELECT id FROM legal_entity LIMIT 1) entity,
          (SELECT id FROM shift LIMIT 1) shift
     FROM tenant t JOIN employee e ON e.tenant_id = t.id
-   WHERE t.slug = '360vhm' AND e.code = 'VHM004'`)).rows[0];
+   WHERE t.slug = $1 AND e.code = $2`, [TENANT_SLUG, ADMIN_CODE])).rows[0];
 
 const caller = (role) => ({ role, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null });
 const madeDepts = [];

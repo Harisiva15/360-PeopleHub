@@ -22,23 +22,48 @@ types.setTypeParser(1082, (value: string) => value);
 // up a cent out and nobody can explain why.
 types.setTypeParser(1700, (value: string) => value);
 
-/**
- * Supabase requires TLS. Verification needs its CA, which is downloaded from
- * Project Settings -> Database -> SSL Configuration; without it the connection
- * is encrypted but the server is not authenticated, which is fine on a laptop
- * and not fine in production. The server refuses to start unverified outside
- * development — see below.
+/*
+ * The production guard comes first, so nothing below can weaken it.
  */
-const ssl = config.sslRootCert
-  ? { ca: readFileSync(config.sslRootCert, 'utf8'), rejectUnauthorized: true }
-  : { rejectUnauthorized: false };
-
 if (!config.sslRootCert && config.nodeEnv === 'production') {
   throw new Error(
     'PGSSLROOTCERT must be set in production: refusing to talk to the database '
     + 'over a connection whose certificate is not verified',
   );
 }
+
+/**
+ * A database on the same host as the client, offering no TLS at all.
+ *
+ * `scripts/ssl.mjs` has honoured `PGSSLMODE=disable` since the CI job was
+ * written — that is how `migrate`, `seed` and `verify:isolation` talk to a
+ * `postgres:17` service container, which is built without TLS support. This pool
+ * did not, so it attempted TLS regardless and the server answered that it does
+ * not support SSL connections.
+ *
+ * That is why the behavioural suites could run only against Supabase. They
+ * connect through the services, the services connect through this pool, and the
+ * pool could not reach a container. The suites' own admin connection was already
+ * fine; this is the other half.
+ *
+ * **Never honoured in production.** The guard above has already thrown by this
+ * point if the CA is missing there, and this flag additionally requires a
+ * non-production environment — so setting `PGSSLMODE=disable` on a deployed API
+ * cannot turn its TLS off. It is a local and CI affordance only.
+ */
+const plaintextLocal = process.env.PGSSLMODE === 'disable' && config.nodeEnv !== 'production';
+
+/**
+ * Supabase requires TLS. Verification needs its CA, which is downloaded from
+ * Project Settings -> Database -> SSL Configuration; without it the connection
+ * is encrypted but the server is not authenticated, which is fine on a laptop
+ * and not fine in production — see the guard above.
+ */
+const ssl = plaintextLocal
+  ? false
+  : config.sslRootCert
+    ? { ca: readFileSync(config.sslRootCert, 'utf8'), rejectUnauthorized: true }
+    : { rejectUnauthorized: false };
 
 export const pool = new Pool({
   connectionString: config.databaseUrl,

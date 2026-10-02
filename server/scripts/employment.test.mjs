@@ -80,8 +80,20 @@ if (!process.env.MIGRATE_DATABASE_URL || !process.env.DATABASE_URL) {
 }
 
 process.env.PG_POOL_MAX = process.env.PG_POOL_MAX ?? '2';
+/**
+ * The administrator this run must leave alone.
+ *
+ * VHM004 is the live tenant's own employee code, and these guards exist to prove
+ * the run did not touch the real account. A fresh database — CI's, or a new
+ * deployment's — numbers its admin differently, so the code is a default rather
+ * than a constant. The guards compare before against after, so pointing this at
+ * a code that does not exist weakens nothing: there is simply nothing to protect.
+ */
+const ADMIN_CODE = process.env.TEST_ADMIN_CODE ?? 'VHM004';
+
 
 const { default: pg } = await import('pg');
+const { sslConfig } = await import('./ssl.mjs');
 const { setAuthAdmin } = await import('../src/auth/adminApi.ts');
 const users = await import('../src/modules/users/service.ts');
 const lifecycle = await import('../src/modules/lifecycle/service.ts');
@@ -89,9 +101,18 @@ const { withScratchTenant, sweepScratchTenants } = await import('./lib/scratch-t
 
 setAuthAdmin({ inviteToSetPassword: () => Promise.resolve({ kind: 'invited' }) });
 
+/*
+ * TLS through the shared helper rather than a hard-coded `rejectUnauthorized`.
+ *
+ * Identical against Supabase, which needs TLS: with no PGSSLROOTCERT set it
+ * still returns { rejectUnauthorized: false }. The difference is CI, where
+ * PGSSLMODE=disable and the helper returns false — a stock postgres:17 service
+ * container offers no TLS at all, so insisting on it fails to connect, and
+ * these suites could not run there.
+ */
 const db = new pg.Client({
   connectionString: process.env.MIGRATE_DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslConfig(),
 });
 await db.connect();
 
@@ -100,6 +121,28 @@ const liveBefore = (await db.query(`
          (SELECT count(*)::int FROM employment_record) h,
          (SELECT count(*)::int FROM tenant) t,
          (SELECT count(*)::int FROM audit_log) a`)).rows[0];
+
+/*
+ * The administrator and the payroll this run must not disturb, as they are
+ * *before* it starts.
+ *
+ * These used to be asserted against literals — `app_role === 'admin'`, a pay run
+ * that is `paid` and `locked` — which says "the live database looks like the
+ * live database" and fails anywhere it does not. A fresh CI database has a
+ * seeded admin and no pay run at all, so the suite could not run there.
+ *
+ * Comparing before against after is both portable and stricter. On a database
+ * with no pay run there is nothing to compare and nothing to damage; on one with
+ * a locked run, any change at all is caught — including a status moving from
+ * `paid` to something else, which the literal check would also have caught, and
+ * a *second* run appearing, which it would not.
+ */
+const guardedBefore = {
+  admin: (await db.query(
+    'SELECT app_role, status FROM employee WHERE code = $1', [ADMIN_CODE])).rows[0] ?? null,
+  payRuns: (await db.query(
+    'SELECT id, status, locked FROM pay_run ORDER BY id')).rows,
+};
 
 await sweepScratchTenants(db);
 
@@ -273,12 +316,26 @@ await withScratchTenant(db, async (ctx) => {
   console.log('\nE. leaving closes the record rather than opening one\n');
 
   const { empId: leaverId } = await make(`ZZ Leaver ${tag}`);
-  const lwd = '2026-09-30';
+  /*
+   * Both dates relative to today, because `exit_record` carries
+   *
+   *     CHECK (last_working_day >= resigned_on)
+   *
+   * and this used to resign on CURRENT_DATE with the last working day hard coded
+   * to '2026-09-30'. True while today was inside September 2026, false from the
+   * first of October, and the suite stopped on a constraint violation before it
+   * reached the assertions below. The dates here are not the subject — the
+   * subject is that leaving *closes* the open record rather than opening a new
+   * one — so they should not be able to expire.
+   *
+   * Thirty days of notice, last day yesterday, against a hire sixty days ago.
+   */
+  const lwd = daysAgo(1);
   await db.query(
     `INSERT INTO exit_record (tenant_id, employee_id, kind, resigned_on,
                               notice_days, last_working_day, status)
-     VALUES ($1, $2, 'resignation', CURRENT_DATE, 30, $3::date, 'in_clearance')`,
-    [ctx.tenant, leaverId, lwd]);
+     VALUES ($1, $2, 'resignation', $4::date, 30, $3::date, 'in_clearance')`,
+    [ctx.tenant, leaverId, lwd, daysAgo(31)]);
   await db.query("UPDATE employee SET status = 'exited', left_on = $2 WHERE id = $1",
     [leaverId, lwd]);
   const { closeEmployment } = await import('../src/modules/people/employment.ts');
@@ -604,13 +661,21 @@ ok('no scratch tenant remains',
     .rows[0].n === 0);
 
 const adminRow = (await db.query(
-  "SELECT app_role, status FROM employee WHERE code = 'VHM004'")).rows[0];
-ok('the existing administrator is untouched',
-  adminRow?.app_role === 'admin' && adminRow.status === 'active', JSON.stringify(adminRow));
+  'SELECT app_role, status FROM employee WHERE code = $1', [ADMIN_CODE])).rows[0] ?? null;
+ok(`the existing administrator (${ADMIN_CODE}) is untouched`,
+  JSON.stringify(adminRow) === JSON.stringify(guardedBefore.admin),
+  `was ${JSON.stringify(guardedBefore.admin)}, now ${JSON.stringify(adminRow)}`);
+if (!guardedBefore.admin) {
+  console.log(`  --    no ${ADMIN_CODE} in this database, so there was nothing to protect`);
+}
 
-const pay = (await db.query('SELECT status, locked FROM pay_run')).rows[0];
-ok('payroll is still paid and locked',
-  pay?.status === 'paid' && pay.locked === true, JSON.stringify(pay));
+const payAfter = (await db.query('SELECT id, status, locked FROM pay_run ORDER BY id')).rows;
+ok('every payroll run is exactly as it was',
+  JSON.stringify(payAfter) === JSON.stringify(guardedBefore.payRuns),
+  `was ${JSON.stringify(guardedBefore.payRuns)}, now ${JSON.stringify(payAfter)}`);
+if (!guardedBefore.payRuns.length) {
+  console.log('  --    no pay run in this database, so there was nothing to protect');
+}
 
 await db.end();
 
