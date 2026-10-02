@@ -1,6 +1,7 @@
 import { getServices } from '../src/services';
 import { DEMO_EMP, DEMO_MGR, EMAP, HRHEAD } from '../src/data/employees';
 import { toBase } from '../src/data/countries';
+import { ATT_IDX } from '../src/data/attendance';
 
 const s = getServices();
 let failed = 0;
@@ -267,6 +268,7 @@ const check = (label: string, got: unknown, want: unknown) => {
     Math.round(reg.reduce((t, r) => t + toBase(r.payslip.gross, r.employee.ccy), 0)),
     Math.round(regTotals.gross));
 
+
   const hist = await s.payroll.payslipHistory(DEMO_EMP.id);
   check('payslip history covers only paid cycles', hist.every((h) => h.run.status === 'Paid'), true);
   check('history starts no earlier than the join date',
@@ -274,6 +276,40 @@ const check = (label: string, got: unknown, want: unknown) => {
 
   const batched = await s.payroll.totalsFor([lastPaid.mk]);
   check('batched totals match the single read', batched[lastPaid.mk].net, regTotals.net);
+
+  /*
+   * And it still reconciles after approving a regularisation *inside* the paid
+   * cycle, which is the case that broke.
+   *
+   * The assertion above only catches this while today happens to sit in the
+   * month after the regularisation the attendance section approves: that one is
+   * dated 2026-09-15, and `lastPaid` is always the month before today, so the
+   * two coincided for exactly October 2026 and the stale cycle total was
+   * invisible before and after. Doing the approval here, against whichever
+   * month is actually paid, removes the coincidence.
+   *
+   * A regularisation needs a day the person was absent, so this looks for one
+   * and says so when the dataset has none rather than asserting on nothing.
+   */
+  const paidMk = lastPaid.mk;
+  const absent = reg
+    .flatMap((r) => Object.values(ATT_IDX[r.employee.id] ?? {})
+      .filter((a) => a.date.slice(0, 7) === paidMk && a.status === 'A' && !a.reg)
+      .map((a) => ({ empId: r.employee.id, date: a.date })))
+    .slice(0, 1)[0];
+
+  if (!absent) {
+    console.log(`SKIP  no unexcused absence in ${paidMk} to regularise`);
+  } else {
+    await s.attendance.raiseRegularisation(
+      absent.empId, absent.date, '09:30', '18:30', 'Reconciliation check');
+    await s.attendance.actOnRegularisation(absent.empId, absent.date, 'Approved');
+    const reg2 = await s.payroll.register(paidMk);
+    const totals2 = await s.payroll.totals(paidMk);
+    check('and still reconciles after a regularisation is approved in that cycle',
+      Math.round(reg2.reduce((t, r) => t + toBase(r.payslip.gross, r.employee.ccy), 0)),
+      Math.round(totals2.gross));
+  }
 
   let rerun = false;
   try { await s.payroll.processRun(lastPaid.mk); } catch { rerun = true; }

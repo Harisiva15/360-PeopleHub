@@ -1,6 +1,7 @@
 import { TODAY, ymd } from '../../lib/dates';
 import { ATT, ATT_IDX, attOf } from '../../data/attendance';
 import type { AttRecord } from '../../data/attendance';
+import { clearPayrollCache } from '../../data/payroll';
 import { EMAP } from '../../data/employees';
 import { siteOf } from '../../data/org';
 import { distM } from '../../lib/format';
@@ -136,11 +137,38 @@ export const attendanceService: AttendanceService = {
     return ok({ ...NOTICE, acknowledgedAt: noticeAck });
   },
 
+  /*
+   * Each of the four writes below ends with `clearPayrollCache()`, and that is
+   * not housekeeping — a payslip is derived from attendance.
+   *
+   * `payslip()` counts a month's unexcused absences and prorates every earnings
+   * line by `(daysInMonth - lop) / daysInMonth`. A day that stops being an
+   * absence therefore changes that person's gross, their PF, their tax and the
+   * run's totals. `payrollTotals()` memoises a whole month in `PT_CACHE`, which
+   * is populated once at module load, so without invalidation the register
+   * recomputes while the cycle total does not and the two stop reconciling.
+   *
+   * That is not hypothetical. `checks/services.ts` approves a regularisation on
+   * 2026-09-15 and then reconciles the register against the cycle total; from 1
+   * October 2026, when September became the last paid run, the two disagreed by
+   * 3,122 — one day of one employee's September gross, 90,520 against 93,642.
+   * `clearPayrollCache()` had existed since the cache was written, carrying the
+   * instruction "call after mutating anything a payslip reads", and nothing in
+   * the codebase called it.
+   *
+   * In the app the same staleness shows as a payroll total that does not move
+   * when an approval should have moved it.
+   *
+   * Always *after* the mutation, never before: a refused regularisation must not
+   * throw away a cache it never invalidated.
+   */
+
   punchIn(empId, date, at) {
     const r = ensure(empId, date, 'P');
     applyMode(r, at);
     r.inT = hhmm(at.at);
     r.late = false;
+    clearPayrollCache();
     return ok(r);
   },
 
@@ -149,12 +177,20 @@ export const attendanceService: AttendanceService = {
     applyMode(r, at);
     r.outT = hhmm(at.at);
     if (r.inT) r.mins = Math.max(0, toMins(r.outT) - toMins(r.inT) - BREAK_MINS);
+    clearPayrollCache();
     return ok(r);
   },
 
   raiseRegularisation(empId, date, inT, outT, reason) {
     const r = ensure(empId, date, 'A');
     r.reg = { status: 'Pending', reason, raised: ymd(TODAY), inT, outT };
+    /*
+     * Raising one does not credit the day, so this cannot change a figure
+     * today. It is invalidated anyway because `ensure` will have *created* the
+     * record if the person had none for that date, and an invented absence is
+     * exactly the kind of change a payslip reads.
+     */
+    clearPayrollCache();
     return ok(r);
   },
 
@@ -169,6 +205,7 @@ export const attendanceService: AttendanceService = {
       r.outT = r.reg.outT;
       r.mins = REGULARISED_MINS;
     }
+    clearPayrollCache();
     return ok(r);
   },
 };

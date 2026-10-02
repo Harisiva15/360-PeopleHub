@@ -1,5 +1,7 @@
 import { ACTIVE, EMAP } from '../../data/employees';
-import { CUR_RUN, DECL, declTotals, hraExempt, PAYRUNS, payrollTotals, payslip } from '../../data/payroll';
+import {
+  clearPayrollCache, CUR_RUN, DECL, declTotals, hraExempt, PAYRUNS, payrollTotals, payslip,
+} from '../../data/payroll';
 import { BANK_BATCHES, COMPLIANCE_PAYS, PAY_INPUTS } from '../../data/payinputs';
 import { LOANS, loanEmiFor } from '../../data/loans';
 import { comp, compAllow, dailyRate, salaryStructure, taxNewRegime, taxOldRegime } from '../../data/salary';
@@ -132,6 +134,15 @@ export const payrollService: PayrollService = {
     Object.keys(d.items).forEach((k) => { d.items[k] = Number(items[k]) || 0; });
     d.status = 'Submitted';
     d.submittedOn = ymd(TODAY);
+    /*
+     * The declared amounts price the Old regime: `payslip()` reads
+     * `declTotals()` and `hraExempt()` to compute the year's tax, so changing
+     * them changes this person's TDS, their net pay, and the run's `tds` and
+     * `net` totals. Gross is unaffected — these are deductions, not earnings —
+     * which is why this went unnoticed while the gross reconciliation was the
+     * only assertion watching. See the note in mock/attendance.ts.
+     */
+    clearPayrollCache();
     return ok(d);
   },
 
@@ -140,6 +151,8 @@ export const payrollService: PayrollService = {
     if (!d) return Promise.reject(new Error('No declaration on file for ' + empId));
     if (d.status === 'Verified') return Promise.reject(new Error('The regime is locked once Finance has verified the proofs'));
     d.regime = regime;
+    /* Old against New is the whole tax calculation in `payslip()`. */
+    clearPayrollCache();
     return ok(d);
   },
 
