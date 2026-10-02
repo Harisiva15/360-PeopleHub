@@ -28,7 +28,14 @@ import {
 import {
   addHoliday, ConfigError, createDepartment, listGrades, listDepartments, removeDepartment, updateDepartment, createSite, listHolidays, listSites, setLeaveQuota,
   setSiteActive, updateFence, updateSite,
+  createBusinessUnit, getBusinessUnit, listBusinessUnits, setBusinessUnitActive,
+  updateBusinessUnit,
+  createLegalEntity, getLegalEntity, listLegalEntities, setDefaultLegalEntity,
+  updateLegalEntity,
+  readTenantProfile, updateTenantDisplayName,
 } from '../modules/config/service.ts';
+import type { BusinessUnitDraft, LegalEntityDraft } from '../modules/config/service.ts';
+import type { ShiftDraft } from '../modules/shifts/service.ts';
 import {
   CompensationError, listComponents, removeComponent,
   salaryHistory, saveComponent, setSalaryStructure,
@@ -100,8 +107,8 @@ import {
   listDocuments, documentTypes,
 } from '../modules/documents/service.ts';
 import {
-  actOnOvertime, listOvertime, listShifts, raiseOvertime, rosterFor,
-  setEmployeeShift, ShiftError, shiftCoverage,
+  actOnOvertime, createShift, listOvertime, listShifts, raiseOvertime, rosterFor,
+  setEmployeeShift, setShiftActive, ShiftError, shiftCoverage, updateShift,
 } from '../modules/shifts/service.ts';
 import {
   issueLetter, LetterError, listLetterRequests, listLetterTypes, rejectLetter,
@@ -1021,6 +1028,98 @@ const routes: Route[] = [
     pattern: '/config/departments/:code',
     handler: (c, _r, p) => removeDepartment(c, p.code!),
   },
+  /*
+   * Business units: the level above a department.
+   *
+   * Reads are open to every role, because a screen that shows which unit
+   * somebody belongs to has to resolve the code to a name. Writes are
+   * admin-only, enforced in the service rather than here: `/config` maps to the
+   * `settings` module, which is already admin-only at the policy ceiling, so the
+   * service check is defence in depth rather than the boundary.
+   *
+   * The literal `/config/business-units` sits above the `:code` form, and both
+   * sit above nothing that could swallow them. `/active` is its own route for
+   * the same reason `/config/sites/:code/active` is: withdrawing a unit from use
+   * is a different act from renaming it, and a caller should not be able to do
+   * one while meaning the other.
+   */
+  { method: 'GET', pattern: '/config/business-units', handler: (c) => listBusinessUnits(c) },
+  {
+    method: 'POST',
+    pattern: '/config/business-units',
+    handler: (c, _r, _p, body) => createBusinessUnit(c, (body ?? {}) as BusinessUnitDraft),
+  },
+  {
+    method: 'GET',
+    pattern: '/config/business-units/:code',
+    handler: (c, _r, p) => getBusinessUnit(c, p.code!),
+  },
+  {
+    method: 'PUT',
+    pattern: '/config/business-units/:code',
+    handler: (c, _r, p, body) =>
+      updateBusinessUnit(c, p.code!, (body ?? {}) as BusinessUnitDraft),
+  },
+  {
+    method: 'PUT',
+    pattern: '/config/business-units/:code/active',
+    handler: (c, _r, p, body) =>
+      setBusinessUnitActive(c, p.code!, (body as { active?: boolean } | null)?.active ?? false),
+  },
+  /*
+   * Legal entities.
+   *
+   * The registered companies this tenant employs through. Reads are open to every
+   * role, as the rest of configuration is — a payslip and an employee record both
+   * name the employing company, and resolving that is not privileged. Writes are
+   * an administrator's, refused in the service rather than here.
+   *
+   * `/default` is its own route for the same reason `/config/sites/:code/active`
+   * is: moving which entity the product falls back to is a different act from
+   * correcting its address, and a caller should not be able to do one while
+   * meaning the other. The literal path sits above the `:code` form.
+   */
+  /*
+   * The tenant''s own profile.
+   *
+   * One read and one write, and the write takes a single named field rather
+   * than a patch: every other column on `tenant` is a contract term or the
+   * tenancy identity, and migration 0053 grants UPDATE on `display_name` alone
+   * so the database refuses the rest. There is deliberately no generic tenant
+   * mutation endpoint.
+   *
+   * The tenant comes from the authenticated context through
+   * `current_tenant_id()`. Nothing in the path or the body names a tenant.
+   */
+  { method: 'GET', pattern: '/config/tenant-profile', handler: (c) => readTenantProfile(c) },
+  {
+    method: 'PUT',
+    pattern: '/config/tenant-profile',
+    handler: (c, _r, _p, body) =>
+      updateTenantDisplayName(c, (body as { displayName?: unknown } | null)?.displayName),
+  },
+  { method: 'GET', pattern: '/config/legal-entities', handler: (c) => listLegalEntities(c) },
+  {
+    method: 'POST',
+    pattern: '/config/legal-entities',
+    handler: (c, _r, _p, body) => createLegalEntity(c, (body ?? {}) as LegalEntityDraft),
+  },
+  {
+    method: 'GET',
+    pattern: '/config/legal-entities/:code',
+    handler: (c, _r, p) => getLegalEntity(c, p.code!),
+  },
+  {
+    method: 'PUT',
+    pattern: '/config/legal-entities/:code',
+    handler: (c, _r, p, body) =>
+      updateLegalEntity(c, p.code!, (body ?? {}) as LegalEntityDraft),
+  },
+  {
+    method: 'PUT',
+    pattern: '/config/legal-entities/:code/default',
+    handler: (c, _r, p) => setDefaultLegalEntity(c, p.code!),
+  },
   { method: 'GET', pattern: '/config/grades', handler: (c) => listGrades(c) },
   { method: 'GET', pattern: '/config/sites', handler: (c) => listSites(c) },
   { method: 'GET', pattern: '/config/holidays', handler: (c) => listHolidays(c) },
@@ -1121,6 +1220,35 @@ const routes: Route[] = [
     method: 'GET',
     pattern: '/shifts/coverage',
     handler: (c) => shiftCoverage(c),
+  },
+  /*
+   * Shaping the profiles themselves. Admin-only, refused in the service rather
+   * than here.
+   *
+   * There is no DELETE: `employee.shift_id`, `attendance.shift_id` and
+   * `site.default_shift_id` all point at the row, and a profile somebody actually
+   * worked is history. Withdrawing one from use is `/active`, which keeps the
+   * people already on it.
+   *
+   * `/active` is its own route for the same reason `/config/sites/:code/active`
+   * is: taking a working pattern out of use is a different act from correcting its
+   * hours, and a caller should not be able to do one while meaning the other.
+   */
+  {
+    method: 'POST',
+    pattern: '/shifts',
+    handler: (c, _r, _p, body) => createShift(c, (body ?? {}) as ShiftDraft),
+  },
+  {
+    method: 'PUT',
+    pattern: '/shifts/:code',
+    handler: (c, _r, p, body) => updateShift(c, p.code!, (body ?? {}) as ShiftDraft),
+  },
+  {
+    method: 'PUT',
+    pattern: '/shifts/:code/active',
+    handler: (c, _r, p, body) =>
+      setShiftActive(c, p.code!, (body as { active?: boolean } | null)?.active ?? false),
   },
   {
     // ?empIds=a,b&from=2026-09-14&days=14

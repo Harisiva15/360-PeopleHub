@@ -9,6 +9,8 @@ import { addDays, daysBetween, isWeekend, parseYmd, TODAY, ymd } from '../../lib
 import { ACTIVE, DEMO_EMP, empName } from '../../data/employees';
 import { LEAVE_BAL } from '../../data/leave';
 import { OVERTIME, ROSTER, SHIFTS } from '../../data/shifts';
+import type { Shift } from '../../data/shifts';
+import type { ShiftDraft, ShiftProfile } from '../contracts';
 import { LOANS } from '../../data/loans';
 import { LETTER_REQS, LETTER_TYPES } from '../../data/letters';
 import { CANDS, INTERVIEWS, REQS, reqOf, STAGES } from '../../data/ats';
@@ -30,13 +32,116 @@ const onShift = (code: string) =>
     return Object.values(week).some((s) => s === code);
   });
 
+/* ---------------- shaping the profiles ----------------
+ *
+ * The server's validation, mirrored, so a form refused against a real tenant is
+ * refused here too — same checks, same wording.
+ *
+ * Two deliberate gaps, both because the demo cannot represent what the rule reads:
+ *
+ *   - **Authorization is not mirrored.** These contract methods carry no caller —
+ *     the service decides from the session — so the demo cannot see a role. The
+ *     screen gates the controls and the server refuses the call, which is the
+ *     arrangement every other demo write already has.
+ *   - **The attendance-history guard is not mirrored.** It reads
+ *     `attendance.shift_id`, and the demo's attendance fixtures carry no shift
+ *     reference at all. Inventing one would be inventing the very thing the guard
+ *     consults, so the demo allows those edits and the server refuses them.
+ */
+
+const SHIFT_CODE_SHAPE = /^[A-Z0-9_-]{2,12}$/;
+const CLOCK_SHAPE = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
+
+/** The server's shape, which `SHIFTS` is the demo's store for. */
+const asProfile = (s: Shift): ShiftProfile => ({
+  id: s.id, code: s.id, name: s.n, start: s.start, end: s.end,
+  timezone: s.tz, region: s.region, night: s.night, flexible: false,
+  breakMinutes: s.brk, graceMinutes: s.grace, active: s.active, colour: s.c,
+  nightAllowance: null, headcount: onShift(s.id).length,
+});
+
+/**
+ * The zones the demo will accept.
+ *
+ * The server asks PostgreSQL through `pg_timezone_names`, which a browser has no
+ * equivalent of. `Intl.DateTimeFormat` answers the same question of a different
+ * authority: it throws on a zone the runtime does not know.
+ */
+function knownZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: tz });
+    return true;
+  } catch { return false; }
+}
+
+/** Mirrors `checkShift`, field for field. */
+function checkDemoShift(d: ShiftDraft, partial: boolean): Error | null {
+  const need = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+
+  if (!partial) {
+    if (!need(d.code)) return new Error('a shift needs a code');
+    if (!SHIFT_CODE_SHAPE.test(d.code!.trim().toUpperCase())) {
+      return new Error('a shift code is 2-12 characters: letters, digits, hyphen or underscore');
+    }
+    if (!need(d.name)) return new Error('a shift needs a name');
+    if (!need(d.timezone)) return new Error('a shift needs a timezone');
+    if (!need(d.startsAt) || !need(d.endsAt)) {
+      return new Error('a shift needs a start and an end time');
+    }
+  }
+  if (d.name !== undefined && !need(d.name)) return new Error('a shift needs a name');
+  if (d.name !== undefined && d.name.trim().length > 120) {
+    return new Error('a name is at most 120 characters');
+  }
+  for (const [label, v] of [['a start time', d.startsAt], ['an end time', d.endsAt]] as const) {
+    if (v !== undefined && !CLOCK_SHAPE.test(String(v).trim())) {
+      return new Error(`${label} is written as HH:MM, such as 09:30`);
+    }
+  }
+  const bound = (v: unknown, label: string, max: number): Error | null => {
+    if (v === undefined) return null;
+    if (typeof v !== 'number' || !Number.isInteger(v)) {
+      return new Error(`${label} is a whole number of minutes`);
+    }
+    if (v < 0) return new Error(`${label} cannot be negative`);
+    if (v > max) return new Error(`${label} is at most ${max} minutes`);
+    return null;
+  };
+  const brk = bound(d.breakMinutes, 'a break', 480);
+  if (brk) return brk;
+  const grace = bound(d.graceMinutes, 'a grace period', 240);
+  if (grace) return grace;
+
+  if (d.region !== undefined && d.region !== null
+    && !/^[A-Z]{2}$/.test(String(d.region).trim().toUpperCase())) {
+    return new Error('a region is a two-letter country code, such as IN');
+  }
+  if (d.timezone !== undefined && !knownZone(d.timezone.trim())) {
+    return new Error(`${d.timezone.trim()} is not a timezone this database recognises`
+      + ' — use an IANA name such as Asia/Kolkata');
+  }
+  return null;
+}
+
+/** Hours must end after they start: no overnight arithmetic exists to honour them. */
+const reversedHours = (start: string, end: string): boolean =>
+  start.slice(0, 5) >= end.slice(0, 5);
+
+const OVERNIGHT_REFUSAL = 'a shift must end after it starts. Overnight hours are not '
+  + 'supported yet — attendance measures worked time between two punches and would '
+  + 'not read them correctly';
+
 export const shiftService: ShiftService = {
   profiles() {
-    return ok(SHIFTS.map((s) => ({
-      id: s.id, code: s.id, name: s.n, start: s.start, end: s.end,
-      timezone: s.tz, region: s.region, night: s.night, flexible: false,
-      headcount: onShift(s.id).length,
-    })));
+    /*
+     * The same shape the server returns, break and grace included, and inactive
+     * profiles among them — somebody may still be assigned to a withdrawn pattern,
+     * and a historical record still has to resolve. Actives first, as the service
+     * orders them.
+     */
+    return ok([...SHIFTS]
+      .sort((a, b) => Number(b.active) - Number(a.active) || a.id.localeCompare(b.id))
+      .map(asProfile));
   },
 
   overtime(empIds, status) {
@@ -104,9 +209,85 @@ export const shiftService: ShiftService = {
     return ok(out);
   },
 
+  createShift(draft) {
+    const bad = checkDemoShift(draft, false);
+    if (bad) return Promise.reject(bad);
+    const code = draft.code!.trim().toUpperCase();
+    if (SHIFTS.some((s) => s.id === code)) {
+      return Promise.reject(new Error(`${code} is already a shift`));
+    }
+    if (reversedHours(draft.startsAt!.trim(), draft.endsAt!.trim())) {
+      return Promise.reject(new Error(OVERNIGHT_REFUSAL));
+    }
+    const made: Shift = {
+      id: code,
+      n: draft.name!.trim(),
+      start: draft.startsAt!.trim().slice(0, 5),
+      end: draft.endsAt!.trim().slice(0, 5),
+      tz: draft.timezone!.trim(),
+      region: draft.region?.trim().toUpperCase() || '',
+      brk: draft.breakMinutes ?? 60,
+      grace: draft.graceMinutes ?? 10,
+      c: draft.colour?.trim() || 'var(--s7)',
+      night: draft.isNight ?? false,
+      active: true,
+    };
+    SHIFTS.push(made);
+    return ok(asProfile(made));
+  },
+
+  updateShift(code, patch) {
+    const key = code.trim().toUpperCase();
+    const s = SHIFTS.find((x) => x.id === key);
+    if (!s) return Promise.reject(new Error('no such shift'));
+    const bad = checkDemoShift(patch, true);
+    if (bad) return Promise.reject(bad);
+    if (patch.code !== undefined && patch.code.trim().toUpperCase() !== key) {
+      return Promise.reject(new Error(
+        'a shift code cannot change — every employee, punch and site default joins on it. '
+        + 'Create a new profile instead'));
+    }
+    const nextStart = patch.startsAt !== undefined ? patch.startsAt.trim() : s.start;
+    const nextEnd = patch.endsAt !== undefined ? patch.endsAt.trim() : s.end;
+    if (reversedHours(nextStart, nextEnd)) {
+      return Promise.reject(new Error(OVERNIGHT_REFUSAL));
+    }
+    Object.assign(s, {
+      ...(patch.name !== undefined ? { n: patch.name.trim() } : {}),
+      ...(patch.startsAt !== undefined ? { start: nextStart.slice(0, 5) } : {}),
+      ...(patch.endsAt !== undefined ? { end: nextEnd.slice(0, 5) } : {}),
+      ...(patch.timezone !== undefined ? { tz: patch.timezone.trim() } : {}),
+      ...(patch.region !== undefined
+        ? { region: patch.region?.trim().toUpperCase() ?? '' } : {}),
+      ...(patch.breakMinutes !== undefined ? { brk: patch.breakMinutes } : {}),
+      ...(patch.graceMinutes !== undefined ? { grace: patch.graceMinutes } : {}),
+      ...(patch.isNight !== undefined ? { night: patch.isNight } : {}),
+      ...(patch.colour !== undefined ? { c: patch.colour?.trim() || 'var(--s7)' } : {}),
+    });
+    return ok(asProfile(s));
+  },
+
+  setShiftActive(code, active) {
+    const key = code.trim().toUpperCase();
+    const s = SHIFTS.find((x) => x.id === key);
+    if (!s) return Promise.reject(new Error('no such shift'));
+    if (typeof active !== 'boolean') {
+      return Promise.reject(new Error('a shift is either active or inactive'));
+    }
+    /* Nobody is moved: the people already on it keep their hours. */
+    s.active = active;
+    return ok(asProfile(s));
+  },
+
   setShift(empId, shiftCode) {
-    if (!SHIFTS.some((s) => s.id === shiftCode)) {
+    const target = SHIFTS.find((s) => s.id === shiftCode);
+    if (!target) {
       return Promise.reject(new Error('No such shift: ' + shiftCode));
+    }
+    /* An inactive profile keeps its people but is not offered for a new assignment. */
+    if (!target.active) {
+      return Promise.reject(new Error(
+        `${shiftCode} is not in use and cannot be assigned — activate it first`));
     }
     /* A profile change applies to every day, because it is a change to the person. */
     const week = ROSTER[empId] ?? (ROSTER[empId] = {});

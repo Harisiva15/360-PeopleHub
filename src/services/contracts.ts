@@ -497,7 +497,63 @@ export interface ShiftProfile {
   region: string;
   night: boolean;
   flexible: boolean;
+  /**
+   * The unpaid break, in minutes, that attendance deducts from worked time.
+   *
+   * This screen used to read the break from `src/data/shifts.ts`, which said 45
+   * while the column said 60 — so it told an administrator one number while the
+   * worked-minutes calculation used another. It comes from the service now.
+   */
+  breakMinutes: number;
+  /**
+   * How late somebody may punch in before attendance marks them late.
+   *
+   * Same story: the constant said 20 minutes for the India shift and the column
+   * says 10, which is the figure the lateness test compares against.
+   */
+  graceMinutes: number;
+  /** Whether the profile is still offered for new work. */
+  active: boolean;
+  /** Chart colour, or null where the tenant has not chosen one. */
+  colour: string | null;
+  /**
+   * The night allowance this profile attracts, or null where none is set.
+   *
+   * Nothing computes with it yet — the statutory duty it exists for applies from
+   * the day an overnight profile is actually run, and none is. Carried so the
+   * editor can show and keep it.
+   */
+  nightAllowance: number | null;
   headcount: number;
+}
+
+/**
+ * Fields a working-hours profile can be created or corrected with.
+ *
+ * Every field is optional so one shape serves both: a create refuses a missing
+ * code, name, timezone or hours, while a patch leaves absent fields alone.
+ *
+ * `code` is accepted on a create and refused on a patch — `employee.shift_id`,
+ * `attendance.shift_id` and `site.default_shift_id` all point at the row, so a
+ * code change is refused rather than ignored.
+ *
+ * `active` is absent on purpose. Taking a pattern out of use is its own call.
+ */
+export interface ShiftDraft {
+  code?: string;
+  name?: string;
+  /** HH:MM, in the profile's own timezone. */
+  startsAt?: string;
+  endsAt?: string;
+  breakMinutes?: number;
+  graceMinutes?: number;
+  isNight?: boolean;
+  nightAllowance?: number | null;
+  isFlexible?: boolean;
+  colour?: string | null;
+  /** An IANA name. The server checks it against the database's own zone list. */
+  timezone?: string;
+  region?: string | null;
 }
 
 /**
@@ -513,8 +569,39 @@ export interface ShiftProfile {
  * rather than a day.
  */
 export interface ShiftService {
-  /** The working-hours profiles this tenant runs, with headcount on each. */
+  /**
+   * The working-hours profiles this tenant runs, with headcount on each.
+   *
+   * **Inactive profiles are included.** Somebody may still be assigned to a
+   * withdrawn pattern — deactivating moves nobody — and a historical punch still
+   * has to resolve to the hours it was judged against. Actives sort first; the
+   * screen decides what to show.
+   */
   profiles(): Promise<ShiftProfile[]>;
+  /**
+   * Admin only. Register a working-hours profile.
+   *
+   * The code is upper-cased and becomes the identity. Hours must end after they
+   * start: the schema has `is_night` but nothing implements overnight arithmetic,
+   * so a reversed pair would describe hours no calculation agrees with.
+   */
+  createShift(draft: ShiftDraft): Promise<ShiftProfile>;
+  /**
+   * Admin only. Correct a profile.
+   *
+   * **Refused once the profile has attendance history**, for the four settings
+   * attendance reads — start time, timezone, grace and break. Correcting the end
+   * time, name, colour, region or flags stays allowed, because nothing in
+   * attendance reads those.
+   */
+  updateShift(code: string, patch: ShiftDraft): Promise<ShiftProfile>;
+  /**
+   * Admin only. Withdraw a profile from use, or bring it back.
+   *
+   * Nobody is moved and nothing is deleted: the people already on it keep their
+   * hours, and it simply stops being offered for a new assignment.
+   */
+  setShiftActive(code: string, active: boolean): Promise<ShiftProfile>;
   overtime(empIds?: string[], status?: Overtime['status']): Promise<Overtime[]>;
   /**
    * Approving credits comp off when that is the compensation, which is why the
@@ -1655,6 +1742,15 @@ export interface Department {
   parentId: string | null;
   active: boolean;
   headcount: number;
+  /**
+   * The business unit it belongs to, or null where none is assigned.
+   *
+   * Null is a real state rather than missing data: departments predate
+   * business units and are never assigned one implicitly.
+   */
+  businessUnitCode: string | null;
+  /** Resolved by the server, so a list needs no second request. */
+  businessUnitName: string | null;
 }
 
 export interface DepartmentDraft {
@@ -1663,12 +1759,209 @@ export interface DepartmentDraft {
   colour?: string | null;
   headId?: string | null;
   parentId?: string | null;
+  /**
+   * A business unit code, or null to leave it unassigned.
+   *
+   * Absent and null differ on a patch: absent leaves the assignment alone,
+   * null clears it.
+   */
+  businessUnitCode?: string | null;
+}
+
+/**
+ * The tenant this build is running for.
+ *
+ * `tenant` is the tenancy root: it has no row level security, it is read by a
+ * dozen modules for currency and statutory defaults, and until migration 0053
+ * the application role could not write it at all. Every field here is read-only
+ * except `displayName`, and that is not a UI convention — 0053 grants UPDATE on
+ * that one column, so the database refuses the others.
+ *
+ * They are returned together because the Company Profile screen shows them
+ * together. An administrator should be able to read the fiscal year and the data
+ * region their contract commits them to without being offered a control for them.
+ */
+export interface TenantProfile {
+  /** The trading name. The one field an administrator may change. */
+  displayName: string;
+  /** Read-only. The registered name; `LegalEntity.legalName` is the filing one. */
+  legalName: string;
+  /** Read-only. The URL identity, and how a login finds its tenant. */
+  slug: string;
+  /** Read-only. 'trial' | 'active' | 'suspended' | 'closed'. */
+  status: string;
+  /** Read-only. Statutory defaults follow it. */
+  homeCountry: string;
+  /** Read-only. Several modules store amounts that assume it. */
+  baseCurrency: string;
+  /** Read-only. 1-12. Decides which leave year a quota change reprices. */
+  fiscalYearStartMonth: number;
+  /** Read-only. A residency commitment in a customer contract. */
+  dataRegion: string;
+  createdAt: string;
+}
+
+/**
+ * The only mutable field on the tenant, named rather than spread.
+ *
+ * There is no generic tenant patch, deliberately: the one place a mass assignment
+ * could reach the tenancy root is exactly the place not to allow one.
+ */
+export interface TenantProfileDraft {
+  displayName: string;
+}
+
+/**
+ * A legal entity — the registered company somebody is employed by.
+ *
+ * Keyed by `code`, as `Site`, `Department` and `BusinessUnit` are: that is what
+ * an administrator quotes and what a URL carries. Three tables have carried a
+ * NOT NULL reference to this row since migration 0002 — an employee, a pay run
+ * and a compliance payment — while nothing in the product could read or edit
+ * one, so the Company Profile screen showed a hard-coded constant instead.
+ *
+ * It is **not** the top of the organisation chart. A business unit deliberately
+ * does not point here: the entity answers "which registered company, and
+ * therefore whose statutory rules", and a business unit answers "which P&L".
+ * They are siblings under the tenant.
+ */
+export interface LegalEntity {
+  code: string;
+  legalName: string;
+  /** ISO 3166-1 alpha-2. Decides which country's statutory rules apply. */
+  country: string;
+  /** ISO 4217. The currency its payroll is denominated in. */
+  currency: string;
+  registeredAddress: string | null;
+  taxId: string | null;
+  registrationId: string | null;
+  pfCode: string | null;
+  esiCode: string | null;
+  /**
+   * The entity the product falls back to when nothing names one.
+   *
+   * Payroll, expenses and employee provisioning each refuse to work without a
+   * default, so a tenant always has exactly one. It moves rather than toggles —
+   * see `setDefaultLegalEntity`.
+   */
+  isDefault: boolean;
+  /** People currently employed by it. What makes a change consequential. */
+  headcount: number;
+}
+
+/**
+ * Fields a legal entity can be created or corrected with.
+ *
+ * Every field is optional so the same shape serves both: a create refuses a
+ * missing code, name, country or currency, while a patch leaves absent fields
+ * alone. An optional identifier sent as an empty string clears it; sent as
+ * `undefined` it is untouched.
+ *
+ * `isDefault` is absent on purpose. Moving the default is its own call.
+ */
+export interface LegalEntityDraft {
+  code?: string;
+  legalName?: string;
+  country?: string;
+  currency?: string;
+  registeredAddress?: string | null;
+  taxId?: string | null;
+  registrationId?: string | null;
+  pfCode?: string | null;
+  esiCode?: string | null;
+}
+
+/**
+ * A business unit — the level above a department.
+ *
+ * Keyed by `code`, as `Site` and `Department` are: that is what an administrator
+ * quotes and what the URL carries. `id` is the code too, so a table can key rows
+ * by it without knowing the server holds a uuid.
+ */
+export interface BusinessUnit {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  /** Only an active unit is offered in a form; inactive ones still resolve. */
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * What the form sends.
+ *
+ * `code` is accepted on create and refused on update — it is the identity, and
+ * the server says so rather than quietly dropping a rename.
+ */
+export interface BusinessUnitDraft {
+  code?: string;
+  name?: string;
+  description?: string | null;
 }
 
 export interface ConfigService {
   sites(): Promise<Site[]>;
   /** The organisation's departments, with headcount. */
   departments(): Promise<Department[]>;
+  /**
+   * Business units, inactive ones included, actives first.
+   *
+   * Readable by every role: a screen showing which unit somebody belongs to has
+   * to resolve the code to a name. Only the writes below are admin-only.
+   */
+  /**
+   * The tenant this build is running for.
+   *
+   * Readable by every role: the product names the company in its own header.
+   * Only `displayName` can be written, and only by an administrator.
+   */
+  tenantProfile(): Promise<TenantProfile>;
+  /**
+   * Admin only. Renames the company, and changes nothing else — migration 0053
+   * grants UPDATE on `display_name` alone, so the rest is refused by PostgreSQL
+   * rather than by this signature.
+   */
+  updateTenantDisplayName(draft: TenantProfileDraft): Promise<TenantProfile>;
+  /**
+   * Every legal entity, the default first.
+   *
+   * Readable by every role: a payslip and an employee record both name the
+   * employing company, and resolving a code to a name is not privileged. Only
+   * the writes below are an administrator's.
+   */
+  legalEntities(): Promise<LegalEntity[]>;
+  /**
+   * Admin only. The code is upper-cased and becomes the entity identity.
+   *
+   * **The first entity in a tenant becomes the default**, because payroll,
+   * expenses and employee provisioning each refuse to run without one.
+   */
+  createLegalEntity(draft: LegalEntityDraft): Promise<LegalEntity>;
+  /**
+   * Admin only. The code cannot move — three tables join on it — and sending a
+   * different one is refused rather than ignored.
+   */
+  updateLegalEntity(code: string, patch: LegalEntityDraft): Promise<LegalEntity>;
+  /**
+   * Admin only. Moves the default to this entity, clearing the previous one in
+   * the same transaction. There is no way to leave a tenant with no default.
+   */
+  setDefaultLegalEntity(code: string): Promise<LegalEntity>;
+  businessUnits(): Promise<BusinessUnit[]>;
+  /** Admin only. The code is upper-cased and becomes the unit identity. */
+  createBusinessUnit(draft: BusinessUnitDraft): Promise<BusinessUnit>;
+  /**
+   * Admin only. Name and description; the code cannot move, and sending one is
+   * refused rather than ignored.
+   */
+  updateBusinessUnit(code: string, patch: BusinessUnitDraft): Promise<BusinessUnit>;
+  /**
+   * Admin only. There is no delete: a unit that stops trading is deactivated so
+   * everything recorded against it stays readable.
+   */
+  setBusinessUnitActive(code: string, active: boolean): Promise<BusinessUnit>;
   /** The grade ladder. Read-only, and readable by everyone. */
   grades(): Promise<GradeBand[]>;
   /** Admin only. The code is the department's identity and cannot move. */

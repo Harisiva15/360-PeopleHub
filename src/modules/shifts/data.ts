@@ -1,7 +1,7 @@
 /** The shift screens' data access. */
 
 import { useMutation, useQuery } from '../../services/react';
-import type { NewOvertime, Overtime } from '../../services';
+import type { NewOvertime, Overtime, ShiftDraft } from '../../services';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
@@ -17,6 +17,13 @@ export const useRejectOvertime = () =>
 export const useRaiseOvertime = () => useMutation((s, o: NewOvertime) => s.shifts.raiseOvertime(o));
 
 export const useShiftProfiles = () => useQuery((s) => s.shifts.profiles(), []);
+/* Admin-only writes, refused by the service rather than hidden here. */
+export const useCreateShift = () =>
+  useMutation((s, draft: ShiftDraft) => s.shifts.createShift(draft));
+export const useUpdateShift = () =>
+  useMutation((s, code: string, patch: ShiftDraft) => s.shifts.updateShift(code, patch));
+export const useSetShiftActive = () =>
+  useMutation((s, code: string, active: boolean) => s.shifts.setShiftActive(code, active));
 export const useRoster = (empIds: string[], from: string, days: number) =>
   useQuery((s) => s.shifts.roster(empIds, from, days), [empIds.join(','), from, String(days)]);
 export const useSetShift = () =>

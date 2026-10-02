@@ -28,19 +28,42 @@ export interface Shift {
   tz: string;
   /** Where the hours are kept, as an ISO country code. */
   region: string;
-  /** Unpaid break, in minutes. */
+  /**
+   * Unpaid break, in minutes.
+   *
+   * These two must match the `shift` table's defaults, because this is the demo's
+   * seed and the demo should show what a real tenant has. They did not: this said
+   * 45 and 20 while the column says 60 and 10, and the screen read from here while
+   * attendance read from the column. The screen now reads the service; these are
+   * the values the service returns in demo mode.
+   */
   brk: number;
-  /** Late-arrival grace, in minutes. */
+  /** Late-arrival grace, in minutes. Matches `shift.grace_minutes`. */
   grace: number;
   c: string;
   night: boolean;
+  /**
+   * Whether the profile is still offered for new work.
+   *
+   * The demo's store for `shift.active`. Deactivating one keeps the people already
+   * on it — that is what the service promises — so this only decides whether it is
+   * offered for a new assignment.
+   */
+  active: boolean;
 }
 
+/*
+ * The four regional profiles, matching what 0015 inserts and seed.mjs writes.
+ *
+ * `brk` and `grace` are 60 and 10 because that is what `shift.break_minutes` and
+ * `shift.grace_minutes` default to and what every seeded row holds. They used to
+ * read 45 and 20/15 here, which is the drift this phase removed.
+ */
 export const SHIFTS: Shift[] = [
-  { id: 'IN', n: 'India Shift', start: '09:30', end: '18:30', tz: 'Asia/Kolkata', region: 'IN', brk: 45, grace: 20, c: 'var(--s1)', night: false },
-  { id: 'US', n: 'US Shift', start: '09:00', end: '18:00', tz: 'America/New_York', region: 'US', brk: 45, grace: 15, c: 'var(--s3)', night: false },
-  { id: 'UK', n: 'UK Shift', start: '09:00', end: '17:30', tz: 'Europe/London', region: 'GB', brk: 45, grace: 15, c: 'var(--s4)', night: false },
-  { id: 'AE', n: 'UAE Shift', start: '09:00', end: '18:00', tz: 'Asia/Dubai', region: 'AE', brk: 45, grace: 15, c: 'var(--s5)', night: false },
+  { id: 'IN', n: 'India Shift', start: '09:30', end: '18:30', tz: 'Asia/Kolkata', region: 'IN', brk: 60, grace: 10, c: 'var(--s1)', night: false, active: true },
+  { id: 'US', n: 'US Shift', start: '09:00', end: '18:00', tz: 'America/New_York', region: 'US', brk: 60, grace: 10, c: 'var(--s3)', night: false, active: true },
+  { id: 'UK', n: 'UK Shift', start: '09:00', end: '17:30', tz: 'Europe/London', region: 'GB', brk: 60, grace: 10, c: 'var(--s4)', night: false, active: true },
+  { id: 'AE', n: 'UAE Shift', start: '09:00', end: '18:00', tz: 'Asia/Dubai', region: 'AE', brk: 60, grace: 10, c: 'var(--s5)', night: false, active: true },
 ];
 
 export const shiftOf = (id: string): Shift => SHIFTS.find((s) => s.id === id) || SHIFTS[0];

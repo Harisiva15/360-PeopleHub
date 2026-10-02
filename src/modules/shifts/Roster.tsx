@@ -24,13 +24,14 @@
 
 import { useMemo, useState } from 'react';
 import { addDays, DOW, fmtD, fmtDS, mondayOf, parseYmd, TODAY, ymd } from '../../lib/dates';
-import { SHIFTS, shiftOf } from '../../data/shifts';
+
 import { DEPTS, deptOf, siteOf, SITES } from '../../data/org';
 import { downloadCSV } from '../../lib/csv';
 import { Avatar, Badge, Card, EmptyState, Seg, StatRow, Tile } from '../../components/ui';
 import { useApp } from '../../state/AppContext';
 import { visibleIds } from '../../state/rbac';
 import { useAllEmployees, useRoster, useSetShift, useShiftProfiles } from './data';
+import { colourOf, resolveProfile } from './profile';
 import { Icon } from '../../components/icons';
 
 /** 12-hour clock, because a rota is read by people not machines. */
@@ -80,11 +81,13 @@ export function RosterView() {
   const ids = useMemo(() => visible.map((e) => e.id), [visible]);
   const roster = useRoster(ids, ws, days);
 
-  /* Profiles come from the server where it is live, and fall back to the
-     four the mock knows about, so the legend is never empty. */
-  const shiftList = profiles.length
-    ? profiles.map((p) => ({ id: p.code, n: p.name, tz: p.timezone, region: p.region, c: shiftOf(p.code).c }))
-    : SHIFTS.map((s) => ({ id: s.id, n: s.n, tz: s.tz, region: s.region, c: s.c }));
+  /*
+   * Profiles come from the service in both modes — the mock returns the same four,
+   * so there is nothing to fall back to and no client-side copy to drift from.
+   */
+  const shiftList = profiles.map((p, i) => ({
+    id: p.code, n: p.name, tz: p.timezone, region: p.region, c: colourOf(p, i),
+  }));
 
   const cellOf = (empId: string, date: string) => roster.data?.[empId]?.[date] ?? 'IN';
   /** Somebody's standing profile: whichever code their working days carry. */
@@ -126,9 +129,9 @@ export function RosterView() {
       ...dates.map((d) => fmtDS(d))]].concat(
       rows.map((e) => {
         const code = standingOf(e.id);
-        const s = shiftOf(code);
+        const s = resolveProfile(profiles, code);
         return [e.name, e.designation, deptOf(e.dept).name, siteOf(e.site).city,
-          s.n, `${s.start}–${s.end}`, s.tz,
+          s.name, `${s.start}–${s.end}`, s.timezone,
           ...dates.map((d) => (cellOf(e.id, d) === 'OFF' ? 'Off' : code))];
       })));
 
@@ -202,8 +205,10 @@ export function RosterView() {
               <tbody>
                 {rows.map((e) => {
                   const code = standingOf(e.id);
-                  const s = shiftOf(code);
-                  const away = offsetNote(s.tz);
+                  const s = resolveProfile(profiles, code);
+                  const away = offsetNote(s.timezone);
+                  /* The colour the legend uses for this profile, so the two agree. */
+                  const sColour = shiftList.find((o) => o.id === code)?.c ?? 'var(--line-2)';
                   return (
                     <tr key={e.id}>
                       <td>
@@ -217,15 +222,15 @@ export function RosterView() {
                       </td>
                       <td>
                         {mayEdit ? (
-                          <select className="rost" style={{ borderLeftColor: s.c }}
+                          <select className="rost" style={{ borderLeftColor: sColour }}
                             value={code} onChange={(ev) => assign(e.id, ev.target.value)}
-                            title={`${s.n} · ${h12(s.start)} – ${h12(s.end)} ${s.tz}`}>
+                            title={`${s.name} · ${h12(s.start)} – ${h12(s.end)} ${s.timezone}`}>
                             {shiftList.map((o) => (
                               <option key={o.id} value={o.id}>{o.n}</option>
                             ))}
                           </select>
                         ) : (
-                          <div className="rost" style={{ borderLeftColor: s.c }}>{s.n}</div>
+                          <div className="rost" style={{ borderLeftColor: sColour }}>{s.name}</div>
                         )}
                         <div className="muted" style={{ fontSize: 10.5, marginTop: 3 }}>
                           {h12(s.start)} – {h12(s.end)}{away ? ` · ${away}` : ''}
@@ -237,8 +242,8 @@ export function RosterView() {
                         return (
                           <td key={d} className="rost-cell">
                             <div className={'rost' + (off ? ' off' : '')}
-                              style={off ? undefined : { borderLeftColor: s.c }}
-                              title={off ? 'Week off' : `${s.n} · ${h12(s.start)} – ${h12(s.end)}`}>
+                              style={off ? undefined : { borderLeftColor: sColour }}
+                              title={off ? 'Week off' : `${s.name} · ${h12(s.start)} – ${h12(s.end)}`}>
                               {off ? 'Off' : cell}
                             </div>
                           </td>

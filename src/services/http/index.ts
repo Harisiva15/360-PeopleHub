@@ -389,11 +389,33 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
 
     config: {
       sites: () => api.get('/config/sites'),
+      /*
+       * The tenant's own profile. One read, and a write that carries a single
+       * named field — there is no generic tenant mutation endpoint.
+       */
+      tenantProfile: () => api.get('/config/tenant-profile'),
+      updateTenantDisplayName: (draft) => api.put('/config/tenant-profile', draft),
+      /*
+       * Legal entities. The Company Profile screen read a constant until these
+       * existed; now it reads the registered company three tables already join on.
+       */
+      legalEntities: () => api.get('/config/legal-entities'),
+      createLegalEntity: (draft) => api.post('/config/legal-entities', draft),
+      updateLegalEntity: (code, patch) =>
+        api.put(`/config/legal-entities/${encodeURIComponent(code)}`, patch),
+      setDefaultLegalEntity: (code) =>
+        api.put(`/config/legal-entities/${encodeURIComponent(code)}/default`, {}),
       departments: () => api.get('/config/departments'),
       grades: () => api.get('/config/grades'),
       createDepartment: (draft) => api.post('/config/departments', draft),
       updateDepartment: (code, patch) => api.put(`/config/departments/${code}`, patch),
       removeDepartment: (code) => api.del(`/config/departments/${code}`),
+      businessUnits: () => api.get('/config/business-units'),
+      createBusinessUnit: (draft) => api.post('/config/business-units', draft),
+      updateBusinessUnit: (code, patch) =>
+        api.put(`/config/business-units/${encodeURIComponent(code)}`, patch),
+      setBusinessUnitActive: (code, active) =>
+        api.put(`/config/business-units/${encodeURIComponent(code)}/active`, { active }),
       holidays: () => api.get('/config/holidays'),
       /*
        * `PUT /config/sites/:code/fence` had been routed and guarded on the
@@ -438,6 +460,14 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
 
     shifts: {
       profiles: () => api.get('/shifts'),
+      /*
+       * Shaping the profiles. No delete: three tables point at a shift row and a
+       * pattern somebody worked is history, so withdrawing it is /active.
+       */
+      createShift: (draft) => api.post('/shifts', draft),
+      updateShift: (code, patch) => api.put(`/shifts/${encodeURIComponent(code)}`, patch),
+      setShiftActive: (code, active) =>
+        api.put(`/shifts/${encodeURIComponent(code)}/active`, { active }),
       todayCoverage: () => api.get('/shifts/coverage'),
       roster: (empIds, from, days) =>
         (empIds.length
