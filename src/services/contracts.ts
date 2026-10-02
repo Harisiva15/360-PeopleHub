@@ -224,12 +224,57 @@ export interface LeaveQuery {
   status?: LeaveStatus;
 }
 
+/**
+ * Why a date is, or is not, a day somebody is expected to work.
+ *
+ * The server's answer, from the `holiday` table and — since the work schedule
+ * tables arrived — the employee's own effective-dated working pattern. The browser
+ * used to answer this itself, from a hard-coded weekend test and a holiday list
+ * compiled into the bundle, and the two could disagree with what a tenant had
+ * actually configured.
+ *
+ * `NOT_EMPLOYED` covers a date before somebody joined or after they left. An older
+ * reader that only knows the first three values still counts correctly, because
+ * every consumer branches on `workingDay` or on `reason === 'HOLIDAY'`.
+ */
+export type DayReason = 'WORKING' | 'WEEKLY_OFF' | 'HOLIDAY' | 'NOT_EMPLOYED';
+
+export interface DayVerdict {
+  /** The calendar date, `YYYY-MM-DD`. */
+  date: string;
+  workingDay: boolean;
+  reason: DayReason;
+  /** The holiday's name when `reason` is HOLIDAY, otherwise null. */
+  holiday: string | null;
+  /**
+   * The work schedule code that decided this date, or null when no assignment
+   * covered it and the Monday-to-Friday fallback answered instead. Null is the
+   * signal that nobody has put this person on a pattern — not that they work
+   * nothing.
+   */
+  schedule: string | null;
+  /**
+   * The shift applying on this date, where the person is expected to work: the
+   * weekday's own shift when the schedule names one, otherwise the employee's.
+   * Null on a day nobody is expected to work.
+   */
+  shift: string | null;
+}
+
+export interface CalendarService {
+  /**
+   * Every date from `from` to `to` inclusive, classified for one employee.
+   *
+   * An employee may read their own, a manager their line, an admin anybody.
+   */
+  workingDays(empId: string, from: string, to: string): Promise<DayVerdict[]>;
+}
+
 export interface ApplyLeave {
   empId: string;
   type: string;
   from: string;
   to: string;
-  days: number;
   reason: string;
   /** 'First Half' or 'Second Half' for a half day, null for whole days. */
   half: string | null;
@@ -240,6 +285,14 @@ export interface LeaveService {
   /** The full balance sheet for one employee, already carrying `avail`. */
   balances(empId: string): Promise<LeaveBalanceRow[]>;
   balance(empId: string, type: string): Promise<LeaveBalanceRow | null>;
+  /**
+   * Apply for leave.
+   *
+   * **The day count is not sent.** The server derives it from the dates, the
+   * Monday-to-Friday rule and the tenant's own holidays, and returns it on
+   * `LeaveRequest.days`. It used to be computed in the browser and stored as
+   * received, so two dates could claim a hundred days.
+   */
   apply(req: ApplyLeave): Promise<LeaveRequest>;
   /** Approving debits the balance, which is why it belongs behind the service. */
   approve(id: string, approverId: string): Promise<LeaveRequest>;
@@ -485,6 +538,254 @@ export interface NewOvertime {
   compensation: Overtime['compensation'];
 }
 
+/**
+ * A work schedule — which days a person is expected to work.
+ *
+ * Kept separate from `ShiftProfile` on purpose, and the split is the point: a
+ * schedule says *which days*, a shift says *which hours, in which timezone, with
+ * how much grace and break*. Migration 0015 moved hours onto the shift and 0054
+ * put days here; nothing copies a value between them.
+ */
+export interface WorkScheduleDay {
+  /** ISO weekday: 1 = Monday … 7 = Sunday. */
+  dayOfWeek: number;
+  working: boolean;
+  /**
+   * The shift this weekday runs on, where it differs from the person's usual one.
+   * Null means the employee's own shift applies.
+   */
+  shiftCode: string | null;
+  /** Resolved by the server, so a screen needs no second request. */
+  shiftName: string | null;
+}
+
+export interface WorkSchedule {
+  code: string;
+  name: string;
+  description: string | null;
+  /** Whether it is still offered for new assignments. */
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** People currently on it, anyone not yet left included. */
+  assignedNow: number;
+  /** All seven on a single read; empty on the list, which does not join them. */
+  days: WorkScheduleDay[];
+}
+
+export interface WorkScheduleDayDraft {
+  dayOfWeek: number;
+  working: boolean;
+  /** A shift code, or null for the employee's own. */
+  shiftCode?: string | null;
+}
+
+export interface WorkScheduleDraft {
+  code?: string;
+  name?: string;
+  description?: string | null;
+  /**
+   * All seven weekdays, or omitted for Monday to Friday.
+   *
+   * A schedule with a gap would answer "is Wednesday worked" with nothing, so the
+   * server writes seven rows or refuses. Only accepted on a create — a weekday is
+   * changed afterwards one at a time.
+   */
+  days?: WorkScheduleDayDraft[];
+}
+
+/** Which schedule applied to an employee over which dates. */
+export interface EmployeeSchedule {
+  id: string;
+  employeeId: string;
+  scheduleCode: string;
+  scheduleName: string;
+  /** Whether that schedule is still offered for new assignments. */
+  scheduleActive: boolean;
+  validFrom: string;
+  /** **Inclusive.** Null means current. */
+  validTo: string | null;
+  createdAt: string;
+}
+
+export interface EmployeeScheduleDraft {
+  scheduleCode: string;
+  validFrom: string;
+  /** Inclusive, or null for open-ended. */
+  validTo?: string | null;
+}
+
+export interface ScheduleService {
+  /**
+   * Every schedule this tenant has, inactive ones included and actives first.
+   *
+   * Readable by every role — which days a company works is not privileged, and an
+   * employee should be able to see the pattern they are on. `days` is empty here.
+   */
+  workSchedules(): Promise<WorkSchedule[]>;
+  /** One schedule with all seven weekdays and the shift each names. */
+  workSchedule(code: string): Promise<WorkSchedule>;
+  /**
+   * Admin only. The code is upper-cased and becomes the identity.
+   *
+   * Omitting `days` means Monday to Friday; sending them means sending all seven.
+   */
+  createWorkSchedule(draft: WorkScheduleDraft): Promise<WorkSchedule>;
+  /** Admin only. Name and description; the code cannot move. */
+  updateWorkSchedule(code: string, patch: WorkScheduleDraft): Promise<WorkSchedule>;
+  /** Admin only. One weekday at a time, because one weekday is one decision. */
+  setWorkScheduleDay(code: string, day: WorkScheduleDayDraft): Promise<WorkSchedule>;
+  /**
+   * Admin only. Withdraw a pattern from use, or bring it back.
+   *
+   * Nobody is moved and nothing is deleted: the people already on it keep it, and
+   * it stops being offered for a new assignment.
+   */
+  setWorkScheduleActive(code: string, active: boolean): Promise<WorkSchedule>;
+  /**
+   * One employee's schedule history, newest first.
+   *
+   * An employee reads their own, a manager their line, an admin anybody.
+   */
+  employeeSchedules(empId: string): Promise<EmployeeSchedule[]>;
+  /**
+   * Put somebody on a schedule from a date. Admin, or manager within their line.
+   *
+   * One transaction: the open period is closed the day before the new one starts,
+   * or amended if it began the same day, and the new one is written. A period that
+   * has already ended is never rewritten — a start date inside one is refused.
+   */
+  assignEmployeeSchedule(
+    empId: string, draft: EmployeeScheduleDraft): Promise<EmployeeSchedule>;
+  /** End an open period without starting another. Admin, or manager within line. */
+  closeEmployeeSchedule(
+    empId: string, assignmentId: string, validTo: string): Promise<EmployeeSchedule>;
+}
+
+/**
+ * A work schedule — which days a person is expected to work.
+ *
+ * Kept separate from `ShiftProfile` on purpose, and the split is the point: a
+ * schedule says *which days*, a shift says *which hours, in which timezone, with
+ * how much grace and break*. Migration 0015 moved hours onto the shift and 0054
+ * put days here; nothing copies a value between them.
+ */
+export interface WorkScheduleDay {
+  /** ISO weekday: 1 = Monday … 7 = Sunday. */
+  dayOfWeek: number;
+  working: boolean;
+  /**
+   * The shift this weekday runs on, where it differs from the person's usual one.
+   * Null means the employee's own shift applies.
+   */
+  shiftCode: string | null;
+  /** Resolved by the server, so a screen needs no second request. */
+  shiftName: string | null;
+}
+
+export interface WorkSchedule {
+  code: string;
+  name: string;
+  description: string | null;
+  /** Whether it is still offered for new assignments. */
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** People currently on it, anyone not yet left included. */
+  assignedNow: number;
+  /** All seven on a single read; empty on the list, which does not join them. */
+  days: WorkScheduleDay[];
+}
+
+export interface WorkScheduleDayDraft {
+  dayOfWeek: number;
+  working: boolean;
+  /** A shift code, or null for the employee's own. */
+  shiftCode?: string | null;
+}
+
+export interface WorkScheduleDraft {
+  code?: string;
+  name?: string;
+  description?: string | null;
+  /**
+   * All seven weekdays, or omitted for Monday to Friday.
+   *
+   * A schedule with a gap would answer "is Wednesday worked" with nothing, so the
+   * server writes seven rows or refuses. Only accepted on a create — a weekday is
+   * changed afterwards one at a time.
+   */
+  days?: WorkScheduleDayDraft[];
+}
+
+/** Which schedule applied to an employee over which dates. */
+export interface EmployeeSchedule {
+  id: string;
+  employeeId: string;
+  scheduleCode: string;
+  scheduleName: string;
+  /** Whether that schedule is still offered for new assignments. */
+  scheduleActive: boolean;
+  validFrom: string;
+  /** **Inclusive.** Null means current. */
+  validTo: string | null;
+  createdAt: string;
+}
+
+export interface EmployeeScheduleDraft {
+  scheduleCode: string;
+  validFrom: string;
+  /** Inclusive, or null for open-ended. */
+  validTo?: string | null;
+}
+
+export interface ScheduleService {
+  /**
+   * Every schedule this tenant has, inactive ones included and actives first.
+   *
+   * Readable by every role — which days a company works is not privileged, and an
+   * employee should be able to see the pattern they are on. `days` is empty here.
+   */
+  workSchedules(): Promise<WorkSchedule[]>;
+  /** One schedule with all seven weekdays and the shift each names. */
+  workSchedule(code: string): Promise<WorkSchedule>;
+  /**
+   * Admin only. The code is upper-cased and becomes the identity.
+   *
+   * Omitting `days` means Monday to Friday; sending them means sending all seven.
+   */
+  createWorkSchedule(draft: WorkScheduleDraft): Promise<WorkSchedule>;
+  /** Admin only. Name and description; the code cannot move. */
+  updateWorkSchedule(code: string, patch: WorkScheduleDraft): Promise<WorkSchedule>;
+  /** Admin only. One weekday at a time, because one weekday is one decision. */
+  setWorkScheduleDay(code: string, day: WorkScheduleDayDraft): Promise<WorkSchedule>;
+  /**
+   * Admin only. Withdraw a pattern from use, or bring it back.
+   *
+   * Nobody is moved and nothing is deleted: the people already on it keep it, and
+   * it stops being offered for a new assignment.
+   */
+  setWorkScheduleActive(code: string, active: boolean): Promise<WorkSchedule>;
+  /**
+   * One employee's schedule history, newest first.
+   *
+   * An employee reads their own, a manager their line, an admin anybody.
+   */
+  employeeSchedules(empId: string): Promise<EmployeeSchedule[]>;
+  /**
+   * Put somebody on a schedule from a date. Admin, or manager within their line.
+   *
+   * One transaction: the open period is closed the day before the new one starts,
+   * or amended if it began the same day, and the new one is written. A period that
+   * has already ended is never rewritten — a start date inside one is refused.
+   */
+  assignEmployeeSchedule(
+    empId: string, draft: EmployeeScheduleDraft): Promise<EmployeeSchedule>;
+  /** End an open period without starting another. Admin, or manager within line. */
+  closeEmployeeSchedule(
+    empId: string, assignmentId: string, validTo: string): Promise<EmployeeSchedule>;
+}
+
 /** A working-hours profile, with how many people are on it. */
 export interface ShiftProfile {
   id: string;
@@ -564,10 +865,36 @@ export interface ShiftDraft {
  * not rotate, and the timezone — the part that decides whether a 21:30 punch
  * is late — had nowhere to live in the old model.
  *
- * So `roster` reports each person's standing profile across a span of days
- * rather than a grid somebody fills in, and `setShift` changes the person
- * rather than a day.
+ * So `setShift` changes the person rather than a day.
+ *
+ * `roster`, by contrast, is per day — not because a shift rotates, but because
+ * *which days are worked* varies by person and date. That answer belongs to the
+ * work schedule, and since Phase 2h-F the rota reads it from the same resolver
+ * leave and the calendar use rather than calling Saturday and Sunday off for
+ * everybody.
  */
+
+/**
+ * One employee's one day on the rota: what is expected, and on which hours.
+ *
+ * **Expected, never actual.** This says what the schedule asks of somebody. It is
+ * not attendance and it never becomes attendance: a working day with no
+ * attendance row is a working day with no attendance row, not an absence.
+ */
+export interface RosterDay {
+  /** The authoritative expectation, from the same resolver leave reads. */
+  expected: DayReason;
+  /** The shift expected that day, or null when nobody is expected in. */
+  shift: string | null;
+  /**
+   * The work schedule that decided it, or null when none is assigned — in which
+   * case the Monday-to-Friday fallback answered. A screen must not present that
+   * as an assignment; see `DayVerdict.schedule`.
+   */
+  schedule: string | null;
+  /** The holiday's name when `expected` is HOLIDAY, otherwise null. */
+  holiday: string | null;
+}
 export interface ShiftService {
   /**
    * The working-hours profiles this tenant runs, with headcount on each.
@@ -613,10 +940,16 @@ export interface ShiftService {
   rejectOvertime(id: string): Promise<Overtime>;
   raiseOvertime(o: NewOvertime): Promise<Overtime>;
   /**
-   * Each person's shift across `days` from `from`, keyed by employee then
-   * date. Every working day carries the same code; weekends come back 'OFF'.
+   * What each person is expected to work across `days` from `from`, keyed by
+   * employee then date.
+   *
+   * One request for the whole team and the whole span — the server resolves every
+   * employee and date in a single statement, so a rota must never call this per
+   * person or per cell. People the caller may not see are simply absent from the
+   * result.
    */
-  roster(empIds: string[], from: string, days: number): Promise<Record<string, Record<string, string>>>;
+  roster(empIds: string[], from: string, days: number):
+  Promise<Record<string, Record<string, RosterDay>>>;
   /** Move somebody onto a different profile. Takes effect now, not on a date. */
   setShift(empId: string, shiftCode: string): Promise<{ empId: string; shift: string }>;
   /** How many active people are on each shift profile. */
@@ -2152,6 +2485,8 @@ export interface Services {
   expenses: ExpenseService;
   payroll: PayrollService;
   compensation: CompensationService;
+  calendar: CalendarService;
+  schedules: ScheduleService;
   shifts: ShiftService;
   loans: LoanService;
   letters: LetterService;

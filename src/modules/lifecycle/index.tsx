@@ -35,6 +35,7 @@ import {
   useLifecycleRow, usePromote, useRemoveTask,
   useSetTaskDone, useVisiblePeople,
 } from './data';
+import { EmployeeScheduleCard } from './Schedule';
 
 const NOW = ymd(TODAY);
 
@@ -322,7 +323,7 @@ function LifecycleDetailView({ id }: { id: string }) {
   const { data: d, loading, error, refetch } = useLifecycleRow(id);
   const setDone = useSetTaskDone();
   const removeTask = useRemoveTask();
-  const [tab, setTab] = useState<'journey' | 'tasks' | 'history'>('journey');
+  const [tab, setTab] = useState<'journey' | 'tasks' | 'history' | 'schedule'>('journey');
 
   if (error) return <EmptyState icon={<Icon n="lock" size="xl" />} msg={error.message} />;
   if (!d) return <EmptyState msg={loading ? 'Loading…' : 'Nobody by that id'} />;
@@ -399,6 +400,13 @@ function LifecycleDetailView({ id }: { id: string }) {
           { v: 'journey' as const, label: 'Journey' },
           { v: 'tasks' as const, label: `Tasks (${open.length})` },
           { v: 'history' as const, label: 'History' },
+          /*
+           * A working pattern is another effective-dated fact about somebody, so
+           * it sits beside their stage and their history rather than in a screen
+           * of its own. The card inside reads and writes through the schedule
+           * service; the service decides who may change it.
+           */
+          { v: 'schedule' as const, label: 'Working pattern' },
         ]}
         onChange={setTab}
       />
@@ -496,6 +504,8 @@ function LifecycleDetailView({ id }: { id: string }) {
             msg="No employment history yet — this journey has not started" />
         )
       )}
+
+      {tab === 'schedule' && <EmployeeScheduleCard empId={id} />}
     </div>
   );
 }

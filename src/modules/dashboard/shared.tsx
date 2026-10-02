@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { sum } from '../../lib/collections';
-import { addDays, DOW, fmtD, fmtDS, fmtTime, hhmm, isWeekend, MON, monthKey, parseYmd, TODAY, ymd } from '../../lib/dates';
+import { addDays, DOW, fmtD, fmtDS, fmtTime, hhmm, MON, monthKey, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
-import { deptOf, HOLIDAY_MAP, ORG } from '../../data/org';
-import type { AttRecord, AttStatus, Celebration, Employee } from '../../services';
+import { deptOf, ORG } from '../../data/org';
+import type { AttRecord, AttStatus, Celebration, DayVerdict, Employee } from '../../services';
 import type { Directory } from '../../services/people';
 import { Avatar, Badge, EmptyState } from '../../components/ui';
 import { ListRow } from '../../components/common';
@@ -135,14 +135,33 @@ const DAY_LABEL: Record<string, string> = {
   P: 'Present', W: 'WFH', L: 'Leave', A: 'Absent', H: 'Holiday', O: 'Week off',
 };
 
-/** One month of an employee's attendance, as a day grid. */
-export function MonthCalendar({ records, mk }: { records: AttRecord[]; mk: string }) {
+/**
+ * One month of an employee's attendance, as a day grid.
+ *
+ * A day with no attendance row used to be filled in here, from `HOLIDAY_MAP` and
+ * `isWeekend` — a holiday list compiled into the bundle and a hard-coded
+ * Saturday/Sunday test. In a configured build that showed week-offs and holidays
+ * no server data supported, and shaded days the tenant had never configured.
+ *
+ * `calendar` carries the server's verdicts for the month instead. Where it is
+ * absent the grid says nothing rather than guessing: a day with no record reads as
+ * no record.
+ *
+ * **It still renders only what attendance actually holds.** Nothing here writes a
+ * status, and no absent, week-off or holiday row is created — that is the later
+ * attendance phase, deliberately not this one.
+ */
+export function MonthCalendar(
+  { records, mk, calendar = [] }:
+  { records: AttRecord[]; mk: string; calendar?: DayVerdict[] },
+) {
   const [Y, M] = mk.split('-').map(Number);
   const first = new Date(Y, M - 1, 1);
   const dim = new Date(Y, M, 0).getDate();
   const lead = first.getDay();
 
   const byDate = new Map(records.map((r) => [r.date, r]));
+  const verdicts = new Map(calendar.map((v) => [v.date, v]));
   const cells = [];
   DOW.forEach((d) => cells.push(<div className="dow" key={'h' + d}>{d[0]}</div>));
   for (let i = 0; i < lead; i++) cells.push(<div className="day mut" key={'l' + i} />);
@@ -150,8 +169,16 @@ export function MonthCalendar({ records, mk }: { records: AttRecord[]; mk: strin
   for (let d = 1; d <= dim; d++) {
     const ds = Y + '-' + String(M).padStart(2, '0') + '-' + String(d).padStart(2, '0');
     const r = byDate.get(ds);
-    const st = r ? r.status : HOLIDAY_MAP[ds] ? 'H' : isWeekend(parseYmd(ds)) ? 'O' : '';
-    const lbl = st === 'H' ? HOLIDAY_MAP[ds] || 'Holiday' : DAY_LABEL[st] || 'No record';
+    const v = verdicts.get(ds);
+    /*
+     * An attendance row wins — it is what happened. Otherwise the server says
+     * whether the day was one this person was expected to work, and with no server
+     * answer the cell stays blank rather than inventing one.
+     */
+    const st = r ? r.status
+      : v && v.reason === 'HOLIDAY' ? 'H'
+        : v && !v.workingDay ? 'O' : '';
+    const lbl = st === 'H' ? (v?.holiday ?? 'Holiday') : DAY_LABEL[st] || 'No record';
     const tip =
       fmtD(ds) + ' · ' + lbl +
       (r && r.inT ? ` · ${fmtTime(r.inT)}–${fmtTime(r.outT)} (${hhmm(r.mins)} h)` : '');

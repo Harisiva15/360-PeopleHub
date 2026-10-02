@@ -376,9 +376,21 @@ const employeeOf = async (account) => (await admin.query(
 
   console.log('\nworkflow: leave\n');
 
+  /*
+   * `n` days ahead, rolled forward off a weekend.
+   *
+   * These dates used to be whatever `today + n` happened to be, and a leave
+   * request was stored with whatever `days` the caller sent. Phase 2h-B derives
+   * the day count from the calendar, so a request landing on a Saturday now
+   * covers nothing and is refused — which made this suite's outcome depend on the
+   * day of the week it ran. These assertions are about who may apply and approve,
+   * not about the calendar, so the dates are nudged to a weekday rather than the
+   * refusal being worked around.
+   */
   const day = (n) => {
     const d = new Date();
     d.setUTCDate(d.getUTCDate() + n);
+    while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
     return d.toISOString().slice(0, 10);
   };
 

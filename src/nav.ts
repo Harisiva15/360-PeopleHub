@@ -141,6 +141,9 @@ export const NAV: NavGroup[] = [
     items: [
       { k: 'settings', n: 'Company profile', to: '/settings?v=company', ic: 'building', d: 'Legal entity, addresses and identifiers.' },
       { k: 'settings', n: 'Organisation structure', to: '/settings?v=org', ic: 'building', d: 'Departments, heads and headcount.' },
+      /* The level above a department. Same `settings` route and permission as
+         every other configuration screen — a new tab, not a new route. */
+      { k: 'settings', n: 'Business units', to: '/settings?v=bu', ic: 'projects', d: 'The operating divisions a department belongs to.' },
       { k: 'settings', n: 'Locations', to: '/settings?v=sites', ic: 'location', d: 'Sites, addresses and geo-fences.' },
       { k: 'settings', n: 'Leave policies', to: '/settings?v=leave', ic: 'holiday', d: 'Quotas, carry-forward and encashment.' },
       { k: 'settings', n: 'Salary components', to: '/settings?v=pay', ic: 'money', d: 'Earnings, deductions and bands.' },

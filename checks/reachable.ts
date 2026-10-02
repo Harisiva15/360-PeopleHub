@@ -44,6 +44,19 @@ const ALLOWED: Record<string, string> = {
    * server's record rather than a lookup into the demo dataset — and
    * `src/state` is walked, so the entry went stale and this check said so.
    */
+
+  /*
+   * Phase 2h-F built the screens, and this list is how we know it finished the
+   * job: nine entries sat here saying "server-side in 2h-D; the screen is 2h-E",
+   * and eight of them came off because something now calls them.
+   *
+   * The ninth is a real exemption rather than an unfinished one. `workSchedule`
+   * reads a single pattern with its weekdays, and it has no caller because
+   * `listWorkSchedules` now returns the weekdays with the list — which it had to,
+   * or the patterns screen would have needed one request per row. The method stays
+   * routed and tested; nothing in the product needs it.
+   */
+  'schedules.workSchedule': 'listWorkSchedules carries the weekdays, so no screen reads one',
 };
 
 const files: string[] = [];

@@ -36,6 +36,15 @@ import {
 } from '../modules/config/service.ts';
 import type { BusinessUnitDraft, LegalEntityDraft } from '../modules/config/service.ts';
 import type { ShiftDraft } from '../modules/shifts/service.ts';
+import { CalendarError, workingDaysFor } from '../modules/calendar/service.ts';
+import {
+  assignEmployeeSchedule, closeEmployeeSchedule, createWorkSchedule, employeeSchedules,
+  getWorkSchedule, listWorkSchedules, ScheduleError, setWorkScheduleActive,
+  setWorkScheduleDay, updateWorkSchedule,
+} from '../modules/schedules/service.ts';
+import type {
+  EmployeeScheduleDraft, WorkScheduleDayDraft, WorkScheduleDraft,
+} from '../modules/schedules/service.ts';
 import {
   CompensationError, listComponents, removeComponent,
   salaryHistory, saveComponent, setSalaryStructure,
@@ -1193,6 +1202,93 @@ const routes: Route[] = [
     handler: (c, _r, p, body) =>
       rejectLeave(c, p.id!, (body as { note?: string } | undefined)?.note),
   },
+  /*
+   * Work schedules: which days a pattern expects, and who is on which pattern.
+   *
+   * Keyed by code, as every other configuration entity in this module is — a site,
+   * a business unit, a legal entity and a shift are all addressed by the code an
+   * administrator quotes rather than by a uuid. An assignment has no natural key,
+   * so those are addressed by id.
+   *
+   * The literal `/work-schedules` sits above the `:code` form. Reads are open to
+   * every role; the writes are refused in the service, not here.
+   *
+   * There is no DELETE: an assignment names a pattern, and a pattern somebody
+   * worked is history. Withdrawing one from use is `/active`.
+   */
+  { method: 'GET', pattern: '/work-schedules', handler: (c) => listWorkSchedules(c) },
+  {
+    method: 'POST',
+    pattern: '/work-schedules',
+    handler: (c, _r, _p, body) => createWorkSchedule(c, (body ?? {}) as WorkScheduleDraft),
+  },
+  {
+    method: 'GET',
+    pattern: '/work-schedules/:code',
+    handler: (c, _r, p) => getWorkSchedule(c, p.code!),
+  },
+  {
+    method: 'PUT',
+    pattern: '/work-schedules/:code',
+    handler: (c, _r, p, body) =>
+      updateWorkSchedule(c, p.code!, (body ?? {}) as WorkScheduleDraft),
+  },
+  {
+    method: 'PUT',
+    pattern: '/work-schedules/:code/active',
+    handler: (c, _r, p, body) =>
+      setWorkScheduleActive(c, p.code!, (body as { active?: boolean } | null)?.active ?? false),
+  },
+  {
+    /* One weekday at a time, because one weekday is one decision. */
+    method: 'PUT',
+    pattern: '/work-schedules/:code/days',
+    handler: (c, _r, p, body) =>
+      setWorkScheduleDay(c, p.code!, (body ?? {}) as WorkScheduleDayDraft),
+  },
+  {
+    /*
+     * An employee's schedule history. Hangs off the employee, as
+     * `/employees/:id/shift` does, because it is a fact about the person.
+     */
+    method: 'GET',
+    pattern: '/employees/:id/schedules',
+    handler: (c, _r, p) => employeeSchedules(c, p.id!),
+  },
+  {
+    method: 'POST',
+    pattern: '/employees/:id/schedules',
+    handler: (c, _r, p, body) =>
+      assignEmployeeSchedule(c, p.id!, (body ?? {}) as EmployeeScheduleDraft),
+  },
+  {
+    /* Ending a period without starting another. */
+    method: 'PUT',
+    pattern: '/employees/:id/schedules/:assignmentId',
+    handler: (c, _r, p, body) =>
+      closeEmployeeSchedule(c, p.id!, p.assignmentId!,
+        (body as { validTo?: string } | null)?.validTo ?? ''),
+  },
+
+  /*
+   * Which days a person is expected to work, and why not when they are not.
+   *
+   * One read, so a screen can show a calendar without deciding for itself what a
+   * weekend or a holiday is. The leave screen used to count its own days from a
+   * hard-coded Saturday/Sunday rule and a holiday list compiled into the bundle,
+   * and the server stored whatever number came back.
+   *
+   * Scoped in the service: an employee reads their own calendar, a manager their
+   * line, an admin anybody.
+   */
+  {
+    method: 'GET',
+    pattern: '/calendar/working-days',
+    handler: (c, req) => {
+      const q = new URL(req.url ?? '/', 'http://x').searchParams;
+      return workingDaysFor(c, q.get('empId') ?? '', q.get('from') ?? '', q.get('to') ?? '');
+    },
+  },
   {
     method: 'POST',
     pattern: '/leave',
@@ -2178,6 +2274,20 @@ const bearer = (req: IncomingMessage): string | undefined => {
  */
 function statusFor(error: unknown): { status: number; message: string } {
   if (error instanceof AuthError) return { status: 401, message: error.message };
+  if (error instanceof CalendarError) {
+    return { status: error.code === 'forbidden' ? 403 : 400, message: error.message };
+  }
+  if (error instanceof ScheduleError) {
+    /*
+     * A conflict is a 409 and not a 400: "already has a schedule covering that
+     * period" is a statement about the data, not about the request being malformed.
+     */
+    const byCode = { forbidden: 403, not_found: 404, conflict: 409 } as const;
+    return {
+      status: byCode[error.code as keyof typeof byCode] ?? 400,
+      message: error.message,
+    };
+  }
   if (error instanceof TenantContextError) return { status: 401, message: 'no tenant context' };
   if (error instanceof PermissionError) {
     return { status: error.kind === 'forbidden' ? 403 : 400, message: error.message };

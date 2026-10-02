@@ -29,6 +29,13 @@ export const ROUTE_MODULE: Record<string, string> = {
   approvals: 'approvals',
   assets: 'assets',
   attendance: 'attendance',
+  /*
+   * The working-day calendar is an attendance read, and deliberately not its own
+   * permission key: it answers which days a person was expected to work, which is
+   * the same question `attendance` already governs, at the same three scopes —
+   * yourself, your line, everybody.
+   */
+  calendar: 'attendance',
   candidates: 'hiring',
   celebrations: 'celebrations',
   compensation: 'compensation',
@@ -70,6 +77,13 @@ export const ROUTE_MODULE: Record<string, string> = {
   tax: 'tax',
   timesheets: 'timesheet',
   users: 'users',
+  /*
+   * Work schedules are time-and-attendance configuration, governed by the same
+   * module key the shift screens already use rather than a new permission key.
+   * The writes are admin-only in the service; `shifts` is what decides who may
+   * see the screens they will eventually appear on.
+   */
+  'work-schedules': 'shifts',
 };
 
 /**

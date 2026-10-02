@@ -22,7 +22,7 @@
     "check:policy": "node --experimental-strip-types scripts/policy.test.mjs",
     "check:routemodules": "node --experimental-strip-types scripts/route-modules.test.mjs",
     "check:routes": "node scripts/check-routes.mjs",
-    "check": "npm run check:schema && npm run check:bootstrap && npm run check:schema:test && npm run check:ratelimit && npm run check:csv && npm run check:auth && npm run check:tenancy && npm run check:payrollrun && npm run check:payrollprereq && npm run check:claim && npm run check:invite && npm run check:profile && npm run check:survey && npm run check:kb && npm run check:departments && npm run check:hierarchy && npm run check:employment && npm run check:projects && npm run check:businessunits && npm run check:deptbu && npm run check:depthierarchy && npm run check:legalentities && npm run check:tenantprofile && npm run check:shifts && npm run check:policy && npm run check:routemodules && npm run check:routes && npm run typecheck",
+    "check": "npm run check:schema && npm run check:bootstrap && npm run check:schema:test && npm run check:ratelimit && npm run check:csv && npm run check:auth && npm run check:tenancy && npm run check:payrollrun && npm run check:payrollprereq && npm run check:claim && npm run check:invite && npm run check:profile && npm run check:survey && npm run check:kb && npm run check:departments && npm run check:hierarchy && npm run check:employment && npm run check:projects && npm run check:businessunits && npm run check:deptbu && npm run check:depthierarchy && npm run check:legalentities && npm run check:tenantprofile && npm run check:shifts && npm run check:workingdays && npm run check:workschedule && npm run check:schedules && npm run check:calschedules && npm run check:policy && npm run check:routemodules && npm run check:routes && npm run typecheck",
     "inspect": "node scripts/inspect.mjs",
     "retention": "node scripts/retention.mjs",
     "verify:isolation": "node scripts/verify-isolation.mjs",
@@ -44,7 +44,11 @@
     "check:depthierarchy": "node --import=tsx/esm scripts/department-hierarchy.test.mjs",
     "check:legalentities": "node --import=tsx/esm scripts/legal-entities.test.mjs",
     "check:tenantprofile": "node --import=tsx/esm scripts/tenant-profile.test.mjs",
-    "check:shifts": "node --import=tsx/esm scripts/shifts.test.mjs"
+    "check:shifts": "node --import=tsx/esm scripts/shifts.test.mjs",
+    "check:workingdays": "node --import=tsx/esm scripts/working-days.test.mjs",
+    "check:workschedule": "node --import=tsx/esm scripts/work-schedule.test.mjs",
+    "check:schedules": "node --import=tsx/esm scripts/schedules.test.mjs",
+    "check:calschedules": "node --import=tsx/esm scripts/calendar-schedules.test.mjs"
   },
   "dependencies": {
     "jose": "^6.2.12",

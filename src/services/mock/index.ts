@@ -7,6 +7,8 @@
 
 import type { Services } from '../contracts';
 import { attendanceService } from './attendance';
+import { calendarService } from './calendar';
+import { scheduleService } from './schedules';
 import { employeeService } from './employees';
 import { expenseService } from './expenses';
 import { leaveService } from './leave';
@@ -38,6 +40,8 @@ import { plannerService } from './planner';
 export const mockServices: Services = {
   employees: employeeService,
   attendance: attendanceService,
+  calendar: calendarService,
+  schedules: scheduleService,
   leave: leaveService,
   timesheet: timesheetService,
   expenses: expenseService,

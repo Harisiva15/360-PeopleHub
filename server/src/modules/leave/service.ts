@@ -19,6 +19,7 @@
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { toBalanceRow, toHalfDayColumn, toLeaveRequest } from './mapper.ts';
+import { classifyRange } from '../calendar/service.ts';
 import type { LeaveBalanceRow, LeaveRequest } from './mapper.ts';
 
 export type { LeaveBalanceRow, LeaveRequest };
@@ -86,7 +87,16 @@ export interface ApplyLeaveInput {
   typeCode: string;
   startsOn: string;
   endsOn: string;
-  days: number;
+  /**
+   * Ignored.
+   *
+   * It was the stored day count until the server started deriving it, and a
+   * client could send any number — two dates and `days: 100` created a
+   * hundred-day request and debited a hundred days on approval. Kept in the
+   * shape so an older client's request body still parses; the value is never
+   * read. `LeaveRequest.days` on the way back is the authoritative figure.
+   */
+  days?: number;
   reason: string;
   half?: string | null;
 }
@@ -95,6 +105,13 @@ export interface ApplyLeaveInput {
  * Apply for leave. Deliberately does *not* touch the balance: an application
  * is a request, and reserving days on application is how balances drift when
  * requests are abandoned.
+ *
+ * **The day count is the server's, not the caller's.** `input.days` is ignored.
+ * It used to be stored as sent, so a request naming two dates could claim a
+ * hundred days and debit a hundred on approval — the browser was computing the
+ * figure, from a hard-coded weekend rule and a holiday list compiled into the
+ * bundle. The count now comes from `classifyRange`, in this transaction, against
+ * the `holiday` table the tenant can actually edit.
  */
 export async function applyForLeave(
   caller: Caller,
@@ -103,7 +120,15 @@ export async function applyForLeave(
   if (caller.role !== 'admin' && input.employeeId !== caller.employeeId) {
     throw new LeaveError('you can only apply for your own leave', 'forbidden');
   }
-  if (input.days <= 0) throw new LeaveError('a request must be at least half a day', 'invalid');
+  const half = input.half ?? null;
+  if (half !== null && input.startsOn !== input.endsOn) {
+    /*
+     * The schema says the same thing — `CHECK (half_day IS NULL OR starts_on =
+     * ends_on)` — but a constraint violation reads as a fault rather than a rule,
+     * and half of a range is not a thing the product offers.
+     */
+    throw new LeaveError('a half day is a single day', 'invalid');
+  }
 
   return withTenant(caller, async (db) => {
     const overlap = await db.query(
@@ -125,6 +150,39 @@ export async function applyForLeave(
       'SELECT manager_id FROM employee WHERE id = $1',
       [input.employeeId],
     );
+    if (approver.rowCount === 0) throw new LeaveError('no such employee', 'not_found');
+
+    /*
+     * The day count, derived here and nowhere else.
+     *
+     * Classified in the same transaction as the insert, so a holiday added
+     * between the two cannot make the stored number disagree with the calendar it
+     * was taken from. Weekends and the tenant's own mandatory holidays — the
+     * employee's site included — drop out; optional holidays stay working days,
+     * which is what every other part of the product already says they are.
+     *
+     * A half day is 0.5 of one working day, matching `days numeric(5, 1)` and
+     * the behaviour the screen has always shown. Taking half of a day nobody
+     * works is refused rather than stored as 0.5.
+     */
+    const span = await classifyRange(db, input.employeeId, input.startsOn, input.endsOn);
+    const working = span.filter((d) => d.workingDay);
+
+    if (working.length === 0) {
+      /*
+       * The reason is named from the verdicts rather than assumed, because
+       * "all week off" is actively misleading for a range nobody was employed
+       * for — which 2h-E's resolver can now say and 2h-B could not.
+       */
+      const why = span.some((d) => d.reason === 'NOT_EMPLOYED')
+        ? 'those dates fall outside this person\'s employment'
+        : span.every((d) => d.reason === 'WEEKLY_OFF')
+          ? 'those dates are all week off'
+          : 'those dates are all week off or holidays';
+      throw new LeaveError(`${why}, so there is no leave to take`, 'invalid');
+    }
+
+    const days = half !== null ? 0.5 : working.length;
 
     const { rows } = await db.query(
       `INSERT INTO leave_request
@@ -133,7 +191,7 @@ export async function applyForLeave(
        RETURNING *`,
       [
         input.employeeId, type.rows[0].id, input.startsOn, input.endsOn,
-        input.days, toHalfDayColumn(input.half ?? null), input.reason,
+        days, toHalfDayColumn(half), input.reason,
         approver.rows[0]?.manager_id ?? null,
       ],
     );

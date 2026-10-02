@@ -20,6 +20,8 @@
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
+import { classifyMany } from '../calendar/service.ts';
+import type { DayReason } from '../calendar/service.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
 export class ShiftError extends Error {
@@ -424,19 +426,54 @@ export async function listShifts(caller: Caller): Promise<Shift[]> {
   });
 }
 
+/** One employee's one day on the rota: what is expected, and on which hours. */
+export interface RosterDay {
+  /**
+   * The authoritative expectation for this date, straight from the calendar
+   * resolver: WORKING, WEEKLY_OFF, HOLIDAY or NOT_EMPLOYED.
+   *
+   * This is the *expected* state and nothing else. It is not attendance, and the
+   * roster writes none: a working day with no attendance row is a working day with
+   * no attendance row, never an absence.
+   */
+  expected: DayReason;
+  /** The shift expected that day, or null when nobody is expected in. */
+  shift: string | null;
+  /** The work schedule that decided it, or null when none is assigned. */
+  schedule: string | null;
+  /** The holiday's name when `expected` is HOLIDAY, otherwise null. */
+  holiday: string | null;
+}
+
 /**
- * Who is on which shift, across a span of days.
+ * Who is expected on which hours, across a span of days.
  *
- * Keyed by employee then date to match the shape the calendar renders, but
- * every working day for one person carries the same code: a shift is a
- * standing profile, not a per-day decision. Weekends come back as 'OFF'.
+ * Keyed by employee then date, which is the shape the rota renders.
+ *
+ * ## This used to hard-code the weekend
+ *
+ * It read `d.getUTCDay()` and called 0 and 6 'OFF' for everybody — so a tenant
+ * working Monday to Saturday, or Sunday to Thursday in the Gulf, saw a rota that
+ * disagreed with their own schedule, their leave counts and their calendar. Worse,
+ * `getUTCDay()` on a date built from a string is the timezone mistake 2h-B was
+ * written to remove.
+ *
+ * Every cell now comes from `classifyMany`, the same resolver leave and the
+ * calendar read, so there is one answer to "is this a working day" in the product
+ * and the rota is a view of it rather than a second opinion.
+ *
+ * ## One query for the whole team
+ *
+ * `classifyMany` resolves every employee and every date in a single statement, so
+ * a fortnight for forty people costs one round trip — not one per person, and
+ * certainly not one per cell.
  */
 export async function rosterFor(
   caller: Caller,
   empIds: string[],
   from: string,
   days: number,
-): Promise<Record<string, Record<string, string>>> {
+): Promise<Record<string, Record<string, RosterDay>>> {
   if (!empIds.length) return {};
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
     throw new ShiftError('the roster needs a start date', 'invalid');
@@ -445,26 +482,42 @@ export async function rosterFor(
   const span = Math.min(Math.max(1, Math.trunc(days) || 7), 62);
 
   return withTenantReadOnly(caller, async (db) => {
+    /*
+     * Who the caller may actually see, decided here as it always was — `scope`
+     * is the line-management rule the rest of this module uses. Resolving the
+     * calendar for somebody outside it would be a leak even though row level
+     * security would then return their dates.
+     */
     const params: unknown[] = [empIds];
     const scoped = scope(caller, 'e.id', params);
-
-    const { rows } = await db.query(
-      `SELECT e.id, s.code
-         FROM employee e
-         JOIN shift s ON s.id = e.shift_id
+    const { rows: allowed } = await db.query(
+      `SELECT e.id FROM employee e
         WHERE e.id = ANY($1::uuid[])${scoped ? ` AND ${scoped}` : ''}`, params);
+    if (!allowed.length) return {};
 
-    const out: Record<string, Record<string, string>> = {};
-    const start = Date.parse(`${from}T00:00:00Z`);
-    for (const r of rows) {
-      const perDay: Record<string, string> = {};
-      for (let i = 0; i < span; i += 1) {
-        const d = new Date(start + i * 86_400_000);
-        /* Saturday and Sunday are the week off on every profile here. */
-        const dow = d.getUTCDay();
-        perDay[d.toISOString().slice(0, 10)] = dow === 0 || dow === 6 ? 'OFF' : (r.code as string);
+    /*
+     * The last date of the span, derived from the string's own parts. `Date.UTC`
+     * on the parsed numbers has no zone in it, which is the property the old
+     * `getUTCDay()` version lacked.
+     */
+    const [y, m, d] = from.split('-').map(Number);
+    const last = new Date(Date.UTC(y!, m! - 1, d! + span - 1)).toISOString().slice(0, 10);
+
+    const byPerson = await classifyMany(
+      db, allowed.map((r) => r.id as string), from, last);
+
+    const out: Record<string, Record<string, RosterDay>> = {};
+    for (const [empId, verdicts] of Object.entries(byPerson)) {
+      const perDay: Record<string, RosterDay> = {};
+      for (const v of verdicts) {
+        perDay[v.date] = {
+          expected: v.reason,
+          shift: v.shift,
+          schedule: v.schedule,
+          holiday: v.holiday,
+        };
       }
-      out[r.id as string] = perDay;
+      out[empId] = perDay;
     }
     return out;
   });

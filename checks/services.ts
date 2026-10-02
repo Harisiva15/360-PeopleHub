@@ -459,15 +459,29 @@ const check = (label: string, got: unknown, want: unknown) => {
   /*
    * A shift is the hours somebody keeps, not a day's assignment — migration
    * 0015 dropped the per-day table, so changing it changes every working day.
+   *
+   * These two read `v !== 'OFF'` and `v === 'US'` against a roster of bare shift
+   * codes. Phase 2h-F made each cell a `RosterDay`, because a rota has to say
+   * *which days* as well as which hours, and the days now come from the work
+   * schedule rather than from a hard-coded weekend. The properties being asserted
+   * are unchanged — one shift across every working day, and a five-day pattern
+   * still having its two days off — so they are rewritten against the new shape
+   * rather than dropped.
    */
   const otWeek = '2026-09-07';
   await s.shifts.setShift(DEMO_EMP.id, 'US');
   const rosterAfter = await s.shifts.roster([DEMO_EMP.id], otWeek, 7);
-  const working = Object.entries(rosterAfter[DEMO_EMP.id]).filter(([, v]) => v !== 'OFF');
+  const cells = Object.values(rosterAfter[DEMO_EMP.id]!);
+  const working = cells.filter((c) => c.expected === 'WORKING');
   check('the shift change applies to every working day',
-    working.every(([, v]) => v === 'US'), true);
+    working.length > 0 && working.every((c) => c.shift === 'US'), true);
   check('and the week still has its two days off',
-    Object.values(rosterAfter[DEMO_EMP.id]).filter((v) => v === 'OFF').length, 2);
+    cells.filter((c) => c.expected === 'WEEKLY_OFF').length, 2);
+  check('every cell carries an expectation the server decided',
+    cells.every((c) => ['WORKING', 'WEEKLY_OFF', 'HOLIDAY', 'NOT_EMPLOYED']
+      .includes(c.expected)), true);
+  check('and a day off names no shift',
+    cells.filter((c) => c.expected === 'WEEKLY_OFF').every((c) => c.shift === null), true);
   let badShift = false;
   try { await s.shifts.setShift(DEMO_EMP.id, 'NOPE'); } catch { badShift = true; }
   check('an unknown shift is refused', badShift, true);

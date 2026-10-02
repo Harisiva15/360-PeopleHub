@@ -20,6 +20,17 @@
  * **Every colour is repeated by a word.** The legend explains the palette, but
  * the shift code is in the cell regardless, because a rota read by someone
  * colour-blind, or printed in grey, still has to say who works which hours.
+ *
+ * **Which days are worked is the server's answer, not this file's.** Until Phase
+ * 2h-F this grid called Saturday and Sunday off for everybody, from a weekday test
+ * on the server and `isWeekend` in the demo — so a tenant working Monday to
+ * Saturday saw a rota that disagreed with their own schedule, their leave counts
+ * and their calendar. Every cell now carries a `RosterDay` from the same resolver
+ * leave reads, in one request for the whole team and span.
+ *
+ * **The rota shows what is expected. It is not attendance.** A working day with no
+ * attendance row is drawn as a working day, never as an absence: the roster writes
+ * nothing and infers nothing about what happened.
  */
 
 import { useMemo, useState } from 'react';
@@ -27,11 +38,13 @@ import { addDays, DOW, fmtD, fmtDS, mondayOf, parseYmd, TODAY, ymd } from '../..
 
 import { DEPTS, deptOf, siteOf, SITES } from '../../data/org';
 import { downloadCSV } from '../../lib/csv';
-import { Avatar, Badge, Card, EmptyState, Seg, StatRow, Tile } from '../../components/ui';
+import { Avatar, Badge, Banner, Card, EmptyState, Seg, StatRow, Tile } from '../../components/ui';
+import type { RosterDay } from '../../services';
 import { useApp } from '../../state/AppContext';
 import { visibleIds } from '../../state/rbac';
 import { useAllEmployees, useRoster, useSetShift, useShiftProfiles } from './data';
 import { colourOf, resolveProfile } from './profile';
+import { EXPECTED_LEGEND, lookOf, scheduleOver, standingShift } from './expected';
 import { Icon } from '../../components/icons';
 
 /** 12-hour clock, because a rota is read by people not machines. */
@@ -89,20 +102,36 @@ export function RosterView() {
     id: p.code, n: p.name, tz: p.timezone, region: p.region, c: colourOf(p, i),
   }));
 
-  const cellOf = (empId: string, date: string) => roster.data?.[empId]?.[date] ?? 'IN';
-  /** Somebody's standing profile: whichever code their working days carry. */
+  /*
+   * One cell, exactly as the server answered it — or undefined where it did not.
+   * Nothing is substituted for a missing answer: a blank cell reads as no answer,
+   * which is the truth, where a fabricated 'IN' would read as an expectation
+   * nobody recorded.
+   */
+  const cellOf = (empId: string, date: string): RosterDay | undefined =>
+    roster.data?.[empId]?.[date];
+  /** Somebody's standing profile, read off the days they are expected to work. */
   const standingOf = (empId: string) =>
-    dates.map((d) => cellOf(empId, d)).find((s) => s !== 'OFF') ?? 'IN';
+    standingShift(roster.data?.[empId], dates) ?? '';
 
   const rows = visible
     .filter((e) => (!dept || e.dept === dept) && (!site || e.site === site))
     .filter((e) => !q.trim() || e.name.toLowerCase().includes(q.trim().toLowerCase()))
     .filter((e) => !shift || standingOf(e.id) === shift);
 
-  /* Coverage counts people working, so a day off is not a shift. */
-  const working = dates.map((d) => rows.filter((e) => cellOf(e.id, d) !== 'OFF').length);
+  /*
+   * Coverage counts people the schedule expects in. Counted off the verdict rather
+   * than "not off", so a holiday and a date outside somebody's employment are both
+   * excluded instead of being quietly counted as cover.
+   */
+  const working = dates.map((d) =>
+    rows.filter((e) => cellOf(e.id, d)?.expected === 'WORKING').length);
   const offDays = rows.reduce((n, e) =>
-    n + dates.filter((d) => cellOf(e.id, d) === 'OFF').length, 0);
+    n + dates.filter((d) => cellOf(e.id, d)?.expected === 'WEEKLY_OFF').length, 0);
+  const holidayDays = rows.reduce((n, e) =>
+    n + dates.filter((d) => cellOf(e.id, d)?.expected === 'HOLIDAY').length, 0);
+  /* People the server answered for with no schedule assignment of their own. */
+  const unassigned = rows.filter((e) => scheduleOver(roster.data?.[e.id], dates) === null).length;
   /*
    * The whole reason the timezone moved onto the shift: people measured
    * against a clock that is not their office's. Compared by country rather
@@ -112,6 +141,7 @@ export function RosterView() {
     const s = shiftList.find((x) => x.id === standingOf(e.id));
     return s ? s.region !== siteOf(e.site).country : false;
   }).length;
+  const loading = roster.loading && !roster.data;
 
   const mayEdit = app.role === 'admin' || app.role === 'manager';
 
@@ -124,15 +154,25 @@ export function RosterView() {
     }
   };
 
+  /*
+   * The export carries the schedule as well as the shift, because "which days"
+   * and "which hours" are two different questions and a rota exported without the
+   * first is the thing this phase set out to fix.
+   */
   const exportCsv = () => downloadCSV(`roster-${ws}.csv`,
-    [['Employee', 'Designation', 'Department', 'Location', 'Shift', 'Hours', 'Timezone',
-      ...dates.map((d) => fmtDS(d))]].concat(
+    [['Employee', 'Designation', 'Department', 'Location', 'Work schedule', 'Shift',
+      'Hours', 'Timezone', ...dates.map((d) => fmtDS(d))]].concat(
       rows.map((e) => {
         const code = standingOf(e.id);
         const s = resolveProfile(profiles, code);
         return [e.name, e.designation, deptOf(e.dept).name, siteOf(e.site).city,
+          scheduleOver(roster.data?.[e.id], dates) ?? 'Not assigned',
           s.name, `${s.start}–${s.end}`, s.timezone,
-          ...dates.map((d) => (cellOf(e.id, d) === 'OFF' ? 'Off' : code))];
+          ...dates.map((d) => {
+            const look = lookOf(cellOf(e.id, d));
+            if (!look) return '';
+            return look.working ? code : look.label;
+          })];
       })));
 
   return (
@@ -178,8 +218,18 @@ export function RosterView() {
           foot={dates.includes(ymd(TODAY)) ? 'Working today' : 'Today is outside this range'} />
         <Tile icon={<Icon n="globe" size="lg" />} label="On another country's hours" value={awayHours}
           foot="Measured against a client's clock" />
-        <Tile icon={<Icon n="rest" size="lg" />} label="Days off" value={offDays} foot="Across the period shown" />
+        <Tile icon={<Icon n="rest" size="lg" />} label="Days off" value={offDays}
+          foot={holidayDays ? `Plus ${holidayDays} holiday day(s)` : 'Across the period shown'} />
       </StatRow>
+
+      {unassigned > 0 && (
+        <Banner kind="warn" icon={<Icon n="schedule" size="lg" />}
+          title={`${unassigned} ${unassigned === 1 ? 'person has' : 'people have'} no work schedule`}>
+          Their days come from the default Monday-to-Friday rule rather than a pattern
+          anybody assigned. Assign one from the person&rsquo;s lifecycle record to make
+          the expectation explicit.
+        </Banner>
+      )}
 
       <Card title="Roster" sub={`${rows.length} people · ${fmtD(ws)} onwards`} flush>
         {rows.length ? (
@@ -188,6 +238,7 @@ export function RosterView() {
               <thead>
                 <tr>
                   <th style={{ minWidth: 190 }}>Employee</th>
+                  <th style={{ minWidth: 132 }}>Work schedule</th>
                   <th style={{ minWidth: 150 }}>Shift</th>
                   {dates.map((d) => {
                     const today = d === ymd(TODAY);
@@ -207,6 +258,7 @@ export function RosterView() {
                   const code = standingOf(e.id);
                   const s = resolveProfile(profiles, code);
                   const away = offsetNote(s.timezone);
+                  const sched = scheduleOver(roster.data?.[e.id], dates);
                   /* The colour the legend uses for this profile, so the two agree. */
                   const sColour = shiftList.find((o) => o.id === code)?.c ?? 'var(--line-2)';
                   return (
@@ -219,6 +271,11 @@ export function RosterView() {
                             <div className="mt">{e.designation}</div>
                           </div>
                         </div>
+                      </td>
+                      <td>
+                        {sched
+                          ? <Badge kind="info">{sched}</Badge>
+                          : <span className="muted" style={{ fontSize: 12 }}>Not assigned</span>}
                       </td>
                       <td>
                         {mayEdit ? (
@@ -238,13 +295,32 @@ export function RosterView() {
                       </td>
                       {dates.map((d) => {
                         const cell = cellOf(e.id, d);
-                        const off = cell === 'OFF';
+                        const look = lookOf(cell);
+                        /*
+                         * No answer for this person and date. Left blank, because
+                         * the alternative is inventing one — and an invented day
+                         * off on a rota is what somebody plans around.
+                         */
+                        if (!look) {
+                          return <td key={d} className="rost-cell">
+                            <div className="rost off" title="No answer for this date">&nbsp;</div>
+                          </td>;
+                        }
+                        /* The shift the schedule expects that day, which may differ from the standing one. */
+                        const dayShift = cell!.shift ?? code;
+                        const tip = look.working
+                          ? `${fmtD(d)} · ${resolveProfile(profiles, dayShift).name} · `
+                            + `${h12(s.start)} – ${h12(s.end)}`
+                          : `${fmtD(d)} · ${look.label}`
+                            + (cell!.holiday ? ` · ${cell!.holiday}` : '');
                         return (
                           <td key={d} className="rost-cell">
-                            <div className={'rost' + (off ? ' off' : '')}
-                              style={off ? undefined : { borderLeftColor: sColour }}
-                              title={off ? 'Week off' : `${s.name} · ${h12(s.start)} – ${h12(s.end)}`}>
-                              {off ? 'Off' : cell}
+                            <div className={'rost' + (look.working ? '' : ' off')}
+                              style={look.working
+                                ? { borderLeftColor: sColour }
+                                : { background: look.tint ?? undefined }}
+                              title={tip}>
+                              {look.working ? dayShift : look.short}
                             </div>
                           </td>
                         );
@@ -255,7 +331,12 @@ export function RosterView() {
               </tbody>
             </table>
           </div>
-        ) : <EmptyState msg="Nobody matches those filters" icon={<Icon n="schedule" size="lg" />} />}
+        ) : (
+          <EmptyState icon={<Icon n="schedule" size="lg" />}
+            msg={loading ? 'Reading the roster…'
+              : roster.error ? roster.error.message
+                : 'Nobody matches those filters'} />
+        )}
 
         <div className="row" style={{
           gap: 14, flexWrap: 'wrap', padding: '11px 14px', borderTop: '1px solid var(--line)',
@@ -272,20 +353,26 @@ export function RosterView() {
               {s.n}
             </span>
           ))}
-          <span className="row" style={{ gap: 5, fontSize: 11.5 }}>
-            <i style={{
-              width: 9, height: 9, borderRadius: 3, background: 'var(--line-2)', display: 'inline-block',
-            }} />
-            Off
-          </span>
+          {EXPECTED_LEGEND.map((x) => (
+            <span key={x.reason} className="row" style={{ gap: 5, fontSize: 11.5 }}>
+              <i style={{
+                width: 9, height: 9, borderRadius: 3, display: 'inline-block',
+                background: x.look.tint ?? 'var(--line-2)',
+                border: '1px solid var(--line-2)',
+              }} />
+              {x.look.label}
+            </span>
+          ))}
         </div>
       </Card>
 
       {mayEdit
         ? (
           <Badge kind="info">
-            A shift is the hours somebody keeps, not a day's assignment — changing it
-            applies from now on, every working day.
+            A work schedule says which days; a shift says which hours. Changing the
+            shift applies from now on, every working day — the days themselves come
+            from the schedule, and this rota shows what is expected rather than what
+            was attended.
           </Badge>
         )
         : <Badge kind="info">Your manager sets the shift; this is a read-only view</Badge>}

@@ -45,6 +45,21 @@ export const balanceOf = (
 
 /* ---------- writes ---------- */
 
+/**
+ * Which days the server counts as working, for the dates on the form.
+ *
+ * The screen used to answer this itself with `isWeekend` and `HOLIDAY_MAP`, and
+ * send the number it arrived at. The server derives the stored figure now, so this
+ * read exists to show the same number *before* submitting rather than to decide it.
+ */
+export const useWorkingDays = (empId: string, from: string, to: string) =>
+  useQuery(
+    (s) => (from && to && to >= from
+      ? s.calendar.workingDays(empId, from, to)
+      : Promise.resolve([])),
+    [empId, from, to],
+  );
+
 export const useApplyLeaveRequest = () => useMutation((s, req: Parameters<typeof s.leave.apply>[0]) => s.leave.apply(req));
 export const useApproveLeave = () => useMutation((s, id: string, approverId: string) => s.leave.approve(id, approverId));
 export const useRejectLeave = () => useMutation((s, id: string, approverId: string, note: string) => s.leave.reject(id, approverId, note));

@@ -512,6 +512,16 @@ export interface Department {
   active: boolean;
   /** Active employees in it. What makes a delete unsafe. */
   headcount: number;
+  /**
+   * The business unit it belongs to, or null where none is assigned.
+   *
+   * Null is a real state rather than missing data: departments predate
+   * business units and are never assigned one implicitly. Carried as the code,
+   * because that is what the rest of the product keys a unit by.
+   */
+  businessUnitCode: string | null;
+  /** Resolved for display, so a list does not need a second request. */
+  businessUnitName: string | null;
 }
 
 export interface DepartmentDraft {
@@ -520,15 +530,25 @@ export interface DepartmentDraft {
   colour?: string | null;
   headId?: string | null;
   parentId?: string | null;
+  /**
+   * A business unit code, or null to leave it unassigned.
+   *
+   * Absent and null differ on a patch: absent leaves the assignment alone,
+   * null clears it. Collapsing the two would make leave this as it is and
+   * remove this the same request.
+   */
+  businessUnitCode?: string | null;
 }
 
 const DEPT_COLUMNS = `
   SELECT d.id, d.code, d.name, d.colour, d.head_employee_id, d.parent_id, d.active,
+         b.code AS business_unit_code, b.name AS business_unit_name,
          COALESCE(h.full_name, '') AS head_name,
          (SELECT count(*)::int FROM employee e
            WHERE e.department_id = d.id AND e.status <> 'exited') AS headcount
     FROM department d
-    LEFT JOIN employee h ON h.id = d.head_employee_id`;
+    LEFT JOIN employee h ON h.id = d.head_employee_id
+    LEFT JOIN business_unit b ON b.id = d.business_unit_id`;
 
 const toDepartment = (r: Record<string, unknown>): Department => ({
   id: r.id as string,
@@ -540,6 +560,8 @@ const toDepartment = (r: Record<string, unknown>): Department => ({
   parentId: (r.parent_id as string | null) ?? null,
   active: Boolean(r.active),
   headcount: Number(r.headcount),
+  businessUnitCode: (r.business_unit_code as string | null) ?? null,
+  businessUnitName: (r.business_unit_name as string | null) ?? null,
 });
 
 export async function listDepartments(caller: Caller): Promise<Department[]> {
@@ -586,6 +608,40 @@ async function deptAudit(
     [caller.employeeId, action, code, JSON.stringify(detail)]);
 }
 
+/**
+ * Turn a business unit code into its id, for a department assignment.
+ *
+ * The caller has already separated the three cases before reaching here:
+ * `undefined` means the request did not mention the assignment, `null` means
+ * clear it, and a code means set it. This only handles the third.
+ *
+ * **An unknown code and another tenant's code give the same answer.** Under row
+ * level security the other tenant's unit does not exist for this caller, so
+ * there is nothing to distinguish — and saying anything more specific would
+ * confirm that it exists somewhere.
+ *
+ * **An inactive unit is refused**, which is the convention locations and projects
+ * already follow: an inactive row stays readable so older records resolve, and is
+ * not offered for new work. A department already pointing at a unit that is later
+ * deactivated keeps pointing at it — withdrawing a unit must not rewrite the
+ * departments that named it while it was open.
+ */
+async function resolveBusinessUnit(
+  db: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }> },
+  code: string,
+): Promise<string> {
+  const key = code.trim().toUpperCase();
+  const { rows } = await db.query(
+    'SELECT id, active FROM business_unit WHERE code = $1', [key]);
+  const unit = rows[0];
+  if (!unit) throw new ConfigError(`no such business unit: ${key}`, 'invalid');
+  if (!unit.active) {
+    throw new ConfigError(
+      `${key} is inactive and cannot be assigned — activate it first`, 'invalid');
+  }
+  return unit.id as string;
+}
+
 export async function createDepartment(
   caller: Caller,
   draft: DepartmentDraft,
@@ -598,13 +654,24 @@ export async function createDepartment(
     const clash = await db.query('SELECT 1 FROM department WHERE code = $1', [code]);
     if (clash.rowCount) throw new ConfigError(`${code} is already a department`, 'conflict');
 
-    const { rows } = await db.query(
-      `INSERT INTO department (code, name, colour, head_employee_id, parent_id, active)
-       VALUES ($1, $2, $3, $4, $5, true) RETURNING id`,
-      [code, draft.name.trim(), draft.colour ?? null,
-        draft.headId ?? null, draft.parentId ?? null]);
+    /*
+     * Absent and null both mean unassigned on a create — there is nothing to
+     * leave alone yet. A code is resolved first, so an unknown or inactive unit
+     * refuses the request before a department exists under it.
+     */
+    const unitId = draft.businessUnitCode
+      ? await resolveBusinessUnit(db, draft.businessUnitCode)
+      : null;
 
-    await deptAudit(db, caller, 'department_created', code, { name: draft.name.trim() });
+    const { rows } = await db.query(
+      `INSERT INTO department (code, name, colour, head_employee_id, parent_id, active,
+                               business_unit_id)
+       VALUES ($1, $2, $3, $4, $5, true, $6) RETURNING id`,
+      [code, draft.name.trim(), draft.colour ?? null,
+        draft.headId ?? null, draft.parentId ?? null, unitId]);
+
+    await deptAudit(db, caller, 'department_created', code,
+      { name: draft.name.trim(), businessUnit: draft.businessUnitCode ?? null });
     const back = await db.query(`${DEPT_COLUMNS} WHERE d.id = $1`, [rows[0]!.id]);
     return toDepartment(back.rows[0]!);
   });
@@ -620,7 +687,10 @@ export async function updateDepartment(
 
   return withTenant(caller, async (db) => {
     const { rows: [found] } = await db.query(
-      'SELECT id FROM department WHERE code = $1', [code]);
+      `SELECT d.id, d.business_unit_id, b.code AS business_unit_code
+         FROM department d
+         LEFT JOIN business_unit b ON b.id = d.business_unit_id
+        WHERE d.code = $1`, [code]);
     if (!found) throw new ConfigError('no such department', 'not_found');
 
     /*
@@ -643,17 +713,46 @@ export async function updateDepartment(
       }
     }
 
+    /*
+     * Absent leaves the assignment alone, null clears it, a code sets it — the
+     * same three-way the colour, head and parent above already use. Resolved
+     * before the UPDATE, so an unknown or inactive unit refuses the whole patch
+     * rather than applying the rest of it.
+     */
+    const touchUnit = patch.businessUnitCode !== undefined;
+    /*
+     * Re-sending the unit the department already has is allowed, even when that
+     * unit has since been deactivated.
+     *
+     * The rule is that an inactive unit cannot be *newly* assigned — not that a
+     * department naming one can never be edited again. Without this exception,
+     * deactivating a unit would quietly make every department under it
+     * unsaveable: the edit form sends the whole record, so renaming such a
+     * department would be refused over a field nobody touched.
+     */
+    const sameAsNow = typeof patch.businessUnitCode === 'string'
+      && patch.businessUnitCode.trim().toUpperCase() === found.business_unit_code;
+
+    let unitId: string | null = null;
+    if (touchUnit && patch.businessUnitCode !== null) {
+      unitId = sameAsNow
+        ? (found.business_unit_id as string)
+        : await resolveBusinessUnit(db, patch.businessUnitCode as string);
+    }
+
     await db.query(
       `UPDATE department
           SET name   = COALESCE($2, name),
               colour = CASE WHEN $5::boolean THEN $3 ELSE colour END,
               head_employee_id = CASE WHEN $6::boolean THEN $4 ELSE head_employee_id END,
               parent_id = CASE WHEN $8::boolean THEN $7 ELSE parent_id END,
-              active = COALESCE($9, active)
+              active = COALESCE($9, active),
+              business_unit_id = CASE WHEN $11::boolean THEN $10 ELSE business_unit_id END
         WHERE id = $1`,
       [found.id, patch.name?.trim() ?? null, patch.colour ?? null, patch.headId ?? null,
         patch.colour !== undefined, patch.headId !== undefined,
-        patch.parentId ?? null, patch.parentId !== undefined, patch.active ?? null]);
+        patch.parentId ?? null, patch.parentId !== undefined, patch.active ?? null,
+        unitId, touchUnit]);
 
     await deptAudit(db, caller, 'department_updated', code, { ...patch });
     const back = await db.query(`${DEPT_COLUMNS} WHERE d.id = $1`, [found.id]);
@@ -754,5 +853,755 @@ export async function listGrades(caller: Caller): Promise<GradeBand[]> {
       minCtc: r.min_ctc === null ? null : Number(r.min_ctc),
       maxCtc: r.max_ctc === null ? null : Number(r.max_ctc),
     }));
+  });
+}
+
+/* ============================================================
+   Business units
+   ============================================================ */
+
+/**
+ * A P&L or operating division — the level above a department.
+ *
+ * Keyed by `code` on the wire, as sites and departments are, because that is
+ * what an administrator quotes and what a URL can carry. The uuid stays
+ * server-side.
+ */
+export interface BusinessUnit {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BusinessUnitDraft {
+  code?: string;
+  name?: string;
+  description?: string | null;
+}
+
+const BU_COLUMNS = `
+  SELECT b.id, b.code, b.name, b.description, b.active,
+         b.created_at, b.updated_at
+    FROM business_unit b`;
+
+const toBusinessUnit = (r: Record<string, unknown>): BusinessUnit => ({
+  /*
+   * `id` is the code, matching Site and Department: the screens key rows by it
+   * and the uuid is of no use to them.
+   */
+  id: r.code as string,
+  code: r.code as string,
+  name: r.name as string,
+  description: (r.description as string | null) ?? null,
+  active: Boolean(r.active),
+  createdAt: new Date(r.created_at as string).toISOString(),
+  updatedAt: new Date(r.updated_at as string).toISOString(),
+});
+
+/** Shaping the organisation is an administrator's, as the rest of settings is. */
+function mayShapeUnit(caller: Caller, verb: string): void {
+  if (caller.role !== 'admin') {
+    throw new ConfigError(`only an admin may ${verb} a business unit`, 'forbidden');
+  }
+}
+
+/**
+ * Two to sixteen characters, upper case, letters, digits and hyphens.
+ *
+ * The same shape is a CHECK constraint on the table, so a code this accepts and
+ * the database refuses cannot exist. Narrow because it is quoted aloud and typed
+ * into forms.
+ */
+const BU_CODE = /^[A-Z0-9][A-Z0-9-]{1,15}$/;
+
+function checkUnit(d: BusinessUnitDraft, patching: boolean): {
+  code: string | null;
+  name: string;
+  description: string | null;
+} {
+  let code: string | null = null;
+  if (!patching) {
+    if (!d.code?.trim()) throw new ConfigError('a business unit needs a code', 'invalid');
+    code = d.code.trim().toUpperCase();
+    if (!BU_CODE.test(code)) {
+      throw new ConfigError(
+        'a code is 2-16 letters, digits or hyphens, such as RETAIL or BU-01', 'invalid');
+    }
+  } else if (d.code !== undefined) {
+    /*
+     * Refused rather than ignored. The code is the identity every other screen
+     * and URL uses, so silently dropping a rename would leave the caller
+     * believing it had happened.
+     */
+    throw new ConfigError(
+      'a code cannot be changed - create a unit under the new code instead', 'invalid');
+  }
+
+  if (!d.name?.trim()) throw new ConfigError('a business unit needs a name', 'invalid');
+  if (d.name.trim().length > 120) {
+    throw new ConfigError('a name is at most 120 characters', 'invalid');
+  }
+
+  const description = d.description?.trim() ? d.description.trim() : null;
+  if (description && description.length > 500) {
+    throw new ConfigError('a description is at most 500 characters', 'invalid');
+  }
+
+  return { code, name: d.name.trim(), description };
+}
+
+/** One audit row per business-unit write, with the actor's name resolved. */
+async function unitAudit(
+  db: { query: (sql: string, params?: unknown[]) => Promise<unknown> },
+  caller: Caller,
+  action: string,
+  code: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO audit_log (category, action, actor_employee_id, actor_label,
+                            subject_table, detail)
+     SELECT 'config', $2, $1, COALESCE(e.full_name, 'system'), 'business_unit',
+            $4::jsonb || jsonb_build_object('businessUnit', $3::text)
+       FROM employee e WHERE e.id = $1`,
+    [caller.employeeId, action, code, JSON.stringify(detail)]);
+}
+
+/**
+ * Every business unit, inactive ones included.
+ *
+ * Readable by any role. A unit's name is not sensitive, and a screen showing
+ * which one a person belongs to has to resolve the code to something better than
+ * a dash. Inactive units come back because an older record may still name one;
+ * `active` says which may be chosen, and the forms offer only those.
+ */
+export async function listBusinessUnits(caller: Caller): Promise<BusinessUnit[]> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(`${BU_COLUMNS} ORDER BY b.active DESC, b.name`);
+    return rows.map(toBusinessUnit);
+  });
+}
+
+/** One unit by code, or null. Readable by any role, for the same reason. */
+export async function getBusinessUnit(
+  caller: Caller,
+  code: string,
+): Promise<BusinessUnit | null> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `${BU_COLUMNS} WHERE b.code = $1`, [code.trim().toUpperCase()]);
+    return rows[0] ? toBusinessUnit(rows[0]) : null;
+  });
+}
+
+export async function createBusinessUnit(
+  caller: Caller,
+  draft: BusinessUnitDraft,
+): Promise<BusinessUnit> {
+  mayShapeUnit(caller, 'add');
+  const v = checkUnit(draft, false);
+  const code = v.code!;
+
+  return withTenant(caller, async (db) => {
+    const clash = await db.query('SELECT 1 FROM business_unit WHERE code = $1', [code]);
+    if (clash.rowCount) {
+      throw new ConfigError(`${code} is already a business unit`, 'conflict');
+    }
+    /*
+     * A duplicate name is refused as well. The unique is on the code, so two
+     * units called the same thing is not a database error — it is
+     * indistinguishable on screen, which makes it a data-entry mistake worth
+     * catching. Compared case-insensitively, because Retail and retail are the
+     * same name to a reader.
+     */
+    const sameName = await db.query(
+      'SELECT code FROM business_unit WHERE lower(name) = lower($1)', [v.name]);
+    if (sameName.rowCount) {
+      throw new ConfigError(
+        `${sameName.rows[0]!.code} is already called ${v.name}`, 'conflict');
+    }
+
+    await db.query(
+      `INSERT INTO business_unit (code, name, description, active)
+       VALUES ($1, $2, $3, true)`,
+      [code, v.name, v.description]);
+
+    await unitAudit(db, caller, 'business_unit_created', code,
+      { name: v.name, description: v.description });
+
+    const back = await db.query(`${BU_COLUMNS} WHERE b.code = $1`, [code]);
+    return toBusinessUnit(back.rows[0]!);
+  });
+}
+
+/**
+ * Change a unit's name or description.
+ *
+ * Not its code, and not its active flag: the code is the identity, and
+ * activation is its own call so that renaming and withdrawing from use cannot be
+ * confused in one request.
+ */
+export async function updateBusinessUnit(
+  caller: Caller,
+  code: string,
+  patch: BusinessUnitDraft,
+): Promise<BusinessUnit> {
+  mayShapeUnit(caller, 'change');
+  const v = checkUnit(patch, true);
+  const key = code.trim().toUpperCase();
+
+  return withTenant(caller, async (db) => {
+    const sameName = await db.query(
+      'SELECT code FROM business_unit WHERE lower(name) = lower($1) AND code <> $2',
+      [v.name, key]);
+    if (sameName.rowCount) {
+      throw new ConfigError(
+        `${sameName.rows[0]!.code} is already called ${v.name}`, 'conflict');
+    }
+
+    const updated = await db.query(
+      `UPDATE business_unit
+          SET name = $2, description = $3, updated_at = now()
+        WHERE code = $1`,
+      [key, v.name, v.description]);
+    if (updated.rowCount === 0) throw new ConfigError('no such business unit', 'not_found');
+
+    await unitAudit(db, caller, 'business_unit_updated', key,
+      { name: v.name, description: v.description });
+
+    const back = await db.query(`${BU_COLUMNS} WHERE b.code = $1`, [key]);
+    return toBusinessUnit(back.rows[0]!);
+  });
+}
+
+/**
+ * Activate or deactivate a unit.
+ *
+ * There is no delete. A unit that stops trading still appears on everything
+ * recorded while it did, so `active = false` withdraws it from the forms and
+ * leaves the history legible — the same rule sites and departments follow.
+ */
+export async function setBusinessUnitActive(
+  caller: Caller,
+  code: string,
+  active: boolean,
+): Promise<BusinessUnit> {
+  mayShapeUnit(caller, 'activate or deactivate');
+  if (typeof active !== 'boolean') {
+    throw new ConfigError('a business unit is either active or inactive', 'invalid');
+  }
+  const key = code.trim().toUpperCase();
+
+  return withTenant(caller, async (db) => {
+    const updated = await db.query(
+      'UPDATE business_unit SET active = $2, updated_at = now() WHERE code = $1',
+      [key, active]);
+    if (updated.rowCount === 0) throw new ConfigError('no such business unit', 'not_found');
+
+    await unitAudit(db, caller,
+      active ? 'business_unit_activated' : 'business_unit_deactivated', key, { active });
+
+    const back = await db.query(`${BU_COLUMNS} WHERE b.code = $1`, [key]);
+    return toBusinessUnit(back.rows[0]!);
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Legal entities
+ *
+ * The registered company a person is employed by, and the one that files for
+ * them. `legal_entity` has existed since 0002 and three tables have carried a
+ * NOT NULL reference to it ever since — `employee`, `pay_run` and
+ * `compliance_payment` — but nothing in the product could create, read or edit
+ * one. Only `scripts/seed.mjs` could, which meant a tenant onboarded any other
+ * way could not run payroll, submit an expense or create an employee: three
+ * services refuse outright with 'no default legal entity configured', and the
+ * product offered no way to fix that.
+ *
+ * So this is CRUD over columns that already exist. No migration: every field
+ * below is a column 0002 created, and the one rule the schema does not hold —
+ * exactly one default per tenant — is held here, the same way `site` holds
+ * exactly one head office.
+ *
+ * **It is deliberately not the top of the organisation chart.** Nothing points
+ * at a legal entity except an employee and the two payroll tables; a business
+ * unit does not and must not. The entity answers "which registered company, and
+ * therefore whose statutory rules", and every existing read of it wants
+ * `country` or `currency`. A department's P&L is a different dimension, which is
+ * why `business_unit` and `legal_entity` are siblings under the tenant.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A legal entity, keyed by code as `Site` and `Department` are.
+ *
+ * `code` is what an administrator quotes and what a URL carries; the uuid stays
+ * on the server. Every optional identifier is carried as `null` rather than an
+ * empty string, because "not recorded" and "recorded as blank" are different
+ * things on a statutory filing.
+ */
+export interface LegalEntity {
+  code: string;
+  legalName: string;
+  /** ISO 3166-1 alpha-2. Drives which statutory rules apply to its people. */
+  country: string;
+  /** ISO 4217. The currency its payroll is denominated in. */
+  currency: string;
+  registeredAddress: string | null;
+  taxId: string | null;
+  registrationId: string | null;
+  pfCode: string | null;
+  esiCode: string | null;
+  /** The one the product falls back to when nothing names an entity. */
+  isDefault: boolean;
+  /** Employees currently employed by it. What makes a change consequential. */
+  headcount: number;
+}
+
+export interface LegalEntityDraft {
+  code?: string;
+  legalName?: string;
+  country?: string;
+  currency?: string;
+  registeredAddress?: string | null;
+  taxId?: string | null;
+  registrationId?: string | null;
+  pfCode?: string | null;
+  esiCode?: string | null;
+}
+
+/*
+ * Every column a LegalEntity is built from, in one place — the lesson
+ * SITE_COLUMNS records, where hand-written copies drifted and a read came back
+ * missing the headquarters flag.
+ *
+ * `country` and `currency` are char(2) and char(3) and the foreign keys to
+ * `country` and `currency` guarantee a value of exactly that width, so there is
+ * no padding to strip — they come back as the codes they are.
+ */
+const LE_COLUMNS = `
+  SELECT l.code, l.legal_name, l.country, l.currency,
+         l.registered_address, l.tax_id, l.registration_id, l.pf_code, l.esi_code,
+         l.is_default,
+         (SELECT count(*)::int FROM employee e
+           WHERE e.legal_entity_id = l.id AND e.status <> 'exited') AS headcount
+    FROM legal_entity l`;
+
+const toLegalEntity = (r: Record<string, unknown>): LegalEntity => ({
+  code: r.code as string,
+  legalName: r.legal_name as string,
+  country: r.country as string,
+  currency: r.currency as string,
+  registeredAddress: (r.registered_address as string | null) ?? null,
+  taxId: (r.tax_id as string | null) ?? null,
+  registrationId: (r.registration_id as string | null) ?? null,
+  pfCode: (r.pf_code as string | null) ?? null,
+  esiCode: (r.esi_code as string | null) ?? null,
+  isDefault: Boolean(r.is_default),
+  headcount: Number(r.headcount),
+});
+
+/** Same code shape as a location: `IN01` and `BLR` are both 2–10 of these. */
+const LE_CODE = /^[A-Z0-9]{2,10}$/;
+
+/** Configuring the tenant is an administrator's, as the rest of settings is. */
+function mayShapeEntity(caller: Caller, verb: string): void {
+  if (caller.role !== 'admin') {
+    throw new ConfigError(`only an admin may ${verb} a legal entity`, 'forbidden');
+  }
+}
+
+/**
+ * Normalise and refuse what the schema cannot see.
+ *
+ * `legal_entity` carries no CHECK constraints at all, so unlike a business unit
+ * there is no second line of defence here: a blank name or a three-letter
+ * country reaches the column unchallenged. The country and currency references
+ * are real foreign keys, but a violation arrives as 23503 and reads as "this
+ * request refers to something that does not exist" — true, and useless. These
+ * say which field and what was expected.
+ */
+function checkEntity(d: LegalEntityDraft, partial: boolean): void {
+  const need = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+
+  if (!partial) {
+    if (!need(d.code)) throw new ConfigError('a legal entity needs a code', 'invalid');
+    if (!LE_CODE.test(d.code!.trim().toUpperCase())) {
+      throw new ConfigError(
+        'a legal entity code is 2-10 letters or digits, such as IN01', 'invalid');
+    }
+    if (!need(d.legalName)) {
+      throw new ConfigError('a legal entity needs its registered name', 'invalid');
+    }
+    if (!need(d.country)) throw new ConfigError('a legal entity needs a country', 'invalid');
+    if (!need(d.currency)) throw new ConfigError('a legal entity needs a currency', 'invalid');
+  }
+  /* On a patch each field is only checked when it is actually being set. */
+  if (d.legalName !== undefined && !need(d.legalName)) {
+    throw new ConfigError('a legal entity needs its registered name', 'invalid');
+  }
+  if (d.country !== undefined && !/^[A-Z]{2}$/.test(String(d.country).trim().toUpperCase())) {
+    throw new ConfigError('a country is a two-letter code, such as IN', 'invalid');
+  }
+  if (d.currency !== undefined && !/^[A-Z]{3}$/.test(String(d.currency).trim().toUpperCase())) {
+    throw new ConfigError('a currency is a three-letter code, such as INR', 'invalid');
+  }
+}
+
+/** An optional identifier: absent leaves it, blank clears it, text records it. */
+const optional = (v: string | null | undefined): string | null =>
+  v === undefined || v === null ? null : (v.trim() || null);
+
+async function entityAudit(
+  db: { query: (sql: string, params?: unknown[]) => Promise<unknown> },
+  caller: Caller,
+  action: string,
+  code: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO audit_log (category, action, actor_employee_id, actor_label,
+                            subject_table, detail)
+     SELECT 'config', $2, $1, COALESCE(e.full_name, 'system'), 'legal_entity',
+            $4::jsonb || jsonb_build_object('legalEntity', $3::text)
+       FROM employee e WHERE e.id = $1`,
+    [caller.employeeId, action, code, JSON.stringify(detail)]);
+}
+
+/**
+ * Make this entity the default, and no other.
+ *
+ * `site` has `site_one_headquarters` to refuse two head offices; `legal_entity`
+ * has no such index, so this transaction is the only thing holding the rule.
+ * Demotion comes first and promotion second, both inside the caller's
+ * transaction, so there is no moment at which a reader could see two defaults or
+ * none — and a failure after this point leaves the tenant with the default it
+ * started with.
+ *
+ * Two concurrent switches are safe without the index: the demotion locks every
+ * currently-default row, so the second transaction waits, then re-reads and
+ * demotes the first one's winner. They serialise on the row rather than racing.
+ */
+async function nominateDefault(
+  db: { query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }> },
+  code: string,
+): Promise<void> {
+  await db.query(
+    'UPDATE legal_entity SET is_default = false WHERE is_default AND code <> $1', [code]);
+  await db.query(
+    'UPDATE legal_entity SET is_default = true WHERE code = $1', [code]);
+}
+
+/**
+ * Every legal entity, the default first.
+ *
+ * Readable by every role, as the rest of configuration is: a payslip, a letter
+ * and an employee record all show which company employs somebody, and resolving
+ * that is not privileged. Only the writes below are an administrator's.
+ */
+export async function listLegalEntities(caller: Caller): Promise<LegalEntity[]> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `${LE_COLUMNS} ORDER BY l.is_default DESC, l.code`);
+    return rows.map(toLegalEntity);
+  });
+}
+
+export async function getLegalEntity(caller: Caller, code: string): Promise<LegalEntity> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `${LE_COLUMNS} WHERE l.code = $1`, [code.trim().toUpperCase()]);
+    if (!rows[0]) throw new ConfigError('no such legal entity', 'not_found');
+    return toLegalEntity(rows[0]);
+  });
+}
+
+/**
+ * Register a legal entity.
+ *
+ * **The first one in a tenant becomes the default.** That is not a new rule
+ * invented here: `payroll`, `expenses` and `people/provision` each refuse to
+ * work with 'no default legal entity configured', and `seed.mjs` has always
+ * written `is_default = true` on the entity it creates. Creating the first entity
+ * without defaulting it would leave a tenant able to hold an entity and still
+ * unable to run payroll — a regression against behaviour that already exists.
+ */
+export async function createLegalEntity(
+  caller: Caller,
+  draft: LegalEntityDraft,
+): Promise<LegalEntity> {
+  mayShapeEntity(caller, 'add');
+  checkEntity(draft, false);
+
+  const code = draft.code!.trim().toUpperCase();
+  const country = draft.country!.trim().toUpperCase();
+  const currency = draft.currency!.trim().toUpperCase();
+
+  return withTenant(caller, async (db) => {
+    const clash = await db.query('SELECT 1 FROM legal_entity WHERE code = $1', [code]);
+    if (clash.rowCount) {
+      throw new ConfigError(`${code} is already a legal entity`, 'conflict');
+    }
+
+    /* Counted inside the transaction, so two concurrent firsts cannot both win. */
+    const { rows: [existing] } = await db.query(
+      'SELECT count(*)::int AS n FROM legal_entity');
+    const first = Number(existing!.n) === 0;
+
+    await db.query(
+      `INSERT INTO legal_entity (code, legal_name, country, currency, registered_address,
+                                 tax_id, registration_id, pf_code, esi_code, is_default)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [code, draft.legalName!.trim(), country, currency,
+        optional(draft.registeredAddress), optional(draft.taxId),
+        optional(draft.registrationId), optional(draft.pfCode), optional(draft.esiCode),
+        first]);
+
+    await entityAudit(db, caller, 'legal_entity_created', code,
+      { legalName: draft.legalName!.trim(), country, currency, isDefault: first });
+
+    const { rows } = await db.query(`${LE_COLUMNS} WHERE l.code = $1`, [code]);
+    return toLegalEntity(rows[0]!);
+  });
+}
+
+/**
+ * Change a legal entity.
+ *
+ * The code cannot move. Three tables carry a NOT NULL reference to the row and
+ * the code is what an administrator quotes, so renaming is what `legalName` is
+ * for — and a code change is refused rather than ignored, because silently
+ * dropping it would tell the caller the rename succeeded.
+ *
+ * `is_default` is not settable here. Moving the default is a different act from
+ * correcting an address, and it has its own call for the same reason
+ * `/config/sites/:code/active` is separate from editing a site.
+ */
+export async function updateLegalEntity(
+  caller: Caller,
+  code: string,
+  patch: LegalEntityDraft,
+): Promise<LegalEntity> {
+  mayShapeEntity(caller, 'change');
+  checkEntity(patch, true);
+
+  const key = code.trim().toUpperCase();
+  if (patch.code !== undefined && patch.code.trim().toUpperCase() !== key) {
+    throw new ConfigError(
+      'a legal entity code cannot change — every employee and pay run joins on it',
+      'invalid');
+  }
+
+  return withTenant(caller, async (db) => {
+    const { rows: [found] } = await db.query(
+      'SELECT id FROM legal_entity WHERE code = $1', [key]);
+    if (!found) throw new ConfigError('no such legal entity', 'not_found');
+
+    /*
+     * Absent leaves a field alone; present replaces it. The same three-way the
+     * rest of this module uses, expressed with a boolean flag per column so a
+     * null can mean "clear this identifier" rather than "do not touch it".
+     */
+    await db.query(
+      `UPDATE legal_entity
+          SET legal_name = COALESCE($2, legal_name),
+              country  = COALESCE($3, country),
+              currency = COALESCE($4, currency),
+              registered_address = CASE WHEN $6::boolean THEN $5 ELSE registered_address END,
+              tax_id          = CASE WHEN $8::boolean  THEN $7  ELSE tax_id END,
+              registration_id = CASE WHEN $10::boolean THEN $9  ELSE registration_id END,
+              pf_code         = CASE WHEN $12::boolean THEN $11 ELSE pf_code END,
+              esi_code        = CASE WHEN $14::boolean THEN $13 ELSE esi_code END
+        WHERE id = $1`,
+      [found.id,
+        patch.legalName?.trim() ?? null,
+        patch.country?.trim().toUpperCase() ?? null,
+        patch.currency?.trim().toUpperCase() ?? null,
+        optional(patch.registeredAddress), patch.registeredAddress !== undefined,
+        optional(patch.taxId), patch.taxId !== undefined,
+        optional(patch.registrationId), patch.registrationId !== undefined,
+        optional(patch.pfCode), patch.pfCode !== undefined,
+        optional(patch.esiCode), patch.esiCode !== undefined]);
+
+    await entityAudit(db, caller, 'legal_entity_updated', key, { ...patch });
+
+    const { rows } = await db.query(`${LE_COLUMNS} WHERE l.code = $1`, [key]);
+    return toLegalEntity(rows[0]!);
+  });
+}
+
+/**
+ * Move the default to this entity.
+ *
+ * There is no way to clear the default to none, and that is the point: payroll,
+ * expenses and employee provisioning each stop working without one. The default
+ * moves, it does not toggle.
+ */
+export async function setDefaultLegalEntity(
+  caller: Caller,
+  code: string,
+): Promise<LegalEntity> {
+  mayShapeEntity(caller, 'change the default for');
+
+  const key = code.trim().toUpperCase();
+
+  return withTenant(caller, async (db) => {
+    const { rows: [found] } = await db.query(
+      'SELECT is_default FROM legal_entity WHERE code = $1', [key]);
+    if (!found) throw new ConfigError('no such legal entity', 'not_found');
+
+    if (!found.is_default) {
+      await nominateDefault(db, key);
+      await entityAudit(db, caller, 'legal_entity_default_changed', key, { isDefault: true });
+    }
+
+    const { rows } = await db.query(`${LE_COLUMNS} WHERE l.code = $1`, [key]);
+    return toLegalEntity(rows[0]!);
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * The tenant's own profile
+ *
+ * `tenant` is the tenancy root. It is in `check-schema`'s GLOBAL_TABLES, has no
+ * row level security, and 0010 granted `app_rw` SELECT on it and nothing else —
+ * alongside `country`, `currency` and `fx_rate`. Nothing has written to it in
+ * fifty-three migrations outside the seed.
+ *
+ * **Because RLS is off here, the `WHERE id = current_tenant_id()` below is not
+ * belt-and-braces — it is the only thing scoping these statements.** Everywhere
+ * else in this module the policy would still refuse a row from another tenant if
+ * the predicate were dropped. Not here. That is why the tenant id is never taken
+ * from a caller-supplied value, and why the update names its one column instead
+ * of spreading a patch.
+ *
+ * Migration 0053 grants UPDATE on `display_name` and no other column, so the
+ * dangerous ones are unreachable in the database rather than by convention: if
+ * this code were ever wrong about which column it writes, PostgreSQL refuses the
+ * statement. Read-only here means read-only there.
+ * ------------------------------------------------------------------ */
+
+/**
+ * What the product knows about the tenant it is running for.
+ *
+ * Every field is read-only except `displayName`. They are returned together
+ * because the Company Profile screen shows them together, and showing them is
+ * the point: an administrator should be able to see the fiscal year and the data
+ * region their contract commits them to without being offered a control that
+ * would be refused.
+ */
+export interface TenantProfile {
+  /** The trading name. The one field an administrator may change. */
+  displayName: string;
+  /** Read-only. The registered name lives on `legal_entity` as well — see 2e. */
+  legalName: string;
+  /** Read-only. The URL identity, and how a login finds its tenant. */
+  slug: string;
+  /** Read-only. 'trial' | 'active' | 'suspended' | 'closed'. */
+  status: string;
+  /** Read-only. Statutory defaults follow it. */
+  homeCountry: string;
+  /** Read-only. Several modules store amounts that assume it. */
+  baseCurrency: string;
+  /** Read-only. 1-12. Decides which leave year a quota change reprices. */
+  fiscalYearStartMonth: number;
+  /** Read-only. A residency commitment in a customer contract. */
+  dataRegion: string;
+  createdAt: string;
+}
+
+/** The only mutable field, named rather than spread. */
+export interface TenantProfileDraft {
+  displayName: string;
+}
+
+const TENANT_COLUMNS = `
+  SELECT t.display_name, t.legal_name, t.slug::text AS slug, t.status,
+         t.home_country, t.base_currency, t.fiscal_year_start_month,
+         t.data_region, t.created_at
+    FROM tenant t`;
+
+const toTenantProfile = (r: Record<string, unknown>): TenantProfile => ({
+  displayName: r.display_name as string,
+  legalName: r.legal_name as string,
+  slug: r.slug as string,
+  status: r.status as string,
+  homeCountry: r.home_country as string,
+  baseCurrency: r.base_currency as string,
+  fiscalYearStartMonth: Number(r.fiscal_year_start_month),
+  dataRegion: r.data_region as string,
+  createdAt: (r.created_at as Date).toISOString(),
+});
+
+/**
+ * The tenant this request is for.
+ *
+ * Readable by every role, as the rest of configuration is — the product shows
+ * the company's name in its header, and resolving that is not privileged. The
+ * route is still only reachable by an administrator, because the whole settings
+ * module is; this says nothing about that, it just does not add a second rule.
+ */
+export async function readTenantProfile(caller: Caller): Promise<TenantProfile> {
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `${TENANT_COLUMNS} WHERE t.id = current_tenant_id()`);
+    /* Unreachable in practice: current_tenant_id() raises before this. */
+    if (!rows[0]) throw new ConfigError('no tenant in context', 'not_found');
+    return toTenantProfile(rows[0]);
+  });
+}
+
+/**
+ * Rename what the company calls itself.
+ *
+ * Only `display_name`, and only by name: there is no patch object to spread and
+ * no column list built from a request body, because the one place a mass
+ * assignment could reach the tenancy root is exactly the place not to allow one.
+ * 0053's column grant means the database agrees.
+ *
+ * 120 characters is the convention this module already uses for a name — see
+ * `checkBusinessUnit`.
+ */
+export async function updateTenantDisplayName(
+  caller: Caller,
+  displayName: unknown,
+): Promise<TenantProfile> {
+  if (caller.role !== 'admin') {
+    throw new ConfigError('only an admin may rename the company', 'forbidden');
+  }
+  if (typeof displayName !== 'string' || !displayName.trim()) {
+    throw new ConfigError('the company needs a name', 'invalid');
+  }
+  /*
+   * Trimmed, not rejected for having spaces, and not otherwise normalised: a
+   * company name is a proper noun. Unicode, punctuation and case are the
+   * customer's to decide, and `text` stores them all — so the only thing taken
+   * off is the whitespace a form adds.
+   */
+  const name = displayName.trim();
+  if (name.length > 120) {
+    throw new ConfigError('a name is at most 120 characters', 'invalid');
+  }
+
+  return withTenant(caller, async (db) => {
+    const updated = await db.query(
+      'UPDATE tenant SET display_name = $1 WHERE id = current_tenant_id()', [name]);
+    if (updated.rowCount === 0) throw new ConfigError('no tenant in context', 'not_found');
+
+    await db.query(
+      `INSERT INTO audit_log (category, action, actor_employee_id, actor_label,
+                              subject_table, detail)
+       SELECT 'config', 'tenant_display_name_updated', $1,
+              COALESCE(e.full_name, 'system'), 'tenant',
+              jsonb_build_object('displayName', $2::text)
+         FROM employee e WHERE e.id = $1`,
+      [caller.employeeId, name]);
+
+    const { rows } = await db.query(
+      `${TENANT_COLUMNS} WHERE t.id = current_tenant_id()`);
+    return toTenantProfile(rows[0]!);
   });
 }

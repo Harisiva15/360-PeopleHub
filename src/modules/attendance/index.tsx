@@ -14,7 +14,7 @@ import { SCOPE } from '../../state/rbac';
 import { useShowEmployee } from '../employees/Profile';
 import { PunchWidget } from './Punch';
 import {
-  useActOnRegularisation, useAttendance, useMyAttendance, usePeople,
+  useActOnRegularisation, useAttendance, useMonthCalendar, useMyAttendance, usePeople,
   usePayRuns, useRaiseRegularisation, useRegularisableDays, useRegularisations, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
@@ -95,6 +95,8 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
   const [mk, setMk] = useState(monthKey(TODAY));
 
   const { data: recs = [] } = useMyAttendance(me.id, mk + '-01', mk + '-31');
+  /* The server decides which of those days were working days. */
+  const { data: monthCal = [] } = useMonthCalendar(me.id, mk);
   const work = recs.filter((r) => ['P', 'W', 'A', 'L'].includes(r.status));
   const present = recs.filter((r) => r.status === 'P' || r.status === 'W').length;
   const late = recs.filter((r) => r.late).length;
@@ -138,7 +140,7 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
 
       <div className="grid g-1-2">
         <Card title="Calendar" sub={monthLabelLong(mk)}>
-          <MonthCalendar records={recs} mk={mk} />
+          <MonthCalendar records={recs} mk={mk} calendar={monthCal} />
         </Card>
         <Card title="Daily log" sub={`${recs.length} records`} flush>
           <div style={{ maxHeight: 520, overflow: 'auto' }} className="tbl-wrap">

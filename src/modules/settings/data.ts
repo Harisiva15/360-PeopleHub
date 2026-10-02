@@ -6,7 +6,9 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import type { AppRole } from '../../types/employee';
-import type { DepartmentDraft } from '../../services';
+import type {
+  BusinessUnitDraft, DepartmentDraft, LegalEntityDraft, TenantProfileDraft,
+} from '../../services';
 import type {
   ComponentDraft, FenceUpdate, GridPatch, SiteDraft, SitePatch,
 } from '../../services';
@@ -90,3 +92,45 @@ export const useUpdateDepartment = () =>
     s.config.updateDepartment(code, patch));
 export const useRemoveDepartment = () =>
   useMutation((s, code: string) => s.config.removeDepartment(code));
+
+/* ---------- the tenant itself ---------- */
+
+/*
+ * The Company Profile screen showed the trading name from the ORG constant. This
+ * reads the tenant row the whole product runs against, and writes the one column
+ * migration 0053 opened.
+ */
+export const useTenantProfile = () => useQuery((s) => s.config.tenantProfile(), []);
+export const useUpdateTenantDisplayName = () =>
+  useMutation((s, draft: TenantProfileDraft) => s.config.updateTenantDisplayName(draft));
+
+/* ---------- legal entities ---------- */
+
+/*
+ * The Company Profile screen rendered the ORG constant and its Save button was
+ * marked not-backed. These read and write the registered company that
+ * employee.legal_entity_id, pay_run and compliance_payment have all joined on
+ * since migration 0002.
+ */
+export const useLegalEntities = () => useQuery((s) => s.config.legalEntities(), []);
+export const useCreateLegalEntity = () =>
+  useMutation((s, draft: LegalEntityDraft) => s.config.createLegalEntity(draft));
+export const useUpdateLegalEntity = () =>
+  useMutation((s, code: string, patch: LegalEntityDraft) =>
+    s.config.updateLegalEntity(code, patch));
+/* Moving the default is its own call, because it is its own decision. */
+export const useSetDefaultLegalEntity = () =>
+  useMutation((s, code: string) => s.config.setDefaultLegalEntity(code));
+
+/* ---------- business units ---------- */
+
+export const useBusinessUnits = () => useQuery((s) => s.config.businessUnits(), []);
+export const useCreateBusinessUnit = () =>
+  useMutation((s, draft: BusinessUnitDraft) => s.config.createBusinessUnit(draft));
+export const useUpdateBusinessUnit = () =>
+  useMutation((s, code: string, patch: BusinessUnitDraft) =>
+    s.config.updateBusinessUnit(code, patch));
+/* Activate and deactivate are one call, because they are one decision. */
+export const useSetBusinessUnitActive = () =>
+  useMutation((s, code: string, active: boolean) =>
+    s.config.setBusinessUnitActive(code, active));

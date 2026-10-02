@@ -59,3 +59,18 @@ export const useRaiseRegularisation = () =>
 export const useActOnRegularisation = () =>
   useMutation((s, r: AttRecord, decision: 'Approved' | 'Rejected') =>
     s.attendance.actOnRegularisation(r.empId, r.date, decision));
+
+/**
+ * The server's working-day verdicts for a month, for the attendance calendar.
+ *
+ * The grid used to fill its empty days from a holiday list compiled into the
+ * bundle and a hard-coded Saturday/Sunday test. This is the same question asked
+ * of the server, so a tenant's own holidays are what show.
+ */
+export const useMonthCalendar = (empId: string, mk: string) => {
+  const [y, m] = mk.split('-').map(Number);
+  const last = new Date(Date.UTC(y!, m!, 0)).getUTCDate();
+  const from = `${mk}-01`;
+  const to = `${mk}-${String(last).padStart(2, '0')}`;
+  return useQuery((s) => s.calendar.workingDays(empId, from, to), [empId, from, to]);
+};

@@ -27,6 +27,7 @@ const src = readFileSync(new URL('../src/services/contracts.ts', import.meta.url
 /** The method that brings a new record into existence, per service. */
 const CREATES: Record<string, string> = {
   attendance: 'punchIn',
+  schedules: 'createWorkSchedule',
   // setStructure, not saveComponent: a component is the company's formula and
   // a structure is the record this service exists to write. Naming the
   // component creator would let this pass while nobody's pay could be set.
@@ -90,6 +91,7 @@ const ALLOWED: Record<string, string> = {
   staffing: 'the staffing book is out of scope for this release',
   security: 'the audit log is written by the modules being audited, never directly',
   approvals: 'a view over other modules queues, owning no records of its own',
+  calendar: 'derived from the holiday table and the working-day rule; owns no rows',
 };
 
 const reg = src.slice(src.indexOf('export interface Services {'));

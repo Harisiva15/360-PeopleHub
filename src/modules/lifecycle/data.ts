@@ -12,7 +12,9 @@
 
 import { useMutation, useQuery } from '../../services/react';
 import { useCaller } from '../../services/people';
-import type { LifecycleFilter, LifecycleTaskDraft, PromotionDraft } from '../../services';
+import type {
+  EmployeeScheduleDraft, LifecycleFilter, LifecycleTaskDraft, PromotionDraft,
+} from '../../services';
 
 export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
@@ -72,3 +74,20 @@ export const usePromote = () => {
 
 /** The real grade ladder. The GRADES constant has drifted from the database. */
 export const useGrades = () => useQuery((s) => s.config.grades(), []);
+
+/* ---------------- working patterns ----------------
+ *
+ * The schedule reads and writes the lifecycle drawer uses. Reads are open to every
+ * role for themselves; the writes are an admin's or a manager's own line, decided
+ * by the service rather than by this module.
+ */
+
+export const useWorkSchedules = () => useQuery((s) => s.schedules.workSchedules(), []);
+export const useEmployeeSchedules = (empId: string) =>
+  useQuery((s) => s.schedules.employeeSchedules(empId), [empId]);
+export const useAssignEmployeeSchedule = () =>
+  useMutation((s, empId: string, draft: EmployeeScheduleDraft) =>
+    s.schedules.assignEmployeeSchedule(empId, draft));
+export const useCloseEmployeeSchedule = () =>
+  useMutation((s, empId: string, assignmentId: string, validTo: string) =>
+    s.schedules.closeEmployeeSchedule(empId, assignmentId, validTo));

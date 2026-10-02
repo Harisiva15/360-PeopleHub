@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { sortBy, sum } from '../../lib/collections';
-import { addDays, DOW, fmtD, fmtDS, isWeekend, MON, mondayOf, parseYmd, TODAY, ymd } from '../../lib/dates';
+import { addDays, DOW, fmtD, fmtDS, MON, mondayOf, TODAY, ymd } from '../../lib/dates';
 import { lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
-import { BANKABLE, HOLIDAY_MAP, LEAVE_TYPES, ltOf, ORG } from '../../data/org';
-import type { LeaveRequest } from '../../services';
+import { BANKABLE, LEAVE_TYPES, ltOf, ORG } from '../../data/org';
+import type { DayVerdict, LeaveRequest } from '../../services';
 import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, Dot, ListRow, StatusBadge } from '../../components/common';
 import { Donut, HBar, Legend } from '../../components/charts';
@@ -16,7 +16,7 @@ import { registerModule } from '../registry';
 import { TITLES } from '../titles';
 import {
   balanceOf, useApplyLeaveRequest, useApproveLeave, useBalancesFor, useCancelLeave, useLeaveFor,
-  useMyBalances, useMyLeave, usePeople, useRejectLeave, useVisiblePeople,
+  useMyBalances, useMyLeave, usePeople, useRejectLeave, useVisiblePeople, useWorkingDays,
 } from './data';
 import type { Directory } from './data';
 import { Icon } from '../../components/icons';
@@ -53,30 +53,45 @@ function ApplyForm({ close }: { close: () => void }) {
   const [reason, setReason] = useState('');
   const [phone, setPhone] = useState(me.phone);
 
-  /* the sandwich rule excludes week-offs and holidays between two leave days */
+  /*
+   * The day count comes from the server.
+   *
+   * This used to be computed here — `isWeekend(d) || HOLIDAY_MAP[ymd(d)]` — and
+   * sent with the request, which the server stored as received. Two dates and a
+   * tampered body could claim a hundred days. The server derives it now; this read
+   * is so the figure shown before submitting is the one that will be stored, not a
+   * second opinion.
+   *
+   * The sandwich rule is unchanged: week-offs and holidays inside a range are not
+   * counted. It is just the server's definition of those now, from the tenant's own
+   * holiday table rather than a list compiled into this bundle.
+   */
   const invalid = !from || !to || to < from;
-  let days = 0;
-  let excluded = 0;
-  if (!invalid) {
-    for (let d = parseYmd(from); ymd(d) <= to; d = addDays(d, 1)) {
-      if (isWeekend(d) || HOLIDAY_MAP[ymd(d)]) excluded++;
-      else days++;
-    }
-    if (dur !== 'full') days = 0.5;
-  }
+  const { data: span = [], loading: spanLoading } = useWorkingDays(me.id, from, to);
+  const working = span.filter((d: DayVerdict) => d.workingDay).length;
+  const excluded = span.length - working;
+  const days = invalid ? 0 : (dur !== 'full' ? 0.5 : working);
   /* The list arrives asynchronously, so hold the selection to something real. */
   const activeType = bals.some((b) => b.type === type) ? type : bals[0]?.type ?? type;
   const bal = bals.find((b) => b.type === activeType);
   const enough = !bal || bal.avail >= days;
 
   const submit = async () => {
-    if (invalid || !days) {
+    if (invalid) {
       app.toast('Check the dates', 'err');
+      return;
+    }
+    if (spanLoading) {
+      app.toast('Still working out those dates', 'err');
+      return;
+    }
+    if (!days) {
+      app.toast('Those dates are all week off or holidays', 'err');
       return;
     }
     try {
       await applyLeave.mutate({
-        empId: me.id, type: activeType, from, to, days,
+        empId: me.id, type: activeType, from, to,
         half: dur === 'full' ? null : dur,
         reason,
       });
@@ -455,6 +470,21 @@ function LvCal() {
   for (let i = 0; i < 28; i++) days.push(addDays(start, i));
   const people = dir.list.slice(0, 40);
   const { data: approved = [] } = useLeaveFor(dir.ids, 'Approved');
+  /*
+   * The non-working tint, from the server.
+   *
+   * It used to come from `HOLIDAY_MAP` and `isWeekend` — a holiday list compiled
+   * into the bundle and a hard-coded Saturday/Sunday test — so this grid could
+   * shade a day the tenant had not configured and miss one it had.
+   *
+   * Read once for the viewer rather than per person. A per-employee calendar would
+   * be forty requests for a tint, and until a work schedule exists the only thing
+   * that varies per employee is a site-specific holiday. Where that matters the
+   * authoritative answer is the one leave already stores.
+   */
+  const app = useApp();
+  const { data: span = [] } = useWorkingDays(app.me.id, ymd(days[0]!), ymd(days[27]!));
+  const offBy = new Map(span.map((v: DayVerdict) => [v.date, v]));
 
   return (
     <Card title="Team leave calendar"
@@ -489,8 +519,14 @@ function LvCal() {
                         data-tip={`${e.name} · ${ltOf(l.type).name} · ${fmtD(l.from)}${l.days > 1 ? ' – ' + fmtD(l.to) : ''}`} />
                     );
                   }
-                  if (HOLIDAY_MAP[ds]) return <td key={i} style={{ background: 'var(--surface-3)' }} data-tip={HOLIDAY_MAP[ds]} />;
-                  if (isWeekend(d)) return <td key={i} style={{ background: 'var(--surface-3)', opacity: 0.6 }} />;
+                  const v = offBy.get(ds);
+                  if (v && v.reason === 'HOLIDAY') {
+                    return <td key={i} style={{ background: 'var(--surface-3)' }}
+                      data-tip={v.holiday ?? 'Holiday'} />;
+                  }
+                  if (v && !v.workingDay) {
+                    return <td key={i} style={{ background: 'var(--surface-3)', opacity: 0.6 }} />;
+                  }
                   return <td key={i} />;
                 })}
               </tr>

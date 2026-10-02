@@ -68,3 +68,6 @@ export const usePendingCount = () => {
   const caller = useCaller();
   return useQuery((s) => s.approvals.pendingCount(caller), [caller.role, caller.meId]);
 };
+
+/* The attendance calendar needs the same server verdicts the attendance screen uses. */
+export { useMonthCalendar } from '../attendance/data';

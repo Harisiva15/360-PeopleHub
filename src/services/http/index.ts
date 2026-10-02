@@ -448,9 +448,10 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       balancesFor: (empIds) =>
         (empIds.length ? api.get(`/leave/balances${qs({ empIds: empIds.join(',') })}`)
           : Promise.resolve({})),
+      /* No `days`: the server derives it and returns the authoritative figure. */
       apply: (req) => api.post<LeaveRequest>('/leave', {
         employeeId: req.empId, typeCode: req.type, startsOn: req.from,
-        endsOn: req.to, days: req.days, reason: req.reason, half: req.half,
+        endsOn: req.to, reason: req.reason, half: req.half,
       }),
       approve: (id: string) => api.post<LeaveRequest>(`/leave/${id}/approve`),
       reject: (id: string, _approverId: string, note?: string) =>
@@ -458,6 +459,34 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       cancel: (id: string) => api.post<LeaveRequest>(`/leave/${id}/cancel`),
     },
 
+    /*
+     * Work schedules. Server-side only in this phase: the screens are a later
+     * one, which is why these appear in checks/reachable.ts's ALLOWED list.
+     */
+    schedules: {
+      workSchedules: () => api.get('/work-schedules'),
+      workSchedule: (code) => api.get(`/work-schedules/${encodeURIComponent(code)}`),
+      createWorkSchedule: (draft) => api.post('/work-schedules', draft),
+      updateWorkSchedule: (code, patch) =>
+        api.put(`/work-schedules/${encodeURIComponent(code)}`, patch),
+      setWorkScheduleDay: (code, day) =>
+        api.put(`/work-schedules/${encodeURIComponent(code)}/days`, day),
+      setWorkScheduleActive: (code, active) =>
+        api.put(`/work-schedules/${encodeURIComponent(code)}/active`, { active }),
+      employeeSchedules: (empId) =>
+        api.get(`/employees/${encodeURIComponent(empId)}/schedules`),
+      assignEmployeeSchedule: (empId, draft) =>
+        api.post(`/employees/${encodeURIComponent(empId)}/schedules`, draft),
+      closeEmployeeSchedule: (empId, assignmentId, validTo) =>
+        api.put(
+          `/employees/${encodeURIComponent(empId)}/schedules/${encodeURIComponent(assignmentId)}`,
+          { validTo }),
+    },
+
+    calendar: {
+      workingDays: (empId, from, to) =>
+        api.get(`/calendar/working-days${qs({ empId, from, to })}`),
+    },
     shifts: {
       profiles: () => api.get('/shifts'),
       /*

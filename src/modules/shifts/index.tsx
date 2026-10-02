@@ -18,7 +18,9 @@ import {
 } from './data';
 import type { Directory } from './data';
 import { RosterView } from './Roster';
+import { SchedulesView } from './Schedules';
 import { colourOf, resolveProfile } from './profile';
+import { EXPECTED_LEGEND, lookOf, scheduleOver, standingShift } from './expected';
 import { ShiftForm } from './ShiftForm';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
@@ -41,6 +43,14 @@ function localNow(tz: string): string | null {
 
 /* ---------------- My roster ---------------- */
 
+/**
+ * One person's own four weeks.
+ *
+ * Read-only by design, and not only because an employee cannot change their own
+ * schedule: the days come from the server's calendar resolver, so this screen has
+ * nothing to compute and no second opinion to offer. It shows which pattern they
+ * are on, which hours, and what each day is expected to be.
+ */
 function ShMy() {
   const app = useApp();
   const me = app.me;
@@ -51,26 +61,35 @@ function ShMy() {
   const days: Date[] = [];
   for (let i = 0; i < 28; i++) days.push(addDays(start, i));
 
-  const mine = roster[me.id] || {};
-  /* One standing profile, read off whichever day is a working day. */
-  const standing = days.map((d) => mine[ymd(d)]).find((x) => x && x !== 'OFF') ?? 'IN';
+  const mine = roster[me.id];
+  const dates = days.map((d) => ymd(d));
+  /* The standing profile and the pattern, both read off the server's verdicts. */
+  const standing = standingShift(mine, dates) ?? '';
+  const sched = scheduleOver(mine, dates);
   const sh = resolveProfile(profiles, standing);
   /* Its own colour where the tenant chose one, otherwise its slot in the list. */
   const shColour = colourOf(sh, Math.max(0, profiles.findIndex((p) => p.code === standing)));
-  const todayShift = mine[ymd(TODAY)];
-  const offs = days.filter((d) => mine[ymd(d)] === 'OFF').length;
+  const todayLook = lookOf(mine?.[ymd(TODAY)]);
+  const offs = dates.filter((d) => mine?.[d]?.expected === 'WEEKLY_OFF').length;
+  const workDays = dates.filter((d) => mine?.[d]?.expected === 'WORKING').length;
   const lead = days[0].getDay();
   const there = localNow(sh.timezone);
 
   return (
     <div className="stack">
-      <StatRow cols={4}>
+      <StatRow cols={5}>
         <Tile label="My shift" value={sh.name}
-          foot={todayShift === 'OFF' ? 'Today is a week off' : `${sh.start} – ${sh.end}`} />
+          foot={todayLook && !todayLook.working
+            ? `Today is ${todayLook.label.toLowerCase()}`
+            : `${sh.start} – ${sh.end}`} />
+        <Tile label="My working pattern" value={sched ?? 'Not assigned'}
+          foot={sched
+            ? 'Which days you are expected in'
+            : 'Monday to Friday is assumed until one is set'} />
         <Tile label="Measured against"
           value={sh.timezone.split('/')[1]?.replace('_', ' ') ?? sh.timezone}
           foot={there ? `${there} there right now` : 'Your own clock'} />
-        <Tile label="Week offs" value={offs} foot="In the 4 weeks shown" />
+        <Tile label="Working days" value={workDays} foot={`${offs} week offs in the 4 weeks shown`} />
         <Tile label="Comp off balance" value={(compOff?.avail ?? 0) + ' days'} foot="Earned from extra working days" />
       </StatRow>
 
@@ -83,25 +102,41 @@ function ShMy() {
           {Array.from({ length: lead }, (_, i) => <div className="day mut" key={'l' + i} />)}
           {days.map((d) => {
             const ds = ymd(d);
-            const s = mine[ds] || standing;
+            const cell = mine?.[ds];
+            const look = lookOf(cell);
             const isToday = ds === ymd(TODAY);
+            /*
+             * No verdict for this date — left blank rather than filled in. The
+             * server answers every date it is asked about, so a gap means the read
+             * has not arrived, and a guess would be a day somebody plans around.
+             */
+            if (!look) {
+              return <div key={ds} className="day mut"
+                style={isToday ? { outline: '2px solid var(--brand)', outlineOffset: -2 } : undefined}
+              >{d.getDate()}</div>;
+            }
+            const dayShift = cell!.shift ?? standing;
             return (
               <div key={ds} className="day"
                 style={{
-                  ...(s === 'OFF'
-                    ? { background: 'var(--surface-3)', color: 'var(--ink-3)' }
-                    : { background: `color-mix(in srgb, ${shColour} 15%, transparent)` }),
+                  ...(look.working
+                    ? { background: `color-mix(in srgb, ${shColour} 15%, transparent)` }
+                    : { background: look.tint ?? 'var(--surface-3)', color: 'var(--ink-3)' }),
                   ...(isToday ? { outline: '2px solid var(--brand)', outlineOffset: -2 } : {}),
                 }}
-                data-tip={`${fmtD(ds)} · ${s === 'OFF' ? 'Week off' : `${sh.name} ${sh.start}–${sh.end} ${sh.timezone}`}`}>
-                {d.getDate()}<small>{s === 'OFF' ? 'OFF' : s}</small>
+                data-tip={`${fmtD(ds)} · ${look.working
+                  ? `${resolveProfile(profiles, dayShift).name} ${sh.start}–${sh.end} ${sh.timezone}`
+                  : look.label}${cell!.holiday ? ` · ${cell!.holiday}` : ''}`}>
+                {d.getDate()}<small>{look.working ? dayShift : look.short}</small>
               </div>
             );
           })}
         </div>
         <div style={{ marginTop: 12 }}>
           <Legend items={profiles.map((p, i) => ({ k: p.name, c: colourOf(p, i) }))
-            .concat([{ k: 'Week off', c: 'var(--line-2)' }])} />
+            .concat(EXPECTED_LEGEND.map((x) => ({
+              k: x.look.label, c: x.look.tint ?? 'var(--line-2)',
+            })))} />
         </div>
       </Card>
     </div>
@@ -469,15 +504,27 @@ function ShDef() {
 
 /* ---------------- entry ---------------- */
 
-type Tab = 'roster' | 'my' | 'ot' | 'def';
+type Tab = 'roster' | 'my' | 'ot' | 'def' | 'sched';
 
 function Shifts() {
   const app = useApp();
+  /*
+   * Working patterns sit beside shift profiles, under the navigation item that
+   * already reads 'Shifts & work schedules' — the second half of which had nothing
+   * behind it until this phase. No new route and no new nav entry.
+   *
+   * Readable by everyone, as the service allows: which days the company works is
+   * not privileged, and the write controls inside are an admin's.
+   */
   const tabs: { v: Tab; label: string }[] = app.role === 'employee'
-    ? [{ v: 'my', label: 'My shift' }, { v: 'ot', label: 'Overtime & comp off' }, { v: 'def', label: 'Shift profiles' }]
+    ? [
+        { v: 'my', label: 'My shift' }, { v: 'ot', label: 'Overtime & comp off' },
+        { v: 'def', label: 'Shift profiles' }, { v: 'sched', label: 'Working patterns' },
+      ]
     : [
         { v: 'roster', label: 'Team roster' }, { v: 'my', label: 'My shift' },
         { v: 'ot', label: 'Overtime & comp off' }, { v: 'def', label: 'Shift profiles' },
+        { v: 'sched', label: 'Working patterns' },
       ];
 
   const [tab, setTab] = useState<Tab>(tabs[0].v);
@@ -490,6 +537,7 @@ function Shifts() {
       {active === 'my' && <ShMy />}
       {active === 'ot' && <ShOt />}
       {active === 'def' && <ShDef />}
+      {active === 'sched' && <SchedulesView />}
     </>
   );
 }

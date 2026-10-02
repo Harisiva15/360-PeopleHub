@@ -5,12 +5,12 @@
  * of its own; splitting them into three files would be filing, not design.
  */
 
-import { addDays, daysBetween, isWeekend, parseYmd, TODAY, ymd } from '../../lib/dates';
-import { ACTIVE, DEMO_EMP, empName } from '../../data/employees';
+import { addDays, daysBetween, parseYmd, TODAY, ymd } from '../../lib/dates';
+import { ACTIVE, DEMO_EMP, EMAP, empName } from '../../data/employees';
 import { LEAVE_BAL } from '../../data/leave';
 import { OVERTIME, ROSTER, SHIFTS } from '../../data/shifts';
 import type { Shift } from '../../data/shifts';
-import type { ShiftDraft, ShiftProfile } from '../contracts';
+import type { RosterDay, ShiftDraft, ShiftProfile } from '../contracts';
 import { LOANS } from '../../data/loans';
 import { LETTER_REQS, LETTER_TYPES } from '../../data/letters';
 import { CANDS, INTERVIEWS, REQS, reqOf, STAGES } from '../../data/ats';
@@ -19,6 +19,7 @@ import type {
   LoanService, Overtime, RecruiterStat, ReqActivity, Requisition, ShiftService,
 } from '../contracts';
 import type { Offer } from '../../data/ats';
+import { classifyDemoDays } from './calendar';
 import { ok } from './util';
 
 /** The clock part of an instant, as the schedule stores it. */
@@ -194,15 +195,28 @@ export const shiftService: ShiftService = {
     return ok(row);
   },
 
+  /*
+   * The rota, from the demo's own calendar rather than a weekend test.
+   *
+   * This read `isWeekend(parseYmd(d)) ? 'OFF' : standingOf(id)` and so called
+   * Saturday off for everybody — which stopped being true the moment a demo
+   * employee could be put on a six-day pattern. `classifyDemoDays` is the same
+   * function the demo calendar and the demo leave count use, so all three agree,
+   * exactly as the three server-side callers do.
+   *
+   * The generated `ROSTER` fixture is no longer consulted for this. It was built
+   * from that same weekend rule, so preferring it would reintroduce the thing
+   * this change removes.
+   */
   roster(empIds, from, days) {
-    const out: Record<string, Record<string, string>> = {};
+    const out: Record<string, Record<string, RosterDay>> = {};
+    const to = ymd(addDays(parseYmd(from), Math.max(0, days - 1)));
     empIds.forEach((id) => {
-      const week: Record<string, string> = {};
-      for (let i = 0; i < days; i++) {
-        const d = ymd(addDays(parseYmd(from), i));
-        /* Fall back to the standing profile when the window runs past what is generated. */
-        week[d] = ROSTER[id]?.[d]
-          ?? (isWeekend(parseYmd(d)) ? 'OFF' : standingOf(id));
+      const week: Record<string, RosterDay> = {};
+      for (const v of classifyDemoDays(id, from, to)) {
+        week[v.date] = {
+          expected: v.reason, shift: v.shift, schedule: v.schedule, holiday: v.holiday,
+        };
       }
       out[id] = week;
     });
@@ -289,7 +303,21 @@ export const shiftService: ShiftService = {
       return Promise.reject(new Error(
         `${shiftCode} is not in use and cannot be assigned — activate it first`));
     }
-    /* A profile change applies to every day, because it is a change to the person. */
+    /*
+     * A profile change applies to every day, because it is a change to the
+     * person — so it is written on the person, as `setEmployeeShift` writes
+     * `employee.shift_id`.
+     *
+     * This used to rewrite the generated `ROSTER` fixture instead, which worked
+     * only while the rota read that fixture. The rota now reads the demo calendar,
+     * which resolves each day's shift from the schedule's override or the
+     * employee's own field — so writing the fixture changed a rota nobody reads
+     * and left the real one showing the old profile.
+     */
+    const emp = EMAP[empId];
+    if (!emp) return Promise.reject(new Error('No such employee: ' + empId));
+    emp.shift = shiftCode;
+    /* Kept in step so anything still reading the fixture agrees with the person. */
     const week = ROSTER[empId] ?? (ROSTER[empId] = {});
     Object.keys(week).forEach((d) => { if (week[d] !== 'OFF') week[d] = shiftCode; });
     return ok({ empId, shift: shiftCode });
@@ -302,11 +330,11 @@ export const shiftService: ShiftService = {
   },
 };
 
-/** The profile somebody is on, read off whichever working day is generated. */
-function standingOf(empId: string): string {
-  const week = ROSTER[empId] ?? {};
-  return Object.values(week).find((s) => s !== 'OFF') ?? 'IN';
-}
+/*
+ * `standingOf` lived here, reading somebody's profile off whichever generated day
+ * was not 'OFF'. The rota now carries the shift on each day's verdict, so the
+ * caller reads it from there and this had no reader left.
+ */
 
 export const loanService: LoanService = {
   list(status) {

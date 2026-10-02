@@ -3,9 +3,12 @@ import { registerModule } from '../registry';
 import { useTabFromUrl } from '../tabParam';
 import { TITLES } from '../titles';
 import { RbacTab, UsersTab } from './access';
-import { CompanyTab, ConfigAuditTab, LeavePolicyTab, LocationsTab, OrgTab, PayConfigTab } from './config';
+import {
+  BusinessUnitsTab, CompanyTab, ConfigAuditTab, LeavePolicyTab, LocationsTab, OrgTab,
+  PayConfigTab,
+} from './config';
 
-type Tab = 'rbac' | 'users' | 'sites' | 'leave' | 'pay' | 'org' | 'company' | 'audit';
+type Tab = 'rbac' | 'users' | 'sites' | 'leave' | 'pay' | 'org' | 'bu' | 'company' | 'audit';
 
 const TABS: { v: Tab; label: string }[] = [
   { v: 'rbac', label: 'Access Control' },
@@ -14,6 +17,7 @@ const TABS: { v: Tab; label: string }[] = [
   { v: 'leave', label: 'Leave Policy' },
   { v: 'pay', label: 'Salary Components' },
   { v: 'org', label: 'Org Structure' },
+  { v: 'bu', label: 'Business Units' },
   { v: 'company', label: 'Company Profile' },
   { v: 'audit', label: 'Audit Log' },
 ];
@@ -31,6 +35,7 @@ function SettingsView() {
       {tab === 'leave' && <LeavePolicyTab />}
       {tab === 'pay' && <PayConfigTab />}
       {tab === 'org' && <OrgTab />}
+      {tab === 'bu' && <BusinessUnitsTab />}
       {tab === 'company' && <CompanyTab />}
       {tab === 'audit' && <ConfigAuditTab />}
     </>

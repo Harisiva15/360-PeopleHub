@@ -33,7 +33,8 @@ import {
   useAllEmployees, useAnnouncements, useAttendanceIn, useCandidates, useCelebrations,
   useClaimsIn, useCompliancePayments, useCourses, useCurrentCycle, useCurrentRun,
   useDeclarations, useEnrolments, useExits, useGoals, useLeaveIn, useMyAttendance,
-  useMyBalances, usePayRuns, usePayrollTotals, usePayslipHistory, usePendingCount,
+  useMonthCalendar, useMyBalances, usePayRuns, usePayrollTotals, usePayslipHistory,
+  usePendingCount,
   useRequisitions,
   useSurveys, useTeam, useTickets, useTimesheetsIn,
 } from './data';
@@ -427,6 +428,8 @@ function DashEmployee() {
   const mk = monthKey(TODAY);
 
   const { data: monthRecs = [] } = useMyAttendance(me.id, mk + '-01', mk + '-31');
+  /* The server decides which of those days were working days. */
+  const { data: monthCal = [] } = useMonthCalendar(me.id, mk);
   const { data: mySheets = [] } = useTimesheetsIn([me.id]);
   const { data: history = [] } = usePayslipHistory(me.id);
   const { data: bals = [] } = useMyBalances(me.id);
@@ -521,7 +524,7 @@ function DashEmployee() {
 
       <div className="grid g-2-1">
         <Card title="My attendance calendar" sub={monthLabelLong(mk)} actions={<GoLink to="attendance">Details</GoLink>}>
-          <MonthCalendar records={monthRecs} mk={mk} />
+          <MonthCalendar records={monthRecs} mk={mk} calendar={monthCal} />
         </Card>
         <Card title="Leave balances" sub={ORG.fy} actions={<GoLink to="leave">Apply</GoLink>}>
           <div className="stack" style={{ gap: 11 }}>

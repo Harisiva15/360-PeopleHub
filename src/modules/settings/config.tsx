@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { sortBy, sum, uniq } from '../../lib/collections';
-import { addDays, DOW, MON, parseYmd, TODAY, ymd } from '../../lib/dates';
+import { inTreeOrder, subtreeOf } from '../../lib/orgtree';
+import { addDays, DOW, fmtD, MON, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { inr, lakh } from '../../lib/format';
 import { LOGO_LIGHT } from '../../assets/logo';
 
@@ -16,20 +17,24 @@ import { COUNTRIES } from '../../data/countries';
 
 
 import { Badge, Banner, Card, EmptyState, KV, Table, TableWrap } from '../../components/ui';
-import { notBacked } from '../../components/NotBacked';
 import { AuditTab } from '../security';
 import { Dot, ListRow } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import type { Department, DepartmentDraft } from '../../services';
+import type {
+  BusinessUnit, Department, DepartmentDraft, LegalEntityDraft,
+} from '../../services';
 import { FenceForm } from './Fence';
 import {
-  useAddHoliday, useAllEmployees, useAttendanceAll, useCandidates, useCompensation,
-  useCreateSite, useHolidays, useLeaveAll, usePayRuns, useRequisitions,
-  useComponents, useRemoveComponent, useSaveComponent,
-  useSetLeaveQuota, useSetSiteActive, useSites,
-  useTimesheetsAll, useUpdateSite, useVisiblePeople,
-  useDepartments, useCreateDepartment, useUpdateDepartment, useRemoveDepartment,
+  useAddHoliday, useAllEmployees, useAttendanceAll, useBusinessUnits, useCandidates,
+  useCompensation, useComponents, useCreateBusinessUnit, useCreateDepartment,
+  useCreateSite, useDepartments, useHolidays, useLeaveAll, usePayRuns, useRemoveComponent,
+  useRemoveDepartment, useRequisitions, useSaveComponent, useSetBusinessUnitActive,
+  useLegalEntities, useSetDefaultLegalEntity, useTenantProfile,
+  useUpdateTenantDisplayName,
+  useSetLeaveQuota, useSetSiteActive, useSites, useTimesheetsAll, useUpdateBusinessUnit,
+  useUpdateLegalEntity,
+  useUpdateDepartment, useUpdateSite, useVisiblePeople,
 } from './data';
 import { Icon } from '../../components/icons';
 
@@ -925,9 +930,15 @@ export function PayConfigTab() {
  * requisition joins on it — so it is set once and locked afterwards. Renaming
  * is what the name field is for.
  */
-function DeptForm({ initial, people, lockCode, onChange }: {
+function DeptForm({ initial, people, units, depts, selfId, lockCode, onChange }: {
   initial: DepartmentDraft;
   people: { id: string; name: string }[];
+  /** Every unit, so an inactive one already assigned can still be named. */
+  units: BusinessUnit[];
+  /** Every department, for the parent selector. */
+  depts: Department[];
+  /** The department being edited, or null when adding one. */
+  selfId: string | null;
   lockCode: boolean;
   onChange: (v: DepartmentDraft) => void;
 }) {
@@ -937,6 +948,18 @@ function DeptForm({ initial, people, lockCode, onChange }: {
     setV(next);
     onChange(next);
   };
+
+  /*
+   * Everything except this department and its descendants. On a create there is
+   * no self yet, so every department is a candidate.
+   */
+  const excluded = selfId === null ? new Set<string>() : subtreeOf(depts, selfId);
+  const parentOptions = sortBy(
+    depts.filter((d) => !excluded.has(d.id)), (d) => d.name.toLowerCase());
+
+  /* The unit this department names, where it has since been deactivated. */
+  const assignedInactive = units.find(
+    (u) => u.code === v.businessUnitCode && !u.active) ?? null;
 
   return (
     <div className="stack">
@@ -965,6 +988,75 @@ function DeptForm({ initial, people, lockCode, onChange }: {
           {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
+      {/*
+        * The parent department, which has been in the database since 0002 and
+        * unreachable from the product until now.
+        *
+        * Null is top-level, and most departments are. The options leave out this
+        * department and everything beneath it, because the server refuses that
+        * with a recursive walk and a select should not propose a refusal — but the
+        * server is still the authority, and a stale list here only means a
+        * refusal the form explains rather than a cycle that gets through.
+        *
+        * Inactive departments are offered, labelled. The server allows an
+        * inactive parent, and hiding something the server permits is its own kind
+        * of lie.
+        */}
+      <div className="field">
+        <label htmlFor="dept-parent">Reports to</label>
+        <select id="dept-parent" className="input" value={v.parentId ?? ''}
+          onChange={(e) => set({ parentId: e.target.value || null })}>
+          <option value="">Top level — no parent</option>
+          {parentOptions.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}{d.active ? '' : ' (inactive)'}
+            </option>
+          ))}
+        </select>
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          {parentOptions.length === 0
+            ? 'There is no other department to report to yet.'
+            : 'The department above this one. Leave it top level if there is none.'}
+        </div>
+      </div>
+      {/*
+        * The business unit, from Company Setup.
+        *
+        * Only active units are offered, which is the rule the server enforces —
+        * an inactive one stays readable on a department that already names it and
+        * cannot be chosen for a new assignment. Unassigned is a real option
+        * because the column is nullable: departments predate business units and
+        * are never given one implicitly.
+        *
+        * The empty string becomes `null`, which the service reads as "clear the
+        * assignment" rather than "leave it alone".
+        */}
+      <div className="field">
+        <label htmlFor="dept-bu">Business unit</label>
+        <select id="dept-bu" className="input" value={v.businessUnitCode ?? ''}
+          onChange={(e) => set({ businessUnitCode: e.target.value || null })}>
+          <option value="">Unassigned</option>
+          {/*
+            * Active units, plus whichever inactive one this department already
+            * names — otherwise the select would show blank for it, and saving
+            * would silently clear an assignment nobody meant to touch.
+            */}
+          {units.filter((u) => u.active || u.code === initial.businessUnitCode).map((u) => (
+            <option key={u.code} value={u.code}>
+              {u.code} — {u.name}{u.active ? '' : ' (inactive)'}
+            </option>
+          ))}
+        </select>
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          {units.length === 0
+            ? 'No business units exist yet. Add one under Company Setup → Business Units.'
+            : 'The operating division this department belongs to. Optional.'}
+          {assignedInactive && (
+            <> <b>{assignedInactive.code}</b> is no longer active. It stays assigned
+              until you change it, and cannot be chosen for another department.</>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -977,21 +1069,29 @@ export function OrgTab() {
   const { data: reqs = [] } = useRequisitions();
   const { data: sheets = [] } = useTimesheetsAll(everyone.map((e) => e.id));
   const { data: depts = [], loading: deptsLoading, refetch: refetchDepts } = useDepartments();
+  /* Reuses the existing Company Setup read, so there is no second business-unit API. */
+  const { data: units = [] } = useBusinessUnits();
   const createDept = useCreateDepartment();
   const updateDept = useUpdateDepartment();
   const removeDept = useRemoveDepartment();
   const dir = useVisiblePeople();
+  /* Parents first, children indented under them. Presentation, so it lives here. */
+  const tree = inTreeOrder(depts);
+  const nameOf = (id: string | null) => depts.find((d) => d.id === id)?.name ?? null;
 
   const editDept = (existing?: Department) => {
     let draft: DepartmentDraft = {
       code: existing?.code ?? '', name: existing?.name ?? '',
       colour: existing?.colour ?? null, headId: existing?.headId ?? null,
+      businessUnitCode: existing?.businessUnitCode ?? null,
+      parentId: existing?.parentId ?? null,
     };
     layer.modal({
       title: existing ? `Edit ${existing.name}` : 'Add a department',
       size: 'narrow',
       body: (
-        <DeptForm initial={draft} people={everyone} lockCode={Boolean(existing)}
+        <DeptForm initial={draft} people={everyone} units={units} depts={depts}
+          selfId={existing?.id ?? null} lockCode={Boolean(existing)}
           onChange={(v) => { draft = v; }} />
       ),
       footer: (close) => (
@@ -1080,17 +1180,29 @@ export function OrgTab() {
             <Table>
               <thead>
                 <tr>
-                  <th>Department</th><th>Head</th><th className="num">Headcount</th>
+                  <th>Department</th><th>Reports to</th><th>Business unit</th>
+                  <th>Head</th><th className="num">Headcount</th>
                   <th className="num">Annual cost</th><th className="num">Open roles</th>
                   {app.role === 'admin' && <th className="right">&nbsp;</th>}
                 </tr>
               </thead>
               <tbody>
-                {depts.map((d) => (
+                {tree.map(({ node: d, depth }) => (
                   <tr key={d.code}>
-                    <td>
-                      <Dot color={d.colour ?? 'var(--s1)'} /> <b>{d.name}</b>
+                    {/* The indent is the hierarchy. Inline, because a new class
+                        would read as unrendered to the styles check. */}
+                    <td style={{ paddingLeft: 10 + depth * 18 }}>
+                      <Dot color={d.colour ?? 'var(--s1)'} /> <b>{d.name}</b>{' '}
+                      <Badge>{d.code}</Badge>
                       {!d.active && <> <Badge kind="mute">Inactive</Badge></>}
+                    </td>
+                    <td className="nowrap">
+                      {nameOf(d.parentId) ?? <span className="muted">Top level</span>}
+                    </td>
+                    <td className="nowrap">
+                      {d.businessUnitName
+                        ? <><Badge>{d.businessUnitCode}</Badge> {d.businessUnitName}</>
+                        : <span className="muted">Unassigned</span>}
                     </td>
                     <td className="nowrap">{d.headName || dir.name(d.headId)}</td>
                     <td className="num">{d.headcount}</td>
@@ -1105,7 +1217,7 @@ export function OrgTab() {
                   </tr>
                 ))}
                 {!depts.length && (
-                  <tr><td colSpan={app.role === 'admin' ? 6 : 5}>
+                  <tr><td colSpan={app.role === 'admin' ? 8 : 7}>
                     <EmptyState
                       msg={deptsLoading ? 'Loading departments…' : 'No departments configured yet'}
                       icon={<Icon n="building" size="lg" />}
@@ -1178,6 +1290,475 @@ const INTEGRATIONS: [string, string, 'good' | 'mute'][] = [
   ['Tally / ERP journal export', 'Not configured', 'mute'],
 ];
 
+/* ---------- The tenant ---------- */
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** 'active' reads as good; a suspended or closed tenant should look like one. */
+const STATUS_KIND: Record<string, 'good' | 'warn' | 'mute'> = {
+  active: 'good', trial: 'warn', suspended: 'warn', closed: 'mute',
+};
+
+/**
+ * The tenant this build runs for.
+ *
+ * One field is editable and eight are not, and that asymmetry is the whole point
+ * of the card. `tenant` is the tenancy root: it has no row level security, a
+ * dozen modules read `base_currency` and `fiscal_year_start_month`, and
+ * `data_region` is a residency commitment in a customer contract. Migration 0053
+ * grants the application role UPDATE on `display_name` and nothing else, so the
+ * read-only fields here are read-only in PostgreSQL too.
+ *
+ * So they are rendered as values rather than as disabled inputs. A greyed-out
+ * text box invites someone to look for the thing that would un-grey it; a
+ * labelled value does not pretend to be a control at all. Each one says who
+ * changes it instead, which is the actionable part.
+ */
+function TenantProfileCard() {
+  const app = useApp();
+  const { data: tenant, loading, error, refetch } = useTenantProfile();
+  const rename = useUpdateTenantDisplayName();
+  const admin = app.role === 'admin';
+
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  /* Opened explicitly, so a slow read cannot drop a half-typed name. */
+  const begin = () => {
+    if (!tenant) return;
+    setFailure(null);
+    setDraft(tenant.displayName);
+  };
+
+  const save = async () => {
+    if (draft === null) return;
+    setBusy(true);
+    setFailure(null);
+    try {
+      await rename.mutate({ displayName: draft });
+      app.toast('Company name saved', 'ok');
+      setDraft(null);
+      refetch();
+    } catch (e) {
+      const said = e instanceof Error ? e.message : 'Could not save the company name';
+      setFailure(said);
+      app.toast(said, 'err');
+    } finally { setBusy(false); }
+  };
+
+  const editing = draft !== null;
+
+  return (
+    <Card
+      title="Tenant"
+      sub="What this installation is, and what the contract fixes"
+      actions={admin && tenant && (
+        editing
+          ? (
+            <div className="row" style={{ gap: 6 }}>
+              <button className="btn sm" disabled={busy} onClick={() => setDraft(null)}>
+                Cancel
+              </button>
+              <button className="btn sm primary" disabled={busy} onClick={save}>
+                {busy ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )
+          : <button className="btn sm" onClick={begin}>Rename</button>
+      )}
+    >
+      {loading && !tenant && (
+        <EmptyState msg="Loading the tenant…" icon={<Icon n="building" size="lg" />} />
+      )}
+      {error && !tenant && (
+        <Banner kind="warn">The tenant could not be read. {error.message}</Banner>
+      )}
+      {failure && <Banner kind="warn">{failure}</Banner>}
+
+      {tenant && (
+        <>
+          <div className="field">
+            <label htmlFor="tenant-name">Company name</label>
+            {editing
+              ? (
+                <input id="tenant-name" className="input" value={draft} autoFocus
+                  maxLength={120}
+                  onChange={(e) => setDraft(e.target.value)} />
+              )
+              : (
+                <div className="input" style={{ background: 'transparent' }}>
+                  {tenant.displayName}
+                </div>
+              )}
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              The trading name, shown wherever the product names the company. The only
+              thing on this card that can be changed here.
+            </span>
+          </div>
+
+          {/*
+            * Values, not disabled inputs. Every one of these is refused by the
+            * database for the application role — migration 0053 grants UPDATE on
+            * `display_name` alone — so offering a control would be offering a
+            * refusal. Each says who does change it instead.
+            */}
+          <KV rows={[
+            ['Legal name', <>
+              {tenant.legalName}{' '}
+              <span className="muted">· change this under the registered entity below</span>
+            </>],
+            ['Slug', <>
+              <Badge>{tenant.slug}</Badge>{' '}
+              <span className="muted">· the sign-in address; fixed for the life of the tenant</span>
+            </>],
+            ['Status', <>
+              <Badge kind={STATUS_KIND[tenant.status] ?? 'mute'}>{tenant.status}</Badge>{' '}
+              <span className="muted">· set by your agreement, not from here</span>
+            </>],
+            ['Country', <>
+              {COUNTRIES.find((c) => c.id === tenant.homeCountry)?.name ?? tenant.homeCountry}{' '}
+              <span className="muted">· statutory defaults follow it</span>
+            </>],
+            ['Base currency', <>
+              {tenant.baseCurrency}{' '}
+              <span className="muted">
+                · reporting is denominated in it, so changing it would reinterpret
+                amounts already recorded
+              </span>
+            </>],
+            ['Fiscal year starts', <>
+              {MONTHS[tenant.fiscalYearStartMonth - 1] ?? tenant.fiscalYearStartMonth}{' '}
+              <span className="muted">· leave years and payroll periods are cut from it</span>
+            </>],
+            ['Data region', <>
+              <Badge>{tenant.dataRegion}</Badge>{' '}
+              <span className="muted">· a residency commitment; ask us to move it</span>
+            </>],
+            ['Tenant since', fmtD(new Date(tenant.createdAt))],
+          ]} />
+        </>
+      )}
+    </Card>
+  );
+}
+
+/* ---------- Legal entity ---------- */
+
+/** The five currencies the reference data holds, derived rather than retyped. */
+const CURRENCIES = uniq(COUNTRIES.map((c) => c.cur));
+
+/**
+ * The registered company, as the database holds it.
+ *
+ * This card used to render `ORG` — a client-side constant — behind a Save button
+ * marked not-backed, while `legal_entity` sat in the database with three tables
+ * joining on it and no way to read or edit a row. So the screen showed a company
+ * profile that could not be wrong, because nothing it displayed came from
+ * anywhere that could change.
+ *
+ * It now reads the real entity and writes through `/config/legal-entities`.
+ * Three things are deliberate:
+ *
+ *   - **The code is shown and locked.** `employee`, `pay_run` and
+ *     `compliance_payment` all carry a NOT NULL reference to this row, and the
+ *     service refuses a code change rather than ignoring it.
+ *   - **Only an administrator sees inputs.** Everyone else sees the same values
+ *     as text. The service refuses the write regardless; this is so a manager is
+ *     not offered a control that would be refused.
+ *   - **TAN has no column.** 0002 gave the table `tax_id` and `registration_id`
+ *     for identifiers and India files on three, so TAN is shown from `ORG` and
+ *     marked as not stored rather than quietly dropped or written to a field that
+ *     means something else.
+ */
+function LegalEntityCard() {
+  const app = useApp();
+  const { data: entities = [], loading, error, refetch } = useLegalEntities();
+  const update = useUpdateLegalEntity();
+  const setDefault = useSetDefaultLegalEntity();
+  const admin = app.role === 'admin';
+
+  /* The default is the one this screen is about — `legalEntities()` returns it first. */
+  const entity = entities.find((e) => e.isDefault) ?? entities[0] ?? null;
+
+  const [draft, setDraft] = useState<LegalEntityDraft | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  /*
+   * The form is only opened explicitly, so a slow read cannot drop a half-typed
+   * edit when the query resolves. `draft` null means "showing what the server
+   * last said".
+   */
+  const begin = () => {
+    if (!entity) return;
+    setFailure(null);
+    setDraft({
+      legalName: entity.legalName,
+      country: entity.country,
+      currency: entity.currency,
+      registeredAddress: entity.registeredAddress ?? '',
+      taxId: entity.taxId ?? '',
+      registrationId: entity.registrationId ?? '',
+      pfCode: entity.pfCode ?? '',
+      esiCode: entity.esiCode ?? '',
+    });
+  };
+
+  const set = (patch: LegalEntityDraft) => setDraft((d) => ({ ...(d ?? {}), ...patch }));
+
+  const save = async () => {
+    if (!entity || !draft) return;
+    setBusy(true);
+    setFailure(null);
+    try {
+      await update.mutate(entity.code, draft);
+      app.toast('Company profile saved', 'ok');
+      setDraft(null);
+      refetch();
+    } catch (e) {
+      /* Shown in the card as well as the toast: the refusal names the field. */
+      const said = e instanceof Error ? e.message : 'Could not save the company profile';
+      setFailure(said);
+      app.toast(said, 'err');
+    } finally { setBusy(false); }
+  };
+
+  const makeDefault = async (code: string) => {
+    try {
+      await setDefault.mutate(code);
+      app.toast(`${code} is now the default entity`, 'ok');
+      refetch();
+    } catch (e) {
+      app.toast(e instanceof Error ? e.message : 'Could not move the default', 'err');
+    }
+  };
+
+  const editing = draft !== null;
+
+  return (
+    <Card
+      title="Company profile"
+      sub="Used on payslips, offer letters and statutory filings"
+      actions={admin && entity && (
+        editing
+          ? (
+            <div className="row" style={{ gap: 6 }}>
+              <button className="btn sm" disabled={busy} onClick={() => setDraft(null)}>
+                Cancel
+              </button>
+              <button className="btn sm primary" disabled={busy} onClick={save}>
+                {busy ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )
+          : <button className="btn sm" onClick={begin}>Edit</button>
+      )}
+    >
+      {loading && !entity && (
+        <EmptyState msg="Loading the registered company…" icon={<Icon n="building" size="lg" />} />
+      )}
+
+      {/* A failed read is said once, here, rather than rendered as an empty company. */}
+      {error && !entity && (
+        <Banner kind="warn">
+          The registered company could not be read. {error.message}
+        </Banner>
+      )}
+
+      {!loading && !error && !entity && (
+        <EmptyState
+          msg={'No legal entity is configured. Payroll, expenses and employee creation each '
+            + 'need one, so this is the first thing to set up.'}
+          icon={<Icon n="building" size="lg" />}
+        />
+      )}
+
+      {failure && <Banner kind="warn">{failure}</Banner>}
+
+      {entity && (
+        <>
+          <div className="grid g2" style={{ gap: '0 14px' }}>
+            <div className="field">
+              <label htmlFor="le-code">Legal entity code</label>
+              <input id="le-code" className="input" value={entity.code} disabled />
+              <span className="muted" style={{ fontSize: 11.5 }}>
+                Every employee and pay run joins on the code, so it cannot change.
+              </span>
+            </div>
+
+            <div className="field">
+              <label htmlFor="le-name">Legal entity name</label>
+              {editing
+                ? (
+                  <input id="le-name" className="input" value={draft.legalName ?? ''}
+                    onChange={(e) => set({ legalName: e.target.value })} />
+                )
+                : <div className="input" style={{ background: 'transparent' }}>{entity.legalName}</div>}
+            </div>
+
+            <div className="field">
+              <label htmlFor="le-country">Country</label>
+              {editing
+                ? (
+                  <select id="le-country" className="input" value={draft.country ?? ''}
+                    onChange={(e) => set({ country: e.target.value })}>
+                    {COUNTRIES.map((c) => (
+                      <option key={c.id} value={c.id}>{c.flag} {c.name}</option>
+                    ))}
+                  </select>
+                )
+                : (
+                  <div className="input" style={{ background: 'transparent' }}>
+                    {COUNTRIES.find((c) => c.id === entity.country)?.name ?? entity.country}
+                  </div>
+                )}
+              <span className="muted" style={{ fontSize: 11.5 }}>
+                Decides which statutory rules apply to its people.
+              </span>
+            </div>
+
+            <div className="field">
+              <label htmlFor="le-currency">Currency</label>
+              {editing
+                ? (
+                  <select id="le-currency" className="input" value={draft.currency ?? ''}
+                    onChange={(e) => set({ currency: e.target.value })}>
+                    {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )
+                : <div className="input" style={{ background: 'transparent' }}>{entity.currency}</div>}
+            </div>
+
+            <div className="field">
+              <label htmlFor="le-tax">Tax ID {entity.country === 'IN' && '(PAN)'}</label>
+              {editing
+                ? (
+                  <input id="le-tax" className="input" value={draft.taxId ?? ''}
+                    onChange={(e) => set({ taxId: e.target.value })} />
+                )
+                : <div className="input" style={{ background: 'transparent' }}>
+                  {entity.taxId || <span className="muted">Not recorded</span>}
+                </div>}
+            </div>
+
+            <div className="field">
+              <label htmlFor="le-reg">Registration ID {entity.country === 'IN' && '(CIN)'}</label>
+              {editing
+                ? (
+                  <input id="le-reg" className="input" value={draft.registrationId ?? ''}
+                    onChange={(e) => set({ registrationId: e.target.value })} />
+                )
+                : <div className="input" style={{ background: 'transparent' }}>
+                  {entity.registrationId || <span className="muted">Not recorded</span>}
+                </div>}
+            </div>
+
+            <div className="field">
+              <label htmlFor="le-pf">PF code</label>
+              {editing
+                ? (
+                  <input id="le-pf" className="input" value={draft.pfCode ?? ''}
+                    onChange={(e) => set({ pfCode: e.target.value })} />
+                )
+                : <div className="input" style={{ background: 'transparent' }}>
+                  {entity.pfCode || <span className="muted">Not recorded</span>}
+                </div>}
+            </div>
+
+            <div className="field">
+              <label htmlFor="le-esi">ESI code</label>
+              {editing
+                ? (
+                  <input id="le-esi" className="input" value={draft.esiCode ?? ''}
+                    onChange={(e) => set({ esiCode: e.target.value })} />
+                )
+                : <div className="input" style={{ background: 'transparent' }}>
+                  {entity.esiCode || <span className="muted">Not recorded</span>}
+                </div>}
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="le-addr">Registered address</label>
+            {editing
+              ? (
+                <textarea id="le-addr" className="input" value={draft.registeredAddress ?? ''}
+                  onChange={(e) => set({ registeredAddress: e.target.value })} />
+              )
+              : <div className="input" style={{ background: 'transparent', whiteSpace: 'pre-wrap' }}>
+                {entity.registeredAddress || <span className="muted">Not recorded</span>}
+              </div>}
+          </div>
+
+          {/*
+            * Which entity the product falls back to when nothing names one.
+            * Payroll, expenses and employee provisioning each refuse to run
+            * without a default, so it moves rather than toggles — there is no
+            * control here for clearing it.
+            */}
+          <div className="field">
+            <label>Default legal entity</label>
+            <div className="row wrap" style={{ gap: 6 }}>
+              {entities.map((e) => (
+                <span key={e.code} className="row" style={{ gap: 6 }}>
+                  <Badge kind={e.isDefault ? 'good' : 'mute'}>
+                    {e.code}{e.isDefault ? ' · default' : ''}
+                  </Badge>
+                  {admin && !e.isDefault && (
+                    <button className="btn sm ghost" onClick={() => makeDefault(e.code)}>
+                      Make default
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              Payroll, expenses and employee creation all use the default when nothing
+              names an entity, so one is always set.
+              {entity.headcount > 0 && ` ${entity.headcount} people are employed by ${entity.code}.`}
+            </span>
+          </div>
+
+          {/*
+            * Everything below has no column on `legal_entity`, so it is still the
+            * constant it always was and still says so. The trading name and the
+            * financial year belong to the `tenant` row rather than the entity;
+            * India's TAN is a third identifier for a table that holds two.
+            */}
+          <div className="field">
+            <label>Not stored against the entity</label>
+            <KV rows={[
+              ['Trading name', ORG.name],
+              ['TAN', ORG.tan],
+              ['Financial year', ORG.fy],
+              ['Tagline', ORG.tagline],
+            ]} />
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              The trading name and financial year belong to the tenant rather than this
+              entity, and the registered table holds two identifiers where India files on
+              three. Shown for reference; not saved by this form.
+            </span>
+          </div>
+
+          <div className="field">
+            <label>Logo</label>
+            <div className="banner" style={{ background: '#fff', borderColor: '#e1e0d9' }}>
+              <img src={LOGO_LIGHT} alt={ORG.name} style={{ height: 66, width: 'auto' }} />
+              <div style={{ color: '#45443f' }}>
+                <div className="t" style={{ color: '#101010' }}>Primary logo</div>
+                Used on payslips, offer letters, certificates and the app header. A light
+                variant is applied automatically in dark mode.
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 export function CompanyTab() {
   const { data: everyone = [] } = useAllEmployees();
   /* "Live system counts" said Departments from a constant. It counts them now. */
@@ -1192,42 +1773,10 @@ export function CompanyTab() {
   const { data: leave = [] } = useLeaveAll(ids);
   return (
     <div className="grid g-2-1">
-      <Card
-        title="Company profile"
-        sub="Used on payslips, offer letters and statutory filings"
-        actions={<button className="btn sm primary"
-          {...notBacked('the company profile is not editable from here yet — these fields read the configured entity')}
-        >Save</button>}
-      >
-        <div className="grid g2" style={{ gap: '0 14px' }}>
-          <div className="field"><label>Product name</label><input className="input" defaultValue={ORG.product} /></div>
-          <div className="field"><label>Trading name</label><input className="input" defaultValue={ORG.name} /></div>
-          <div className="field"><label>Legal entity name</label><input className="input" defaultValue={ORG.legal} /></div>
-          <div className="field"><label>CIN</label><input className="input" defaultValue={ORG.cin} /></div>
-          <div className="field"><label>Company PAN</label><input className="input" defaultValue={ORG.pan} /></div>
-          <div className="field"><label>TAN</label><input className="input" defaultValue={ORG.tan} /></div>
-          <div className="field"><label>Financial year</label><input className="input" defaultValue={ORG.fy} /></div>
-          <div className="field"><label>Brand name (used on documents)</label><input className="input" defaultValue={ORG.name} /></div>
-          <div className="field"><label>Tagline</label><input className="input" defaultValue={ORG.tagline} /></div>
-        </div>
-
-        <div className="field">
-          <label>Logo</label>
-          <div className="banner" style={{ background: '#fff', borderColor: '#e1e0d9' }}>
-            <img src={LOGO_LIGHT} alt={ORG.name} style={{ height: 66, width: 'auto' }} />
-            <div style={{ color: '#45443f' }}>
-              <div className="t" style={{ color: '#101010' }}>Primary logo</div>
-              Used on payslips, offer letters, certificates and the app header. A light variant is applied
-              automatically in dark mode.
-            </div>
-          </div>
-        </div>
-
-        <div className="field">
-          <label>Registered address</label>
-          <textarea className="input" defaultValue={ORG.addr} />
-        </div>
-      </Card>
+      <div className="stack">
+        <TenantProfileCard />
+        <LegalEntityCard />
+      </div>
 
       <div className="stack">
         <Card title="At a glance" sub="Live system counts">
@@ -1278,3 +1827,334 @@ export function CompanyTab() {
  */
 export const ConfigAuditTab = AuditTab;
 
+
+/* ============================================================
+   Business units
+   ============================================================ */
+
+/**
+ * The add and edit form.
+ *
+ * One form for both, because the fields are the same and the only difference is
+ * whether the code may still be chosen. On an edit it may not: the code is the
+ * identity every other record will name, and the server refuses a change rather
+ * than dropping it, so offering the field would be offering something that fails.
+ *
+ * Validation is shown where it happens and the server's own sentence is shown
+ * verbatim on failure. Nothing here predicts a refusal the server has not made —
+ * a duplicate name is only knowable by asking.
+ */
+function BusinessUnitForm({ existing, close, done }: {
+  existing: BusinessUnit | null;
+  close: () => void;
+  done: () => void;
+}) {
+  const app = useApp();
+  const create = useCreateBusinessUnit();
+  const update = useUpdateBusinessUnit();
+
+  const [code, setCode] = useState(existing?.code ?? '');
+  const [name, setName] = useState(existing?.name ?? '');
+  const [description, setDescription] = useState(existing?.description ?? '');
+  const [err, setErr] = useState('');
+
+  const pending = create.pending || update.pending;
+  const codeOk = /^[A-Z0-9][A-Z0-9-]{1,15}$/.test(code.trim().toUpperCase());
+
+  const save = async () => {
+    setErr('');
+    try {
+      if (existing) {
+        await update.mutate(existing.code, {
+          name: name.trim(), description: description.trim() || null,
+        });
+        app.toast(`${existing.code} saved`, 'ok');
+      } else {
+        await create.mutate({
+          code: code.trim().toUpperCase(),
+          name: name.trim(),
+          description: description.trim() || null,
+        });
+        app.toast(`${code.trim().toUpperCase()} added`, 'ok');
+      }
+      close();
+      done();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save the business unit');
+    }
+  };
+
+  return (
+    <div className="stack">
+      {err && (
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Not saved">{err}</Banner>
+      )}
+
+      <div className="field">
+        <label htmlFor="bu-code">Code <span className="req">*</span></label>
+        <input
+          id="bu-code"
+          className="input mono"
+          value={code}
+          disabled={Boolean(existing)}
+          placeholder="RETAIL"
+          maxLength={16}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+        />
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          {existing
+            ? 'The code cannot change — records that name this unit refer to it by code.'
+            : 'Two to sixteen letters, digits or hyphens. This is what the unit is '
+              + 'quoted as, so keep it short and recognisable.'}
+        </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="bu-name">Name <span className="req">*</span></label>
+        <input
+          id="bu-name"
+          className="input"
+          value={name}
+          placeholder="Retail &amp; Digital"
+          maxLength={120}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor="bu-desc">Description</label>
+        <textarea
+          id="bu-desc"
+          className="input"
+          rows={3}
+          value={description}
+          maxLength={500}
+          placeholder="What this unit covers. Optional."
+          onChange={(e) => setDescription(e.target.value)}
+        />
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+          {description.trim().length}/500
+        </div>
+      </div>
+
+      <div className="row end gap">
+        <button className="btn" onClick={close} disabled={pending}>Cancel</button>
+        <button
+          className="btn primary"
+          onClick={() => void save()}
+          disabled={pending || !name.trim() || (!existing && !codeOk)}
+        >
+          {pending ? 'Saving…' : existing ? 'Save' : 'Add business unit'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Business units — the level above a department.
+ *
+ * Nothing references a unit yet, so this screen is the whole feature: it is where
+ * the list is read and where the four writes happen. Deactivating rather than
+ * deleting is the rule, as it is for locations and departments, so there is no
+ * remove button to look for.
+ *
+ * Reads are open to every role on the server, because a screen showing somebody's
+ * unit has to resolve the code to a name. The writes are admin-only there, and
+ * this tab lives inside Settings, which an employee cannot reach at all — so the
+ * buttons are shown unconditionally rather than hidden by role. Hiding them here
+ * would not be the protection; `mayShapeUnit` in the service is.
+ */
+export function BusinessUnitsTab() {
+  const app = useApp();
+  const layer = useLayer();
+  const { data: units = [], loading, error, refetch } = useBusinessUnits();
+  const setActive = useSetBusinessUnitActive();
+
+  const [find, setFind] = useState('');
+  const [show, setShow] = useState<'' | 'active' | 'inactive'>('');
+
+  const edit = (existing: BusinessUnit | null) => layer.modal({
+    title: existing ? `Edit ${existing.code}` : 'Add a business unit',
+    sub: existing ? existing.name : 'The level above a department',
+    size: 'narrow',
+    body: (close: () => void) => (
+      <BusinessUnitForm existing={existing} close={close} done={() => void refetch()} />
+    ),
+    footer: null,
+  });
+
+  /*
+   * Deactivating asks first, because it withdraws the unit from every form at
+   * once. Reactivating does not — it is not destructive and the row says plainly
+   * what state it is in.
+   */
+  const toggle = (u: BusinessUnit) => {
+    const run = async (next: boolean) => {
+      try {
+        await setActive.mutate(u.code, next);
+        app.toast(next ? `${u.code} activated` : `${u.code} deactivated`, 'ok');
+        void refetch();
+      } catch (e) {
+        app.toast(
+          e instanceof Error ? e.message : 'Could not change the business unit', 'err');
+      }
+    };
+    if (!u.active) { void run(true); return; }
+    layer.modal({
+      title: `Deactivate ${u.code}?`,
+      sub: u.name,
+      size: 'narrow',
+      body: () => (
+        <div className="stack">
+          <Banner kind="info" icon={<Icon n="info" size="lg" />}>
+            A deactivated unit stops being offered on the forms. Nothing recorded
+            against it changes, and it still resolves to its name wherever it
+            already appears.
+          </Banner>
+          <p className="muted" style={{ fontSize: 12.5 }}>
+            You can activate it again at any time. There is no delete, because
+            removing a unit would take its history with it.
+          </p>
+        </div>
+      ),
+      footer: (close: () => void) => (
+        <>
+          <button className="btn" onClick={close}>Cancel</button>
+          <button className="btn primary" onClick={() => { void run(false); close(); }}>
+            Deactivate
+          </button>
+        </>
+      ),
+    });
+  };
+
+  const needle = find.trim().toLowerCase();
+  const shown = units
+    .filter((u) => !needle
+      || u.code.toLowerCase().includes(needle)
+      || u.name.toLowerCase().includes(needle)
+      || (u.description ?? '').toLowerCase().includes(needle))
+    .filter((u) => (!show || (show === 'active') === u.active));
+
+  const filtering = Boolean(needle || show);
+  const clear = () => { setFind(''); setShow(''); };
+  const live = units.filter((u) => u.active).length;
+
+  return (
+    <div className="stack">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="muted" style={{ fontSize: 12.5 }}>
+          {units.length === 0
+            ? 'No business units yet.'
+            : <>{units.length} business {units.length === 1 ? 'unit' : 'units'}, {live} active.</>}
+        </div>
+        <button className="btn primary sm" onClick={() => edit(null)}>Add business unit</button>
+      </div>
+
+      <div className="row wrap" style={{ gap: 6, alignItems: 'center' }}>
+        <input
+          className="input sm"
+          style={{ width: 220 }}
+          placeholder="Search code, name or description"
+          aria-label="Search business units"
+          value={find}
+          onChange={(e) => setFind(e.target.value)}
+        />
+        <select
+          className="input sm"
+          aria-label="Status"
+          value={show}
+          onChange={(e) => setShow(e.target.value as '' | 'active' | 'inactive')}
+        >
+          <option value="">Any status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <button className="btn sm" disabled={!filtering} onClick={clear}>Clear filters</button>
+      </div>
+
+      {/* The server's own message, never a generic one. */}
+      {error && (
+        <Banner kind="warn" icon={<Icon n="warn" size="lg" />} title="Could not load business units">
+          {error.message}
+        </Banner>
+      )}
+
+      {loading && units.length === 0 && (
+        <div className="muted" style={{ fontSize: 12.5 }}>Loading business units…</div>
+      )}
+
+      {/*
+        * `EmptyState` here takes a message and an icon, so the guidance and the
+        * way out are part of the message rather than separate props — the same
+        * shape the other tabs in this file use.
+        */}
+      {!loading && !error && shown.length === 0 && (
+        <EmptyState
+          icon={<Icon n="building" size="xl" />}
+          msg={
+            <div className="stack" style={{ alignItems: 'center', gap: 8 }}>
+              <div>
+                {units.length === 0
+                  ? 'No business units yet.'
+                  : 'No business units match these filters.'}
+              </div>
+              {units.length === 0 && (
+                <div className="muted" style={{ fontSize: 12.5 }}>
+                  A business unit is the P&amp;L a department belongs to.
+                </div>
+              )}
+              {filtering
+                ? <button className="btn sm" onClick={clear}>Clear filters</button>
+                : <button className="btn primary sm" onClick={() => edit(null)}>Add business unit</button>}
+            </div>
+          }
+        />
+      )}
+
+      {shown.length > 0 && (
+        <TableWrap>
+          <Table>
+            <thead>
+              <tr>
+                <th>Code</th><th>Name</th><th>Description</th>
+                <th>Status</th><th>Added</th><th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((u) => (
+                <tr key={u.code} style={u.active ? undefined : { opacity: 0.55 }}>
+                  <td className="mono">{u.code}</td>
+                  <td><b>{u.name}</b></td>
+                  <td className="muted">{u.description ?? '—'}</td>
+                  <td>
+                    {u.active
+                      ? <Badge kind="good">Active</Badge>
+                      : <Badge kind="warn">Inactive</Badge>}
+                  </td>
+                  <td className="nowrap muted">{u.createdAt.slice(0, 10)}</td>
+                  <td className="nowrap">
+                    <button className="btn sm ghost" onClick={() => edit(u)}>Edit</button>
+                    <button
+                      className="btn sm ghost"
+                      disabled={setActive.pending}
+                      onClick={() => toggle(u)}
+                    >
+                      {u.active ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </TableWrap>
+      )}
+
+      <div className="muted" style={{ fontSize: 12.5 }}>
+        A business unit is deactivated rather than deleted, so everything recorded
+        against it stays readable. Codes cannot be changed once created.
+      </div>
+    </div>
+  );
+}
