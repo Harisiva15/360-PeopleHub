@@ -129,6 +129,33 @@ jobs:
         env:
           MIGRATE_DATABASE_URL: postgresql://postgres:ci@localhost:5432/peoplehub
           DATABASE_URL: postgresql://app_rw:ci@localhost:5432/peoplehub
+          # config.ts has exactly two hard requirements, DATABASE_URL and this,
+          # and the suites import the service layer, so `config.ts` loads and
+          # throws before a single assertion runs without it.
+          #
+          # Inert here. It is used only to build the JWKS URL, and nothing in
+          # these suites makes an HTTP request — the one that would, the
+          # invitation path, has its provider replaced by a stub. `pages.yml`
+          # passes the same ci.invalid to check:gate for the same reason.
+          #
+          # This is what the first real CI run caught and a laptop could not:
+          # server/.env supplies SUPABASE_URL locally and is git-ignored, so the
+          # suites passed 488/488 on a developer's machine while the step itself
+          # had never been proven to carry what they need.
+          SUPABASE_URL: https://ci.invalid
+          # And the redirect an invitation link points at. inviteRedirect()
+          # throws without it — correctly, since an invitation with nowhere to
+          # send anybody is not an invitation — which failed four assertions in
+          # check:invite and stopped check:hierarchy outright. Inert: the
+          # provider is stubbed in these suites, so no link is ever followed.
+          APP_BASE_URL: https://ci.invalid
+          # Not a key, and deliberately not empty. check:invite asserts that no
+          # audit row leaks it, as `!blob.includes(secret)` — and an unset
+          # variable makes that needle the empty string, which every string
+          # contains, so the assertion inverts and fails unconditionally. A
+          # recognisable non-secret keeps it a real check: this value must never
+          # appear in an audit row either.
+          SUPABASE_SERVICE_ROLE_KEY: ci-not-a-real-service-role-key
           TEST_ADMIN_CODE: VHM001
           TEST_TENANT_SLUG: '360vhm'
         run: |
@@ -155,6 +182,20 @@ jobs:
         env:
           MIGRATE_DATABASE_URL: postgresql://postgres:ci@localhost:5432/peoplehub
           DATABASE_URL: postgresql://app_rw:ci@localhost:5432/peoplehub
+          SUPABASE_URL: https://ci.invalid
+          # And the redirect an invitation link points at. inviteRedirect()
+          # throws without it — correctly, since an invitation with nowhere to
+          # send anybody is not an invitation — which failed four assertions in
+          # check:invite and stopped check:hierarchy outright. Inert: the
+          # provider is stubbed in these suites, so no link is ever followed.
+          APP_BASE_URL: https://ci.invalid
+          # Not a key, and deliberately not empty. check:invite asserts that no
+          # audit row leaks it, as `!blob.includes(secret)` — and an unset
+          # variable makes that needle the empty string, which every string
+          # contains, so the assertion inverts and fails unconditionally. A
+          # recognisable non-secret keeps it a real check: this value must never
+          # appear in an audit row either.
+          SUPABASE_SERVICE_ROLE_KEY: ci-not-a-real-service-role-key
           TEST_ADMIN_CODE: VHM001
           TEST_TENANT_SLUG: '360vhm'
         run: |

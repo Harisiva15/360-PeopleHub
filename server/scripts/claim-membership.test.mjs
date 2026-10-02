@@ -255,8 +255,8 @@ console.log('\nwhat a first sign-in may claim\n');
       const live = await c.query('SELECT * FROM auth_membership($1)', [admin.user_id]);
       ok('   and auth_membership still resolves them', live.rows.length === 1,
         `returned ${live.rows.length} rows`);
+      ok('   with the admin role', live.rows[0]?.role === 'admin');
     }
-    ok('   with the admin role', live.rows[0]?.role === 'admin');
   } finally {
     await c.end();
   }
