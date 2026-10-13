@@ -1,0 +1,24 @@
+# Migrations are hashed, so their bytes are part of their identity.
+#
+# scripts/migrate.mjs records sha256 of each migration's content and refuses to
+# run against a database where a recorded file no longer hashes the same --
+# correctly, because an edited migration means the schema and the repository
+# disagree and no later migration reconciles that.
+#
+# That makes line endings load-bearing. This repository has core.autocrlf=true
+# and had no .gitattributes, so `git checkout` on Windows rewrote LF to CRLF and
+# changed the hash. It happened to exactly one file during the 0055 work, and
+# `migrate.mjs` would then have refused to apply anything against production,
+# reporting "0050_survey_participation.sql has changed since it was applied" for
+# a file nobody had edited.
+#
+# eol=lf pins the checkout to LF, which is what the committed blobs already are
+# and what production's ledger was computed from -- verified at the time this
+# was added: production's recorded checksum matched the committed blob for all
+# 54 applied migrations, and the working tree for 53 of them, the difference
+# being that one converted file.
+#
+# So this changes no committed byte and no recorded checksum. It makes a
+# Windows checkout produce the same bytes a Linux one does, which is the only
+# way the hash can mean anything.
+*.sql text eol=lf

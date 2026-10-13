@@ -192,6 +192,7 @@ import {
 } from '../modules/config/permissions.ts';
 import { navBadges, pending, pendingCount } from '../modules/approvals/service.ts';
 import { approveLoan, listLoans, LoanError } from '../modules/loans/service.ts';
+import { migrationSummary } from '../db/migrationState.ts';
 import {
   courses, enrol, enrolments, LearningError, setProgress,
 } from '../modules/learning/service.ts';
@@ -2565,7 +2566,15 @@ export function createApp() {
       const url = new URL(req.url ?? '/', 'http://localhost');
 
       if (url.pathname === '/health') {
-        send(res, 200, { ok: true });
+        /*
+         * `ok` still means "this process is serving", which is what Render
+         * polls for and must not start failing because a migration is
+         * outstanding — that would take the deployment down instead of the
+         * feature. `migrations.behind` is the separate signal, and it is
+         * counts only: this route answers before auth and before the rate
+         * limiter, so anybody can read it. The filenames go to the log.
+         */
+        send(res, 200, { ok: true, migrations: migrationSummary() });
         return;
       }
 

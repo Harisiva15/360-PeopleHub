@@ -3,6 +3,7 @@
 import { createApp } from './http/app.ts';
 import { config } from './config.ts';
 import { closePool, pool } from './db/pool.ts';
+import { reportMigrationState } from './db/migrationState.ts';
 
 const server = createApp();
 
@@ -36,3 +37,16 @@ process.on('SIGTERM', () => void shutdown());
 process.on('SIGINT', () => void shutdown());
 
 void verifyTenancy();
+
+/*
+ * Whether this build is newer than this database.
+ *
+ * Deliberately not fatal, unlike verifyTenancy above — see the comment on
+ * reportMigrationState. It logs, stores what /health reports, and returns;
+ * a `.catch` guards the one thing it must never do, which is take the process
+ * down while complaining that the process is serving.
+ */
+void reportMigrationState().catch((e: unknown) => {
+  console.error('[server] migration state check failed to run:',
+    e instanceof Error ? e.message : e);
+});
