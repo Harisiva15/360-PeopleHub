@@ -90,5 +90,33 @@ if (gaps.rows.length) {
   process.exit(1);
 }
 
+/*
+ * The other half of the same question.
+ *
+ * tenancy_gaps() asks whether a table can tell one tenant from another.
+ * public_write_exposure() asks whether anybody at all has to be a tenant to
+ * write to it — which is what nobody asked for five tables, including `tenant`
+ * itself, whose 130 cascading foreign keys made a public key enough to delete
+ * the lot. Caught by reading catalogues rather than by any suite, because the
+ * test cluster has no Supabase default privileges to reproduce it with.
+ *
+ * Both are tolerated as absent, for a database older than the migration that
+ * introduces them.
+ */
+const exposure = await client
+  .query('SELECT object_kind, object_name, grantee, problem FROM public_write_exposure()')
+  .catch(() => ({ rows: [] }));
+if (exposure.rows.length) {
+  console.error('\npublic-role exposure after migrating:');
+  for (const r of exposure.rows) {
+    console.error(`  ${r.object_kind} ${r.object_name} → ${r.grantee}: ${r.problem}`);
+  }
+  console.error(
+    '\nGrant it deliberately in a migration, or revoke it. A table reachable by '
+    + 'anon is reachable by anybody holding the publishable key.');
+  await client.end();
+  process.exit(1);
+}
+
 console.log(count ? `\n${count} migration(s) applied` : '\nalready up to date');
 await client.end();

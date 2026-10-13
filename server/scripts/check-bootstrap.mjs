@@ -35,12 +35,32 @@ const ok = (label, cond, detail = '') => {
   console.log(`  ${cond ? 'ok  ' : 'FAIL'}  ${label}${cond ? '' : `\n        ${detail}`}`);
 };
 
-/* Every auth.<thing> named by a migration, comments included — a reference in
-   a comment is harmless, and treating it as required costs nothing. */
+/*
+ * Every auth.<thing> a migration actually references, with comments stripped.
+ *
+ * This used to scan the raw file, on the reasoning that "a reference in a
+ * comment is harmless, and treating it as required costs nothing". That held
+ * until a comment named something from the *other* `auth` — the Supabase
+ * client's `auth.signInWithPassword`, `auth.getSession` and four more, written
+ * down in 0055 to explain why no PostgREST read needed preserving. Those are
+ * browser methods, not database objects; nothing can provide a stand-in for
+ * them, and the check demanded six.
+ *
+ * So the cost was not nothing, and the premise is inverted rather than the
+ * assertion deleted: what matters is what the SQL references, which is what
+ * aborts with 42P01 when CI has not stood it up. Comments stripped first, the
+ * same way every content assertion in checks/ does it, and the answer is the
+ * three this file's own header describes — auth.users, auth.uid,
+ * auth.mfa_factors.
+ */
+const stripComments = (sql) => sql
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/--[^\n]*/g, ' ');
+
 const required = new Set();
 const files = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
 for (const f of files) {
-  const sql = readFileSync(join(migrationsDir, f), 'utf8');
+  const sql = stripComments(readFileSync(join(migrationsDir, f), 'utf8'));
   for (const m of sql.matchAll(/\bauth\.([a-z_][a-z0-9_]*)/gi)) required.add(m[1].toLowerCase());
 }
 
