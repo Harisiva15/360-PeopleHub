@@ -1104,6 +1104,22 @@ html[data-theme="dark"] .tipbox{background:#3a3a37;color:#fff}
 .cal .day.A{background:var(--crit-wash);border-color:color-mix(in srgb,var(--crit) 30%,transparent);color:var(--crit-text)}
 .cal .day.H{background:var(--surface-3);color:var(--ink-3)}
 .cal .day.O{background:var(--surface-2);color:var(--ink-3)}
+/*
+ * The expected channel, for a day with no attendance record.
+ *
+ * Deliberately separate class names from the single-letter statuses above:
+ * `exp-weekly_off` is not `O`. The statuses are what attendance holds; these are
+ * what the schedule expected, and before Phase 2h-H a week off was drawn with
+ * `.O` — which made an expectation look like a record saying so.
+ *
+ * `exp-working` is the one that matters: a day somebody was expected in for with
+ * nothing recorded. It gets a dashed edge rather than a colour, because it is not
+ * a result — it is a gap, and calling it red would be calling it an absence.
+ */
+.cal .day.exp-working{background:transparent;border-style:dashed;border-color:var(--line-2);color:var(--ink-2)}
+.cal .day.exp-weekly_off{background:var(--line-2);color:var(--ink-3)}
+.cal .day.exp-holiday{background:var(--surface-2);border-color:color-mix(in srgb,var(--brand) 20%,transparent);color:var(--ink-3)}
+.cal .day.exp-not_employed{background:transparent;border-color:transparent;color:var(--ink-3);opacity:.45}
 html[data-theme="dark"] .cal .day.L{color:#fab219}
 
 /* ---------- Misc ---------- */
@@ -1419,6 +1435,18 @@ kbd{font-family:var(--font)}
 select.rost{cursor:pointer;appearance:none}
 select.rost:hover{border-color:var(--line-2);box-shadow:var(--shadow-sm)}
 .rost.off{color:var(--ink-3);background:transparent;border-left-color:var(--line-2)}
+/*
+ * The recorded status, under the expectation rather than instead of it.
+ *
+ * Phase 2h-H gave the rota two channels: the cell says what the schedule expected
+ * and this says what attendance holds. A cell with no `.rost-act` is a day with no
+ * record — which is not an absence, and is why this is an addition to the cell
+ * rather than a replacement of its contents.
+ */
+.rost-act{
+  display:block;margin-top:2px;font-size:9.5px;font-weight:700;
+  letter-spacing:.02em;color:var(--ink-2);opacity:.9;
+}
 
 /* ---------- Paged table footer ---------- */
 .pager{

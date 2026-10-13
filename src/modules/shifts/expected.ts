@@ -55,6 +55,19 @@ export function lookOf(cell: RosterDay | undefined): ExpectedLook | null {
   return LOOK[cell.expected] ?? null;
 }
 
+/**
+ * The same look, from a reason on its own.
+ *
+ * `RosterDay.expected` and `DayVerdict.reason` are the same four values from the
+ * same resolver — the rota carries one and the calendar the other. Phase 2h-H
+ * needed the presentation for a `DayVerdict`, and a second table of labels is
+ * exactly how a week off comes to be drawn two different ways on two screens.
+ */
+export function lookOfReason(reason: DayReason | undefined): ExpectedLook | null {
+  if (!reason) return null;
+  return LOOK[reason] ?? null;
+}
+
 /** The legend, in the order the states are worth explaining. */
 export const EXPECTED_LEGEND: { reason: DayReason; look: ExpectedLook }[] =
   (['WEEKLY_OFF', 'HOLIDAY', 'NOT_EMPLOYED'] as DayReason[])

@@ -351,9 +351,9 @@ ok('34. the rota calls no attendance method at all',
   'attendance integration is a later phase');
 ok('    and the server roster writes nothing',
   !/INSERT INTO attendance/.test(serverRoster) && !/UPDATE attendance/.test(serverRoster));
-ok('35. where attendance and expectation meet, attendance still wins',
-  /const st = r \? r\.status/.test(code('src/modules/dashboard/shared.tsx')),
-  'the month calendar prefers the record over the verdict, unchanged by this phase');
+ok('35. where attendance and expectation meet, attendance still wins its channel',
+  /const cls = r \? r\.status/.test(code('src/modules/dashboard/shared.tsx')),
+  'renamed from `st` to `cls` in 2h-H, when the grid gained a second channel');
 ok('    and the dashboard still consumes the authoritative verdicts',
   /calendar\?: DayVerdict\[\]/.test(code('src/modules/dashboard/shared.tsx')),
   'Phase 2h-E architecture kept, not replaced');

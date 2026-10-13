@@ -28,9 +28,11 @@
  * and their calendar. Every cell now carries a `RosterDay` from the same resolver
  * leave reads, in one request for the whole team and span.
  *
- * **The rota shows what is expected. It is not attendance.** A working day with no
- * attendance row is drawn as a working day, never as an absence: the roster writes
- * nothing and infers nothing about what happened.
+ * **Expected and actual, since Phase 2h-H.** The cell's tint is what the schedule
+ * expected; a recorded punch adds its status and times on top. A working day with
+ * no attendance row stays a working day with no attendance row — never an absence.
+ * `A` is a status something writes deliberately, a missing row is missing
+ * information, and the rota writes neither.
  */
 
 import { useMemo, useState } from 'react';
@@ -42,7 +44,10 @@ import { Avatar, Badge, Banner, Card, EmptyState, Seg, StatRow, Tile } from '../
 import type { RosterDay } from '../../services';
 import { useApp } from '../../state/AppContext';
 import { visibleIds } from '../../state/rbac';
-import { useAllEmployees, useRoster, useSetShift, useShiftProfiles } from './data';
+import {
+  useAllEmployees, useAttendance, useRoster, useSetShift, useShiftProfiles,
+} from './data';
+import { ACTUAL_LABEL, NO_ATTENDANCE, recordsByEmployee } from '../attendance/day';
 import { colourOf, resolveProfile } from './profile';
 import { EXPECTED_LEGEND, lookOf, scheduleOver, standingShift } from './expected';
 import { Icon } from '../../components/icons';
@@ -93,6 +98,14 @@ export function RosterView() {
   const visible = useMemo(() => people.filter((e) => allowed.has(e.id)), [people, allowed]);
   const ids = useMemo(() => visible.map((e) => e.id), [visible]);
   const roster = useRoster(ids, ws, days);
+  /*
+   * What actually happened, in one range read for the whole team — the same shape
+   * `listAttendance` already scopes by role, so a manager sees their line and
+   * nobody else's. Never one request per person and never one per cell.
+   */
+  const attendance = useAttendance(ids, ws, dates[dates.length - 1] ?? ws);
+  const actuals = useMemo(
+    () => recordsByEmployee(attendance.data ?? []), [attendance.data]);
 
   /*
    * Profiles come from the service in both modes — the mock returns the same four,
@@ -133,6 +146,17 @@ export function RosterView() {
   /* People the server answered for with no schedule assignment of their own. */
   const unassigned = rows.filter((e) => scheduleOver(roster.data?.[e.id], dates) === null).length;
   /*
+   * Working days up to today with nothing recorded against them. Counted and
+   * named as exactly that — days awaiting a record. It is deliberately not called
+   * absences: nothing here decides that, and the figure exists so somebody can go
+   * and look rather than so a deduction can be computed from it.
+   */
+  const today = ymd(TODAY);
+  const awaiting = rows.reduce((n, e) => n + dates.filter((d) =>
+    d <= today
+    && cellOf(e.id, d)?.expected === 'WORKING'
+    && !actuals.get(e.id)?.get(d)).length, 0);
+  /*
    * The whole reason the timezone moved onto the shift: people measured
    * against a clock that is not their office's. Compared by country rather
    * than by code, because the UK shift's region is GB and its code is not.
@@ -161,17 +185,25 @@ export function RosterView() {
    */
   const exportCsv = () => downloadCSV(`roster-${ws}.csv`,
     [['Employee', 'Designation', 'Department', 'Location', 'Work schedule', 'Shift',
-      'Hours', 'Timezone', ...dates.map((d) => fmtDS(d))]].concat(
+      'Hours', 'Timezone',
+      ...dates.flatMap((d) => [`${fmtDS(d)} expected`, `${fmtDS(d)} actual`])]].concat(
       rows.map((e) => {
         const code = standingOf(e.id);
         const s = resolveProfile(profiles, code);
         return [e.name, e.designation, deptOf(e.dept).name, siteOf(e.site).city,
           scheduleOver(roster.data?.[e.id], dates) ?? 'Not assigned',
           s.name, `${s.start}–${s.end}`, s.timezone,
-          ...dates.map((d) => {
+          /*
+           * Two columns per date, because the export carries two answers. One
+           * merged column is how a reader ends up treating a gap as a result.
+           */
+          ...dates.flatMap((d) => {
             const look = lookOf(cellOf(e.id, d));
-            if (!look) return '';
-            return look.working ? code : look.label;
+            const act = actuals.get(e.id)?.get(d) ?? null;
+            return [
+              look ? (look.working ? code : look.label) : '',
+              act ? (ACTUAL_LABEL[act.status] ?? act.status) : NO_ATTENDANCE,
+            ];
           })];
       })));
 
@@ -210,7 +242,7 @@ export function RosterView() {
         <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export</button>
       </div>
 
-      <StatRow cols={4}>
+      <StatRow cols={5}>
         <Tile icon={<Icon n="people" size="lg" />} label="On the rota" value={rows.length}
           foot={`of ${people.length} people`} />
         <Tile icon={<Icon n="calendar" size="lg" />} label="Covered today"
@@ -220,6 +252,8 @@ export function RosterView() {
           foot="Measured against a client's clock" />
         <Tile icon={<Icon n="rest" size="lg" />} label="Days off" value={offDays}
           foot={holidayDays ? `Plus ${holidayDays} holiday day(s)` : 'Across the period shown'} />
+        <Tile icon={<Icon n="clock" size="lg" />} label="Awaiting a record" value={awaiting}
+          foot="Expected in, no record — not an absence" />
       </StatRow>
 
       {unassigned > 0 && (
@@ -308,19 +342,41 @@ export function RosterView() {
                         }
                         /* The shift the schedule expects that day, which may differ from the standing one. */
                         const dayShift = cell!.shift ?? code;
-                        const tip = look.working
-                          ? `${fmtD(d)} · ${resolveProfile(profiles, dayShift).name} · `
+                        /* What was actually recorded, if anything. */
+                        const act = actuals.get(e.id)?.get(d) ?? null;
+                        const actualWords = act
+                          ? (ACTUAL_LABEL[act.status] ?? act.status)
+                          : NO_ATTENDANCE;
+                        const expectedWords = look.working
+                          ? `${resolveProfile(profiles, dayShift).name} `
                             + `${h12(s.start)} – ${h12(s.end)}`
-                          : `${fmtD(d)} · ${look.label}`
-                            + (cell!.holiday ? ` · ${cell!.holiday}` : '');
+                          : look.label + (cell!.holiday ? ` (${cell!.holiday})` : '');
+                        /*
+                         * Both answers in the tooltip, expected first. A missing
+                         * record reads as "No attendance" and nothing else.
+                         */
+                        const tip = `${fmtD(d)} · Expected: ${expectedWords}`
+                          + ` · Actual: ${actualWords}`
+                          + (act?.inT ? ` ${act.inT}–${act.outT ?? '—'}` : '')
+                          + (act?.late ? ' · late' : '');
                         return (
                           <td key={d} className="rost-cell">
                             <div className={'rost' + (look.working ? '' : ' off')}
                               style={look.working
                                 ? { borderLeftColor: sColour }
                                 : { background: look.tint ?? undefined }}
-                              title={tip}>
+                              title={tip} aria-label={tip}>
                               {look.working ? dayShift : look.short}
+                              {/*
+                                * The recorded status, under the expectation rather
+                                * than instead of it. Absent only ever appears here
+                                * because attendance holds an 'A'.
+                                */}
+                              {act && (
+                                <small className="rost-act">
+                                  {act.status}{act.mins ? ` ${(act.mins / 60).toFixed(1)}h` : ''}
+                                </small>
+                              )}
                             </div>
                           </td>
                         );
@@ -353,6 +409,7 @@ export function RosterView() {
               {s.n}
             </span>
           ))}
+          <span className="muted" style={{ fontSize: 11, fontWeight: 650 }}>Expected:</span>
           {EXPECTED_LEGEND.map((x) => (
             <span key={x.reason} className="row" style={{ gap: 5, fontSize: 11.5 }}>
               <i style={{
@@ -363,6 +420,22 @@ export function RosterView() {
               {x.look.label}
             </span>
           ))}
+          <span className="muted" style={{ fontSize: 11, fontWeight: 650 }}>Recorded:</span>
+          {Object.entries(ACTUAL_LABEL).map(([k, label]) => (
+            <span key={k} className="row" style={{ gap: 4, fontSize: 11.5 }}>
+              <b style={{ fontSize: 10.5 }}>{k}</b>{label}
+            </span>
+          ))}
+          <span className="row" style={{ gap: 4, fontSize: 11.5 }}>
+            <b style={{ fontSize: 10.5 }}>—</b>{NO_ATTENDANCE}
+          </span>
+          <span className="muted" style={{ fontSize: 11, fontWeight: 650 }}>Leave:</span>
+          <span className="row" style={{ gap: 4, fontSize: 11.5 }}>
+            <b style={{ fontSize: 10.5 }}>LV</b>Approved
+          </span>
+          <span className="row" style={{ gap: 4, fontSize: 11.5 }}>
+            <b style={{ fontSize: 10.5 }}>LV½</b>Approved half day
+          </span>
         </div>
       </Card>
 
@@ -371,8 +444,10 @@ export function RosterView() {
           <Badge kind="info">
             A work schedule says which days; a shift says which hours. Changing the
             shift applies from now on, every working day — the days themselves come
-            from the schedule, and this rota shows what is expected rather than what
-            was attended.
+            from the schedule. Each cell shows what was expected, whether approved
+            leave covers it, and what attendance actually recorded — three separate
+            facts. A working day with nothing recorded is exactly that, and not an
+            absence.
           </Badge>
         )
         : <Badge kind="info">Your manager sets the shift; this is a read-only view</Badge>}

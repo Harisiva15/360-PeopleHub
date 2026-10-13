@@ -66,3 +66,15 @@ export const useAssignEmployeeSchedule = () =>
 export const useCloseEmployeeSchedule = () =>
   useMutation((s, empId: string, assignmentId: string, validTo: string) =>
     s.schedules.closeEmployeeSchedule(empId, assignmentId, validTo));
+
+/**
+ * What attendance actually recorded, for the rota's actual channel.
+ *
+ * One range read for the whole team. The service scopes it by role — an employee
+ * sees their own, a manager their line, an admin anybody — so the rota inherits
+ * exactly the visibility it already had and gains none.
+ */
+export const useAttendance = (empIds: string[], from: string, to: string) =>
+  useQuery((s) => s.attendance.list({ empIds, from, to }),
+    [empIds.join(','), from, to]);
+

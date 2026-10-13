@@ -132,12 +132,29 @@ ok('MonthCalendar does not read the bundled holiday list',
   !/HOLIDAY_MAP/.test(dash));
 ok('nor a hard-coded weekend', !/isWeekend/.test(dash));
 ok('it takes the server verdicts as a prop', /calendar\?: DayVerdict\[\]/.test(dash));
-ok('an attendance row still wins over the calendar',
-  /const st = r \? r\.status/.test(dash),
-  'what happened beats what was expected');
+/*
+ * These two pinned the exact expression Phase 2h-B introduced:
+ *
+ *   const st = r ? r.status
+ *     : v && v.reason === 'HOLIDAY' ? 'H'
+ *       : v && !v.workingDay ? 'O' : '';
+ *
+ * They went red the moment Phase 2h-H split that into two channels, which is
+ * what a ratchet pinned to one expression is for. Inverted rather than deleted,
+ * because the two *properties* they were holding are still the right ones — the
+ * recorded status still wins its own channel, and an unanswered day still says
+ * nothing. What changed is that the expectation no longer borrows the status
+ * palette to say it.
+ */
+ok('an attendance row still wins the recorded channel',
+  /const cls = r \? r\.status/.test(dash),
+  'what happened is what happened');
 ok('and with no verdict the cell says nothing',
-  /: v && !v\.workingDay \? 'O' : '';/.test(dash),
-  'a blank day reads as no record, not as a fabricated week off');
+  /: look \? EXPECTED_CLASS\[day\.expected!\.reason\] : ''/.test(dash),
+  'a blank day reads as no answer, not as a fabricated week off');
+ok('  while a day with no record no longer borrows a status to describe itself',
+  !/=== 'HOLIDAY'\s*\?\s*'H'/.test(dash) && !/workingDay\s*\?\s*'O'/.test(dash),
+  'that collapse is the defect 2h-H removed');
 ok('both callers pass the verdicts',
   /calendar=\{monthCal\}/.test(code('src/modules/attendance/index.tsx'))
   && /calendar=\{monthCal\}/.test(code('src/modules/dashboard/index.tsx')));

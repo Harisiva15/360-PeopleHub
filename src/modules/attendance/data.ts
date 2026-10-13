@@ -74,3 +74,12 @@ export const useMonthCalendar = (empId: string, mk: string) => {
   const to = `${mk}-${String(last).padStart(2, '0')}`;
   return useQuery((s) => s.calendar.workingDays(empId, from, to), [empId, from, to]);
 };
+
+/**
+ * The tenant's working patterns, for the policy summary.
+ *
+ * Read-only. The attendance screen states the working week rather than deciding
+ * it — which is why it has to ask rather than assert.
+ */
+export const useWorkSchedules = () => useQuery((s) => s.schedules.workSchedules(), []);
+

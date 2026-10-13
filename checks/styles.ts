@@ -55,6 +55,10 @@ for (const rel of files) {
  * Names assembled at runtime, which no scan of the source can see whole:
  * `'b-' + kind`, `'t-' + tone`, `'grid g' + cols`, a modal's size, an
  * attendance status code used as a class.
+ *
+ * The scan above only looks inside `className=`, so a name that reaches the
+ * attribute through a lookup table never appears there whole — which is the same
+ * reason the single-letter attendance statuses are listed here.
  */
 const COMPOSED = new Set([
   'b-good', 'b-warn', 'b-crit', 'b-info', 'b-mute',
@@ -62,6 +66,14 @@ const COMPOSED = new Set([
   'g4', 'g5', 'narrow', 'wide', 'start', 'end', 'up', 'down', 'drag',
   'lg', 'xl', 'sr', 'acc', 'good', 'info', 'note', 'money',
   'A', 'H', 'L', 'O', 'P', 'W',
+  /*
+   * The expected channel of the attendance month grid, from Phase 2h-H's
+   * `EXPECTED_CLASS` map in `src/modules/dashboard/shared.tsx`. Deliberately
+   * namespaced away from the status letters above: `exp-weekly_off` is what the
+   * schedule expected, `O` is what attendance recorded, and before that phase the
+   * grid drew the first using the second.
+   */
+  'exp-working', 'exp-weekly_off', 'exp-holiday', 'exp-not_employed',
 ]);
 
 const defined = new Set<string>();

@@ -4,7 +4,13 @@ import { sum } from '../../lib/collections';
 import { addDays, DOW, fmtD, fmtDS, fmtTime, hhmm, MON, monthKey, TODAY, ymd } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { deptOf, ORG } from '../../data/org';
-import type { AttRecord, AttStatus, Celebration, DayVerdict, Employee } from '../../services';
+import type {
+  AttRecord, AttStatus, Celebration, DayVerdict, Employee,
+} from '../../services';
+import {
+  actualLabel, awaitingRecord, composeDays, expectedLabel,
+} from '../attendance/day';
+import { lookOfReason } from '../shifts/expected';
 import type { Directory } from '../../services/people';
 import { Avatar, Badge, EmptyState } from '../../components/ui';
 import { ListRow } from '../../components/common';
@@ -131,8 +137,23 @@ export function CelebRows({ list, dir, onWish }: {
   );
 }
 
-const DAY_LABEL: Record<string, string> = {
-  P: 'Present', W: 'WFH', L: 'Leave', A: 'Absent', H: 'Holiday', O: 'Week off',
+/**
+ * The expected channel's classes, written out rather than composed.
+ *
+ * `exp-${reason.toLowerCase()}` produced the same four strings and was shorter,
+ * but `checks/styles.ts` walks the source for rendered class names and cannot see
+ * a name that only exists at runtime — so it reported all four as defined-but-never-
+ * rendered. Spelling them out keeps the stylesheet and the markup checkable
+ * against each other, which is the point of that check.
+ *
+ * Deliberately not the single-letter status names: `exp-weekly_off` is not `O`.
+ * One channel is what attendance holds, the other is what the schedule expected.
+ */
+const EXPECTED_CLASS: Record<DayVerdict['reason'], string> = {
+  WORKING: 'exp-working',
+  WEEKLY_OFF: 'exp-weekly_off',
+  HOLIDAY: 'exp-holiday',
+  NOT_EMPLOYED: 'exp-not_employed',
 };
 
 /**
@@ -143,13 +164,24 @@ const DAY_LABEL: Record<string, string> = {
  * Saturday/Sunday test. In a configured build that showed week-offs and holidays
  * no server data supported, and shaded days the tenant had never configured.
  *
- * `calendar` carries the server's verdicts for the month instead. Where it is
- * absent the grid says nothing rather than guessing: a day with no record reads as
- * no record.
+ * `calendar` carries the server's verdicts for the month instead.
  *
- * **It still renders only what attendance actually holds.** Nothing here writes a
- * status, and no absent, week-off or holiday row is created — that is the later
- * attendance phase, deliberately not this one.
+ * ## Two channels, since Phase 2h-H
+ *
+ * The cell used to hold one glyph: the attendance status where there was a row,
+ * otherwise `'H'` for a holiday or `'O'` for a week off. That collapsed two
+ * different answers into one — a day off was drawn exactly like an attendance
+ * record saying so, and a working day with no record was drawn as blank, which is
+ * also what a day nobody was expected in looked like.
+ *
+ * Now the **tint is the expectation** and the **glyph is the record**. A working
+ * day with no attendance is tinted as a working day and carries no glyph, and its
+ * label says "Working · No attendance" — which is the truth, and is specifically
+ * **not** an absence. `A` is a status something writes deliberately; a missing row
+ * is missing information, and turning one into the other is a later phase's
+ * decision with a payroll consequence attached.
+*
+ * **Nothing here writes.** No attendance row is created, updated or inferred.
  */
 export function MonthCalendar(
   { records, mk, calendar = [] }:
@@ -160,32 +192,52 @@ export function MonthCalendar(
   const dim = new Date(Y, M, 0).getDate();
   const lead = first.getDay();
 
-  const byDate = new Map(records.map((r) => [r.date, r]));
-  const verdicts = new Map(calendar.map((v) => [v.date, v]));
+  /* Every date in the month, joined against both answers in one pass. */
+  const dates = Array.from({ length: dim }, (_, i) =>
+    `${Y}-${String(M).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`);
+  const days = composeDays(dates, calendar, records);
+
   const cells = [];
   DOW.forEach((d) => cells.push(<div className="dow" key={'h' + d}>{d[0]}</div>));
   for (let i = 0; i < lead; i++) cells.push(<div className="day mut" key={'l' + i} />);
 
-  for (let d = 1; d <= dim; d++) {
-    const ds = Y + '-' + String(M).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-    const r = byDate.get(ds);
-    const v = verdicts.get(ds);
+  for (const day of days) {
+    const r = day.actual;
+    const look = lookOfReason(day.expected?.reason);
     /*
-     * An attendance row wins — it is what happened. Otherwise the server says
-     * whether the day was one this person was expected to work, and with no server
-     * answer the cell stays blank rather than inventing one.
+     * The class carries the *actual* status, which is what the palette was built
+     * for. Where there is no record it carries the expectation instead, prefixed
+     * so the two can never be confused in CSS either: `exp-off` is not `O`.
      */
-    const st = r ? r.status
-      : v && v.reason === 'HOLIDAY' ? 'H'
-        : v && !v.workingDay ? 'O' : '';
-    const lbl = st === 'H' ? (v?.holiday ?? 'Holiday') : DAY_LABEL[st] || 'No record';
-    const tip =
-      fmtD(ds) + ' · ' + lbl +
-      (r && r.inT ? ` · ${fmtTime(r.inT)}–${fmtTime(r.outT)} (${hhmm(r.mins)} h)` : '');
+    const cls = r ? r.status
+      : look ? EXPECTED_CLASS[day.expected!.reason] : '';
+
+    const expected = expectedLabel(day);
+    const actual = actualLabel(day);
+    /* Both answers, always, in that order — the point of the phase. */
+    const tip = `${fmtD(day.date)} · ${expected ? `Expected: ${expected} · ` : ''}`
+      + `Actual: ${actual}`
+      + (r && r.inT ? ` · ${fmtTime(r.inT)}–${fmtTime(r.outT)} (${hhmm(r.mins)} h)` : '')
+      + (r?.late ? ' · late' : '')
+      + (day.expected?.shift ? ` · shift ${day.expected.shift}` : '');
+
     cells.push(
-      <div key={ds} className={'day ' + st + (ds > ymd(TODAY) ? ' mut' : '')} data-tip={tip}>
-        {d}
-        {r && r.mins ? <small>{(r.mins / 60).toFixed(1)}h</small> : st === 'L' ? <small>L</small> : st === 'A' ? <small>A</small> : null}
+      <div key={day.date}
+        className={'day ' + cls + (day.date > ymd(TODAY) ? ' mut' : '')}
+        data-tip={tip} aria-label={tip}>
+        {Number(day.date.slice(8))}
+        {/*
+          * The glyph is the record and nothing else. A day awaiting one shows a
+          * faint dot rather than a letter: it marks the cell as worth a look
+          * without naming a status nobody has written.
+          */}
+        {r && r.mins
+          ? <small>{(r.mins / 60).toFixed(1)}h</small>
+          : r
+            ? <small>{r.status}</small>
+            : awaitingRecord(day) && day.date <= ymd(TODAY)
+              ? <small className="muted" aria-hidden="true">·</small>
+              : null}
       </div>,
     );
   }
@@ -193,13 +245,31 @@ export function MonthCalendar(
   return (
     <>
       <div className="cal">{cells}</div>
+      {/*
+        * Two legends, because there are two channels. Each entry is a word as
+        * well as a colour — a grid read in greyscale still has to say which days
+        * were expected and what was recorded.
+        */}
+      <div className="muted" style={{ fontSize: 11, marginTop: 8, fontWeight: 650 }}>
+        Recorded
+      </div>
       <Legend
         items={[
           { k: 'Present', c: 'var(--good)' },
           { k: 'WFH', c: 'var(--s1)' },
           { k: 'Leave', c: 'var(--warn)' },
           { k: 'Absent', c: 'var(--crit)' },
-          { k: 'Holiday / week off', c: 'var(--line-2)' },
+        ]}
+      />
+      <div className="muted" style={{ fontSize: 11, marginTop: 6, fontWeight: 650 }}>
+        Expected, where nothing was recorded
+      </div>
+      <Legend
+        items={[
+          { k: 'Working · no attendance', c: 'var(--surface-3)' },
+          { k: 'Week off', c: 'var(--line-2)' },
+          { k: 'Holiday', c: 'var(--surface-2)' },
+          { k: 'Not employed', c: 'transparent' },
         ]}
       />
     </>

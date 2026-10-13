@@ -15,10 +15,12 @@ import { useShowEmployee } from '../employees/Profile';
 import { PunchWidget } from './Punch';
 import {
   useActOnRegularisation, useAttendance, useMonthCalendar, useMyAttendance, usePeople,
+  useWorkSchedules,
   usePayRuns, useRaiseRegularisation, useRegularisableDays, useRegularisations, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
 import { MonthCalendar } from '../dashboard/shared';
+import { actualLabel, awaitingRecord, composeDays, expectedLabel } from './day';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
@@ -97,7 +99,22 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
   const { data: recs = [] } = useMyAttendance(me.id, mk + '-01', mk + '-31');
   /* The server decides which of those days were working days. */
   const { data: monthCal = [] } = useMonthCalendar(me.id, mk);
-  const work = recs.filter((r) => ['P', 'W', 'A', 'L'].includes(r.status));
+  /*
+   * The two answers, kept apart.
+   *
+   * `work` used to be `recs.filter(status in P/W/A/L)` and was labelled "working
+   * days in month" — which counted *records*, not working days. A month where
+   * nothing was recorded reported zero working days, and a month of absences
+   * reported them as working days attended. The expected count comes from the
+   * resolver, which is the only thing that knows the person's schedule.
+   */
+  const expectedDays = monthCal.filter((v) => v.workingDay).length;
+  const days = composeDays(monthCal.map((v) => v.date), monthCal, recs);
+  const today = ymd(TODAY);
+  /* Expected in, nothing recorded, and the day has already happened. */
+  const awaiting = days.filter((d) => awaitingRecord(d) && d.date <= today).length;
+  /* What is expected of them today, where the month shown includes it. */
+  const todayDay = days.find((d) => d.date === today) ?? null;
   const present = recs.filter((r) => r.status === 'P' || r.status === 'W').length;
   const late = recs.filter((r) => r.late).length;
   const hrs = sum(recs, (r) => r.mins) / 60;
@@ -127,16 +144,36 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
         <button className="btn" onClick={exportCsv}><Icon n="download" size="lg" /> Export</button>
       </div>
 
+      {/*
+        * Today, answered twice. The point of the phase in one line: what the
+        * schedule expected, and what attendance holds — never merged, and a
+        * missing record never called an absence.
+        */}
+      {todayDay && (
+        <Banner kind="info" icon={<Icon n="calendar" size="lg" />} title={fmtD(today)}>
+          <b>Expected:</b> {expectedLabel(todayDay) ?? 'Not known'}
+          {todayDay.expected?.shift ? ` · shift ${todayDay.expected.shift}` : ''}
+          {todayDay.expected?.schedule ? ` · pattern ${todayDay.expected.schedule}` : ''}
+          {' · '}<b>Recorded:</b> {actualLabel(todayDay)}
+        </Banner>
+      )}
+
       <StatRow cols={5}>
-        <Tile label="Present days" value={present} foot={`${work.length} working days in month`} />
+        <Tile label="Present days" value={present}
+          foot={`of ${expectedDays} working day(s) your pattern expects`} />
         <Tile label="Total hours" value={hrs.toFixed(1) + ' h'} foot={`Avg ${avg.toFixed(1)} h / day`} />
         <Tile label="WFH days" value={recs.filter((r) => r.status === 'W').length} foot="Policy: up to 8 / month" />
         <Tile label="Leave / absent"
           value={`${recs.filter((r) => r.status === 'L').length} / ${recs.filter((r) => r.status === 'A').length}`}
           foot={`${unapproved} unapproved (LOP)`} />
-        <Tile label="Late marks" value={late} trend={late > 3 ? 'down' : undefined}
-          foot={late > 3 ? 'Above threshold (3)' : 'Within policy'} />
+        <Tile label="Awaiting a record" value={awaiting}
+          foot="Expected in, no record — not an absence" />
       </StatRow>
+      {late > 0 && (
+        <Badge kind={late > 3 ? 'warn' : 'info'}>
+          {late} late mark(s) this month{late > 3 ? ' — above the threshold of 3' : ''}
+        </Badge>
+      )}
 
       <div className="grid g-1-2">
         <Card title="Calendar" sub={monthLabelLong(mk)}>
@@ -512,6 +549,9 @@ function AttReg({ onRegularise }: { onRegularise: () => void }) {
 
 function AttCal() {
   const y = TODAY.getFullYear();
+  /* Active patterns only: a withdrawn one is not the policy any more. */
+  const { data: schedules = [] } = useWorkSchedules();
+  const patterns = schedules.filter((w) => w.active);
   const exportCsv = () =>
     downloadCSV(
       `holiday_calendar_${y}.csv`,
@@ -549,8 +589,22 @@ function AttCal() {
 
         <Card title="Shift & work-week policy" sub="Applies to all sites">
           <KV rows={[
-            ['Work week', 'Monday – Friday (5 days)'],
-            ['Week off', 'Saturday, Sunday'],
+            /*
+             * Read from the patterns the tenant actually has, not asserted.
+             *
+             * These two rows said "Monday – Friday (5 days)" and "Saturday,
+             * Sunday" as flat text. That stopped being true the moment a tenant
+             * could define a six-day or Sunday-to-Thursday pattern, and a policy
+             * table stating a working week the product does not keep is worse
+             * than one saying nothing.
+             */
+            ['Work week', patterns.length
+              ? patterns.map((w) =>
+                `${w.name} (${w.days.filter((d) => d.working).length} days)`).join(' · ')
+              : 'No working pattern configured'],
+            ['Week off', patterns.length
+              ? 'Whatever each pattern leaves unworked — see Shifts & work schedules'
+              : 'Monday – Friday is assumed until a pattern is set'],
             ...SITES.filter((s) => !s.remote).map((s) => [s.city + ' shift', s.shift + ' IST'] as [string, string]),
             ['Grace period', '20 minutes · 3 late marks = ½ day CL'],
             ['Full day', '≥ 8 h 0 m · Half day 4 h 0 m'],
