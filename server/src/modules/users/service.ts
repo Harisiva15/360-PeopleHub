@@ -29,6 +29,7 @@ import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import { openLeaveBalances } from '../people/provision.ts';
 /* One employment-history writer, shared with provisioning and exits. */
 import { recordEmployment, reasonForChange, termsOf } from '../people/employment.ts';
+import { assignInitialSchedule } from '../schedules/service.ts';
 import { authAdmin, inviteRedirect } from '../../auth/adminApi.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
@@ -75,6 +76,11 @@ export interface UserDraft {
   managerId?: string | null | undefined; role: Role;
   empType?: string | undefined; joinedOn?: string | undefined;
   empId?: string | null | undefined; sendInvitation?: boolean | undefined;
+  /**
+   * The working pattern this person starts on, by code. Optional; omitted leaves
+   * them unassigned rather than defaulted. Validated against this tenant.
+   */
+  workScheduleCode?: string | null | undefined;
 }
 
 export type UserPatch = Partial<Omit<UserDraft, 'sendInvitation'>>;
@@ -402,6 +408,26 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
      * an account made here has no history at all, and the lifecycle screen
      * shows a person who apparently began existing with no terms.
      */
+    /*
+     * The working pattern, where one was chosen.
+     *
+     * Through the schedule service and inside this transaction, as the joiner and
+     * onboarding paths do it — so the rules are the same ones a hand-made
+     * assignment obeys, and a schedule that cannot be assigned leaves no account
+     * and no employee behind.
+     *
+     * Dated from the joining date the row above carries, never from today.
+     */
+    if (typeof d.workScheduleCode === 'string' && d.workScheduleCode.trim()) {
+      const { rows: joined } = await db.query<{ on: string }>(
+        'SELECT joined_on::text AS on FROM employee WHERE id = $1', [emp[0]!.id]);
+      await assignInitialSchedule(db, caller, emp[0]!.id, {
+        scheduleCode: d.workScheduleCode,
+        validFrom: joined[0]!.on,
+        validTo: null,
+      });
+    }
+
     await recordEmployment(db, emp[0]!.id, 'hire', {
       on: d.joinedOn ?? null, recordedBy: caller.employeeId,
     });

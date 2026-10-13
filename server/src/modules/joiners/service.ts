@@ -38,6 +38,15 @@ export interface NewJoiner {
   joiningOn: string;
   employmentType?: string;
   note?: string | null;
+  /**
+   * The working pattern the joiner starts on, by code. Optional.
+   *
+   * Only reaches an employee when an admin raises the request, because that
+   * approves immediately. A manager's request queues, and the pattern is chosen
+   * by whoever approves it — so it is deliberately *not* stored on the request
+   * row, which would need a column for a decision that has not been made yet.
+   */
+  workScheduleCode?: string | null;
 }
 
 export interface JoiningRequest {
@@ -171,7 +180,12 @@ export async function requestJoiner(
 
     // An admin is the approver, so their own request is already decided.
     if (caller.role === 'admin') {
-      return approveInTransaction(db, caller, id, 'created directly by an admin');
+      /*
+       * An admin raising a request approves it immediately, so the pattern they
+       * chose on the request travels straight through.
+       */
+      return approveInTransaction(
+        db, caller, id, 'created directly by an admin', input.workScheduleCode ?? null);
     }
     return reload(db, id);
   });
@@ -189,6 +203,7 @@ async function approveInTransaction(
   caller: Caller,
   id: string,
   note: string | null,
+  workScheduleCode: string | null,
 ): Promise<JoiningRequest> {
   const { rows } = await db.query(
     'SELECT * FROM joining_request WHERE id = $1 FOR UPDATE', [id]);
@@ -199,7 +214,7 @@ async function approveInTransaction(
   }
 
   // Shared with the onboarding flow, which has to produce an identical record.
-  const { id: employeeId, code } = await provisionEmployee(db, {
+  const { id: employeeId, code } = await provisionEmployee(db, caller, {
     fullName: req.full_name as string,
     workEmail: req.work_email as string,
     joinedOn: req.joining_on as string,
@@ -210,6 +225,13 @@ async function approveInTransaction(
     designation: req.designation as string | null,
     employmentType: req.employment_type as string | null,
     code: req.employee_code as string | null,
+    /*
+     * Chosen at approval rather than carried on the request. A request is raised
+     * by a manager before anybody has decided which pattern the person works, and
+     * putting the code on `joining_request` would mean a column — so a migration
+     * — for a decision that belongs to this moment anyway.
+     */
+    workScheduleCode,
   });
 
   await db.query(
@@ -234,11 +256,20 @@ export async function approveJoiner(
   caller: Caller,
   id: string,
   note?: string,
+  /**
+   * The working pattern the new employee starts on, by code. Optional.
+   *
+   * Omitted leaves them with no assignment, which the calendar absorbs through
+   * its Monday-to-Friday fallback and the screens report as "Not assigned".
+   * Nothing is substituted — see `ProvisionSpec.workScheduleCode`.
+   */
+  workScheduleCode?: string | null,
 ): Promise<JoiningRequest> {
   if (caller.role !== 'admin') {
     throw new JoinerError('only an admin may approve a joiner', 'forbidden');
   }
-  return withTenant(caller, (db) => approveInTransaction(db, caller, id, note ?? null));
+  return withTenant(caller, (db) =>
+    approveInTransaction(db, caller, id, note ?? null, workScheduleCode ?? null));
 }
 
 export async function rejectJoiner(

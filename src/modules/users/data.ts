@@ -123,3 +123,12 @@ export function useTenantLoginHistory(enabled = true) {
     (s) => (enabled ? s.users.tenantLoginHistory(c) : Promise.resolve([] as LoginEvent[])),
     [c.role, c.meId, enabled]);
 }
+
+/**
+ * The working patterns a new account can be put on.
+ *
+ * Read-only here. User Management offers the choice at creation; the schedule
+ * service decides whether it is allowed, and changing somebody's pattern later is
+ * effective-dated and lives on their own record.
+ */
+export const useWorkSchedules = () => useQuery((s) => s.schedules.workSchedules(), []);

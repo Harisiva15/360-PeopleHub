@@ -679,7 +679,8 @@ const routes: Route[] = [
   {
     method: 'POST',
     pattern: '/onboarding/:id/complete',
-    handler: (c, _r, p) => completeOnboarding(c, p.id!),
+    handler: (c, _r, p, body) => completeOnboarding(
+      c, p.id!, (body as { workScheduleCode?: string | null } | null)?.workScheduleCode ?? null),
   },
   { method: 'GET', pattern: '/requisitions', handler: (c) => listRequisitions(c) },
   {
@@ -944,8 +945,10 @@ const routes: Route[] = [
   {
     method: 'POST',
     pattern: '/joiners/:id/approve',
-    handler: (c, _r, p, body) =>
-      approveJoiner(c, p.id!, (body as { note?: string } | undefined)?.note),
+    handler: (c, _r, p, body) => {
+      const b = body as { note?: string; workScheduleCode?: string | null } | undefined;
+      return approveJoiner(c, p.id!, b?.note, b?.workScheduleCode ?? null);
+    },
   },
   {
     method: 'POST',

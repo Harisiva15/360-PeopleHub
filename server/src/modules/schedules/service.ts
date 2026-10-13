@@ -39,7 +39,7 @@
  */
 
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
-import type { Caller } from '../../tenancy/context.ts';
+import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
 export class ScheduleError extends Error {
   readonly code: string;
@@ -699,6 +699,62 @@ export async function assignEmployeeSchedule(
   employeeId: string,
   draft: EmployeeScheduleDraft,
 ): Promise<EmployeeSchedule> {
+  return withTenant(caller, async (db) => {
+    const known = await db.query('SELECT 1 FROM employee WHERE id = $1', [employeeId]);
+    if (!known.rows[0]) throw new ScheduleError('no such employee', 'not_found');
+    await mayTouch(db, caller, employeeId, true);
+    return writeAssignment(db, caller, employeeId, draft);
+  });
+}
+
+/**
+ * The first assignment for somebody being created, inside the creating transaction.
+ *
+ * Phase 2h-G connected employee provisioning to this module. The three creation
+ * paths — a joiner approval, an onboarding completion and a User Management
+ * account — each already run inside a transaction they own, and each now hands
+ * that transaction here so the employee and their first working pattern commit
+ * together or not at all. A refused schedule leaves no employee behind.
+ *
+ * **Every rule is the shared one.** Same `writeAssignment`, so the schedule still
+ * has to exist, be active and belong to this tenant, and the dates are still
+ * checked the same way. Nothing about provisioning is special except who decided
+ * the caller was allowed to do it.
+ *
+ * **Which is the one thing deliberately not re-checked here.** `mayTouch` asks
+ * whether this caller may change *that employee's* schedule, and for a manager it
+ * answers by walking their reporting line. A person created a moment ago is not
+ * usefully in anybody's line yet — and the right being exercised is the right to
+ * create them, which the calling flow has already established (`approveJoiner` is
+ * admin-only, `completeOnboarding` checks `mayOnboard`, `createUser` checks
+ * `mayGrant`). Re-deriving a weaker version of that here would refuse managers
+ * the completion of a flow they are permitted to run.
+ *
+ * So this function is not routed and takes no decision of its own: it is reachable
+ * only from inside a creation path that has already authorised itself.
+ */
+export async function assignInitialSchedule(
+  db: TenantClient,
+  caller: Caller,
+  employeeId: string,
+  draft: EmployeeScheduleDraft,
+): Promise<EmployeeSchedule> {
+  return writeAssignment(db, caller, employeeId, draft);
+}
+
+/**
+ * The assignment itself, with every rule and no authorization.
+ *
+ * Split out so `assignEmployeeSchedule` and `assignInitialSchedule` cannot drift:
+ * the supersession rule, the settled-period refusal, the exited-employee refusal
+ * and the overlap mapping exist once.
+ */
+async function writeAssignment(
+  db: TenantClient,
+  caller: Caller,
+  employeeId: string,
+  draft: EmployeeScheduleDraft,
+): Promise<EmployeeSchedule> {
   checkDateRange(draft.validFrom, draft.validTo);
   const from = draft.validFrom;
   const to = draft.validTo ?? null;
@@ -708,11 +764,10 @@ export async function assignEmployeeSchedule(
   }
   const wanted = draft.scheduleCode.trim().toUpperCase();
 
-  return withTenant(caller, async (db) => {
+  {
     const emp = await db.query(
       'SELECT status, joined_on FROM employee WHERE id = $1', [employeeId]);
     if (!emp.rows[0]) throw new ScheduleError('no such employee', 'not_found');
-    await mayTouch(db, caller, employeeId, true);
 
     /*
      * An exited employee is not given a new schedule. They have no days left to
@@ -813,7 +868,7 @@ export async function assignEmployeeSchedule(
 
     const back = await db.query(`${ES_COLUMNS} WHERE es.id = $1`, [inserted.rows[0]!.id]);
     return toAssignment(back.rows[0]!);
-  });
+  }
 }
 
 /**

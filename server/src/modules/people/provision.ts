@@ -12,9 +12,14 @@
  * of it. The caller owns the transaction because provisioning is never the
  * only thing happening — the request or the journey has to be marked in the
  * same commit, or a refresh shows an employee created twice.
+ *
+ * Phase 2h-G added the working pattern to that whole job. It is optional, it is
+ * assigned through the schedule service rather than written here, and it is dated
+ * from the joining date — see `workScheduleCode` below.
  */
 
-import type { TenantClient } from '../../tenancy/context.ts';
+import type { Caller, TenantClient } from '../../tenancy/context.ts';
+import { assignInitialSchedule } from '../schedules/service.ts';
 import { recordEmployment } from './employment.ts';
 
 export class ProvisionError extends Error {
@@ -42,6 +47,19 @@ export interface ProvisionSpec {
   code?: string | null;
   /** Who approved this, for the employment record. Null for a system action. */
   recordedBy?: string | null;
+  /**
+   * The working pattern this person starts on, by code. Optional.
+   *
+   * Omitted or null means **no assignment is written**, and the employee's
+   * calendar keeps falling back to Monday-to-Friday with `schedule: null` — the
+   * state Phase 2h-E built deliberately and the screens report as "Not assigned".
+   *
+   * There is no default to substitute here: `work_schedule` carries no
+   * `is_default` column, `DEFAULT_MF` is only the code migration 0054's backfill
+   * used, and nothing guarantees a tenant has one. Picking a pattern on somebody's
+   * behalf would claim a decision nobody made, so an unnamed pattern stays unnamed.
+   */
+  workScheduleCode?: string | null;
 }
 
 /**
@@ -52,6 +70,7 @@ export interface ProvisionSpec {
  */
 export async function provisionEmployee(
   db: TenantClient,
+  caller: Caller,
   spec: ProvisionSpec,
 ): Promise<{ id: string; code: string }> {
   const entity = await db.query(
@@ -106,6 +125,25 @@ export async function provisionEmployee(
    * they start, and the lifecycle's probation branch counts from it.
    */
   await recordEmployment(db, id, 'hire', { on: spec.joinedOn, recordedBy: spec.recordedBy ?? null });
+
+  /*
+   * The working pattern, where one was chosen — effective from the joining date
+   * rather than from now, for the same reason the employment record above is:
+   * somebody provisioned in October to start in January is on their pattern from
+   * January, and dating it today would claim they were expected in for three
+   * months nobody scheduled.
+   *
+   * Through the schedule service, so the rules are the ones that apply to a
+   * pattern assigned by hand, and inside this transaction, so a schedule that
+   * cannot be assigned leaves no employee behind.
+   */
+  if (typeof spec.workScheduleCode === 'string' && spec.workScheduleCode.trim()) {
+    await assignInitialSchedule(db, caller, id, {
+      scheduleCode: spec.workScheduleCode,
+      validFrom: spec.joinedOn,
+      validTo: null,
+    });
+  }
 
   return { id, code };
 }

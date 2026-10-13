@@ -2547,6 +2547,18 @@ export interface UserDraft {
    * True, or absent, sends an invitation instead.
    */
   sendInvitation?: boolean;
+  /**
+   * The working pattern this person starts on, by code. Optional.
+   *
+   * Omitted leaves them with no assignment, which the calendar absorbs through
+   * its Monday-to-Friday fallback and every screen reports as "Not assigned".
+   * Nothing is substituted: there is no default work schedule concept in this
+   * product, so choosing one here would claim a decision nobody made.
+   *
+   * The server validates it — exists, active, this tenant — and dates the
+   * assignment from the joining date, not from now.
+   */
+  workScheduleCode?: string | null;
 }
 
 export type UserPatch = Partial<Omit<UserDraft, 'sendInvitation'>>;

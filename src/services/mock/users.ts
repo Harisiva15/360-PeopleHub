@@ -12,12 +12,14 @@
  * the server's policy that `checks/roles.ts` holds to it cell by cell.
  */
 
+import { uid } from '../../lib/rng';
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
 import { EMAP } from '../../data/employees';
 import { ORG } from '../../data/org';
 import { LOGIN_HISTORY, USERS, loginHistoryFor, userOf } from '../../data/users';
 import type { LoginEvent, LoginMethod, UserAccount, UserStatus } from '../../data/users';
+import { ASSIGNMENTS, SCHEDULES } from './schedules';
 import { actionScope, may, mayAssignRole, PERMS } from '../../state/rbac';
 import type { UserAction } from '../../state/rbac';
 import { visibleIds } from '../../state/rbac';
@@ -191,6 +193,23 @@ export const userService: UserService = {
     if (bad) return refuse(bad);
 
     /*
+     * The working pattern, refused in the server's own words.
+     *
+     * Checked before anything is created, as the service checks it inside the
+     * creating transaction — so a form refused against a real tenant is refused
+     * here too, with the same sentence. Omitted or blank means unassigned, which
+     * is what the selector's "Not assigned" option sends; nothing is substituted.
+     */
+    const wanted = (draft.workScheduleCode ?? '').trim().toUpperCase();
+    if (wanted) {
+      const pattern = SCHEDULES.find((s) => s.code === wanted);
+      if (!pattern) return refuse(`no such work schedule: ${wanted}`);
+      if (!pattern.active) {
+        return refuse(`${wanted} is not in use and cannot be assigned — activate it first`);
+      }
+    }
+
+    /*
      * A manager raises a request; an administrator creates an account. Decided
      * here rather than passed in — a client that chooses its own status is a
      * client that can skip the approval it was supposed to wait for.
@@ -234,6 +253,27 @@ export const userService: UserService = {
       approvedAt: byManager ? null : ymd(TODAY),
     };
     USERS.unshift(u);
+
+    /*
+     * Record the assignment where the demo has an employee to attach it to.
+     *
+     * The demo's account creation does not materialise an employee — the
+     * directory is a fixture — so this only applies to an account linked to an
+     * existing person. Where there is nobody to assign, nothing is recorded,
+     * which is the same "Not assigned" state the server leaves behind when no
+     * pattern was chosen. The refusals above are the part a form actually
+     * experiences, and those are faithful in every case.
+     */
+    if (wanted && u.empId) {
+      ASSIGNMENTS.push({
+        id: uid('ES'),
+        employeeId: u.empId,
+        scheduleCode: wanted,
+        validFrom: u.joinedOn,
+        validTo: null,
+        createdAt: new Date().toISOString(),
+      });
+    }
     return ok(u);
   },
 

@@ -282,7 +282,16 @@ export async function setTask(
  * verification, asset issue and payroll setup, so completing around it would
  * mean claiming those happened.
  */
-export async function completeOnboarding(caller: Caller, id: string): Promise<Onboarding> {
+export async function completeOnboarding(
+  caller: Caller,
+  id: string,
+  /**
+   * The working pattern the new employee starts on, by code. Optional, and
+   * omitted leaves them unassigned rather than guessed at — see
+   * `ProvisionSpec.workScheduleCode`.
+   */
+  workScheduleCode?: string | null,
+): Promise<Onboarding> {
   if (!mayOnboard(caller)) {
     throw new OnboardingError('only a manager or admin may complete onboarding', 'forbidden');
   }
@@ -311,7 +320,7 @@ export async function completeOnboarding(caller: Caller, id: string): Promise<On
     const email = (j.candidate_email as string | null)
       ?? `${(j.full_name as string).toLowerCase().replace(/[^a-z]+/g, '.')}@360.technology`;
 
-    const { id: employeeId } = await provisionEmployee(db, {
+    const { id: employeeId } = await provisionEmployee(db, caller, {
       fullName: j.full_name as string,
       workEmail: email,
       joinedOn: j.joining_on as string,
@@ -319,6 +328,8 @@ export async function completeOnboarding(caller: Caller, id: string): Promise<On
       siteId: j.site_id as string | null,
       managerId: j.manager_id as string | null,
       designation: j.designation as string | null,
+      /* Chosen when the journey is completed, which is when the person becomes real. */
+      workScheduleCode: workScheduleCode ?? null,
     });
 
     await db.query(

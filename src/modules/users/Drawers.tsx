@@ -25,6 +25,7 @@ import { SignInTable } from './SignIns';
 import type { UserAccount, UserDraft } from '../../services';
 import {
   useCreateUser, useLoginHistory, useNextCode, useUpdateUser, useVisiblePeople,
+  useWorkSchedules,
 } from './data';
 import { ROLE_BLURB, ROLE_LABEL, RoleBadge, UserStatusBadge, whenOf } from './shared';
 
@@ -46,6 +47,7 @@ export function UserForm({
   const dir = useVisiblePeople();
   const sites = useSites();
   const create = useCreateUser();
+  const schedules = useWorkSchedules();
   const update = useUpdateUser();
   const nextCode = useNextCode();
 
@@ -65,6 +67,14 @@ export function UserForm({
   const [joinedOn, setJoinedOn] = useState(existing?.joinedOn ?? ymd(TODAY));
   const [role, setRole] = useState<AppRole>(existing?.role ?? 'employee');
   const [invite, setInvite] = useState(true);
+  const [workScheduleCode, setWorkScheduleCode] = useState('');
+
+  /*
+   * Only patterns the server would accept for a new assignment. An inactive one
+   * is refused by the schedule service, so offering it would be offering a
+   * failure — and the service remains the authority either way.
+   */
+  const patterns = (schedules.data ?? []).filter((w) => w.active);
 
   /* The roles this caller may hand out. An admin is the only one who makes one. */
   const roles = (['employee', 'manager', 'admin'] as AppRole[])
@@ -84,6 +94,11 @@ export function UserForm({
       code: autoCode ? undefined : code,
       empId: existing?.empId ?? null,
       sendInvitation: invite,
+      /*
+       * Omitted entirely on an edit: `updateUser` does not take it, and a pattern
+       * change is effective-dated through the employee's own record.
+       */
+      ...(existing ? {} : { workScheduleCode: workScheduleCode || null }),
     };
     try {
       if (existing) {
@@ -198,6 +213,51 @@ export function UserForm({
             <input className="input" type="date" value={joinedOn}
               onChange={(e) => setJoinedOn(e.target.value)} />
           </div>
+
+          {/*
+            * Which days they work, chosen here because this is where the joining
+            * date is — the assignment starts on it.
+            *
+            * Only offered when creating. Changing somebody's pattern afterwards
+            * is effective-dated and belongs on their own record, where the
+            * history is visible; a second editor here would quietly rewrite the
+            * current period instead of opening a new one.
+            */}
+          {!existing && (
+            <div className="field">
+              <label htmlFor="user-sched">Work schedule</label>
+              {patterns.length ? (
+                <>
+                  <select id="user-sched" className="input" value={workScheduleCode}
+                    aria-describedby="user-sched-hint"
+                    onChange={(e) => setWorkScheduleCode(e.target.value)}>
+                    <option value="">Not assigned</option>
+                    {patterns.map((w) => (
+                      <option key={w.code} value={w.code}>
+                        {w.name} ({w.days.filter((d) => d.working).length} days a week)
+                      </option>
+                    ))}
+                  </select>
+                  <div className="hint" id="user-sched-hint">
+                    {workScheduleCode
+                      ? <>Applies from {fmtD(joinedOn)}, the joining date above.</>
+                      : (
+                        <>
+                          Leaving this unassigned is a real choice, not a gap: their
+                          calendar falls back to Monday&ndash;Friday and their record
+                          shows &ldquo;Not assigned&rdquo; until somebody sets one.
+                        </>
+                      )}
+                  </div>
+                </>
+              ) : (
+                <div className="hint">
+                  No working pattern has been set up yet. Add one under Shifts &amp; work
+                  schedules, or leave this person unassigned for now.
+                </div>
+              )}
+            </div>
+          )}
 
           {existing && (
             <div style={{ marginTop: 6 }}>
