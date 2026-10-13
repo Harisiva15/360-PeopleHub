@@ -5,6 +5,7 @@ import type { IconName } from '../components/icons';
 import { sum } from '../lib/collections';
 import { chance, rnd } from '../lib/rng';
 import { ACTIVE } from './employees';
+import { TODAY } from '../lib/dates';
 import { comp, salaryStructure } from './salary';
 import type { Grade } from '../types/country';
 
@@ -88,6 +89,17 @@ export interface FbpPlan {
   na?: boolean;
 }
 
+/**
+ * The day the declaration window shuts: 31 March of the fiscal year today falls
+ * in, April to March.
+ *
+ * This was the literal 2027-03-31, which is the right answer only until that date
+ * passes — after which every declaration in the demo is refused and the service
+ * check that declares one fails. Derived, it is self-correcting, and it still
+ * produces 2027-03-31 for any date in the 2026-27 year.
+ */
+const FBP_LOCK = `${TODAY.getMonth() >= 3 ? TODAY.getFullYear() + 1 : TODAY.getFullYear()}-03-31`;
+
 export const FBP: Record<string, FbpPlan> = {};
 
 (function genFbp() {
@@ -109,7 +121,7 @@ export const FBP: Record<string, FbpPlan> = {};
       alloc[c.id] = v;
       left -= v;
     });
-    FBP[e.id] = { pool, alloc, status: chance(0.6) ? 'Declared' : 'Not declared', lockedOn: '2027-03-31' };
+    FBP[e.id] = { pool, alloc, status: chance(0.6) ? 'Declared' : 'Not declared', lockedOn: FBP_LOCK };
   });
 })();
 

@@ -17,8 +17,7 @@ this repository can tell, has not been rotated.
 **Do not apply these migrations with the exposed credential.** A migration
 applied with a credential somebody else may hold is a migration you cannot
 later prove was yours. Rotate it in Supabase → Project Settings → Database,
-then update `server/.env` (gitignored) and re-run `npm run connect` if you use
-that helper.
+then update `server/.env` (gitignored) with the new connection strings.
 
 Nothing below should be run until that is done.
 

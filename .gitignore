@@ -29,3 +29,12 @@ scratch/
 # local build config
 .env.local
 .env
+
+# Local throwaway Postgres for the server suites.
+#
+# It normally lives outside the repo, at %LOCALAPPDATA%\360-peoplehub-pg — it used
+# to sit under AppData\Local\Temp, which Windows cleanup purged mid-session and
+# destroyed. These entries are a guard for anyone who points it at the working
+# tree instead: a cluster's data directory must never be stageable.
+.data/
+pgtest/

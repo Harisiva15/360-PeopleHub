@@ -187,7 +187,18 @@ const SOON = ymd(addDays(TODAY, 30));
   const draft = EVENTS.find((e) => e.status === 'Draft')!;
   await refused('nobody can respond to a draft', () => s.events.rsvp(ADMIN, draft.id, 'Going'));
 
-  const done = EVENTS.find((e) => e.status === 'Published' && isPast(e))!;
+  /*
+   * A past published event that is **not** the demo manager's.
+   *
+   * It is reused below to check that a manager cannot edit somebody else's
+   * event, and the fixture's organisers rotate with the date: at some clock
+   * offsets the first past published event happened to be the manager's own, so
+   * the assertion tested their own event and update was correctly allowed. The
+   * premise is part of the assertion, so it belongs in the selection.
+   */
+  const done = EVENTS.find((e) => e.status === 'Published' && isPast(e)
+    && e.organiserId !== DEMO_MGR.id)!;
+  check('there is a past published event somebody else organised', Boolean(done), true);
   await refused('nor to something that has happened',
     () => s.events.rsvp(ADMIN, done.id, 'Going'));
 

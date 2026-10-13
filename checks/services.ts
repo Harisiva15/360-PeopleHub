@@ -1,4 +1,5 @@
 import { getServices } from '../src/services';
+import { addDays, mondayOf, TODAY, ymd } from '../src/lib/dates';
 import { DEMO_EMP, DEMO_MGR, EMAP, HRHEAD } from '../src/data/employees';
 import { toBase } from '../src/data/countries';
 import { ATT_IDX } from '../src/data/attendance';
@@ -97,9 +98,25 @@ const check = (label: string, got: unknown, want: unknown) => {
   check('a second decision is refused', regRefused, true);
 
   /* ---- timesheet ---- */
-  const week = '2026-10-05';                       /* a Monday */
-  const mon = '2026-10-05';
-  const tue = '2026-10-06';
+  /*
+   * A week the demo fixture does not generate, derived rather than written down.
+   *
+   * `src/data/timesheet.ts` fills eight weeks *backwards* from `mondayOf(TODAY)`,
+   * so any Monday in the past may already carry a sheet — and week 1 carries a
+   * decided one. This block needs a week with no sheet at all, because the first
+   * assertion is that asking for one yields an empty draft.
+   *
+   * It used to be the literal '2026-10-05', which worked only while that date
+   * happened to sit outside the fixture's eight-week window. On 12 October 2026
+   * the window reached it, `forWeek` returned the generated Approved sheet, and
+   * every assertion below it failed — including one that threw rather than
+   * reported, because an approved sheet cannot be edited. A future Monday can
+   * never collide: the fixture only looks back.
+   */
+  const weekMon = addDays(mondayOf(TODAY), 7);
+  const week = ymd(weekMon);
+  const mon = ymd(weekMon);
+  const tue = ymd(addDays(weekMon, 1));
   const sheet = await s.timesheet.forWeek(DEMO_EMP.id, week);
   check('a new week starts as an empty draft',
     [sheet.status, sheet.entries.length, sheet.total], ['Draft', 0, 0]);
@@ -131,7 +148,8 @@ const check = (label: string, got: unknown, want: unknown) => {
   let offWeek = false;
   try {
     await s.timesheet.addEntry(sheet.id, {
-      date: '2026-10-13', proj: 'P-NBFC', task: 'Development', hours: 1,
+      /* The Tuesday of the following week — outside `week`, whichever week that is. */
+      date: ymd(addDays(weekMon, 8)), proj: 'P-NBFC', task: 'Development', hours: 1,
     });
   } catch { offWeek = true; }
   check('a day outside the week is refused', offWeek, true);

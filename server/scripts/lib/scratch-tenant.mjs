@@ -131,13 +131,25 @@ export async function withScratchTenant(db, body) {
      * employee who is paid. Without one they are themselves an employee with no
      * compensation on file, and payroll — correctly — refuses to process a
      * cycle containing them.
+     *
+     * **They joined long ago, not today.** This was `CURRENT_DATE`, which paired
+     * badly with the fixed calendar dates most suites use: those dates are fixed
+     * precisely so a weekday assertion cannot depend on the day the suite runs,
+     * and once today moved past them the employment bound Phase 2h-E added —
+     * correctly — reported every one as NOT_EMPLOYED. Twenty-one assertions
+     * failed on 12 October 2026 for no reason but the calendar advancing.
+     *
+     * A fixed early date removes the coupling instead of papering over it: there
+     * is now no date in this fixture that moves, so no suite can be made to fail
+     * by waiting. Anything that genuinely needs somebody who joined recently
+     * creates them itself, which several suites already do.
      */
     const admin = await one(
       `INSERT INTO employee
          (tenant_id, code, full_name, work_email, status, app_role,
           department_id, site_id, legal_entity_id, shift_id, joined_on, currency, ctc)
        VALUES ($1, 'ZZ001', 'ZZ Scratch Admin', $2, 'active', 'admin',
-               $3, $4, $5, $6, CURRENT_DATE, 'INR', 1200000)
+               $3, $4, $5, $6, DATE '2020-01-01', 'INR', 1200000)
        RETURNING id`,
       [`zz-scratch-admin-${suffix}@360.technology`, dept.id, site.id, entity.id, shift.id]);
 

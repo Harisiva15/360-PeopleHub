@@ -121,6 +121,32 @@ console.log('\nthis phase added no schema\n');
   const cols = (await db.query(
     `SELECT column_name FROM information_schema.columns
       WHERE table_name = 'holiday' ORDER BY ordinal_position`)).rows.map((r) => r.column_name);
+  /*
+   * The shared fixture holds no moving date.
+   *
+   * Its administrator used to join CURRENT_DATE, which paired badly with the
+   * fixed calendar dates this suite and others use: once today passed those
+   * dates, the employment bound Phase 2h-E added reported every one as
+   * NOT_EMPLOYED and twenty-one assertions failed for no reason but the calendar
+   * advancing. A fixed joining date removes the coupling; this stops it coming
+   * back, because the next person to need "somebody who joined recently" will be
+   * tempted to put CURRENT_DATE back rather than create their own employee.
+   */
+  /*
+   * SQL clock functions only. `Date.now()` is excluded deliberately: the fixture
+   * uses it to build a unique tenant slug, which is a timestamp used as an
+   * identifier rather than as a date, and nothing compares it to anything. A
+   * first version of this regex flagged it, which is the right instinct and the
+   * wrong target.
+   */
+  const CLOCK = /CURRENT_DATE|CURRENT_TIMESTAMP|(?<!Date\.)\bnow\s*\(\s*\)/gi;
+  const fixtureSrc = readFileSync(join(here, 'lib', 'scratch-tenant.mjs'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  ok('0. the scratch fixture dates nothing from the clock',
+    !CLOCK.test(fixtureSrc),
+    (fixtureSrc.match(CLOCK) ?? []).join(', '));
+
   ok('1. holiday still has exactly its six columns',
     cols.join(',') === 'id,tenant_id,observed_on,name,optional,site_id', cols.join(','));
 

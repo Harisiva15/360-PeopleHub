@@ -99,7 +99,27 @@ const reasonFrom = async (res: Response): Promise<string> => {
     }
     if (!detail) detail = text.slice(0, 200);
   } catch { /* a body that is not JSON is not worth a second failure */ }
-  return detail || `Supabase returned ${res.status}`;
+  return redactKey(detail) || `Supabase returned ${res.status}`;
+};
+
+/**
+ * Remove the service-role key from anything on its way into an error message.
+ *
+ * This module's whole claim is that the key is read from config, put in a
+ * header, and appears in no return value, no error message and no log line. The
+ * first three were true; the last two had a gap, because a provider's error body
+ * is passed through verbatim and the request that produced it carried the key. A
+ * provider that echoed it back — in a validation message, a proxy error, a
+ * misconfigured gateway — would have written it into whatever logged the failure.
+ *
+ * Not a likely response, but the cost of being wrong is the one credential that
+ * bypasses row-level security, and the check is two lines. The key is never
+ * compared against anything, only removed, so this says nothing about it either.
+ */
+const redactKey = (text: string): string => {
+  const key = config.supabaseServiceKey;
+  if (!key || !text) return text;
+  return text.split(key).join('[redacted]');
 };
 
 /** Whether Supabase is saying "that address already has an account". */
