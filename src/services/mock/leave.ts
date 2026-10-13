@@ -18,6 +18,14 @@ export const leaveService: LeaveService = {
       out = out.filter((l) => want.has(l.empId));
     }
     if (q.status) out = out.filter((l) => l.status === q.status);
+    /*
+     * Overlap, both bounds inclusive — the same rule the service applies. A
+     * request that began before the window and runs into it is in; filtering on
+     * `from >= q.from` would drop exactly the leave a month view needs most.
+     * Dates compare as `YYYY-MM-DD` strings, which sort correctly.
+     */
+    if (q.from) out = out.filter((l) => l.to >= q.from!);
+    if (q.to) out = out.filter((l) => l.from <= q.to!);
     return ok(out);
   },
 

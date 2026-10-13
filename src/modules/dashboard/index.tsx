@@ -33,7 +33,8 @@ import {
   useAllEmployees, useAnnouncements, useAttendanceIn, useCandidates, useCelebrations,
   useClaimsIn, useCompliancePayments, useCourses, useCurrentCycle, useCurrentRun,
   useDeclarations, useEnrolments, useExits, useGoals, useLeaveIn, useMyAttendance,
-  useMonthCalendar, useMyBalances, usePayRuns, usePayrollTotals, usePayslipHistory,
+  useApprovedLeave, useMonthCalendar, useMyBalances, usePayRuns, usePayrollTotals,
+  usePayslipHistory,
   usePendingCount,
   useRequisitions,
   useSurveys, useTeam, useTickets, useTimesheetsIn,
@@ -430,6 +431,13 @@ function DashEmployee() {
   const { data: monthRecs = [] } = useMyAttendance(me.id, mk + '-01', mk + '-31');
   /* The server decides which of those days were working days. */
   const { data: monthCal = [] } = useMonthCalendar(me.id, mk);
+  /*
+   * Their own approved leave for the month, so the calendar's third channel has
+   * something to show. Phase 2h-I gave the shared component the channel and left
+   * this caller passing nothing, which rendered a month with no leave marks on a
+   * screen where leave is one of the things somebody is looking for.
+   */
+  const { data: monthLeave = [] } = useApprovedLeave([me.id], mk + '-01', mk + '-31');
   const { data: mySheets = [] } = useTimesheetsIn([me.id]);
   const { data: history = [] } = usePayslipHistory(me.id);
   const { data: bals = [] } = useMyBalances(me.id);
@@ -524,7 +532,8 @@ function DashEmployee() {
 
       <div className="grid g-2-1">
         <Card title="My attendance calendar" sub={monthLabelLong(mk)} actions={<GoLink to="attendance">Details</GoLink>}>
-          <MonthCalendar records={monthRecs} mk={mk} calendar={monthCal} />
+          <MonthCalendar records={monthRecs} mk={mk} calendar={monthCal}
+            leave={monthLeave} />
         </Card>
         <Card title="Leave balances" sub={ORG.fy} actions={<GoLink to="leave">Apply</GoLink>}>
           <div className="stack" style={{ gap: 11 }}>

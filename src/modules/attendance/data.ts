@@ -83,3 +83,9 @@ export const useMonthCalendar = (empId: string, mk: string) => {
  */
 export const useWorkSchedules = () => useQuery((s) => s.schedules.workSchedules(), []);
 
+/*
+ * Approved leave for the Expected / Leave / Actual view. Shared with the rota and
+ * the dashboard calendar — see services/leave.ts for why the status filter is not
+ * duplicated per module.
+ */
+export { useApprovedLeave } from '../../services/leave';

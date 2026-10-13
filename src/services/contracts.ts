@@ -222,6 +222,13 @@ export type LeaveBalanceRow = LeaveBalance & { type: string; avail: number };
 export interface LeaveQuery {
   empIds?: string[];
   status?: LeaveStatus;
+  /**
+   * Inclusive span. Returns requests *overlapping* it, so a leave that began
+   * before the window still appears — which is the leave somebody looking at a
+   * month most needs to see. Omitted means the whole history.
+   */
+  from?: string;
+  to?: string;
 }
 
 /**

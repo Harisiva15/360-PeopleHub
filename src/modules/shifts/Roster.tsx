@@ -28,11 +28,12 @@
  * and their calendar. Every cell now carries a `RosterDay` from the same resolver
  * leave reads, in one request for the whole team and span.
  *
- * **Expected and actual, since Phase 2h-H.** The cell's tint is what the schedule
- * expected; a recorded punch adds its status and times on top. A working day with
- * no attendance row stays a working day with no attendance row — never an absence.
- * `A` is a status something writes deliberately, a missing row is missing
- * information, and the rota writes neither.
+ * **Expected, leave and actual, since Phases 2h-H and 2h-I.** The cell's tint is
+ * what the schedule expected; approved leave marks the cell; a recorded punch adds
+ * its status and times on top. A working day with no attendance row stays a
+ * working day with no attendance row — never an absence. `A` is a status something
+ * writes deliberately, a missing row is missing information, and the rota writes
+ * neither. Approved leave explains a gap without becoming one.
  */
 
 import { useMemo, useState } from 'react';
@@ -45,9 +46,11 @@ import type { RosterDay } from '../../services';
 import { useApp } from '../../state/AppContext';
 import { visibleIds } from '../../state/rbac';
 import {
-  useAllEmployees, useAttendance, useRoster, useSetShift, useShiftProfiles,
+  useAllEmployees, useApprovedLeave, useAttendance, useRoster, useSetShift, useShiftProfiles,
 } from './data';
-import { ACTUAL_LABEL, NO_ATTENDANCE, recordsByEmployee } from '../attendance/day';
+import {
+  ACTUAL_LABEL, leaveByEmployee, leaveOn, NO_ATTENDANCE, recordsByEmployee,
+} from '../attendance/day';
 import { colourOf, resolveProfile } from './profile';
 import { EXPECTED_LEGEND, lookOf, scheduleOver, standingShift } from './expected';
 import { Icon } from '../../components/icons';
@@ -106,6 +109,13 @@ export function RosterView() {
   const attendance = useAttendance(ids, ws, dates[dates.length - 1] ?? ws);
   const actuals = useMemo(
     () => recordsByEmployee(attendance.data ?? []), [attendance.data]);
+  /*
+   * Approved leave for the same team and span, in one more range read. Three
+   * requests for the whole grid: expected, leave, actual.
+   */
+  const leaveRead = useApprovedLeave(ids, ws, dates[dates.length - 1] ?? ws);
+  const leaves = useMemo(
+    () => leaveByEmployee(leaveRead.data ?? []), [leaveRead.data]);
 
   /*
    * Profiles come from the service in both modes — the mock returns the same four,
@@ -155,7 +165,13 @@ export function RosterView() {
   const awaiting = rows.reduce((n, e) => n + dates.filter((d) =>
     d <= today
     && cellOf(e.id, d)?.expected === 'WORKING'
-    && !actuals.get(e.id)?.get(d)).length, 0);
+    && !actuals.get(e.id)?.get(d)
+    /* Approved leave explains the gap, so it is not one awaiting a record. */
+    && !leaveOn(leaves.get(e.id) ?? [], d)).length, 0);
+  /* Working days across the period covered by approved leave. */
+  const onLeave = rows.reduce((n, e) => n + dates.filter((d) =>
+    cellOf(e.id, d)?.expected === 'WORKING'
+    && leaveOn(leaves.get(e.id) ?? [], d) !== null).length, 0);
   /*
    * The whole reason the timezone moved onto the shift: people measured
    * against a clock that is not their office's. Compared by country rather
@@ -186,7 +202,10 @@ export function RosterView() {
   const exportCsv = () => downloadCSV(`roster-${ws}.csv`,
     [['Employee', 'Designation', 'Department', 'Location', 'Work schedule', 'Shift',
       'Hours', 'Timezone',
-      ...dates.flatMap((d) => [`${fmtDS(d)} expected`, `${fmtDS(d)} actual`])]].concat(
+      ...dates.flatMap((d) => [
+        `${fmtDS(d)} expected`, `${fmtDS(d)} leave status`,
+        `${fmtDS(d)} leave type`, `${fmtDS(d)} actual`,
+      ])]].concat(
       rows.map((e) => {
         const code = standingOf(e.id);
         const s = resolveProfile(profiles, code);
@@ -200,8 +219,11 @@ export function RosterView() {
           ...dates.flatMap((d) => {
             const look = lookOf(cellOf(e.id, d));
             const act = actuals.get(e.id)?.get(d) ?? null;
+            const lv = leaveOn(leaves.get(e.id) ?? [], d);
             return [
               look ? (look.working ? code : look.label) : '',
+              lv ? (lv.half ? `Approved (${lv.half})` : 'Approved') : '',
+              lv ? lv.type : '',
               act ? (ACTUAL_LABEL[act.status] ?? act.status) : NO_ATTENDANCE,
             ];
           })];
@@ -252,8 +274,13 @@ export function RosterView() {
           foot="Measured against a client's clock" />
         <Tile icon={<Icon n="rest" size="lg" />} label="Days off" value={offDays}
           foot={holidayDays ? `Plus ${holidayDays} holiday day(s)` : 'Across the period shown'} />
+        {/*
+          * Both figures in one tile: StatRow takes at most five columns, and
+          * widening a shared component for one screen is not worth it. They belong
+          * together anyway — the leave count is most of why the other is small.
+          */}
         <Tile icon={<Icon n="clock" size="lg" />} label="Awaiting a record" value={awaiting}
-          foot="Expected in, no record — not an absence" />
+          foot={`Expected in, no record · ${onLeave} day(s) on approved leave`} />
       </StatRow>
 
       {unassigned > 0 && (
@@ -344,6 +371,7 @@ export function RosterView() {
                         const dayShift = cell!.shift ?? code;
                         /* What was actually recorded, if anything. */
                         const act = actuals.get(e.id)?.get(d) ?? null;
+                        const lv = leaveOn(leaves.get(e.id) ?? [], d);
                         const actualWords = act
                           ? (ACTUAL_LABEL[act.status] ?? act.status)
                           : NO_ATTENDANCE;
@@ -356,9 +384,15 @@ export function RosterView() {
                          * record reads as "No attendance" and nothing else.
                          */
                         const tip = `${fmtD(d)} · Expected: ${expectedWords}`
+                          + (lv
+                            ? ` · Leave: Approved — ${lv.type}${lv.half ? ` (${lv.half})` : ''}`
+                            : '')
                           + ` · Actual: ${actualWords}`
                           + (act?.inT ? ` ${act.inT}–${act.outT ?? '—'}` : '')
-                          + (act?.late ? ' · late' : '');
+                          + (act?.late ? ' · late' : '')
+                          + (lv && act && act.status !== 'L'
+                            ? ' · attendance recorded during approved leave'
+                            : '');
                         return (
                           <td key={d} className="rost-cell">
                             <div className={'rost' + (look.working ? '' : ' off')}
@@ -367,6 +401,16 @@ export function RosterView() {
                                 : { background: look.tint ?? undefined }}
                               title={tip} aria-label={tip}>
                               {look.working ? dayShift : look.short}
+                              {/*
+                                * Approved leave, as a word beside the expectation.
+                                * It does not replace the shift code: the schedule
+                                * still expected them on those hours.
+                                */}
+                              {lv && (
+                                <small className="rost-lv" title={`Approved leave · ${lv.type}`}>
+                                  LV{lv.half ? '½' : ''}
+                                </small>
+                              )}
                               {/*
                                 * The recorded status, under the expectation rather
                                 * than instead of it. Absent only ever appears here

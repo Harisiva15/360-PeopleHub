@@ -78,3 +78,5 @@ export const useAttendance = (empIds: string[], from: string, to: string) =>
   useQuery((s) => s.attendance.list({ empIds, from, to }),
     [empIds.join(','), from, to]);
 
+/* Approved leave for the rota's leave channel. Shared — see services/leave.ts. */
+export { useApprovedLeave } from '../../services/leave';

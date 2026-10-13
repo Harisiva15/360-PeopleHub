@@ -14,13 +14,17 @@ import { SCOPE } from '../../state/rbac';
 import { useShowEmployee } from '../employees/Profile';
 import { PunchWidget } from './Punch';
 import {
-  useActOnRegularisation, useAttendance, useMonthCalendar, useMyAttendance, usePeople,
+  useActOnRegularisation, useApprovedLeave, useAttendance, useMonthCalendar,
+  useMyAttendance, usePeople,
   useWorkSchedules,
   usePayRuns, useRaiseRegularisation, useRegularisableDays, useRegularisations, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
 import { MonthCalendar } from '../dashboard/shared';
-import { actualLabel, awaitingRecord, composeDays, expectedLabel } from './day';
+import {
+  actualLabel, awaitingRecord, composeDays, expectedLabel, leaveLabel,
+  recordedDuringLeave,
+} from './day';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
 import { TITLES } from '../titles';
@@ -99,6 +103,9 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
   const { data: recs = [] } = useMyAttendance(me.id, mk + '-01', mk + '-31');
   /* The server decides which of those days were working days. */
   const { data: monthCal = [] } = useMonthCalendar(me.id, mk);
+  /* Their own approved leave for the month, in one range read. */
+  const { data: monthLeave = [] } = useApprovedLeave([me.id], mk + '-01', mk + '-31');
+
   /*
    * The two answers, kept apart.
    *
@@ -109,10 +116,17 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
    * resolver, which is the only thing that knows the person's schedule.
    */
   const expectedDays = monthCal.filter((v) => v.workingDay).length;
-  const days = composeDays(monthCal.map((v) => v.date), monthCal, recs);
+  const days = composeDays(monthCal.map((v) => v.date), monthCal, recs, monthLeave);
   const today = ymd(TODAY);
   /* Expected in, nothing recorded, and the day has already happened. */
   const awaiting = days.filter((d) => awaitingRecord(d) && d.date <= today).length;
+  /*
+   * Working days covered by approved leave. Counted off the expected channel, so
+   * a weekend inside a leave span is not counted as a leave day — which is the
+   * same rule the leave service applied when it derived the stored day count.
+   */
+  const leaveDays = days.filter(
+    (d) => d.leave !== null && d.expected?.reason === 'WORKING').length;
   /* What is expected of them today, where the month shown includes it. */
   const todayDay = days.find((d) => d.date === today) ?? null;
   const present = recs.filter((r) => r.status === 'P' || r.status === 'W').length;
@@ -154,7 +168,11 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
           <b>Expected:</b> {expectedLabel(todayDay) ?? 'Not known'}
           {todayDay.expected?.shift ? ` · shift ${todayDay.expected.shift}` : ''}
           {todayDay.expected?.schedule ? ` · pattern ${todayDay.expected.schedule}` : ''}
+          {leaveLabel(todayDay) ? <> · <b>Leave:</b> {leaveLabel(todayDay)}</> : null}
           {' · '}<b>Recorded:</b> {actualLabel(todayDay)}
+          {recordedDuringLeave(todayDay)
+            ? <> · <Badge kind="warn">Attendance recorded during approved leave</Badge></>
+            : null}
         </Banner>
       )}
 
@@ -166,8 +184,14 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
         <Tile label="Leave / absent"
           value={`${recs.filter((r) => r.status === 'L').length} / ${recs.filter((r) => r.status === 'A').length}`}
           foot={`${unapproved} unapproved (LOP)`} />
+        {/*
+          * Both figures in one tile: StatRow takes at most five columns, and a
+          * sixth tile strands itself on a row of its own. They belong together
+          * anyway — approved leave is most of why the other figure is small, and
+          * neither is an absence.
+          */}
         <Tile label="Awaiting a record" value={awaiting}
-          foot="Expected in, no record — not an absence" />
+          foot={`Expected in, no record · ${leaveDays} day(s) on approved leave`} />
       </StatRow>
       {late > 0 && (
         <Badge kind={late > 3 ? 'warn' : 'info'}>
@@ -177,7 +201,7 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
 
       <div className="grid g-1-2">
         <Card title="Calendar" sub={monthLabelLong(mk)}>
-          <MonthCalendar records={recs} mk={mk} calendar={monthCal} />
+          <MonthCalendar records={recs} mk={mk} calendar={monthCal} leave={monthLeave} />
         </Card>
         <Card title="Daily log" sub={`${recs.length} records`} flush>
           <div style={{ maxHeight: 520, overflow: 'auto' }} className="tbl-wrap">

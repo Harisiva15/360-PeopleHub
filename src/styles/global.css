@@ -1120,6 +1120,19 @@ html[data-theme="dark"] .tipbox{background:#3a3a37;color:#fff}
 .cal .day.exp-weekly_off{background:var(--line-2);color:var(--ink-3)}
 .cal .day.exp-holiday{background:var(--surface-2);border-color:color-mix(in srgb,var(--brand) 20%,transparent);color:var(--ink-3)}
 .cal .day.exp-not_employed{background:transparent;border-color:transparent;color:var(--ink-3);opacity:.45}
+/*
+ * Approved leave, as a corner mark — the third channel Phase 2h-I added.
+ *
+ * A mark rather than a fill, because the fill already carries two meanings: the
+ * recorded status where there is one, the expectation where there is not. Leave
+ * is a separate fact about the same day and gets a separate mark; the day's label
+ * names it in words, so the mark is never the only thing saying it.
+ */
+.cal .day{position:relative}
+.cal .day .day-lv{
+  position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;
+  background:var(--warn);box-shadow:0 0 0 1px var(--surface-1);
+}
 html[data-theme="dark"] .cal .day.L{color:#fab219}
 
 /* ---------- Misc ---------- */
@@ -1446,6 +1459,14 @@ select.rost:hover{border-color:var(--line-2);box-shadow:var(--shadow-sm)}
 .rost-act{
   display:block;margin-top:2px;font-size:9.5px;font-weight:700;
   letter-spacing:.02em;color:var(--ink-2);opacity:.9;
+}
+/*
+ * Approved leave on a rota cell — a word, beside the expectation rather than
+ * instead of it. The schedule still expected them on those hours.
+ */
+.rost-lv{
+  display:inline-block;margin-left:5px;font-size:9.5px;font-weight:800;
+  letter-spacing:.03em;color:var(--warn-text,#8a6100);
 }
 
 /* ---------- Paged table footer ---------- */

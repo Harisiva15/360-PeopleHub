@@ -357,9 +357,33 @@ export async function cancelLeave(caller: Caller, requestId: string): Promise<Le
  * see — never a way to widen it. The scope clause is ANDed last, so a manager
  * asking for someone else's team gets nothing rather than everything.
  */
+/**
+ * Leave requests the caller may see, optionally narrowed to a span.
+ *
+ * ## The span, added in Phase 2h-I
+ *
+ * `from`/`to` were added so the attendance calendar and the rota can line
+ * approved leave up against a month without reading somebody's whole leave
+ * history — the same shape `listAttendance` already takes, so the three range
+ * reads a composite view needs look alike.
+ *
+ * **It matches on overlap, not containment.** A request running from late October
+ * into November belongs in November's answer: filtering on `starts_on >= from`
+ * would silently drop every leave that began before the window, which is exactly
+ * the leave somebody looking at a month most needs to see.
+ *
+ * Scope is applied first and unconditionally, as it always was: `empIds` and the
+ * span narrow what the caller can already see and never widen it.
+ */
 export async function listLeave(
   caller: Caller,
-  q: { empIds?: string[]; status?: LeaveRequest['status'] } = {},
+  q: {
+    empIds?: string[];
+    status?: LeaveRequest['status'];
+    /** Inclusive. Returns requests overlapping `from`..`to`. */
+    from?: string;
+    to?: string;
+  } = {},
 ): Promise<LeaveRequest[]> {
   const where: string[] = [];
   const params: unknown[] = [];
@@ -384,6 +408,19 @@ export async function listLeave(
   if (q.status) {
     params.push(q.status.toLowerCase());
     where.push(`lr.status = $${params.length}`);
+  }
+  /*
+   * Overlap, both bounds inclusive — `starts_on`/`ends_on` are inclusive dates
+   * and the schema enforces `ends_on >= starts_on`. A request touching the span
+   * at either edge is in.
+   */
+  if (q.from) {
+    params.push(q.from);
+    where.push(`lr.ends_on >= $${params.length}::date`);
+  }
+  if (q.to) {
+    params.push(q.to);
+    where.push(`lr.starts_on <= $${params.length}::date`);
   }
 
   return withTenantReadOnly(caller, async (db) => {

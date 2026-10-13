@@ -1180,6 +1180,9 @@ const routes: Route[] = [
       return listLeave(c, {
         ...(ids ? { empIds: ids.split(',').filter(Boolean) } : {}),
         ...(p.get('status') ? { status: p.get('status') as 'Pending' } : {}),
+        /* The span a calendar or rota asks for; omitted means the whole history. */
+        ...(p.get('from') ? { from: p.get('from')! } : {}),
+        ...(p.get('to') ? { to: p.get('to')! } : {}),
       });
     },
   },

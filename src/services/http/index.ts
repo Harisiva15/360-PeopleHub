@@ -441,7 +441,7 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
 
     leave: {
       list: (q) => api.get<LeaveRequest[]>(`/leave${qs({
-        empIds: q.empIds?.join(','), status: q.status,
+        empIds: q.empIds?.join(','), status: q.status, from: q.from, to: q.to,
       })}`),
       balances: (empId) => api.get(`/leave/balances/${empId}`),
       balance: (empId, type) => api.get(`/leave/balances/${empId}${qs({ type })}`),

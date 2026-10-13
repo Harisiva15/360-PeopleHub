@@ -25,6 +25,11 @@ export const useMyAttendance = (empId: string, from?: string, to?: string) =>
 
 export const useLeaveIn = (ids: string[]) => useQuery((s) => s.leave.list({ empIds: ids }), [key(ids)]);
 export const useMyBalances = (empId: string) => useQuery((s) => s.leave.balances(empId), [empId]);
+/*
+ * Approved leave as a range read, for the month calendar's leave channel. The
+ * same hook the attendance screens and the rota use — see services/leave.ts.
+ */
+export { useApprovedLeave } from '../../services/leave';
 
 export const useTimesheetsIn = (ids: string[]) => useQuery((s) => s.timesheet.list({ empIds: ids }), [key(ids)]);
 export const useClaimsIn = (ids: string[]) =>

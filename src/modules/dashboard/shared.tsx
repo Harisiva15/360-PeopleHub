@@ -5,10 +5,11 @@ import { addDays, DOW, fmtD, fmtDS, fmtTime, hhmm, MON, monthKey, TODAY, ymd } f
 import { pct } from '../../lib/format';
 import { deptOf, ORG } from '../../data/org';
 import type {
-  AttRecord, AttStatus, Celebration, DayVerdict, Employee,
+  AttRecord, AttStatus, Celebration, DayVerdict, Employee, LeaveRequest,
 } from '../../services';
 import {
-  actualLabel, awaitingRecord, composeDays, expectedLabel,
+  actualLabel, awaitingRecord, composeDays, expectedLabel, leaveLabel,
+  recordedDuringLeave,
 } from '../attendance/day';
 import { lookOfReason } from '../shifts/expected';
 import type { Directory } from '../../services/people';
@@ -180,12 +181,20 @@ const EXPECTED_CLASS: Record<DayVerdict['reason'], string> = {
  * **not** an absence. `A` is a status something writes deliberately; a missing row
  * is missing information, and turning one into the other is a later phase's
  * decision with a payroll consequence attached.
-*
+ *
+ * Phase 2h-I added a third: **approved leave**, marked by a corner dot and named
+ * in the label. It does not replace either of the others — a Saturday covered by
+ * leave is still drawn as the week off the schedule says it is.
+ *
  * **Nothing here writes.** No attendance row is created, updated or inferred.
  */
 export function MonthCalendar(
-  { records, mk, calendar = [] }:
-  { records: AttRecord[]; mk: string; calendar?: DayVerdict[] },
+  { records, mk, calendar = [], leave = [] }:
+  {
+    records: AttRecord[]; mk: string; calendar?: DayVerdict[];
+    /** Approved leave overlapping the month. Only approved rows are honoured. */
+    leave?: LeaveRequest[];
+  },
 ) {
   const [Y, M] = mk.split('-').map(Number);
   const first = new Date(Y, M - 1, 1);
@@ -195,7 +204,7 @@ export function MonthCalendar(
   /* Every date in the month, joined against both answers in one pass. */
   const dates = Array.from({ length: dim }, (_, i) =>
     `${Y}-${String(M).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`);
-  const days = composeDays(dates, calendar, records);
+  const days = composeDays(dates, calendar, records, leave);
 
   const cells = [];
   DOW.forEach((d) => cells.push(<div className="dow" key={'h' + d}>{d[0]}</div>));
@@ -214,11 +223,14 @@ export function MonthCalendar(
 
     const expected = expectedLabel(day);
     const actual = actualLabel(day);
-    /* Both answers, always, in that order — the point of the phase. */
+    /* Three answers, always, in that order — the point of the phase. */
+    const onLeave = leaveLabel(day);
     const tip = `${fmtD(day.date)} · ${expected ? `Expected: ${expected} · ` : ''}`
+      + (onLeave ? `Leave: ${onLeave} · ` : '')
       + `Actual: ${actual}`
       + (r && r.inT ? ` · ${fmtTime(r.inT)}–${fmtTime(r.outT)} (${hhmm(r.mins)} h)` : '')
       + (r?.late ? ' · late' : '')
+      + (recordedDuringLeave(day) ? ' · attendance recorded during approved leave' : '')
       + (day.expected?.shift ? ` · shift ${day.expected.shift}` : '');
 
     cells.push(
@@ -226,6 +238,12 @@ export function MonthCalendar(
         className={'day ' + cls + (day.date > ymd(TODAY) ? ' mut' : '')}
         data-tip={tip} aria-label={tip}>
         {Number(day.date.slice(8))}
+        {/*
+          * Approved leave, as a corner mark beside the other two channels rather
+          * than instead of them. The label carries the word, so the mark is never
+          * the only thing saying it.
+          */}
+        {day.leave && <i className="day-lv" aria-hidden="true" />}
         {/*
           * The glyph is the record and nothing else. A day awaiting one shows a
           * faint dot rather than a letter: it marks the cell as worth a look
@@ -246,9 +264,9 @@ export function MonthCalendar(
     <>
       <div className="cal">{cells}</div>
       {/*
-        * Two legends, because there are two channels. Each entry is a word as
+        * Three legends, because there are three channels. Each entry is a word as
         * well as a colour — a grid read in greyscale still has to say which days
-        * were expected and what was recorded.
+        * were expected, which were covered by leave, and what was recorded.
         */}
       <div className="muted" style={{ fontSize: 11, marginTop: 8, fontWeight: 650 }}>
         Recorded
@@ -261,6 +279,10 @@ export function MonthCalendar(
           { k: 'Absent', c: 'var(--crit)' },
         ]}
       />
+      <div className="muted" style={{ fontSize: 11, marginTop: 6, fontWeight: 650 }}>
+        Approved leave
+      </div>
+      <Legend items={[{ k: 'Leave approved (corner mark)', c: 'var(--warn)' }]} />
       <div className="muted" style={{ fontSize: 11, marginTop: 6, fontWeight: 650 }}>
         Expected, where nothing was recorded
       </div>
