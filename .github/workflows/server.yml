@@ -101,31 +101,33 @@ jobs:
           DATABASE_URL: postgresql://app_rw:ci@localhost:5432/peoplehub
         run: npm run verify:isolation
 
-      # The behavioural suites, against a real database.
+      # Every suite that needs a database, run here because here is the only
+      # place one exists.
       #
-      # All eleven. They existed and ran nowhere: each skips itself when
-      # DATABASE_URL and MIGRATE_DATABASE_URL are unset, which is every
-      # environment except a developer's laptop, so 488 assertions about how the
-      # services actually behave were written, run once by hand, and then
-      # guarded nothing. This job already had the database they needed — it was
-      # standing one up for the migrations and the isolation check and then
-      # throwing it away.
+      # This used to name eleven, and there are twenty-four. The other thirteen
+      # were added over the phases that built business units, legal entities,
+      # the tenant profile, shifts, work schedules and the calendar — and each
+      # skips itself when DATABASE_URL and MIGRATE_DATABASE_URL are unset, which
+      # is every environment except a developer's laptop. So roughly a thousand
+      # assertions about how the services actually behave were written, run once
+      # by hand, and then guarded nothing. The job was already standing up the
+      # database they needed and throwing it away.
       #
-      # What makes them safe to run against a seeded database is that the ones
-      # which write build a scratch tenant, work inside it, and drop it in a
-      # single DELETE that cascades through all 126 tenant-scoped tables. Each
-      # proves that at the end by comparing the surrounding row counts before and
-      # after; after a full pass the seeded tenant is untouched and no scratch
-      # tenant or ZZ-prefixed employee remains.
+      # A suite that cannot reach the database skips itself and exits 0, which
+      # is indistinguishable from passing. That is acceptable on a laptop and
+      # not here, because this step exists to be the place these actually run: a
+      # typo in a connection string above would turn all twenty-four into
+      # silent no-ops and the job would still be green. So the absence of a skip
+      # is asserted rather than assumed — and asserted in the same pass that
+      # runs them, rather than by running all of them a second time, which is
+      # what the separate guard step used to do.
       #
-      # TEST_ADMIN_CODE and TEST_TENANT_SLUG point the suites at what this job
-      # seeded. Their defaults are the live tenant's own '360vhm' and 'VHM004',
-      # so a developer's run against production is unchanged; here they name the
-      # seed's admin, which is VHM001 unless `--code` says otherwise.
-      #
-      # Ordered cheapest-first within reason, so a broken schema fails before
-      # the 117-assertion suite spends two minutes proving it.
-      - name: Behavioural suites
+      # What makes them safe against a seeded database is that the ones which
+      # write build a scratch tenant, work inside it, and drop it in a single
+      # DELETE that cascades through every tenant-scoped table. Each proves that
+      # at the end by comparing the surrounding row counts; after a full pass the
+      # seeded tenant is untouched and no scratch tenant remains.
+      - name: Behavioural suites, and none of them skipped
         env:
           MIGRATE_DATABASE_URL: postgresql://postgres:ci@localhost:5432/peoplehub
           DATABASE_URL: postgresql://app_rw:ci@localhost:5432/peoplehub
@@ -135,76 +137,39 @@ jobs:
           #
           # Inert here. It is used only to build the JWKS URL, and nothing in
           # these suites makes an HTTP request — the one that would, the
-          # invitation path, has its provider replaced by a stub. `pages.yml`
-          # passes the same ci.invalid to check:gate for the same reason.
-          #
-          # This is what the first real CI run caught and a laptop could not:
-          # server/.env supplies SUPABASE_URL locally and is git-ignored, so the
-          # suites passed 488/488 on a developer's machine while the step itself
-          # had never been proven to carry what they need.
+          # invitation path, has its provider replaced by a stub.
           SUPABASE_URL: https://ci.invalid
           # And the redirect an invitation link points at. inviteRedirect()
           # throws without it — correctly, since an invitation with nowhere to
-          # send anybody is not an invitation — which failed four assertions in
-          # check:invite and stopped check:hierarchy outright. Inert: the
-          # provider is stubbed in these suites, so no link is ever followed.
+          # send anybody is not an invitation.
           APP_BASE_URL: https://ci.invalid
           # Not a key, and deliberately not empty. check:invite asserts that no
           # audit row leaks it, as `!blob.includes(secret)` — and an unset
           # variable makes that needle the empty string, which every string
-          # contains, so the assertion inverts and fails unconditionally. A
-          # recognisable non-secret keeps it a real check: this value must never
-          # appear in an audit row either.
+          # contains, so the assertion inverts and fails unconditionally.
           SUPABASE_SERVICE_ROLE_KEY: ci-not-a-real-service-role-key
           TEST_ADMIN_CODE: VHM001
           TEST_TENANT_SLUG: '360vhm'
         run: |
-          npm run check:tenancy
-          npm run check:claim
-          npm run check:profile
-          npm run check:kb
-          npm run check:survey
-          npm run check:departments
-          npm run check:invite
-          npm run check:payrollprereq
-          npm run check:projects
-          npm run check:hierarchy
-          npm run check:employment
-
-      # A suite that cannot reach the database skips itself and exits 0, which is
-      # indistinguishable from passing. That is acceptable on a laptop and not
-      # here, because this job exists to be the place these actually run: a
-      # typo in a connection string above would turn all eleven into silent
-      # no-ops and the job would still be green.
-      #
-      # So the absence of a skip is asserted, rather than assumed.
-      - name: No suite silently skipped
-        env:
-          MIGRATE_DATABASE_URL: postgresql://postgres:ci@localhost:5432/peoplehub
-          DATABASE_URL: postgresql://app_rw:ci@localhost:5432/peoplehub
-          SUPABASE_URL: https://ci.invalid
-          # And the redirect an invitation link points at. inviteRedirect()
-          # throws without it — correctly, since an invitation with nowhere to
-          # send anybody is not an invitation — which failed four assertions in
-          # check:invite and stopped check:hierarchy outright. Inert: the
-          # provider is stubbed in these suites, so no link is ever followed.
-          APP_BASE_URL: https://ci.invalid
-          # Not a key, and deliberately not empty. check:invite asserts that no
-          # audit row leaks it, as `!blob.includes(secret)` — and an unset
-          # variable makes that needle the empty string, which every string
-          # contains, so the assertion inverts and fails unconditionally. A
-          # recognisable non-secret keeps it a real check: this value must never
-          # appear in an audit row either.
-          SUPABASE_SERVICE_ROLE_KEY: ci-not-a-real-service-role-key
-          TEST_ADMIN_CODE: VHM001
-          TEST_TENANT_SLUG: '360vhm'
-        run: |
-          set -e
-          for s in tenancy claim profile kb survey departments invite \
-                   payrollprereq projects hierarchy employment; do
-            if npm run --silent "check:$s" | grep -q SKIPPED; then
-              echo "check:$s skipped itself — it did not reach the database"
-              exit 1
+          set -euo pipefail
+          failed=0
+          for s in migrationstate claim profile kb survey departments deptbu depthierarchy businessunits legalentities tenantprofile projects invite hierarchy employment payrollprereq shifts workingdays workschedule schedules calschedules provisioning expectedactual leavealign; do
+            echo "::group::check:$s"
+            if ! out=$(npm run --silent "check:$s" 2>&1); then
+              echo "$out"
+              echo "::error::check:$s failed"
+              failed=1
+            elif grep -q SKIPPED <<<"$out"; then
+              echo "$out"
+              echo "::error::check:$s skipped itself — it did not reach the database"
+              failed=1
+            else
+              echo "$out" | tail -3
             fi
+            echo "::endgroup::"
           done
-          echo "all eleven suites reached the database"
+          if [ "$failed" -ne 0 ]; then
+            echo "one or more database suites failed or skipped"
+            exit 1
+          fi
+          echo "all 24 database suites reached the database and passed"

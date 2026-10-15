@@ -36,10 +36,25 @@ import { loadEnv } from './env.mjs';
 loadEnv();
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/*
+ * Skip rather than fail without a database, which is the convention every
+ * other suite here follows and this one did not.
+ *
+ * `npm run check` is the developer's chain and CI's static job runs the same
+ * script with no database at all, relying on each database suite to stand
+ * aside. Exiting 1 instead turned the whole server workflow red on a commit
+ * whose only sin was adding a suite — which is a worse failure than the one
+ * the suite exists to catch, because a red CI nobody can explain gets ignored.
+ *
+ * The cost of a skip is that it reads exactly like a pass. `server.yml` closes
+ * that by asserting the absence of this message in the job that does have a
+ * database, so the exit-0 cannot hide there.
+ */
 const url = process.env.MIGRATE_DATABASE_URL;
-if (!url) {
-  console.error('MIGRATE_DATABASE_URL is not set');
-  process.exit(1);
+if (!url || !process.env.DATABASE_URL) {
+  console.log('\nSKIPPED: no database, and the ledger this reads is a table in one.\n');
+  process.exit(0);
 }
 
 let failed = 0;
