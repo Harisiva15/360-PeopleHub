@@ -50,6 +50,23 @@ const KEY = 'zz-not-a-real-service-role-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY = KEY;
 process.env.SUPABASE_URL = 'https://zz-project.supabase.invalid';
 process.env.APP_BASE_URL = 'https://360peoplehub.com';
+/*
+ * Inert, and required anyway.
+ *
+ * `adminApi.ts` imports `config.ts`, which has exactly two hard requirements
+ * and throws on a missing DATABASE_URL before this file reaches its first
+ * assertion. Nothing here opens a connection — every assertion is about an
+ * HTTP sequence and `fetch` is replaced below — so the value only has to exist.
+ * It is deliberately unroutable rather than plausible: if anything ever does
+ * try to connect, it should fail loudly instead of reaching a real database.
+ *
+ * Set here rather than in CI's environment because this suite needs no
+ * database and belongs in the job that has none. Without it the whole server
+ * workflow failed on the static job, two commits after this file was written,
+ * with the real cause four suites up the chain.
+ */
+process.env.DATABASE_URL = process.env.DATABASE_URL
+  ?? 'postgresql://zz:zz@127.0.0.1:1/zz-never-connected';
 
 const { supabaseAuthAdmin, AdminApiError, inviteRedirect } =
   await import('../src/auth/adminApi.ts');

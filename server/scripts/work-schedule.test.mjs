@@ -560,10 +560,35 @@ console.log('\nand the tenants that did exist when it ran\n');
   const defs = (await db.query(
     "SELECT w.id, w.tenant_id, w.name, w.active FROM work_schedule w WHERE w.code = 'DEFAULT_MF'"
   )).rows;
-  ok('49. every tenant with an employee got one DEFAULT_MF',
+  /*
+   * Scoped to the tenants the backfill covered, not to every tenant with an
+   * employee.
+   *
+   * This used to compare `defs.length` against `count(DISTINCT tenant_id)` from
+   * `employee`, which holds only where the employees predated the migration —
+   * true of production, and false of any database migrated before it was
+   * seeded. CI does exactly that: `npm run migrate` runs 0054 against an empty
+   * schema, so the backfill finds nobody, and `npm run seed` then creates a
+   * tenant that correctly has no default pattern. The old assertion read that
+   * as a defect, and it is the same state assertion 48 above calls correct.
+   *
+   * So what is asserted is the invariant the backfill actually promises —
+   * at most one DEFAULT_MF per tenant, named and shaped right, with every
+   * employee of a covered tenant assigned to it — and the question of which
+   * tenants it covered is answered by looking, rather than assumed. A tenant
+   * with employees and no DEFAULT_MF is a tenant whose employees postdate the
+   * migration, which is a service concern and a later phase.
+   */
+  ok('49. no tenant got more than one DEFAULT_MF',
+    new Set(defs.map((d) => d.tenant_id)).size === defs.length,
+    `${defs.length} schedule(s) across ${new Set(defs.map((d) => d.tenant_id)).size} tenant(s)`);
+  ok('    and every tenant the backfill covered has one',
     defs.length === (await db.query(
-      'SELECT count(DISTINCT tenant_id)::int n FROM employee')).rows[0].n,
-    String(defs.length));
+      `SELECT count(DISTINCT e.tenant_id)::int n FROM employee e
+        WHERE EXISTS (SELECT 1 FROM work_schedule w
+                       WHERE w.tenant_id = e.tenant_id AND w.code = 'DEFAULT_MF')`
+    )).rows[0].n,
+    'a tenant with a default pattern and no employees would mean the reverse gap');
   ok('    named so it reads as a system default rather than a configuration',
     defs.every((d) => /Default Monday-Friday/.test(d.name)),
     JSON.stringify(defs.map((d) => d.name)));
@@ -788,43 +813,90 @@ console.log('\nand the three facts that make the end date unanswerable here\n');
 /* Idempotence: the backfill statements can run again and change nothing. */
 console.log('\nre-running the backfill changes nothing\n');
 
-{
-  const snapshot = async () => (await db.query(
-    `SELECT (SELECT count(*)::int FROM work_schedule) a,
-            (SELECT count(*)::int FROM work_schedule_day) b,
-            (SELECT count(*)::int FROM employee_schedule) c`)).rows[0];
-  const was = await snapshot();
+/*
+ * In a scratch tenant, because this writes.
+ *
+ * It used to run the three statements against whatever database the suite was
+ * pointed at, and prove idempotence by their being no-ops. That holds only
+ * where the backfill has already covered every tenant — and where it has not,
+ * the statements do their work instead, which is the opposite of what the
+ * assertion claims to be checking and leaves the rows behind. In CI that is
+ * precisely what happened: 0054 ran against an empty schema, so these three
+ * statements backfilled the seeded tenant, the count comparison failed, the
+ * census below reported the live tenant changed, and a later assertion passed
+ * only because this block had quietly created the assignments it checks for.
+ *
+ * A scratch tenant removes the dependence on what the database already holds.
+ * The statements run twice: the first proves they do the right thing, the
+ * second proves doing it again changes nothing. That is strictly more than the
+ * old version could show, since a no-op is idempotent for the uninteresting
+ * reason.
+ */
+await withScratchTenant(db, async (y) => {
+  const T = y.tenant;
+  const scoped = async () => (await db.query(
+    `SELECT (SELECT count(*)::int FROM work_schedule WHERE tenant_id = $1) a,
+            (SELECT count(*)::int FROM work_schedule_day WHERE tenant_id = $1) b,
+            (SELECT count(*)::int FROM employee_schedule WHERE tenant_id = $1) c`,
+    [T])).rows[0];
 
-  await db.query(
-    `INSERT INTO work_schedule (tenant_id, code, name, description, active)
-     SELECT DISTINCT e.tenant_id, 'DEFAULT_MF', 'Default Monday-Friday Schedule', 'x', true
-       FROM employee e ON CONFLICT (tenant_id, code) DO NOTHING`);
-  await db.query(
-    `INSERT INTO work_schedule_day
-       (tenant_id, work_schedule_id, day_of_week, working, shift_id)
-     SELECT ws.tenant_id, ws.id, d.dow, d.dow <= 5, NULL
-       FROM work_schedule ws
-      CROSS JOIN (VALUES (1), (2), (3), (4), (5), (6), (7)) AS d(dow)
-      WHERE ws.code = 'DEFAULT_MF'
-      ON CONFLICT (tenant_id, work_schedule_id, day_of_week) DO NOTHING`);
-  await db.query(
-    `INSERT INTO employee_schedule
-       (tenant_id, employee_id, work_schedule_id, valid_from, valid_to)
-     SELECT e.tenant_id, e.id, ws.id, e.joined_on,
-             CASE WHEN e.status = 'exited' THEN e.left_on ELSE NULL END
-       FROM employee e
-       JOIN work_schedule ws
-         ON ws.tenant_id = e.tenant_id AND ws.code = 'DEFAULT_MF'
-      WHERE (e.status <> 'exited' OR e.left_on IS NOT NULL)
-        AND NOT EXISTS (
-          SELECT 1 FROM employee_schedule es
-           WHERE es.tenant_id = e.tenant_id AND es.employee_id = e.id)`);
+  /* The migration's three statements, verbatim but narrowed to this tenant. */
+  const backfill = async () => {
+    await db.query(
+      `INSERT INTO work_schedule (tenant_id, code, name, description, active)
+       SELECT DISTINCT e.tenant_id, 'DEFAULT_MF', 'Default Monday-Friday Schedule', 'x', true
+         FROM employee e WHERE e.tenant_id = $1
+        ON CONFLICT (tenant_id, code) DO NOTHING`, [T]);
+    await db.query(
+      `INSERT INTO work_schedule_day
+         (tenant_id, work_schedule_id, day_of_week, working, shift_id)
+       SELECT ws.tenant_id, ws.id, d.dow, d.dow <= 5, NULL
+         FROM work_schedule ws
+        CROSS JOIN (VALUES (1), (2), (3), (4), (5), (6), (7)) AS d(dow)
+        WHERE ws.code = 'DEFAULT_MF' AND ws.tenant_id = $1
+        ON CONFLICT (tenant_id, work_schedule_id, day_of_week) DO NOTHING`, [T]);
+    await db.query(
+      `INSERT INTO employee_schedule
+         (tenant_id, employee_id, work_schedule_id, valid_from, valid_to)
+       SELECT e.tenant_id, e.id, ws.id, e.joined_on,
+               CASE WHEN e.status = 'exited' THEN e.left_on ELSE NULL END
+         FROM employee e
+         JOIN work_schedule ws
+           ON ws.tenant_id = e.tenant_id AND ws.code = 'DEFAULT_MF'
+        WHERE e.tenant_id = $1
+          AND (e.status <> 'exited' OR e.left_on IS NOT NULL)
+          AND NOT EXISTS (
+            SELECT 1 FROM employee_schedule es
+             WHERE es.tenant_id = e.tenant_id AND es.employee_id = e.id)`, [T]);
+  };
 
-  const now = await snapshot();
-  ok('52. the three statements are idempotent',
-    now.a === was.a && now.b === was.b && now.c === was.c,
-    `${JSON.stringify(was)} -> ${JSON.stringify(now)}`);
-}
+  const empty = await scoped();
+  ok('52. a tenant created after the migration starts with nothing',
+    empty.a === 0 && empty.b === 0 && empty.c === 0, JSON.stringify(empty));
+
+  await backfill();
+  const first = await scoped();
+  ok('    the three statements give it one pattern',
+    first.a === 1, String(first.a));
+  ok('    with all seven weekdays', first.b === 7, String(first.b));
+  ok('    and assign the one employee this tenant has',
+    first.c === (await db.query(
+      `SELECT count(*)::int n FROM employee
+        WHERE tenant_id = $1 AND (status <> 'exited' OR left_on IS NOT NULL)`, [T]
+    )).rows[0].n, String(first.c));
+  ok('    from the day they joined, open-ended',
+    (await db.query(
+      `SELECT count(*)::int n FROM employee_schedule es JOIN employee e ON e.id = es.employee_id
+        WHERE es.tenant_id = $1 AND es.valid_from = e.joined_on AND es.valid_to IS NULL`, [T]
+    )).rows[0].n === first.c,
+    'dated from joining rather than from the day the migration ran');
+
+  await backfill();
+  const second = await scoped();
+  ok('53. and running them again changes nothing',
+    second.a === first.a && second.b === first.b && second.c === first.c,
+    `${JSON.stringify(first)} -> ${JSON.stringify(second)}`);
+});
 
 } catch (e) {
   fatal = e;
@@ -844,10 +916,24 @@ ok(`leave requests ${after.lr}`, after.lr === before.lr, `was ${before.lr}`);
 ok('its work schedules are unchanged by this run', after.ws === before.ws,
   `was ${before.ws}, now ${after.ws}`);
 ok('and so are its assignments', after.es === before.es, `was ${before.es}`);
-ok('every live employee that is still here has exactly one assignment',
+/*
+ * Scoped to the tenants the backfill covered, for the same reason assertion 49
+ * is. An employee in a tenant with no DEFAULT_MF has no assignment and should
+ * not: nothing has provisioned one, and the calendar answers from the
+ * Monday-to-Friday fallback with `schedule: null`, which is the state 2h-E
+ * built deliberately.
+ *
+ * It passed unscoped only because the idempotence block above used to backfill
+ * the database it was run against, so it was checking rows the suite had just
+ * created. That block writes to a scratch tenant now, so this has to say which
+ * employees it means.
+ */
+ok('every live employee of a covered tenant has exactly one assignment',
   (await db.query(
     `SELECT count(*)::int n FROM employee e
       WHERE e.status <> 'exited'
+        AND EXISTS (SELECT 1 FROM work_schedule w
+                     WHERE w.tenant_id = e.tenant_id AND w.code = 'DEFAULT_MF')
         AND (SELECT count(*) FROM employee_schedule es WHERE es.employee_id = e.id) <> 1`
   )).rows[0].n === 0);
 ok('no scratch tenant remains',
