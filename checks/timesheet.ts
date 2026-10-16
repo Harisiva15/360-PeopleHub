@@ -200,20 +200,43 @@ console.log('\ntimesheet is its own place in the rail\n');
 
 {
   const nav = readRaw('src/nav.ts');
-  ok('Timesheet is a top-level group', /group: 'Timesheet',/.test(nav),
-    'it was a section inside Time & attendance, which put one subject in two places');
 
   /*
-   * An item left behind in another group offers the same view twice, from two
-   * rail entries — which is the thing moving it was meant to stop.
+   * Two groups now, not one.
+   *
+   * This asserted `group: 'Timesheet'` because the module had just been lifted
+   * out of Time & attendance, where it put one subject in two places. It has
+   * since been split again, deliberately: the weekly return and the planner the
+   * hours are booked against are two jobs, and eight items under one heading
+   * described half of them. Inverted rather than deleted — the property it was
+   * holding is that timesheet has a place of its own in the rail, and it has
+   * two.
    */
-  const groups = nav.split(/\n  \{\n    group: /).slice(1);
-  const strays = groups
-    .filter((g) => !g.startsWith("'Timesheet'"))
-    .filter((g) => g.includes("k: 'timesheet'"))
-    .map((g) => g.slice(0, g.indexOf(',')));
-  ok('no timesheet item is left in another group', strays.length === 0,
-    'still in: ' + strays.join(', '));
+  ok('Timesheets is a top-level group', /group: 'Timesheets',/.test(nav),
+    'it was a section inside Time & attendance, which put one subject in two places');
+  ok('and Projects is the second', /group: 'Projects',/.test(nav),
+    'the planner and the projects time is booked against');
+  ok('the old single Timesheet heading is gone',
+    !/group: 'Timesheet',/.test(nav),
+    'two headings differing by one letter is worse than one');
+
+  /*
+   * The real property, which the old assertion approximated.
+   *
+   * It used to say no `k: 'timesheet'` item may live outside the Timesheet
+   * group, on the grounds that a stray offers the same view from two rail
+   * entries. Two timesheet views now sit under Projects on purpose — they are
+   * about the things time is booked against — so keying on the module no longer
+   * distinguishes a stray from a deliberate placement.
+   *
+   * What actually matters is that no *route* is offered twice. That is the
+   * duplicate the original assertion existed to catch, and it is now checked
+   * directly rather than through the module key.
+   */
+  const routes = [...nav.matchAll(/to: '(\/(?:timesheet|planner)\?v=[a-z]+)'/g)].map((m) => m[1]!);
+  const twice = routes.filter((r, i) => routes.indexOf(r) !== i);
+  ok('no timesheet or planner route is offered twice',
+    twice.length === 0, `duplicated: ${[...new Set(twice)].join(', ')}`);
 }
 
 console.log('\nthe week screen has the parts a week needs\n');

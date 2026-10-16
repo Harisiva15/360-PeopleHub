@@ -38,7 +38,8 @@
  * | Company Setup          | settings    | **admin only**  | entity, structure, policy     |
  * | People                 | employees   | everyone        | records, org, requests, life  |
  * | Time & Attendance      | attendance  | everyone        | presence, corrections, shifts |
- * | Timesheet              | timesheet   | everyone        | booked effort and the planner |
+ * | Timesheets             | timesheet   | everyone        | the weekly return             |
+ * | Projects               | planner     | everyone        | the board, sprints, projects  |
  * | Leave                  | leave       | everyone        | requests, calendar, holidays  |
  * | Payroll & Compensation | payroll     | everyone        | pay, tax, benefits, claims    |
  * | Performance            | performance | everyone        | goals, reviews, engagement    |
@@ -72,8 +73,8 @@
  * ### A group is not a module
  *
  * Several sections gather views from more than one route, because people look
- * for a thing by what it is rather than by which service serves it: the planner
- * sits in Timesheet, the knowledge base in Documents, engagement beside
+ * for a thing by what it is rather than by which service serves it: two
+ * timesheet views sit in Projects, the knowledge base in Documents, engagement beside
  * recognition in Performance, and the helpdesk SLA with the other analytics.
  * `bench` and `placements` even load the same screen. An entry is a route plus a
  * tab, not a file.
@@ -102,6 +103,17 @@ export interface NavItem {
   ic?: IconName;
   /** Who this view is for, when the route permission is broader than the view. */
   roles?: readonly Role[];
+  /**
+   * Extra words the sidebar search should match, beyond the label.
+   *
+   * For a view somebody looks for under a name it no longer carries. The
+   * search builds its haystack from "group · item", so renaming an item or
+   * moving it to a differently-named group silently breaks the one thing
+   * somebody types to find it. Two cases exist today: Sprints answers to
+   * "Iterations", and the two timesheet views that now sit under Projects
+   * answer to "Timesheet".
+   */
+  alt?: readonly string[];
 }
 
 export interface NavGroup {
@@ -199,39 +211,72 @@ export const NAV: NavGroup[] = [
     ],
   },
 
+  /*
+   * Two sections, not one, and the split is by what somebody came to do rather
+   * than by which service answers.
+   *
+   * These were one "Timesheet" group holding both the weekly return and the
+   * planner. The two jobs have little to do with each other in the moment:
+   * filling in your week is a Friday-afternoon chore, and looking at the board
+   * is what you do when you want to know what is in progress. Together they
+   * meant eight items under a heading that described half of them.
+   *
+   * **Routes and tabs are untouched.** Every `to` below is the link it already
+   * was, so bookmarks and anything anybody has pasted into a message keep
+   * working. The only label that changes is Iterations, which becomes Sprints
+   * because that is what people call them — and it keeps answering to the old
+   * name in search through `alt`.
+   *
+   * **Each item keeps its own key**, which is why two `/timesheet` views sit
+   * under Projects: "Projects" and "Utilisation & effort" are timesheet screens
+   * about the things time is booked against, so they belong beside the board
+   * and keep `k: 'timesheet'`. Grouping is presentation; `k` is the permission,
+   * and moving an item between groups cannot change what it opens.
+   */
   {
-    group: 'Timesheet',
+    group: 'Timesheets',
     ic: 'note',
     k: 'timesheet',
-    desc: 'What you worked on, by week, and whose weeks are waiting on you.',
+    desc: 'Log your hours each week, and decide your team’s.',
     items: [
       { k: 'timesheet', n: 'My timesheet', to: '/timesheet?v=entry', ic: 'note', d: 'Log this week’s hours.' },
       { k: 'timesheet', n: 'Time entries', to: '/timesheet?v=entries', ic: 'document', d: 'Every line you have logged, filterable.' },
       { k: 'timesheet', n: 'Timesheet calendar', to: '/timesheet?v=cal', ic: 'calendar', d: 'Your weeks at a glance, and the ones you have not started.' },
       { k: 'timesheet', n: 'Timesheet history', to: '/timesheet?v=hist', ic: 'clock', d: 'Every week you have submitted.' },
       /*
-       * The planner, which is the work the hours are booked against. Your IA
-       * puts Projects and Tasks in this group, and these four are that: a board
-       * of what is in progress, who carries it, and which iteration it sits in.
-       * Every role reaches them, as before.
-       */
-      { k: 'planner', n: 'Work board', to: '/planner?v=board', ic: 'grid', d: 'Everything in progress, by column.' },
-      { k: 'planner', n: 'My work', to: '/planner?v=mine', ic: 'person', d: 'What is assigned to you.' },
-      { k: 'planner', n: 'Action items', to: '/planner?v=actions', ic: 'goal', d: 'Follow-ups and their owners.' },
-      { k: 'planner', n: 'Iterations', to: '/planner?v=iterations', ic: 'refresh', d: 'Sprints and what each delivered.' },
-      /*
-       * The four below read somebody else's week, which the policy grants a
+       * The two below read somebody else's week, which the policy grants a
        * manager ('team') and an admin ('all') and an employee not at all. The
        * service scopes every read again — this only stops offering a screen
        * that would come back empty.
        */
       { k: 'timesheet', n: 'Team timesheets', to: '/timesheet?v=team', ic: 'team', d: 'Your line’s weeks, with hours and status.', roles: ['manager', 'admin'] },
       { k: 'timesheet', n: 'Pending approvals', to: '/timesheet?v=appr', ic: 'done', d: 'Decide your team’s weeks.', roles: ['manager', 'admin'] },
-      { k: 'timesheet', n: 'Projects', to: '/timesheet?v=proj', ic: 'projects', d: 'What time can be booked against.', roles: ['manager', 'admin'] },
+    ],
+  },
+
+  {
+    group: 'Projects',
+    ic: 'projects',
+    k: 'planner',
+    desc: 'Your work, the team board, sprints and the projects time is booked against.',
+    items: [
+      { k: 'planner', n: 'My work', to: '/planner?v=mine', ic: 'person', d: 'What is assigned to you.' },
+      { k: 'planner', n: 'Work board', to: '/planner?v=board', ic: 'grid', d: 'Everything in progress, by column.' },
+      { k: 'planner', n: 'Action items', to: '/planner?v=actions', ic: 'goal', d: 'Follow-ups and their owners.' },
+      /* Renamed from Iterations. The route is unchanged, and `alt` keeps the
+         old name findable for anybody who still searches for it. */
+      { k: 'planner', n: 'Sprints', to: '/planner?v=iterations', ic: 'refresh', d: 'Sprints and what each delivered.', alt: ['Iterations'] },
+      /*
+       * Timesheet screens, under Projects because that is what they are about.
+       * They keep `k: 'timesheet'` — the group a thing is shown in is not what
+       * decides who may open it — and `alt` keeps them findable by the module
+       * name they no longer sit under.
+       */
+      { k: 'timesheet', n: 'Projects', to: '/timesheet?v=proj', ic: 'projects', d: 'What time can be booked against.', roles: ['manager', 'admin'], alt: ['Timesheet'] },
       /* Not "Timesheet reports": that name belongs to the cross-module report in
          Reports & Analytics, and two rows with one label is the defect the
          Recruitment relabel fixed. This one is the in-module view. */
-      { k: 'timesheet', n: 'Utilisation & effort', to: '/timesheet?v=rep', ic: 'chart', d: 'Utilisation and effort by project.', roles: ['manager', 'admin'] },
+      { k: 'timesheet', n: 'Utilisation & effort', to: '/timesheet?v=rep', ic: 'chart', d: 'Utilisation and effort by project.', roles: ['manager', 'admin'], alt: ['Timesheet'] },
     ],
   },
 

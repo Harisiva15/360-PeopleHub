@@ -43,6 +43,14 @@ interface Dest {
   label: string;
   href: string;
   ic: IconName;
+  /**
+   * Words this destination should also match, from `NavItem.alt`.
+   *
+   * Kept out of `label` so the flyout still reads cleanly — a row saying
+   * "Projects · Sprints (Iterations)" would put the old name in front of
+   * everybody to serve the few who search for it.
+   */
+  alt?: readonly string[];
 }
 
 /**
@@ -67,7 +75,9 @@ function useDestinations(): { groups: NavGroup[]; dests: Dest[] } {
         return;
       }
       g.items.filter(allowed).forEach((i) => {
-        dests.push({ k: i.k, label: `${g.group} · ${i.n}`, href: hrefOf(i), ic: g.ic });
+        dests.push({
+          k: i.k, label: `${g.group} · ${i.n}`, href: hrefOf(i), ic: g.ic, alt: i.alt,
+        });
       });
     });
     return { groups, dests };
@@ -113,7 +123,10 @@ function GlobalSearch() {
 
   const needle = q.trim().toLowerCase();
   const pages = needle
-    ? dests.filter((d) => d.label.toLowerCase().includes(needle)).slice(0, 6)
+    ? dests
+      .filter((d) => d.label.toLowerCase().includes(needle)
+        || (d.alt ?? []).some((a) => a.toLowerCase().includes(needle)))
+      .slice(0, 6)
     : [];
   /*
    * People come from the scoped directory, so an employee searching finds
