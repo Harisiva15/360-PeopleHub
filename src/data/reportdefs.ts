@@ -159,7 +159,7 @@ const SEEDS: Omit<ReportDef, 'id' | 'ownerId' | 'createdOn' | 'lastRunOn' | 'run
 ];
 
 (function genReports() {
-  const authors = ACTIVE().filter((e) => e.role === 'admin' || e.role === 'manager');
+  const authors = ACTIVE().filter((e) => e.role === 'company_admin' || e.reports.length > 0);
   if (!authors.length) return;
 
   SEEDS.forEach((seed) => {

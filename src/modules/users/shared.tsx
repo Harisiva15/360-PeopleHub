@@ -11,7 +11,7 @@
 import type { ReactNode } from 'react';
 import { Badge } from '../../components/ui';
 import type { BadgeKind } from '../../components/ui';
-import { may } from '../../state/rbac';
+import { ROLE_LABEL, SCOPE, may } from '../../state/rbac';
 import type { UserAction } from '../../state/rbac';
 import { useApp } from '../../state/AppContext';
 import type { AppRole } from '../../types/employee';
@@ -68,21 +68,20 @@ export const UserStatusBadge = ({ s }: { s: UserStatus }) => (
 
 /* ---------------- role ---------------- */
 
-/** What each role means, shown when one is chosen — §6. */
-export const ROLE_BLURB: Record<AppRole, string> = {
-  admin: 'Full end-to-end access: every employee, payroll, configuration and the audit trail.',
-  manager: 'Their reporting line — approvals, team records, and limited user administration.',
-  employee: 'Self-service only: their own record, their own requests, and what the company shares.',
-};
+/*
+ * What each role means, and what to call it.
+ *
+ * Both come from rbac.ts now. There were three copies of this mapping in the
+ * tree and two of them still read 'admin' | 'manager' | 'employee', so the
+ * label somebody saw depended on which screen they were on.
+ */
+export { ROLE_LABEL };
 
-export const ROLE_LABEL: Record<AppRole, string> = {
-  admin: 'Administrator',
-  manager: 'Manager',
-  employee: 'Employee',
-};
-
+export const ROLE_BLURB = Object.fromEntries(
+  (Object.keys(SCOPE) as AppRole[]).map((r) => [r, SCOPE[r].desc]),
+) as Record<AppRole, string>;
 const ROLE_TONE: Record<AppRole, BadgeKind> = {
-  admin: 'info', manager: 'info', employee: 'mute',
+  company_admin: 'info', hr_admin: 'info', finance_admin: 'info', employee: 'mute',
 };
 
 export const RoleBadge = ({ r }: { r: AppRole }) => (

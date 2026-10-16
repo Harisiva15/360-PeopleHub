@@ -302,8 +302,8 @@ export function exportKPI(scope: ExportRun[] = EXPORT_LOG, asOf = ymd(TODAY)) {
 /* ---------------- a history to read ---------------- */
 
 (function genExportHistory() {
-  const admins = ACTIVE().filter((e) => e.role === 'admin');
-  const managers = ACTIVE().filter((e) => e.role === 'manager');
+  const admins = ACTIVE().filter((e) => e.role === 'company_admin');
+  const managers = ACTIVE().filter((e) => e.reports.length > 0);
   if (!admins.length) return;
 
   for (let i = 0; i < 34; i++) {

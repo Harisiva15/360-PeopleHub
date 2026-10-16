@@ -245,7 +245,7 @@ export const integrationOf = (id: string) => INTEGRATIONS.find((i) => i.id === i
 /* ---------------- a believable set of endpoints and keys ---------------- */
 
 (function genIntegrations() {
-  const admins = ACTIVE().filter((e) => e.role === 'admin');
+  const admins = ACTIVE().filter((e) => e.role === 'company_admin');
   if (!admins.length) return;
   const by = () => admins[ri(0, admins.length - 1)]!.id;
 

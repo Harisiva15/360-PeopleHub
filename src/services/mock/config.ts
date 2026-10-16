@@ -317,7 +317,7 @@ export const configService: ConfigService = {
       return Promise.reject(new Error('Only an administrator can change permissions'));
     }
     for (const p of patches) {
-      if (p.module === 'settings' && p.role === 'admin' && p.read === 'none') {
+      if (p.module === 'settings' && p.role === 'company_admin' && p.read === 'none') {
         return Promise.reject(new Error(
           'Administrators cannot be removed from Settings — there would be no way '
           + 'back from inside the application'));

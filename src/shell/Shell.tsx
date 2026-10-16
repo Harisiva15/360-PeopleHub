@@ -15,7 +15,7 @@ import type { FlyoutState } from './NavFlyout';
 import { useFavourites } from './favourites';
 import { Menu } from '../components/Menu';
 import { useAuth } from '../auth/AuthContext';
-import { ROLE_LABEL } from '../modules/settings/access';
+import { ROLE_LABEL } from '../state/rbac';
 import type { ReactNode } from 'react';
 
 const isMobile = () => window.matchMedia('(max-width: 860px)').matches;
