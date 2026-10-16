@@ -18,6 +18,7 @@
  */
 
 import {
+  MANAGER_ADDS,
   PERMS,
   USER_ACTIONS as CLIENT_ACTIONS,
   actionScope as clientScope,
@@ -29,7 +30,7 @@ import {
 import { HRHEAD } from '../src/data/employees';
 import type { AppRole } from '../src/types/employee';
 import {
-  POLICY, ROLES, effectiveFor, effectiveModulesFor,
+  POLICY, ROLES, effectiveFor, effectiveModulesFor, modulesFor,
   USER_ACTIONS as SERVER_ACTIONS,
   actionScope as serverScope,
   mayAssignRole as serverMayAssign,
@@ -281,6 +282,31 @@ for (const role of ROLES) {
     }
   }
   ok('nobody may act on an account further than they may see one');
+}
+
+/* ------------------------------------------------------------------ *
+ * The manager layer, mirrored
+ * ------------------------------------------------------------------ */
+
+console.log('\nthe manager layer says the same thing on both sides\n');
+
+/*
+ * MANAGER_ADDS is the frontend's copy of what having reports adds. It held
+ * eight modules while the policy's manager layer granted thirty-five, so a
+ * manager was refused the job-title catalogue, the software estate and the
+ * lifecycle board - each of which the server would have served them.
+ *
+ * Nothing caught it, because the menu-vs-policy comparison below ran only
+ * with hasReports false. The layer had no assertion of its own at all.
+ */
+const layer = modulesFor('manager');
+const missing = layer.filter((m) => !MANAGER_ADDS.includes(m));
+const extra = MANAGER_ADDS.filter((m) => !layer.includes(m));
+if (missing.length || extra.length) {
+  if (missing.length) fail(`MANAGER_ADDS is missing: ${missing.join(', ')}`);
+  if (extra.length) fail(`MANAGER_ADDS claims what the layer does not grant: ${extra.join(', ')}`);
+} else {
+  ok(`MANAGER_ADDS matches the policy's manager layer, all ${layer.length} modules`);
 }
 
 /* ------------------------------------------------------------------ *

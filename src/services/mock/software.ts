@@ -105,13 +105,13 @@ const validate = (d: Partial<SoftwareDraft>, existing?: SoftwareProduct): string
 
 export const softwareService: SoftwareService = {
   list(c, f = {}) {
-    if (c.role === 'employee') return refuse('Your role cannot browse the software estate');
+    if (!callerCovers(c, 'software', 'team')) return refuse('Your role cannot browse the software estate');
     const rows = SOFTWARE.map(rowOf).filter((r) => matches(r, f));
     return ok(sortBy(rows, (r) => -r.annualCost));
   },
 
   get(c, id) {
-    if (c.role === 'employee') return refuse('Your role cannot browse the software estate');
+    if (!callerCovers(c, 'software', 'team')) return refuse('Your role cannot browse the software estate');
     const p = productOf(id);
     if (!p) return ok(null);
     const detail: SoftwareDetail = {
@@ -141,12 +141,12 @@ export const softwareService: SoftwareService = {
   },
 
   stats(c) {
-    if (c.role === 'employee') return refuse('Your role cannot browse the software estate');
+    if (!callerCovers(c, 'software', 'team')) return refuse('Your role cannot browse the software estate');
     return ok(softwareKPI());
   },
 
   renewals(c, withinDays = 90) {
-    if (c.role === 'employee') return refuse('Your role cannot browse the software estate');
+    if (!callerCovers(c, 'software', 'team')) return refuse('Your role cannot browse the software estate');
     return ok(renewalCalendar().filter((r) => r.inDays <= withinDays));
   },
 

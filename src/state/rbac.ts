@@ -114,8 +114,13 @@ export const PERMS: Record<AppRole, string[]> = {
  * still answers for the people two levels down.
  */
 export const MANAGER_ADDS: string[] = [
-  'approvals', 'customreports', 'exports', 'hiring', 'onboarding', 'recruitment',
-  'reports', 'users',
+   'account', 'announcements', 'approvals', 'assets', 'attendance',
+   'benefits', 'celebrations', 'customreports', 'dashboard', 'devplans',
+   'documents', 'employees', 'engagement', 'events', 'exit', 'expenses',
+   'exports', 'helpdesk', 'hiring', 'jobtitles', 'learning', 'leave',
+   'lifecycle', 'onboarding', 'org', 'payroll', 'performance', 'planner',
+   'recruitment', 'reports', 'shifts', 'software', 'tax', 'timesheet',
+   'users',
 ];
 
 /** One module's three verbs, as the server reports them in `Me.rules`. */
@@ -283,10 +288,18 @@ export const can = (
    * answers both of the questions the arguments above exist to answer — and a
    * menu that disagrees with the server is a menu that offers 403s.
    */
+  /*
+   * Fail closed before anything else, including the manager layer.
+   *
+   * The guard used to sit only on PERMS[role], so an unrecognised role with
+   * reports still collected everything MANAGER_ADDS grants - which went from
+   * eight modules to thirty-five and turned a small hole into most of the
+   * product. Having reports is not a role, and it cannot stand in for one.
+   */
+  if (!isAppRole(role)) return false;
   const granted = serverModules && serverModules.length
     ? serverModules.includes(k)
-    : (isAppRole(role) && PERMS[role].includes(k))
-      || (hasReports && MANAGER_ADDS.includes(k));
+    : PERMS[role].includes(k) || (hasReports && MANAGER_ADDS.includes(k));
   return granted && (!apiConfigured || LIVE_MODULES.has(k));
 };
 

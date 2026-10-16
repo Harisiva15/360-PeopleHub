@@ -113,7 +113,7 @@ export const lifecycleService: LifecycleService = {
   },
 
   addTask(c, empId, draft) {
-    if (c.role === 'employee') return refuse('Your role cannot assign lifecycle tasks');
+    if (!callerCovers(c, 'lifecycle', 'team')) return refuse('Your role cannot assign lifecycle tasks');
     const row = inScope(c).find((r) => r.subject.id === empId);
     if (!row) return refuse('That person is outside the people you can see');
     if (!draft.n?.trim()) return refuse('Say what the task is');
@@ -139,7 +139,7 @@ export const lifecycleService: LifecycleService = {
   },
 
   setTaskDone(c, taskId, done) {
-    if (c.role === 'employee') {
+    if (!callerCovers(c, 'lifecycle', 'team')) {
       /* Somebody may complete a task assigned to them, and nothing else. */
       const own = LIFECYCLE_TASKS.find((t) => t.id === taskId);
       if (!own || own.assigneeId !== c.meId) {
@@ -148,7 +148,7 @@ export const lifecycleService: LifecycleService = {
     }
     const t = LIFECYCLE_TASKS.find((x) => x.id === taskId);
     if (!t) return refuse('No such task');
-    if (c.role !== 'employee' && !inScope(c).some((r) => r.subject.id === t.empId)) {
+    if (callerCovers(c, 'lifecycle', 'team') && !inScope(c).some((r) => r.subject.id === t.empId)) {
       return refuse('That person is outside the people you can see');
     }
     if (t.done === done) return ok(t);
@@ -181,7 +181,7 @@ export const lifecycleService: LifecycleService = {
    * report what would have been written.
    */
   confirmProbation(c, empId, opts = {}) {
-    if (c.role === 'employee') return refuse('Your role cannot confirm probation');
+    if (!callerCovers(c, 'lifecycle', 'team')) return refuse('Your role cannot confirm probation');
     const row = inScope(c).find((r) => r.subject.id === empId);
     if (!row) return refuse('No such person');
     if (row.subject.onProbation === false && row.standing.stage !== 'Joined') {
@@ -201,7 +201,7 @@ export const lifecycleService: LifecycleService = {
   },
 
   promote(c, empId, draft) {
-    if (c.role === 'employee') return refuse('Your role cannot promote somebody');
+    if (!callerCovers(c, 'lifecycle', 'team')) return refuse('Your role cannot promote somebody');
     const wantsGrade = Boolean(draft.gradeCode?.trim());
     const wantsTitle = Boolean(draft.designation?.trim());
     if (!wantsGrade && !wantsTitle) {

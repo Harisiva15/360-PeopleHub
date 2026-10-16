@@ -215,7 +215,7 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
   await allowed('a manager can bulk update their own line',
     () => s.users.bulkUpdate(MANAGER, two, { site: 'CHN' }));
   await refused('a manager cannot bulk promote to administrator',
-    () => s.users.bulkUpdate(MANAGER, two, { role: 'admin' as AppRole }));
+    () => s.users.bulkUpdate(MANAGER, two, { role: 'company_admin' }));
   await refused('a manager cannot bulk update outside their line',
     () => s.users.bulkUpdate(MANAGER, [outside.id], { site: 'CHN' }));
 

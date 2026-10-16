@@ -20,7 +20,7 @@ import { ORG } from '../../data/org';
 import { LOGIN_HISTORY, USERS, loginHistoryFor, userOf } from '../../data/users';
 import type { LoginEvent, LoginMethod, UserAccount, UserStatus } from '../../data/users';
 import { ASSIGNMENTS, SCHEDULES } from './schedules';
-import { PERMS, actionScope, callerCovers, may, mayAssignRole, visibleIds } from '../../state/rbac';
+import { effectiveActionScope, PERMS, actionScope, callerCovers, may, mayAssignRole, visibleIds } from '../../state/rbac';
 import type { UserAction } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
 import type {
@@ -61,7 +61,12 @@ function inScope(c: Caller): UserAccount[] {
  * classic hole — a manager who may deactivate, deactivating the CEO.
  */
 function guard(c: Caller, action: UserAction, target?: UserAccount): string | null {
-  const scope = actionScope(c.role, action);
+  /*
+   * The union, not the role alone. actionScope answers for one layer, so a
+   * manager - an employee the tree widened - was refused every act the
+   * manager layer grants, including simply viewing the accounts they manage.
+   */
+  const scope = effectiveActionScope(c.role, teamOf(c.meId, true).length > 0, action);
   if (scope === 'none') return `Your role cannot ${action.replace(/^\w+\./, '').replace(/_/g, ' ')}`;
   if (!target || scope === 'all') return null;
 
@@ -563,7 +568,7 @@ export const userService: UserService = {
   },
 
   tenantLoginHistory(c) {
-    if (c.role === 'employee') {
+    if (!callerCovers(c, 'users', 'team')) {
       return refuse('Only an administrator or a manager can read this');
     }
     if (callerCovers(c, 'users', 'all')) return ok(LOGIN_HISTORY.slice(0, 500));

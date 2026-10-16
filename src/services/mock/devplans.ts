@@ -148,7 +148,7 @@ export const devPlanService: DevPlanService = {
   },
 
   mentors(c) {
-    if (c.role === 'employee') return refuse('Your role cannot see who is mentoring whom');
+    if (!callerCovers(c, 'devplans', 'team')) return refuse('Your role cannot see who is mentoring whom');
     return ok(mentorLoad());
   },
 

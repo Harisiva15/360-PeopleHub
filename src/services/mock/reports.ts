@@ -111,13 +111,13 @@ const validate = (d: Partial<ReportDraft>, existing?: ReportDef): string | null 
 
 export const makeReportService = (getSvc: () => Services): ReportService => ({
   list(c) {
-    if (c.role === 'employee') return refuse('Your role cannot build reports');
+    if (!callerCovers(c, 'customreports', 'team')) return refuse('Your role cannot build reports');
     return ok(reportsVisibleTo(c.meId, c.role).map((r) => rowOf(r, c)));
   },
 
   /** The datasets a report can be built on — the export catalogue, filtered. */
   datasets(c) {
-    if (c.role === 'employee') return refuse('Your role cannot build reports');
+    if (!callerCovers(c, 'customreports', 'team')) return refuse('Your role cannot build reports');
     return ok(DATASETS.filter((d) => can(c.role, d.k, teamOf(c.meId, true).length > 0)));
   },
 
@@ -210,7 +210,7 @@ export const makeReportService = (getSvc: () => Services): ReportService => ({
   },
 
   create(c, d) {
-    if (c.role === 'employee') return refuse('Your role cannot build reports');
+    if (!callerCovers(c, 'customreports', 'team')) return refuse('Your role cannot build reports');
     const bad = validate(d);
     if (bad) return refuse(bad);
     const ds = datasetOf(d.datasetId)!;
@@ -268,7 +268,7 @@ export const makeReportService = (getSvc: () => Services): ReportService => ({
    * report stops being trusted.
    */
   duplicate(c, id) {
-    if (c.role === 'employee') return refuse('Your role cannot build reports');
+    if (!callerCovers(c, 'customreports', 'team')) return refuse('Your role cannot build reports');
     const r = reportOf(id);
     if (!r) return refuse('No such report');
     if (!r.shared && r.ownerId !== c.meId && !callerCovers(c, 'customreports', 'all')) {

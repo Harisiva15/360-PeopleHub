@@ -311,7 +311,22 @@ function useResolvedIdentity(
 }
 
 export function AppProvider({ children, initialRole = 'company_admin' }: { children: ReactNode; initialRole?: AppRole }) {
-  const start = ACCOUNTS().find((a) => a.role === initialRole)!;
+  /*
+   * The demo account to start as.
+   *
+   * This was `...find(...)!`, and the `!` was load-bearing in the worst way:
+   * a role with no demo account gave `undefined`, and the next line read
+   * `.role` off it. A stale initialRole produced "Cannot read properties of
+   * undefined" from a component three levels down, forty times over, with
+   * nothing naming the role that caused it.
+   */
+  const start = ACCOUNTS().find((acc) => acc.role === initialRole);
+  if (!start) {
+    throw new Error(
+      `No demo account for role "${initialRole}". `
+      + `ACCOUNTS() offers: ${ACCOUNTS().map((acc) => acc.role).join(', ')}.`,
+    );
+  }
   /*
    * In API mode neither of these is seeded from the demo dataset — not even
    * for the one render before the server answers, because that render is
@@ -454,7 +469,14 @@ export function AppProvider({ children, initialRole = 'company_admin' }: { child
           : (apiMode ? 'none' : scopeOfDemo(role, hasReports, module));
         return covers(granted, needed);
       },
-      isMyReport: (id: string) => role !== 'employee' && visibleIds(role, meId).includes(id) && id !== meId,
+      /*
+       * Having reports is the question, not holding a role. `role !== 'employee'`
+       * answered false for every manager - the only people the helper exists
+       * for - because a manager is an employee the reporting tree widened.
+       */
+      isMyReport: (id: string) => hasReports
+        && visibleIds(role, meId).includes(id)
+        && id !== meId,
       toasts,
       toast,
       dismissToast,
