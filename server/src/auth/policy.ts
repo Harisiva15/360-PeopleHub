@@ -327,7 +327,15 @@ export const POLICY: Record<string, ModulePolicy> = {
    */
   users: rule(NO, ['team', 'none', 'none'], ALL_R, NO, ALL_RWA),
 
-  settings: rule(NO, NO, ALL_R, NO, ALL_RWA),
+  /*
+   * Only company_admin. Users, roles and settings - departments, locations,
+   * leave policies, salary components - are one job, and it is not HR's.
+   *
+   * HR held read: all here, which put the whole section in their menu as a
+   * read-only tour. If HR turns out to need one tab of it (the leave policy
+   * text is the likely one), that is a grant on that tab, not on settings.
+   */
+  settings: rule(NO, NO, NO, NO, ALL_RWA),
   security: rule(NO, NO, NO, NO, ALL_RWA),
   integrations: rule(NO, NO, NO, NO, ALL_RWA),
   billing: rule(NO, NO, NO, ALL_R, ALL_R),
@@ -435,9 +443,19 @@ export function effectiveFor(
   hasReports: boolean,
   module: string,
 ): ModuleRule {
+  /*
+   * Fail closed on a role nobody recognises.
+   *
+   * `Role` is a compile-time promise and this value may not have been
+   * compiled: it can arrive from a column, a token claim or a fixture. Left
+   * unguarded, an unknown role kept the employee baseline and the manager
+   * layer, so it read as an ordinary member of staff rather than as nobody.
+   * EMPTY is the only honest answer to "what may this unknown thing do".
+   */
+  if (!(ROLES as readonly string[]).includes(role)) return EMPTY;
   const p = POLICY[module];
   if (!p) return EMPTY;
-  const layers: ModuleRule[] = [p.employee, p[role]];
+  const layers: ModuleRule[] = [p.employee, p[role] ?? EMPTY];
   if (hasReports) layers.push(p.manager);
   return layers.reduce((acc, r) => ({
     read: wider(acc.read, r.read),
@@ -694,6 +712,16 @@ export function effectiveRuleFor(
   module: string,
   overrides: Overrides,
 ): ModuleRule {
+  /*
+   * Fail closed on a role nobody recognises.
+   *
+   * `Role` is a compile-time promise and this value may not have been
+   * compiled: it can arrive from a column, a token claim or a fixture. Left
+   * unguarded, an unknown role kept the employee baseline and the manager
+   * layer, so it read as an ordinary member of staff rather than as nobody.
+   * EMPTY is the only honest answer to "what may this unknown thing do".
+   */
+  if (!(ROLES as readonly string[]).includes(role)) return EMPTY;
   if (!POLICY[module]) return EMPTY;
   const layers: (Role | Layer)[] = hasReports
     ? ['employee', 'manager', role]

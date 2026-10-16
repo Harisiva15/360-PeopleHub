@@ -71,24 +71,26 @@ export const PERMS: Record<AppRole, string[]> = {
   /* People. Everything an employee has, plus the company's people records.
      Reads payroll and does not run it; edits what people are paid. */
   hr_admin: [
+    'software',
     'account', 'announcements', 'approvals', 'assets', 'attendance', 'bench',
     'benefits', 'celebrations', 'compensation', 'customreports', 'dashboard',
     'devplans', 'documents', 'employees', 'engagement', 'events', 'exec', 'exit',
     'expenses', 'exports', 'helpdesk', 'hiring', 'jobtitles', 'learning', 'leave',
     'lifecycle', 'onboarding', 'org', 'payroll', 'performance', 'planner',
-    'recruitment', 'reports', 'requirements', 'settings', 'shifts', 'software', 'tax',
+    'recruitment', 'reports', 'requirements', 'shifts', 'tax',
     'timesheet', 'users',
   ],
 
   /* Money. Payroll, tax, expenses and the commercial book. Reads compensation
      and does not set it. */
   finance_admin: [
+    'devplans', 'helpdesk', 'learning', 'performance', 'shifts',
     'account', 'announcements', 'approvals', 'assets', 'attendance', 'benefits',
     'billing', 'celebrations', 'clients', 'compensation', 'customreports',
-    'dashboard', 'devplans', 'documents', 'employees', 'engagement', 'events', 'exec',
-    'exit', 'expenses', 'exports', 'helpdesk', 'jobtitles', 'learning', 'leave',
-    'lifecycle', 'org', 'payroll', 'performance', 'placements', 'planner', 'reports',
-    'shifts', 'software', 'tax', 'timesheet', 'vendors',
+    'dashboard', 'documents', 'employees', 'engagement', 'events', 'exec',
+    'exit', 'expenses', 'exports', 'jobtitles', 'leave',
+    'lifecycle', 'org', 'payroll', 'placements', 'planner', 'reports',
+    'software', 'tax', 'timesheet', 'vendors',
   ],
 
   /* The whole tenant, and the only role that creates logins, changes a role or
@@ -180,12 +182,26 @@ export const scopeOfDemo = (
   hasReports: boolean,
   module: string,
 ): Scope => {
+  if (!isAppRole(role)) return 'none';
   const byRole = PERMS[role].includes(module);
   const byTree = hasReports && MANAGER_ADDS.includes(module);
   if (!byRole && !byTree) return 'none';
   if (role !== 'employee') return 'all';
   return byTree ? 'team' : 'own';
 };
+
+/**
+ * Is this actually one of the four roles?
+ *
+ * It matters because `AppRole` is only a compile-time promise, and the places
+ * a role arrives from are not all compiled: a check fixture, a stored row, a
+ * JSON payload. A stale 'admin' used to reach `visibleIds`, miss the
+ * administrator branch, and fall through to the reporting-tree branch - which
+ * answered as though the caller were a manager. That is the worst possible
+ * reading of an unknown role, and it is silent.
+ */
+const ROLES = new Set<string>(['employee', 'hr_admin', 'finance_admin', 'company_admin']);
+export const isAppRole = (r: unknown): r is AppRole => typeof r === 'string' && ROLES.has(r);
 
 export interface ScopeInfo {
   label: string;
@@ -269,7 +285,8 @@ export const can = (
    */
   const granted = serverModules && serverModules.length
     ? serverModules.includes(k)
-    : PERMS[role].includes(k) || (hasReports && MANAGER_ADDS.includes(k));
+    : (isAppRole(role) && PERMS[role].includes(k))
+      || (hasReports && MANAGER_ADDS.includes(k));
   return granted && (!apiConfigured || LIVE_MODULES.has(k));
 };
 
@@ -309,6 +326,8 @@ export function visibleIds(role: AppRole, meId: string): string[] {
    * branch is taken by anybody who has reports, whatever role they hold — an
    * employee who runs a team, or an HR administrator who does.
    */
+  /* Fail closed. An unrecognised role is not a manager. */
+  if (!isAppRole(role)) return [meId];
   if (role === 'hr_admin' || role === 'finance_admin' || role === 'company_admin') {
     return ACTIVE().map((e) => e.id);
   }
@@ -401,14 +420,27 @@ export const effectiveActionScope = (
   ? widerScope(actionScope(role, action), actionScope('manager', action))
   : actionScope(role, action));
 
-/** Whether this role may perform this act at all. */
-export const may = (role: AppRole, action: UserAction): boolean =>
-  actionScope(role, action) !== 'none';
+/**
+ * Whether this person may perform this act at all.
+ *
+ * Takes `hasReports` because the manager layer grants acts of its own, and
+ * the server's `may` has taken it all along. Without it the two sides
+ * disagreed about a manager: the client asked the role alone and the server
+ * asked the union, so a manager with reports could be offered an act the
+ * server would then refuse - or refused one it would have allowed.
+ */
+export const may = (role: AppRole, hasReports: boolean, action: UserAction): boolean =>
+  effectiveActionScope(role, hasReports, action) !== 'none';
 
 /** Whether this role may hand out that role. Only an admin makes an admin. */
-export const mayAssignRole = (role: AppRole, granted: AppRole): boolean => {
-  if (!may(role, 'role.assign')) return false;
-  return granted === 'employee' ? true : may(role, 'role.assign_admin');
+/** Whether this person may hand out that role. Mirrors the server exactly. */
+export const mayAssignRole = (
+  role: AppRole,
+  hasReports: boolean,
+  granted: AppRole,
+): boolean => {
+  if (!may(role, hasReports, 'role.assign')) return false;
+  return granted === 'employee' ? true : may(role, hasReports, 'role.assign_admin');
 };
 
 export const USER_ACTIONS = Object.keys(ACTION_SCOPE) as UserAction[];

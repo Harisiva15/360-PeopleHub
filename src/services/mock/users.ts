@@ -128,7 +128,8 @@ function validate(d: Partial<UserDraft>, c: Caller, existing?: UserAccount): str
    * administrator. Checked on the value, not the act — a manager assigns roles
    * every time they raise a joiner, and this is the one they may not assign.
    */
-  if (role !== existing?.role && !mayAssignRole(c.role, role)) {
+  if (role !== existing?.role
+    && !mayAssignRole(c.role, teamOf(c.meId, true).length > 0, role)) {
     return callerCovers(c, 'users', 'all')
       ? 'Only an administrator can create or assign the Administrator role'
       : 'Your role cannot assign that role';
@@ -146,7 +147,9 @@ function nextCode(): string {
 
 export const userService: UserService = {
   nextEmployeeCode(c) {
-    if (!may(c.role, 'user.create')) return refuse('Your role cannot create users');
+    if (!may(c.role, teamOf(c.meId, true).length > 0, 'user.create')) {
+      return refuse('Your role cannot create users');
+    }
     return ok(nextCode());
   },
 
@@ -414,7 +417,8 @@ export const userService: UserService = {
   bulkUpdate(c, ids, patch) {
     const stop = guard(c, 'user.bulk_update');
     if (stop) return refuse(stop);
-    if (patch.role && !mayAssignRole(c.role, patch.role as AppRole)) {
+    if (patch.role
+      && !mayAssignRole(c.role, teamOf(c.meId, true).length > 0, patch.role as AppRole)) {
       return refuse('Only an administrator can assign the Administrator role');
     }
 
@@ -543,7 +547,7 @@ export const userService: UserService = {
   },
 
   setMfaRequired(c, id, required) {
-    if (!may(c.role, 'user.suspend')) {
+    if (!may(c.role, teamOf(c.meId, true).length > 0, 'user.suspend')) {
       return refuse('Only an administrator can require a second factor');
     }
     const u = userOf(id);

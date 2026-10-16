@@ -1,0 +1,47 @@
+{
+  /*
+   * The check suites, typechecked.
+   *
+   * They were not, and `"include": ["src"]` is why. Fifty suites ran under
+   * vite-node with nothing ever reading their types, so when `AppRole` lost
+   * 'admin' and 'manager' the compiler reported zero errors in checks/ while
+   * two dozen fixtures still passed the removed values. The first one ran as a
+   * runtime failure on a line the compiler could have named.
+   *
+   * `src` is included alongside `checks` rather than referenced: these options
+   * differ from tsconfig.app.json only by needing Node's types, and a project
+   * reference would mean making the app project composite for no other reason.
+   * The cost is that src is checked twice by `tsc -b`.
+   */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.checks.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    /* The suites are scripts: they read files, take arguments and set exit codes. */
+    "types": ["vite/client", "node"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /*
+     * Linting, with two of the app's rules relaxed on purpose.
+     *
+     * A suite routinely builds a fixture it only partly reads, and takes a
+     * callback argument it does not use, and failing the build for that would
+     * push people towards deleting assertions to keep the compiler quiet.
+     */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["checks", "src"]
+}

@@ -36,8 +36,8 @@ const allowed = async (label: string, run: () => Promise<unknown>) => {
   catch (e) { check(label, `refused: ${(e as Error).message}`, 'allowed'); }
 };
 
-const ADMIN: Caller = { role: 'admin', meId: HRHEAD.id };
-const MANAGER: Caller = { role: 'manager', meId: DEMO_MGR.id };
+const ADMIN: Caller = { role: 'company_admin', meId: HRHEAD.id };
+const MANAGER: Caller = { role: 'employee', meId: DEMO_MGR.id };
 const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
 const NOW = ymd(TODAY);
 
@@ -132,7 +132,7 @@ const NOW = ymd(TODAY);
   /* ---- who sees whom ---- */
 
   const mgrRows = await s.lifecycle.list(MANAGER);
-  const line = new Set(visibleIds('manager', DEMO_MGR.id));
+  const line = new Set(visibleIds('employee', DEMO_MGR.id));
   check('a manager sees only their line',
     mgrRows.filter((r) => !line.has(r.subject.id)
       && r.subject.managerId !== DEMO_MGR.id).length, 0);

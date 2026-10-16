@@ -14,6 +14,7 @@
  * could hold a row.
  */
 
+import { can } from '../src/state/rbac';
 import { getServices } from '../src/services';
 import { DATASETS, EXPORT_LOG, datasetOf } from '../src/data/exports';
 import { ACTIVE, DEMO_EMP, DEMO_MGR, HRHEAD } from '../src/data/employees';
@@ -38,8 +39,8 @@ const allowed = async (label: string, run: () => Promise<unknown>) => {
   catch (e) { check(label, `refused: ${(e as Error).message}`, 'allowed'); }
 };
 
-const ADMIN: Caller = { role: 'admin', meId: HRHEAD.id };
-const MANAGER: Caller = { role: 'manager', meId: DEMO_MGR.id };
+const ADMIN: Caller = { role: 'company_admin', meId: HRHEAD.id };
+const MANAGER: Caller = { role: 'employee', meId: DEMO_MGR.id };
 const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
 const NOW = ymd(TODAY);
 
@@ -58,7 +59,7 @@ const seeded = new Set(EXPORT_LOG.map((r) => r.id));
    * than being discovered in a spreadsheet.
    */
   const unscoped = DATASETS.filter((d) =>
-    d.scope !== 'caller' && d.roles.some((r) => r !== 'admin'));
+    d.scope !== 'caller' && can('employee', d.k, true));
   check('every dataset is caller-scoped or administrators only',
     unscoped.map((d) => d.id), []);
 
@@ -103,7 +104,9 @@ const seeded = new Set(EXPORT_LOG.map((r) => r.id));
     jobtitles: async () => (await s.jobTitles.list(MANAGER)).length,
   };
 
-  for (const d of DATASETS.filter((x) => x.scope === 'caller' && x.roles.includes('manager'))) {
+  for (const d of DATASETS.filter(
+    (x) => x.scope === 'caller' && can('employee', x.k, true),
+  )) {
     const want = expected[d.id];
     check(`${d.id} has a screen to compare against`, !!want, true);
     if (!want) continue;
@@ -133,7 +136,7 @@ const seeded = new Set(EXPORT_LOG.map((r) => r.id));
 
   const listedToManager = await s.exports.datasets(MANAGER);
   check("a manager's catalogue holds only what they can run",
-    listedToManager.filter((d) => !d.roles.includes('manager')).length, 0);
+    listedToManager.filter((d) => !can('employee', d.k, true)).length, 0);
   check('and does not list the admin-only ones at all',
     listedToManager.filter((d) => d.scope === 'admin-only').length, 0);
 

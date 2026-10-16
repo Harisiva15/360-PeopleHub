@@ -34,13 +34,13 @@ export function PermissionGuard({
   fallback?: ReactNode;
 }) {
   const app = useApp();
-  return <>{may(app.role, action) ? children : fallback}</>;
+  return <>{may(app.role, app.hasReports, action) ? children : fallback}</>;
 }
 
 /** The same question, for code rather than markup. */
 export function useMay(): (action: UserAction) => boolean {
   const app = useApp();
-  return (action) => may(app.role, action);
+  return (action) => may(app.role, app.hasReports, action);
 }
 
 /* ---------------- status ---------------- */

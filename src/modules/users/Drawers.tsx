@@ -78,7 +78,7 @@ export function UserForm({
 
   /* The roles this caller may hand out. An admin is the only one who makes one. */
   const roles = (['employee', 'manager', 'admin'] as AppRole[])
-    .filter((r) => r === existing?.role || mayAssignRole(app.role, r));
+    .filter((r) => r === existing?.role || mayAssignRole(app.role, app.hasReports, r));
 
   const fillCode = async () => {
     try { setCode(await nextCode.mutate()); setAutoCode(false); }

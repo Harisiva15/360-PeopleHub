@@ -14,8 +14,8 @@ const check = (label: string, got: unknown, want: unknown) => {
 
 (async () => {
   /* scoping: each role sees a different slice, enforced in the service */
-  const asAdmin = await s.employees.visible({ role: 'admin', meId: HRHEAD.id });
-  const asMgr = await s.employees.visible({ role: 'manager', meId: DEMO_MGR.id });
+  const asAdmin = await s.employees.visible({ role: 'company_admin', meId: HRHEAD.id });
+  const asMgr = await s.employees.visible({ role: 'employee', meId: DEMO_MGR.id });
   const asEmp = await s.employees.visible({ role: 'employee', meId: DEMO_EMP.id });
   console.log(`scope: admin ${asAdmin.length} · manager ${asMgr.length} · employee ${asEmp.length}`);
   check('employee sees only themselves', asEmp.map((e) => e.id), [DEMO_EMP.id]);

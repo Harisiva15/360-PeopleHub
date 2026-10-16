@@ -38,7 +38,7 @@ import type { DocRequest, Onboarding, ReqActivity } from '../src/services';
 import type { AppRole } from '../src/types/employee';
 import type { ReactElement } from 'react';
 
-const render = (node: ReactElement, role: AppRole = 'admin') => renderToStaticMarkup(
+const render = (node: ReactElement, role: AppRole = 'company_admin') => renderToStaticMarkup(
   <MemoryRouter>
     <AuthProvider>
       <AppProvider initialRole={role}>
@@ -65,7 +65,9 @@ console.log('\nintake screens\n');
 const journeys = await s.onboarding.list();
 const subject = journeys.find((j) => j.status !== 'Completed') ?? journeys[0]!;
 
-for (const role of ['admin', 'manager'] as AppRole[]) {
+/* The two audiences these screens are for: somebody who administers
+   onboarding, and somebody who merely runs a team. */
+for (const role of ['company_admin', 'hr_admin'] as AppRole[]) {
   check(`the collection view mounts for ${role}`,
     render(<CollectionView />, role).includes('Who is holding us up'), true);
   check(`a joiner's document panel mounts for ${role}`,

@@ -42,7 +42,7 @@ const allowed = async (label: string, run: () => Promise<unknown>) => {
   catch (e) { check(label, `refused: ${(e as Error).message}`, 'allowed'); }
 };
 
-const ADMIN: Caller = { role: 'admin', meId: HRHEAD.id };
+const ADMIN: Caller = { role: 'company_admin', meId: HRHEAD.id };
 const NOW = ymd(TODAY);
 
 (async () => {

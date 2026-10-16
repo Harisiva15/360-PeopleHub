@@ -21,10 +21,15 @@ import {
   PERMS,
   USER_ACTIONS as CLIENT_ACTIONS,
   actionScope as clientScope,
+  can as clientCan,
   mayAssignRole as clientMayAssign,
+  scopeOfDemo,
+  visibleIds,
 } from '../src/state/rbac';
+import { HRHEAD } from '../src/data/employees';
+import type { AppRole } from '../src/types/employee';
 import {
-  POLICY, ROLES, effectiveFor, modulesFor,
+  POLICY, ROLES, effectiveFor, effectiveModulesFor,
   USER_ACTIONS as SERVER_ACTIONS,
   actionScope as serverScope,
   mayAssignRole as serverMayAssign,
@@ -159,7 +164,14 @@ if (!failed) ok('nobody can write or approve further than they can read');
 /* ---- the navigation matches ---- */
 
 for (const role of ROLES) {
-  const allowed = new Set(modulesFor(role));
+  /*
+   * The union, not the layer in isolation. `modulesFor` answers what one
+   * layer grants by itself, which is what the access screen lists; a person
+   * navigates by what they actually reach. Comparing the menu against the
+   * isolated figure reported six modules as over-offered when every one of
+   * them was the employee baseline an administrator also holds.
+   */
+  const allowed = new Set(effectiveModulesFor(role, false));
   const navigable = new Set(PERMS[role as Role]);
 
   const offered = [...navigable].filter((m) => !allowed.has(m));
@@ -226,14 +238,36 @@ for (const role of ROLES) {
   }
   if (!drift) ok('every act reaches exactly as far on both sides');
 
-  /* The one rule the whole module rests on. */
-  const managerMakesAdmin = serverMayAssign('manager', 'admin') || clientMayAssign('manager', 'admin');
-  if (managerMakesAdmin) fail('a manager can make an administrator');
-  else ok('only an administrator can make an administrator');
+  /*
+   * The one rule the whole module rests on, in its stronger form.
+   *
+   * It used to ask whether a 'manager' could make an 'admin'. Neither value
+   * exists: manager is not assignable and admin is not grantable, so after
+   * the rename the question had no subject. It asks every role now, which
+   * also covers the two the old form could not name - an HR or finance
+   * administrator handing out company_admin is the privilege escalation
+   * worth asserting against, and nothing used to.
+   */
+  let escalation = false;
+  for (const role of ROLES) {
+    if (role === 'company_admin') continue;
+    /* Both layer states: having reports must not be a route to it either. */
+    for (const hasReports of [false, true]) {
+      const server = serverMayAssign(role, hasReports, 'company_admin');
+      const client = clientMayAssign(role, hasReports, 'company_admin');
+      if (server || client) {
+        escalation = true;
+        const who = `${role}${hasReports ? ' with reports' : ''}`;
+        fail(`${who} can make a company administrator (server ${server}, client ${client})`);
+      }
+    }
+  }
+  if (!escalation) ok('no role but company_admin can make a company administrator');
 
-  const adminMakesAdmin = serverMayAssign('admin', 'admin') && clientMayAssign('admin', 'admin');
-  if (!adminMakesAdmin) fail('an administrator cannot make an administrator');
-  else ok('an administrator can');
+  const adminMakesAdmin = serverMayAssign('company_admin', false, 'company_admin')
+    && clientMayAssign('company_admin', false, 'company_admin');
+  if (!adminMakesAdmin) fail('a company administrator cannot make a company administrator');
+  else ok('and a company administrator can');
 
   /* Nobody administers accounts without being able to see them. */
   for (const role of ROLES) {
@@ -247,6 +281,90 @@ for (const role of ROLES) {
     }
   }
   ok('nobody may act on an account further than they may see one');
+}
+
+/* ------------------------------------------------------------------ *
+ * An administrator is also an employee
+ * ------------------------------------------------------------------ */
+
+console.log('\nadmin grants add to the employee baseline, never subtract\n');
+
+/*
+ * The union is max(employee, manager-if-reports, assignedRole), so holding an
+ * administrative role cannot cost somebody what every employee has: their own
+ * leave, their own reviews, their own training, their own tickets, their own
+ * shifts, their own development plan, a software request.
+ *
+ * This is not hypothetical. The menu-vs-policy check above was comparing
+ * against `modulesFor`, which answers what one layer grants *in isolation*,
+ * and reported six modules as over-offered for hr_admin and finance_admin.
+ * They were the employee baseline, and acting on that reading would have
+ * taken an HR administrator's own leave request away from them.
+ */
+let baselineLost = false;
+for (const m of Object.keys(POLICY)) {
+  const emp = effectiveFor('employee', false, m);
+  for (const verb of ['read', 'write', 'approve'] as const) {
+    if (emp[verb] === 'none') continue;
+    for (const role of ROLES) {
+      if (role === 'employee') continue;
+      const got = effectiveFor(role, false, m)[verb];
+      if (got === 'none') {
+        baselineLost = true;
+        fail(`${role} loses the employee baseline: ${verb} on ${m}` + ` (employee ${emp[verb]}, ${role} none)`);
+      }
+    }
+  }
+}
+if (!baselineLost) ok('every module and verb an employee holds, every admin role holds too');
+
+/* ------------------------------------------------------------------ *
+ * A role that is not a role
+ * ------------------------------------------------------------------ */
+
+console.log('\nan unrecognised role reaches nothing\n');
+
+/*
+ * The old value, cast on purpose. `AppRole` is a compile-time promise and
+ * these functions are reached from places that were never compiled against
+ * it: a stored column, a token claim, a fixture in this very directory.
+ *
+ * Before the guard, 'admin' missed the administrator branch in visibleIds and
+ * fell through to the reporting-tree branch - so an unknown role answered as
+ * though it were a manager, silently, with the widest reading available short
+ * of full access. That is the behaviour these three assertions exist to stop
+ * coming back.
+ */
+const STALE = 'admin' as unknown as AppRole;
+const STALE_SERVER = 'admin' as unknown as Role;
+
+const seen = visibleIds(STALE, HRHEAD.id);
+if (seen.length !== 1 || seen[0] !== HRHEAD.id) {
+  fail(`an unrecognised role saw ${seen.length} people, not just itself`);
+} else {
+  ok('an unrecognised role sees only itself');
+}
+
+/* hasReports deliberately true: the fall-through took the team branch, so
+ * passing true is what proves the guard runs before it. */
+if (scopeOfDemo(STALE, true, 'employees') !== 'none') {
+  fail('an unrecognised role with reports still has a scope');
+} else {
+  ok('and no scope on any module, reports or not');
+}
+
+if (clientCan(STALE, 'employees', true)) {
+  fail('an unrecognised role may still open a module');
+} else {
+  ok('and may open nothing');
+}
+
+/* The server answers the same question, and must answer it the same way. */
+const srv = effectiveFor(STALE_SERVER, true, 'employees');
+if (srv.read !== 'none' || srv.write !== 'none' || srv.approve !== 'none') {
+  fail(`the server grants an unrecognised role ${JSON.stringify(srv)}`);
+} else {
+  ok('and the server grants it nothing either');
 }
 
 console.log(`\n${Object.keys(POLICY).length} modules x ${ROLES.length} roles defined`);

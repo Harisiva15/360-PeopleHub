@@ -51,7 +51,7 @@ const provision = code('server/src/modules/people/provision.ts');
 const usersSvc = code('server/src/modules/users/service.ts');
 const schedSvc = code('server/src/modules/schedules/service.ts');
 
-const ADMIN = { role: 'admin' as const, meId: ACTIVE()[0]!.id };
+const ADMIN = { role: 'company_admin' as const, meId: ACTIVE()[0]!.id };
 
 /* ------------------------------------------------------------------ *
  * The contract, and the one canonical field

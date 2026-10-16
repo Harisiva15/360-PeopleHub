@@ -35,8 +35,8 @@ const allowed = async (label: string, run: () => Promise<unknown>) => {
   catch (e) { check(label, `refused: ${(e as Error).message}`, 'allowed'); }
 };
 
-const ADMIN: Caller = { role: 'admin', meId: HRHEAD.id };
-const MANAGER: Caller = { role: 'manager', meId: DEMO_MGR.id };
+const ADMIN: Caller = { role: 'company_admin', meId: HRHEAD.id };
+const MANAGER: Caller = { role: 'employee', meId: DEMO_MGR.id };
 const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
 
 (async () => {
@@ -77,7 +77,7 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
   const mgrSees = await s.users.list(MANAGER);
   check('an administrator sees more than a manager', adminSees.length > mgrSees.length, true);
 
-  const mgrTeam = new Set(visibleIds('manager', DEMO_MGR.id));
+  const mgrTeam = new Set(visibleIds('employee', DEMO_MGR.id));
   check('every account a manager sees is in their line',
     mgrSees.filter((u) => !u.empId || !mgrTeam.has(u.empId)).length, 0);
 
@@ -103,11 +103,11 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
   });
 
   await refused('a manager cannot create an administrator',
-    () => s.users.create(MANAGER, base({ role: 'admin' })));
+    () => s.users.create(MANAGER, base({ role: 'company_admin' })));
   await allowed('a manager can create an employee',
     () => s.users.create(MANAGER, base()));
   await allowed('an administrator can create an administrator',
-    () => s.users.create(ADMIN, base({ role: 'admin' })));
+    () => s.users.create(ADMIN, base({ role: 'company_admin' })));
 
   const mgrMade = USERS.find((u) => u.requestedById === DEMO_MGR.id && u.status === 'Pending Approval')!;
   check("a manager's creation waits for approval", mgrMade.status, 'Pending Approval');
@@ -120,9 +120,9 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
 
   const teamMember = mgrSees.find((u) => u.role === 'employee' && u.status === 'Active')!;
   await refused('a manager cannot promote somebody to administrator',
-    () => s.users.update(MANAGER, teamMember.id, { role: 'admin' }));
+    () => s.users.update(MANAGER, teamMember.id, { role: 'company_admin' }));
   await allowed('an administrator can',
-    () => s.users.update(ADMIN, teamMember.id, { role: 'manager' }));
+    () => s.users.update(ADMIN, teamMember.id, { role: 'employee' }));
   await s.users.update(ADMIN, teamMember.id, { role: 'employee' });   /* put it back */
 
   /* ---- validation ---- */
