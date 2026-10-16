@@ -57,6 +57,17 @@ export interface Dataset {
    * list of roles here could express.
    */
   k: string;
+  /**
+   * The least scope on `k` this dataset needs, when reaching the module is
+   * not enough.
+   *
+   * Most caller-scoped datasets need 'own': the service narrows the rows to
+   * whoever asked. A few are the whole catalogue of something rather than
+   * anybody's slice of it - the software estate, the job-title list - and the
+   * services behind them serve at team and above. Without this the export
+   * catalogue offered an employee two datasets the run path then refused.
+   */
+  needs?: 'own' | 'team' | 'all';
   scope: DatasetScope;
   /**
    * True where the rows are about identifiable people in a way that would
@@ -168,6 +179,7 @@ export const DATASETS: Dataset[] = [
     desc: 'Subscriptions, seats, renewals and what the idle seats cost.',
     ic: 'puzzle',
     k: 'software',
+    needs: 'team',
     scope: 'caller',
     personal: false,
     dated: false,
@@ -190,6 +202,7 @@ export const DATASETS: Dataset[] = [
     desc: 'Every title, its level and family, and how many people hold it.',
     ic: 'briefcase',
     k: 'jobtitles',
+    needs: 'team',
     scope: 'caller',
     personal: false,
     dated: false,

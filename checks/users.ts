@@ -157,8 +157,18 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
     () => s.users.setStatus(MANAGER, teamMember.id, 'Active'));
   await refused('a manager cannot suspend',
     () => s.users.setStatus(MANAGER, teamMember.id, 'Suspended', 'held'));
-  await allowed('a manager can deactivate somebody in their line',
+  /*
+   * Deactivating is an account act, and account acts are company_admin's.
+   *
+   * This asserted the opposite, on the old grounds that offboarding is
+   * ordinary. The lifecycle record a manager does own is what records the
+   * exit; closing the login is a different decision with a different blast
+   * radius, and the policy says so in as many words.
+   */
+  await refused('a manager cannot deactivate anybody, even in their line',
     () => s.users.setStatus(MANAGER, teamMember.id, 'Inactive', 'Left the team'));
+  await allowed('but an administrator can',
+    () => s.users.setStatus(ADMIN, teamMember.id, 'Inactive', 'Left the team'));
   await s.users.setStatus(ADMIN, teamMember.id, 'Active');
 
   /* ---- password reset ---- */
@@ -212,8 +222,11 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
   /* ---- bulk ---- */
 
   const two = mgrSees.filter((u) => u.status !== 'Deleted').slice(0, 2).map((u) => u.id);
-  await allowed('a manager can bulk update their own line',
+  /* A bulk update is an account act too, whoever the rows belong to. */
+  await refused('a manager cannot bulk update, even their own line',
     () => s.users.bulkUpdate(MANAGER, two, { site: 'CHN' }));
+  await allowed('but an administrator can',
+    () => s.users.bulkUpdate(ADMIN, two, { site: 'CHN' }));
   await refused('a manager cannot bulk promote to administrator',
     () => s.users.bulkUpdate(MANAGER, two, { role: 'company_admin' }));
   await refused('a manager cannot bulk update outside their line',

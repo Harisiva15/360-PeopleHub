@@ -14,11 +14,11 @@
  * quietly answered a different question.
  */
 
-import { callerCovers, can } from '../../state/rbac';
+import { callerCovers } from '../../state/rbac';
 import { sortBy } from '../../lib/collections';
 import { uid } from '../../lib/rng';
 import { TODAY, ymd } from '../../lib/dates';
-import { EMAP, teamOf } from '../../data/employees';
+import { EMAP } from '../../data/employees';
 import { deptOf, siteOf } from '../../data/org';
 import { DATASETS, EXPORT_LOG, datasetOf, exportKPI, exportHistory } from '../../data/exports';
 import type { Dataset, ExportRun } from '../../data/exports';
@@ -165,7 +165,7 @@ const describe = (d: Dataset, f: ExportFilter) =>
 const mayExport = (c: Caller, d: Dataset): boolean => (
   d.scope === 'admin-only'
     ? callerCovers(c, 'exports', 'all')
-    : can(c.role, d.k, teamOf(c.meId, true).length > 0)
+    : callerCovers(c, d.k, d.needs ?? 'own')
 );
 
 export const makeExportService = (getSvc: () => Services): ExportService => ({
