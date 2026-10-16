@@ -14,10 +14,11 @@
  * quietly answered a different question.
  */
 
+import { callerCovers, can } from '../../state/rbac';
 import { sortBy } from '../../lib/collections';
 import { uid } from '../../lib/rng';
 import { TODAY, ymd } from '../../lib/dates';
-import { EMAP } from '../../data/employees';
+import { EMAP, teamOf } from '../../data/employees';
 import { deptOf, siteOf } from '../../data/org';
 import { DATASETS, EXPORT_LOG, datasetOf, exportKPI, exportHistory } from '../../data/exports';
 import type { Dataset, ExportRun } from '../../data/exports';
@@ -137,7 +138,9 @@ const runRow = (r: ExportRun): ExportRunRow => ({
  * else's export history is surveillance with no purpose the product has.
  */
 function visibleRuns(c: Caller): ExportRun[] {
-  return c.role === 'admin' ? exportHistory() : exportHistory().filter((r) => r.byId === c.meId);
+  return callerCovers(c, 'exports', 'all')
+      ? exportHistory()
+      : exportHistory().filter((r) => r.byId === c.meId);
 }
 
 const describe = (d: Dataset, f: ExportFilter) =>
@@ -152,7 +155,7 @@ export const makeExportService = (getSvc: () => Services): ExportService => ({
      * person cannot run, greyed out, tells them what exists and that they
      * cannot have it — which is a worse answer than not raising it.
      */
-    return ok(DATASETS.filter((d) => d.roles.includes(c.role)));
+    return ok(DATASETS.filter((d) => can(c.role, d.k, teamOf(c.meId, true).length > 0)));
   },
 
   history(c, f = {}) {
@@ -203,11 +206,11 @@ export const makeExportService = (getSvc: () => Services): ExportService => ({
      * is looking for the attempts as much as the successes, and an exception
      * that leaves no trace is the one thing this register cannot afford.
      */
-    if (!d.roles.includes(c.role)) {
+    if (!can(c.role, d.k, teamOf(c.meId, true).length > 0)) {
       record(0, 'Refused', `${c.role} cannot export ${d.n.toLowerCase()}`);
       return refuse(`Your role cannot export ${d.n.toLowerCase()}`);
     }
-    if (d.scope === 'admin-only' && c.role !== 'admin') {
+    if (d.scope === 'admin-only' && !callerCovers(c, 'exports', 'all')) {
       /* Belt and braces: the roles list already says admin, and this says why. */
       record(0, 'Refused', 'This dataset is not narrowed to the caller');
       return refuse('That dataset can only be exported in full, so only an administrator may take it');

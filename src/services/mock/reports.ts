@@ -14,10 +14,11 @@
  * the only thing this module does that the export centre does not.
  */
 
+import { callerCovers, can } from '../../state/rbac';
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
 import { uid } from '../../lib/rng';
-import { EMAP } from '../../data/employees';
+import { EMAP, teamOf } from '../../data/employees';
 import { DATASETS, datasetOf } from '../../data/exports';
 import {
   AGGREGATIONS, REPORT_DEFS, reportOf, reportsVisibleTo,
@@ -38,10 +39,11 @@ const rowOf = (r: ReportDef, c: Caller): ReportRow => ({
   owner: EMAP[r.ownerId]?.name ?? r.ownerId,
   mine: r.ownerId === c.meId,
   /* Whether this caller could run it at all, so the list can say why not. */
-  runnable: (datasetOf(r.datasetId)?.roles ?? []).includes(c.role),
+  runnable: can(c.role, datasetOf(r.datasetId)?.k ?? '', teamOf(c.meId, true).length > 0),
 });
 
-const mayEdit = (c: Caller, r: ReportDef) => c.role === 'admin' || r.ownerId === c.meId;
+const mayEdit = (c: Caller, r: ReportDef) => callerCovers(c, 'customreports', 'all')
+  || r.ownerId === c.meId;
 
 /** A number from a cell, treating anything unparseable as absent rather than zero. */
 const num = (v: unknown): number | null => {
@@ -116,13 +118,13 @@ export const makeReportService = (getSvc: () => Services): ReportService => ({
   /** The datasets a report can be built on — the export catalogue, filtered. */
   datasets(c) {
     if (c.role === 'employee') return refuse('Your role cannot build reports');
-    return ok(DATASETS.filter((d) => d.roles.includes(c.role)));
+    return ok(DATASETS.filter((d) => can(c.role, d.k, teamOf(c.meId, true).length > 0)));
   },
 
   async run(c, id) {
     const r = reportOf(id);
     if (!r) return refuse('No such report');
-    if (!r.shared && r.ownerId !== c.meId && c.role !== 'admin') {
+    if (!r.shared && r.ownerId !== c.meId && !callerCovers(c, 'customreports', 'all')) {
       return refuse('That report is private to somebody else');
     }
     const ds = datasetOf(r.datasetId);
@@ -212,7 +214,7 @@ export const makeReportService = (getSvc: () => Services): ReportService => ({
     const bad = validate(d);
     if (bad) return refuse(bad);
     const ds = datasetOf(d.datasetId)!;
-    if (!ds.roles.includes(c.role)) {
+    if (!can(c.role, ds.k, teamOf(c.meId, true).length > 0)) {
       return refuse(`Your role cannot report on ${ds.n.toLowerCase()}`);
     }
     const r: ReportDef = {
@@ -269,7 +271,7 @@ export const makeReportService = (getSvc: () => Services): ReportService => ({
     if (c.role === 'employee') return refuse('Your role cannot build reports');
     const r = reportOf(id);
     if (!r) return refuse('No such report');
-    if (!r.shared && r.ownerId !== c.meId && c.role !== 'admin') {
+    if (!r.shared && r.ownerId !== c.meId && !callerCovers(c, 'customreports', 'all')) {
       return refuse('That report is private to somebody else');
     }
     const copy: ReportDef = {

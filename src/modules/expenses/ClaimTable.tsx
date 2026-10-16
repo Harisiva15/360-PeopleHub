@@ -68,7 +68,7 @@ export function ClaimTable({
                       <button className="btn sm primary" onClick={() => onApprove?.(c)}>Approve</button>{' '}
                       <button className="btn sm" onClick={() => onReject?.(c)}>Reject</button>
                     </>
-                  ) : c.status === 'Approved' && app.role === 'admin' ? (
+                  ) : c.status === 'Approved' && app.reaches('expenses', 'approve', 'all') ? (
                     <button className="btn sm" onClick={() => onPay?.(c)}>Mark reimbursed</button>
                   ) : <span className="muted">—</span>}
                 </td>

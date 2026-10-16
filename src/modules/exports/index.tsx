@@ -228,7 +228,7 @@ function ExportsView() {
         value={tab}
         options={[
           { v: 'take' as const, label: `What you can export (${datasets.length})` },
-          { v: 'register' as const, label: app.role === 'admin' ? 'Register' : 'Your exports' },
+          { v: 'register' as const, label: app.reaches('exports', 'read', 'all') ? 'Register' : 'Your exports' },
         ]}
         onChange={setTab}
       />
@@ -282,7 +282,7 @@ function ExportsView() {
                 </option>
               ))}
             </select>
-            {app.role === 'admin' && (
+            {app.reaches('exports', 'read', 'all') && (
               <select className="input sm" value={f.byId ?? ''} aria-label="Person"
                 onChange={(e) => one('byId')(e.target.value)}>
                 <option value="">Anybody</option>
@@ -313,7 +313,9 @@ function ExportsView() {
           </div>
 
           <Card
-            title={app.role === 'admin' ? 'Everything that has left' : 'What you have taken'}
+            title={app.reaches('exports', 'read', 'all')
+                ? 'Everything that has left'
+                : 'What you have taken'}
             sub={`${history.length} of ${all.length} · newest first`}
             flush
           >
@@ -323,7 +325,7 @@ function ExportsView() {
                   <thead>
                     <tr>
                       <th>When</th><th>Dataset</th>
-                      {app.role === 'admin' && <th>By</th>}
+                      {app.reaches('exports', 'read', 'all') && <th>By</th>}
                       <th className="num">Rows</th><th className="num">Columns</th>
                       <th>Range</th><th>Outcome</th>
                     </tr>
@@ -345,7 +347,7 @@ function ExportsView() {
                             </div>
                           )}
                         </td>
-                        {app.role === 'admin' && (
+                        {app.reaches('exports', 'read', 'all') && (
                           <td>
                             <div className="row" style={{ gap: 8, alignItems: 'center' }}>
                               <Avatar name={r.run.byName} />
@@ -390,7 +392,7 @@ function ExportsView() {
             )}
           </Card>
 
-          {app.role === 'admin' && stats != null && stats.refused > 0 && (
+          {app.reaches('exports', 'read', 'all') && stats != null && stats.refused > 0 && (
             <Banner kind="warn" icon={<Icon n="blocked" size="lg" />} title="Refused attempts are kept too">
               {stats.refused} export(s) were refused because the role could not run
               them. Those are recorded deliberately — a register holding only the

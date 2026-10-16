@@ -610,7 +610,11 @@ function DashEmployee() {
 
 function Dashboard() {
   const app = useApp();
-  return app.role === 'employee' ? <DashEmployee /> : app.role === 'manager' ? <DashManager /> : <DashAdmin />;
+  /* Three dashboards, chosen by reach rather than by title: an HR or finance
+     administrator gets the wide one, anybody with reports gets the team one. */
+  if (app.reaches('dashboard', 'read', 'all')) return <DashAdmin />;
+  if (app.hasReports) return <DashManager />;
+  return <DashEmployee />;
 }
 
 registerModule({

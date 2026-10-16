@@ -51,7 +51,7 @@ export function AddJoinerForm({ close, onDone }: { close: () => void; onDone: ()
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isAdmin = app.role === 'admin';
+  const seesAll = app.reaches('employees', 'write', 'all');
   const set = <K extends keyof JoinerDraft>(k: K, v: JoinerDraft[K]) =>
     setD((prev) => ({ ...prev, [k]: v }));
 
@@ -102,8 +102,8 @@ export function AddJoinerForm({ close, onDone }: { close: () => void; onDone: ()
 
   return (
     <form onSubmit={submit}>
-      <Banner kind={isAdmin ? 'info' : 'warn'} icon={isAdmin ? 'ℹ' : '⏳'}>
-        {isAdmin
+      <Banner kind={seesAll ? 'info' : 'warn'} icon={seesAll ? 'ℹ' : '⏳'}>
+        {seesAll
           ? 'Creates the employee record immediately, with opening leave balances.'
           : 'Goes to an admin for approval. The employee record is created once they approve.'}
       </Banner>
@@ -177,7 +177,7 @@ export function AddJoinerForm({ close, onDone }: { close: () => void; onDone: ()
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 8 }}>
         <button type="button" className="btn" onClick={close} disabled={busy}>Cancel</button>
         <button type="submit" className="btn primary" disabled={busy}>
-          {busy ? 'Saving…' : isAdmin ? 'Create employee' : 'Send for approval'}
+          {busy ? 'Saving…' : seesAll ? 'Create employee' : 'Send for approval'}
         </button>
       </div>
     </form>
@@ -205,7 +205,7 @@ export function JoinerQueue({ rows, onDecide }: {
           <thead>
             <tr>
               <th>Name</th><th>Email</th><th>Role</th><th>Joining</th><th>Raised by</th>
-              {app.role === 'admin' && <th className="right">Decision</th>}
+              {app.reaches('employees', 'write', 'all') && <th className="right">Decision</th>}
             </tr>
           </thead>
           <tbody>
@@ -216,7 +216,7 @@ export function JoinerQueue({ rows, onDecide }: {
                 <td>{r.designation ?? '—'}{r.dept ? ` · ${r.dept}` : ''}</td>
                 <td className="nowrap">{r.joiningOn}</td>
                 <td className="muted">{r.requestedByName ?? '—'}</td>
-                {app.role === 'admin' && (
+                {app.reaches('employees', 'write', 'all') && (
                   <td className="right">
                     <button className="btn sm" onClick={() => onDecide(r.id, 'reject')}>Reject</button>
                     {' '}

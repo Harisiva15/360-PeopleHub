@@ -188,7 +188,7 @@ function Celebrations() {
   const { data: everyone = [] } = useAllEmployees();
   const post = usePostAnnouncement();
 
-  const canPost = app.role === 'admin' || app.role === 'manager';
+  const canPost = app.reaches('announcements', 'write', 'team');
 
   /*
    * Nothing sends a message. There is no notification path out of the product
@@ -282,7 +282,7 @@ function Announcements() {
   const setPinned = useSetPinned();
   const removeOne = useRemoveAnnouncement();
 
-  const canPost = app.role === 'admin' || app.role === 'manager';
+  const canPost = app.reaches('announcements', 'write', 'team');
   const [acked, setAcked] = useState<Record<string, boolean>>({});
 
   const ack = (a: Announcement) => {
@@ -316,9 +316,11 @@ function Announcements() {
 
   const compose = () => layer.modal({
     title: 'New announcement',
-    sub: app.role === 'admin' ? 'Goes to everyone' : 'Goes to your department',
+    sub: app.reaches('announcements', 'write', 'all')
+        ? 'Goes to everyone'
+        : 'Goes to your department',
     size: 'wide',
-    body: (close: () => void) => <Compose close={close} onPost={post} canPin={app.role === 'admin'} />,
+    body: (close: () => void) => <Compose close={close} onPost={post} canPin={app.reaches('announcements', 'write', 'all')} />,
     footer: null,
   });
 

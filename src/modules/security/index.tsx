@@ -192,7 +192,7 @@ function useAccessFindings(goToAudit: () => void): Finding[] {
    * `tenant_membership` and is what every server-side check reads, so it is
    * what a finding about privilege has to count.
    */
-  const admins = accounts.filter((a) => a.role === 'admin' && a.status === 'Active');
+  const admins = accounts.filter((a) => a.role !== 'employee' && a.status === 'Active');
   /* A settled exit has had its access closed, so it is no longer a finding. */
   const leavers = EXITS.filter((x) => x.status !== 'Settled' && x.lwd <= ymd(addDays(TODAY, 14)));
 
@@ -278,7 +278,7 @@ function useAccessFindings(goToAudit: () => void): Finding[] {
   return sortBy(out, (o) => SEV_RANK[o.sev]);
 }
 
-const ROLES: AppRole[] = ['admin', 'manager', 'employee'];
+const ROLES: AppRole[] = ['company_admin', 'hr_admin', 'finance_admin', 'employee'];
 
 function AccessTab({ goToAudit }: { goToAudit: () => void }) {
   const findings = useAccessFindings(goToAudit);

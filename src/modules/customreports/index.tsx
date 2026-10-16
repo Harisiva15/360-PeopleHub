@@ -431,7 +431,7 @@ function CustomReportsView() {
                     act(() => duplicate.mutate(r.report.id), 'Copied to your reports')}>
                     Duplicate
                   </button>
-                  {(r.mine || app.role === 'admin') && (
+                  {(r.mine || app.reaches('customreports', 'write', 'all')) && (
                     <>
                       <button className="btn sm" onClick={() => edit(r)}>
                         <Icon n="tool" size="lg" /> Edit

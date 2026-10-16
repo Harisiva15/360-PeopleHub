@@ -15,14 +15,13 @@
 import { uid } from '../../lib/rng';
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
-import { EMAP } from '../../data/employees';
+import { EMAP, teamOf } from '../../data/employees';
 import { ORG } from '../../data/org';
 import { LOGIN_HISTORY, USERS, loginHistoryFor, userOf } from '../../data/users';
 import type { LoginEvent, LoginMethod, UserAccount, UserStatus } from '../../data/users';
 import { ASSIGNMENTS, SCHEDULES } from './schedules';
-import { actionScope, may, mayAssignRole, PERMS } from '../../state/rbac';
+import { PERMS, actionScope, callerCovers, may, mayAssignRole, visibleIds } from '../../state/rbac';
 import type { UserAction } from '../../state/rbac';
-import { visibleIds } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
 import type {
   Caller, UserDraft, UserFilter, UserService, UserStats,
@@ -130,7 +129,7 @@ function validate(d: Partial<UserDraft>, c: Caller, existing?: UserAccount): str
    * every time they raise a joiner, and this is the one they may not assign.
    */
   if (role !== existing?.role && !mayAssignRole(c.role, role)) {
-    return role === 'admin'
+    return callerCovers(c, 'users', 'all')
       ? 'Only an administrator can create or assign the Administrator role'
       : 'Your role cannot assign that role';
   }
@@ -214,7 +213,8 @@ export const userService: UserService = {
      * here rather than passed in — a client that chooses its own status is a
      * client that can skip the approval it was supposed to wait for.
      */
-    const byManager = c.role === 'manager';
+    const byManager = !callerCovers(c, 'users', 'all')
+      && teamOf(c.meId, true).length > 0;
     const status: UserStatus = byManager
       ? 'Pending Approval'
       : draft.sendInvitation === false ? 'Active' : 'Invitation Pending';
@@ -562,7 +562,7 @@ export const userService: UserService = {
     if (c.role === 'employee') {
       return refuse('Only an administrator or a manager can read this');
     }
-    if (c.role === 'admin') return ok(LOGIN_HISTORY.slice(0, 500));
+    if (callerCovers(c, 'users', 'all')) return ok(LOGIN_HISTORY.slice(0, 500));
     const mine = visibleIds(c.role, c.meId);
     return ok(LOGIN_HISTORY
       .filter((e) => e.employeeId && mine.includes(e.employeeId))

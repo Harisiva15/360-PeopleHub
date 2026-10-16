@@ -11,14 +11,14 @@
 import { sortBy } from '../../lib/collections';
 import { uid } from '../../lib/rng';
 import { TODAY, ymd } from '../../lib/dates';
-import { EMAP } from '../../data/employees';
+import { EMAP, teamOf } from '../../data/employees';
 import {
   SEATS, SOFTWARE, SOFTWARE_CATS, annualCost, isDormant, isOverAllocated,
   productOf, renewalCalendar, renewsInDays, seatsHeldBy, seatsOf, softwareKPI, wastedCost,
 } from '../../data/software';
 import type { SoftwareProduct, SoftwareSeat } from '../../data/software';
 import { recordAudit } from '../../data/audit';
-import { visibleIds } from '../../state/rbac';
+import { callerCovers } from '../../state/rbac';
 import type {
   Caller, SoftwareDetail, SoftwareDraft, SoftwareFilter, SoftwareRow,
   SoftwareSeatRow, SoftwareService,
@@ -68,7 +68,7 @@ function matches(r: SoftwareRow, f: SoftwareFilter): boolean {
 }
 
 /** An administrator writes the estate; everyone else reads. */
-const mayWrite = (c: Caller) => c.role === 'admin';
+const mayWrite = (c: Caller) => callerCovers(c, 'software', 'all');
 
 /**
  * Whose seat this caller may revoke.
@@ -78,9 +78,10 @@ const mayWrite = (c: Caller) => c.role === 'admin';
  * seats accumulate. Taking one from outside their line is not theirs to do.
  */
 function mayRevoke(c: Caller, empId: string): boolean {
-  if (c.role === 'admin') return true;
-  if (c.role === 'manager') return visibleIds('manager', c.meId).includes(empId);
-  return false;
+  if (callerCovers(c, 'software', 'all')) return true;
+  /* Their own line, and not themselves: taking back your own seat is not
+   * housekeeping, it is leaving the product you were given. */
+  return teamOf(c.meId, true).includes(empId);
 }
 
 const validate = (d: Partial<SoftwareDraft>, existing?: SoftwareProduct): string | null => {

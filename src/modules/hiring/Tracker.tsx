@@ -74,7 +74,7 @@ export function TrackerView() {
   const today = ymd(TODAY);
 
   /* A manager sees the job orders they own or that sit under them. */
-  const mine = app.role === 'admin' ? rows : rows.filter(
+  const mine = app.reaches('hiring', 'read', 'all') ? rows : rows.filter(
     (r) => r.hiringManagerId === app.meId || r.recruiterId === app.meId
       || isMyReport(app.meId, r.hiringManagerId));
 

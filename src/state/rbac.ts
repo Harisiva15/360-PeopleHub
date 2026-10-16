@@ -141,6 +141,33 @@ export const hasReportsFromRules = (
 ): boolean => Object.values(rules ?? {})
   .some((r) => r.read === 'team' || r.write === 'team' || r.approve === 'team');
 
+/** Scope width, matching `RANK` in server/src/auth/policy.ts. */
+const RANK: Record<Scope, number> = {
+  none: 0, own: 1, team: 2, all: 3,
+};
+
+/** Whether a granted scope reaches as far as a needed one. */
+export const covers = (granted: Scope, needed: Scope): boolean => RANK[granted] >= RANK[needed];
+
+/**
+ * A caller's scope on one module, for the in-memory services.
+ *
+ * The mock has no server to ask and no `hasReports` on `Caller`, so the demo
+ * dataset's own reporting tree answers that half. The shape is the same as the
+ * server's union: role first, then the tree widens it.
+ */
+export const callerScope = (
+  c: { role: AppRole; meId: string },
+  module: string,
+): Scope => scopeOfDemo(c.role, teamOf(c.meId, true).length > 0, module);
+
+/** Does this caller reach `needed` on `module`? */
+export const callerCovers = (
+  c: { role: AppRole; meId: string },
+  module: string,
+  needed: Scope,
+): boolean => covers(callerScope(c, module), needed);
+
 /**
  * One module's scope in the demo build, where there is no server to ask.
  *

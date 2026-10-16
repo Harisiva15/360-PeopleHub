@@ -1,3 +1,4 @@
+import type { AppRole } from '../../types/employee';
 import { useState } from 'react';
 import { sortBy, sum, uniq } from '../../lib/collections';
 import { addDays, daysBetween, fmtD, monthLabelLong, TODAY, yearsSince, ymd } from '../../lib/dates';
@@ -15,7 +16,7 @@ import { Chip, Divide, ListRow, StatusBadge } from '../../components/common';
 import { HBar, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { isMyReport } from '../../state/rbac';
+import { covers, isMyReport, scopeOfDemo } from '../../state/rbac';
 import {
   useActiveLoans, useAllEmployees, useExitDetail, useExits, useMyLeaveBalance,
   useSetClearance, useSettleExit, useVisiblePeople,
@@ -58,8 +59,8 @@ const EXIT_TIMELINE: [string, string][] = [
 
 /** Exits the signed-in user may act on. */
 /** Managers see exits from their own line; admins see the whole book. */
-function exitScope(role: string, meId: string, exits: ExitRecord[], dir: Directory): ExitRecord[] {
-  if (role === 'admin') return exits;
+function exitScope(role: AppRole, meId: string, exits: ExitRecord[], dir: Directory): ExitRecord[] {
+  if (covers(scopeOfDemo(role, false, 'exit'), 'all')) return exits;
   return exits.filter((x) => {
     const e = dir.byId(x.empId);
     return !!e && (e.managerId === meId || isMyReport(meId, x.empId));
@@ -250,7 +251,7 @@ function XtFnf({ sel, setSel }: { sel: string | null; setSel: (id: string) => vo
             actions={
               <div className="row">
                 <button className="btn sm" onClick={() => window.print()}><Icon n="print" size="lg" /> Statement</button>
-                {app.role === 'admin' && x.status !== 'Settled' && (
+                {app.reaches('exit', 'write', 'all') && x.status !== 'Settled' && (
                   <button className="btn sm primary" onClick={async () => {
                     try {
                       await settleExit.mutate(x.id);

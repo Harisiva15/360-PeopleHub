@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  ACCOUNTS, can, hasReportsFromRules, SCOPE, scopeOfDemo, visibleIds,
+  ACCOUNTS, can, covers, hasReportsFromRules, SCOPE, scopeOfDemo, visibleIds,
 } from './rbac';
 import type { RuleScopes, Scope } from './rbac';
 import { EMAP, teamOf } from '../data/employees';
@@ -79,6 +79,14 @@ interface AppState {
    * readable by accident.
    */
 scopeOf: (module: string, verb: 'read' | 'write' | 'approve') => Scope;
+  /**
+   * Does this person reach `needed` on this module and verb?
+   *
+   * The question nearly every screen actually wants. `role === 'admin'` was
+   * standing in for it, which is why hr_admin and finance_admin would have
+   * been locked out of their own modules by a mechanical rename.
+   */
+  reaches: (module: string, verb: 'read' | 'write' | 'approve', needed: Scope) => boolean;
 
   isMyReport: (id: string) => boolean;
 
@@ -438,6 +446,13 @@ export function AppProvider({ children, initialRole = 'company_admin' }: { child
         /* Fail closed: a module the server did not mention grants nothing. */
         if (!r) return apiMode ? 'none' : scopeOfDemo(role, hasReports, module);
         return (r[verb] ?? 'none') as Scope;
+      },
+      reaches: (module: string, verb: 'read' | 'write' | 'approve', needed: Scope) => {
+        const r = resolved.access?.rules?.[module];
+        const granted = r
+          ? ((r[verb] ?? 'none') as Scope)
+          : (apiMode ? 'none' : scopeOfDemo(role, hasReports, module));
+        return covers(granted, needed);
       },
       isMyReport: (id: string) => role !== 'employee' && visibleIds(role, meId).includes(id) && id !== meId,
       toasts,

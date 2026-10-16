@@ -61,12 +61,15 @@ interface Dest {
  * on the role and on nothing else.
  */
 function useDestinations(): { groups: NavGroup[]; dests: Dest[] } {
-  const { role } = useApp();
+  const app = useApp();
+  const { role } = app;
   return useMemo(() => {
-    const groups = NAV.filter((g) => (!g.roles || g.roles.includes(role)) && can(role, g.k));
+    const groups = NAV.filter(
+      (g) => can(role, g.k, app.hasReports) && (!g.needs || app.reaches(g.k, 'read', g.needs)),
+    );
 
     const allowed = (i: NavItem) =>
-      can(role, i.k) && (!i.roles || i.roles.includes(role));
+      can(role, i.k, app.hasReports) && (!i.needs || app.reaches(i.k, 'read', i.needs));
 
     const dests: Dest[] = [];
     groups.forEach((g) => {
@@ -81,7 +84,7 @@ function useDestinations(): { groups: NavGroup[]; dests: Dest[] } {
       });
     });
     return { groups, dests };
-  }, [role]);
+  }, [role, app]);
 }
 
 /* ---------------- breadcrumb ---------------- */

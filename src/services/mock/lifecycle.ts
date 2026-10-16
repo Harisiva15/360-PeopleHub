@@ -25,7 +25,7 @@ import {
 } from '../../data/lifecycleStages';
 import type { LifecycleStage, LifecycleTask } from '../../data/lifecycleStages';
 import { recordAudit } from '../../data/audit';
-import { visibleIds } from '../../state/rbac';
+import { callerCovers, visibleIds } from '../../state/rbac';
 import type {
   Caller, LifecycleDetail, LifecycleFilter, LifecycleRow, LifecycleService, LifecycleStats,
 } from '../contracts';
@@ -47,9 +47,9 @@ function inScope(c: Caller): LifecycleRow[] {
     openTasks: tasksFor(s.id).filter((t) => !t.done).length,
   }));
 
-  if (c.role === 'admin') return all;
-  if (c.role === 'manager') {
-    const mine = new Set(visibleIds('manager', c.meId));
+  if (callerCovers(c, 'lifecycle', 'all')) return all;
+  {
+    const mine = new Set(visibleIds(c.role, c.meId));
     /*
      * A manager's line, plus the joiners and candidates reporting into them —
      * those have no employee row, so the id set cannot find them.
@@ -161,7 +161,9 @@ export const lifecycleService: LifecycleService = {
   },
 
   removeTask(c, taskId) {
-    if (c.role !== 'admin') return refuse('Only an administrator can remove a lifecycle task');
+    if (!callerCovers(c, 'lifecycle', 'all')) {
+      return refuse('Only an administrator can remove a lifecycle task');
+    }
     const i = LIFECYCLE_TASKS.findIndex((t) => t.id === taskId);
     if (i < 0) return refuse('No such task');
     const [t] = LIFECYCLE_TASKS.splice(i, 1);
