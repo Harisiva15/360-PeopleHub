@@ -145,7 +145,16 @@ export function PunchWidget({ empId }: { empId: string }) {
       site: activeMode,
       lat: fix?.lat ?? null,
       lng: fix?.lng ?? null,
-      src: 'Web',
+      /*
+       * Lower case, because this is a stored value and not a label.
+       * `attendance.source` is a closed set in the schema — 'web', 'mobile',
+       * 'biometric', 'kiosk', 'import', 'system' — and this sent 'Web', so
+       * every punch was refused by the CHECK constraint and answered 500.
+       * The server normalises case now as well; this sends the right thing to
+       * begin with. The capital W belongs to the Source column, which formats
+       * it for display.
+       */
+      src: 'web',
       at: nowInstant(),
     };
     const r = kind === 'in'
@@ -174,6 +183,31 @@ export function PunchWidget({ empId }: { empId: string }) {
       footer: (close) => <button className="btn primary" onClick={close}>Done</button>,
     });
     app.toast(kind === 'in' ? 'Punched in' : 'Punched out', 'ok');
+  };
+
+  /**
+   * The same punch, with a failure that somebody can see.
+   *
+   * `doPunch` is async and was called straight from onClick, so a rejection
+   * became an unhandled promise: no toast, no modal, no console line anybody
+   * would look at. The screen was identical whether the punch was recorded or
+   * refused — which is how a CHECK-constraint violation on every single punch
+   * went unnoticed long enough to leave production with no attendance rows at
+   * all.
+   *
+   * A refusal has to say so. The message is the server's own where there is
+   * one, because "you have already checked in today" and "your account is not
+   * linked to an employee record" are different problems with different
+   * answers, and collapsing them into "something went wrong" is how somebody
+   * ends up asking payroll instead of fixing it.
+   */
+  const punchOrSay = async (kind: 'in' | 'out') => {
+    try {
+      await doPunch(kind);
+    } catch (e) {
+      const why = e instanceof Error && e.message ? e.message : 'The server did not say why.';
+      app.toast(`Could not ${kind === 'in' ? 'punch in' : 'punch out'} — ${why}`, 'err');
+    }
   };
 
   return (
@@ -220,9 +254,9 @@ export function PunchWidget({ empId }: { empId: string }) {
         </div>
 
         {state === 'out' ? (
-          <button className="btn solid" onClick={() => doPunch('in')}><Icon n="timer" size="lg" /> Punch In</button>
+          <button className="btn solid" onClick={() => void punchOrSay('in')}><Icon n="timer" size="lg" /> Punch In</button>
         ) : state === 'in' ? (
-          <button className="btn solid" onClick={() => doPunch('out')}><Icon n="stop" size="lg" /> Punch Out</button>
+          <button className="btn solid" onClick={() => void punchOrSay('out')}><Icon n="stop" size="lg" /> Punch Out</button>
         ) : (
           <span className="badge" style={{ background: 'rgba(255,255,255,.2)', color: '#fff', borderColor: 'rgba(255,255,255,.3)' }}><Icon n="ok" size="lg" /> Day completed
           </span>

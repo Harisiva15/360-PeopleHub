@@ -186,6 +186,39 @@ const DERIVE = `
     FROM resolved LEFT JOIN site s ON s.id = resolved.punch_site_id`;
 
 /**
+ * How a punch was made, as the one set the column will accept.
+ *
+ * Migration 0004 closed this set in the schema:
+ *
+ *     source text NOT NULL DEFAULT 'web'
+ *       CHECK (source IN ('web','mobile','biometric','kiosk','import','system'))
+ *
+ * and the punch handler passed `at.src` straight into it. The web client sends
+ * `'Web'`. Postgres refused every insert with 23514, the route answered 500,
+ * and the screen said nothing at all — so production reached this point with
+ * zero attendance rows ever written, which read as "check-in records no time
+ * and no location" because there was no row to carry either.
+ *
+ * Normalised rather than rejected: the case of a client's label is not a thing
+ * worth failing a morning over, and 'Biometric' means 'biometric'. An
+ * unrecognised value does become 'web' — the column's own default — because the
+ * alternative is refusing a punch over a field nobody reads for anything but a
+ * display label.
+ *
+ * Validated here rather than left to the constraint, so the one place that
+ * knows the permitted set is the one place that writes the column. The
+ * constraint stays as the backstop it is meant to be.
+ */
+const ATTENDANCE_SOURCES = [
+  'web', 'mobile', 'biometric', 'kiosk', 'import', 'system',
+] as const;
+
+function sourceOf(src: string | undefined | null): string {
+  const s = (src ?? '').trim().toLowerCase();
+  return (ATTENDANCE_SOURCES as readonly string[]).includes(s) ? s : 'web';
+}
+
+/**
  * The moment a punch happened, as something `timestamptz` will accept.
  *
  * The client used to send a bare 'HH:MM' here, which Postgres rejected outright
@@ -368,7 +401,7 @@ export async function punchIn(
              latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
              distance_m = EXCLUDED.distance_m, geo_ok = EXCLUDED.geo_ok,
              updated_at = now()`,
-      [empId, date, at.site === WFH ? 'W' : 'P', when, d.site_id, at.src ?? 'web', d.is_late,
+      [empId, date, at.site === WFH ? 'W' : 'P', when, d.site_id, sourceOf(at.src), d.is_late,
         lat, lng, remote ? null : d.distance_m, geoOk]);
 
     return reload(db, empId, date);

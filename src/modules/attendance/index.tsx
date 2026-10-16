@@ -23,7 +23,7 @@ import type { Directory } from './data';
 import { MonthCalendar } from '../dashboard/shared';
 import {
   actualLabel, awaitingRecord, composeDays, expectedLabel, leaveLabel,
-  recordedDuringLeave,
+  recordedDuringLeave, sourceLabel,
 } from './day';
 import { useTabFromUrl } from '../tabParam';
 import { registerModule } from '../registry';
@@ -57,7 +57,7 @@ function useAttDetail(dir: Directory) {
             ['Punch in', <span className="mono">{r.inT ? fmtTime(r.inT) + (r.late ? ' · late' : '') : '—'}</span>],
             ['Punch out', <span className="mono">{r.outT ? fmtTime(r.outT) : '—'}</span>],
             ['Net hours', r.mins ? hhmm(r.mins) + ' h (excl. 45 min break)' : '—'],
-            ['Source', r.src || '—'],
+            ['Source', sourceLabel(r.src) || '—'],
             ['Work mode', siteOf(r.site).name],
             ...(r.notes ? [['Notes', r.notes]] as [string, React.ReactNode][] : []),
             ...(r.reg ? [['Regularisation', <><StatusBadge status={r.reg.status} /> — {r.reg.reason}</>]] as [string, React.ReactNode][] : []),
@@ -84,7 +84,7 @@ function AttRow({ r, person, onClick }: { r: AttRecord; person?: Employee; onCli
       <td className="mono">{r.outT ? fmtTime(r.outT) : '—'}</td>
       <td className="num">{r.mins ? hhmm(r.mins) : '—'}</td>
       <td className="nowrap">{r.inT ? siteOf(r.site).name : '—'}</td>
-      <td className="muted">{r.src || '—'}</td>
+      <td className="muted">{sourceLabel(r.src) || '—'}</td>
     </tr>
   );
 }
@@ -141,7 +141,7 @@ function AttMe({ onRegularise }: { onRegularise: () => void }) {
       [['Date', 'Day', 'Status', 'In', 'Out', 'Hours', 'Mode', 'Source', 'Notes']].concat(
         sortBy(recs, (r) => r.date).map((r) => [
           r.date, dowOf(r.date), r.status, r.inT || '', r.outT || '', (r.mins / 60).toFixed(2),
-          siteOf(r.site).name, r.src || '', r.notes || '',
+          siteOf(r.site).name, sourceLabel(r.src), r.notes || '',
         ]),
       ),
     );
@@ -392,7 +392,7 @@ function AttLog() {
         sortBy(recs, (r) => r.date).map((r) => {
           const e = dir.byId(r.empId);
           return [e?.code ?? r.empId, e?.name ?? '—', e ? deptOf(e.dept).name : '—', e ? siteOf(e.site).name : '—', r.date, r.status,
-            r.inT || '', r.outT || '', (r.mins / 60).toFixed(2), siteOf(r.site).name, r.src || ''];
+            r.inT || '', r.outT || '', (r.mins / 60).toFixed(2), siteOf(r.site).name, sourceLabel(r.src)];
         }),
       ),
     );

@@ -71,7 +71,7 @@ const jitter = (base: number, m: number): number => base + (rnd() - 0.5) * m;
         lng: null,
         dist: null,
         geoOk: null,
-        src: 'Web',
+        src: 'web',
         late: false,
         reg: null,
         notes: '',

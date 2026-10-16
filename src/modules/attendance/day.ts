@@ -86,6 +86,31 @@ export const ACTUAL_LABEL: Record<string, string> = {
 export const NO_ATTENDANCE = 'No attendance';
 
 /**
+ * How a punch was made, in words.
+ *
+ * `attendance.source` is a closed lower-case set in the schema — 'web',
+ * 'mobile', 'biometric', 'kiosk', 'import', 'system'. The screens were showing
+ * that value raw, which is why the client sent 'Web' with a capital letter: it
+ * was being written to satisfy a column and read as a label at the same time,
+ * and the column refused it.
+ *
+ * So the stored value stays canonical and this turns it into something to read.
+ * An unknown value is shown as it arrives rather than hidden, because a source
+ * nobody has a word for is still worth seeing.
+ */
+const SOURCE_LABEL: Record<string, string> = {
+  web: 'Web',
+  mobile: 'Mobile',
+  biometric: 'Biometric',
+  kiosk: 'Kiosk',
+  import: 'Imported',
+  system: 'System',
+};
+
+export const sourceLabel = (src: string | null | undefined): string =>
+  (src ? SOURCE_LABEL[src.toLowerCase()] ?? src : '');
+
+/**
  * The actual side in words.
  *
  * Returns `NO_ATTENDANCE` for a day with no row — never `Absent`, and never the

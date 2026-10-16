@@ -30,7 +30,7 @@ function ensure(empId: string, date: string, status: AttRecord['status']): AttRe
     inT: null, outT: null, mins: 0,
     site: e?.site ?? 'CHN',
     lat: null, lng: null, dist: null, geoOk: null,
-    src: 'Web', late: false, reg: null, notes: '',
+    src: 'web', late: false, reg: null, notes: '',
   };
   ATT.push(row);
   (ATT_IDX[empId] = ATT_IDX[empId] || {})[date] = row;
