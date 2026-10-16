@@ -23,7 +23,10 @@
  *     the real lock it holds across `onAuthStateChange`. An auth method awaited
  *     inside that callback deadlocks, and a hand-written stub cannot deadlock,
  *     so a stub can pass while production hangs forever.
- *   - React, its scheduler, and StrictMode's double-invoked effects.
+ *   - React and its scheduler. Deliberately WITHOUT StrictMode: the shipped
+ *     bundle does not double-invoke effects, and double-invoking them here
+ *     re-subscribes and re-reads the session, which papers over an ordering
+ *     that production only gets one shot at.
  *   - The real `HashRouter`, provider tree, `AuthGate` branch order, and
  *     `LoginPage`'s own busy state.
  *
@@ -33,8 +36,8 @@
  *
  * Two lines are load-bearing and worth keeping if this file is edited:
  *
- *   - `StrictMode`, because mount → unmount → remount is what shakes out an
- *     effect that only settles the once.
+ *   - the held getSession above, because the race it forces is the whole
+ *     point of assertions 12 to 14 and is invisible without it.
  *   - `setServices(createHttpServices(...))`, because `getServices()` defaults
  *     to the mock over `src/data`. Without it the app never asks the server
  *     anything, and the test proves only that the demo build works.
@@ -282,6 +285,31 @@ if (!sb.supabase) {
   process.exit(0);
 }
 
+/*
+ * The first session check, held.
+ *
+ * AuthProvider resolves the session two ways: once at mount via getSession(),
+ * and continuously via onAuthStateChange. Both write the same two pieces of
+ * state, so whichever lands last wins. This holds the first one and delivers
+ * the answer it captured — "there is no session" — after SIGNED_IN, which is
+ * what a slow first session check does in a real browser.
+ *
+ * Everything else about auth-js stays real; only the timing is forced.
+ */
+const realGetSession = sb.supabase.auth.getSession.bind(sb.supabase.auth);
+let heldOnce = false;
+let releaseHeld: (() => void) | null = null;
+(sb.supabase.auth as unknown as Record<string, unknown>).getSession = async () => {
+  const answer = await realGetSession();
+  if (!heldOnce) {
+    heldOnce = true;
+    trace.push('getSession HELD (stale answer captured)');
+    await new Promise<void>((r) => { releaseHeld = r; });
+    trace.push('getSession RELEASED (stale answer delivered)');
+  }
+  return answer;
+};
+
 const { getServices, setServices } = await import('../src/services');
 const { createHttpServices, apiConfigured } = await import('../src/services/http');
 if (!apiConfigured) {
@@ -291,7 +319,7 @@ if (!apiConfigured) {
 setServices(createHttpServices(getServices()));
 
 const React = await import('react');
-const { StrictMode, act } = React;
+const { act } = React;
 const { createRoot } = await import('react-dom/client');
 const App = (await import('../src/App')).default;
 const { loadAllRoutes } = await import('../src/modules');
@@ -325,7 +353,7 @@ const html = () => w.document.getElementById('root')!.innerHTML;
 const text = () => (w.document.getElementById('root')!.textContent ?? '');
 
 await act(async () => {
-  root.render(React.createElement(StrictMode, null, React.createElement(App, null)));
+  root.render(React.createElement(App, null));
 });
 await settle();
 
@@ -407,6 +435,33 @@ ok('11. the deep-linked destination survived signing in',
   `landed on ${w.location.hash} — a bookmark must not be lost at the door`);
 
 console.log(`\n  ${calls} request(s): ${trace.join(' → ')}\n`);
+
+/* ------------------------------------------------------------------ *
+ * And then the first session check finally answers
+ * ------------------------------------------------------------------ */
+
+console.log('');
+console.log('the first session check answers at last, with what it saw before');
+console.log('');
+
+await act(async () => { releaseHeld?.(); });
+await settle(16);
+
+ok('12. a stale session check does not sign them back out',
+  !/type=.password./.test(html()),
+  'getSession answered after SIGNED_IN with the session it saw before it. '
+  + 'Letting that overwrite a newer one throws somebody who just signed in '
+  + 'back to the login form, and latches them there: ' + text().slice(0, 200));
+ok('13. and the button is still not stuck on Signing in',
+  !/Signing in/.test(text()),
+  text().slice(0, 200));
+ok('14. the signed-in person is still named on screen',
+  text().includes(EMP.name),
+  text().slice(0, 200));
+
+console.log('');
+console.log('  trace: ' + trace.join(' -> '));
+console.log('');
 
 clearTimeout(watchdog);
 root.unmount();

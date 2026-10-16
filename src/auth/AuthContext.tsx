@@ -213,6 +213,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMustChange(false);
   }, []);
 
+  /*
+   * Whether onAuthStateChange has spoken yet.
+   *
+   * Two things below resolve the session and both write the same state, so
+   * whichever lands last wins. The listener is always the better authority:
+   * it reports what just happened, while getSession() reports what was true
+   * when it was called. On a slow first check that answer arrives after a
+   * sign-in and is wrong in two ways at once - it returns somebody who just
+   * signed in to the login screen, and its else-branch sets mfaRequired
+   * false, which is the second factor cleared by a race rather than by a
+   * check. A ref, not state: it gates an effect and must not re-run it.
+   */
+  const authEventSeen = useRef(false);
+
   useEffect(() => {
     if (!supabase) return;
 
@@ -221,6 +235,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // after an OAuth redirect. Either way this resolves it once.
     void supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return;
+      /* Something newer already answered; this one is stale. */
+      if (authEventSeen.current) return;
       setSession(data.session);
       setReady(true);
       // A reload lands here rather than on SIGNED_IN, and a reloaded tab owes
@@ -230,6 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
+      authEventSeen.current = true;
       setSession(next);
       setReady(true);
 
