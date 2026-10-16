@@ -12,8 +12,10 @@
 
 import { withTenant } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
-import { POLICY, ROLES, effectiveRule, narrower, ruleFor } from '../../auth/policy.ts';
-import type { ModuleRule, Role, Scope } from '../../auth/policy.ts';
+import {
+  POLICY, POLICY_LAYERS, ROLES, effectiveRule, narrower, ruleFor,
+} from '../../auth/policy.ts';
+import type { Layer, ModuleRule, Role, Scope } from '../../auth/policy.ts';
 import { forgetOverrides, overridesFor } from '../../auth/overrides.ts';
 
 export class PermissionError extends Error {
@@ -34,8 +36,11 @@ export interface ModuleGrid {
   effective: Record<Role, ModuleRule>;
 }
 
-const byRole = (fn: (r: Role) => ModuleRule): Record<Role, ModuleRule> =>
-  ({ employee: fn('employee'), manager: fn('manager'), admin: fn('admin') });
+const byRole = (
+  fn: (r: Role | Layer) => ModuleRule,
+): Record<Role | Layer, ModuleRule> => Object.fromEntries(
+  POLICY_LAYERS.map((l) => [l, fn(l)]),
+) as Record<Role | Layer, ModuleRule>;
 
 /**
  * The whole grid, ceiling and effective side by side.
@@ -101,7 +106,7 @@ export async function setPermissions(
      * undo it from inside the application, and the fix becomes a database
      * session somebody has to be talked through on the phone.
      */
-    if (p.module === 'settings' && p.role === 'admin' && p.read === 'none') {
+    if (p.module === 'settings' && p.role === 'company_admin' && p.read === 'none') {
       throw new PermissionError(
         'Administrators cannot be removed from Settings — there would be no way '
         + 'back from inside the application', 'forbidden');

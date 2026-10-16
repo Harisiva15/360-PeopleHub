@@ -183,7 +183,8 @@ import {
   agentFrom, recordLoginEvent, listLoginHistory, listTenantLoginHistory,
 } from '../modules/users/loginHistory.ts';
 import {
-  effectiveModulesFor, effectiveRule, ROLE_SUMMARY,
+  effectiveModulesForTenant, effectiveRuleFor, fromLegacyRole, legacyHasReports,
+  ROLE_SUMMARY,
 } from '../auth/policy.ts';
 import { overridesFor } from '../auth/overrides.ts';
 import { moduleForPath } from './route-modules.ts';
@@ -2059,7 +2060,10 @@ const routes: Route[] = [
      */
     handler: async (c) => {
       const overrides = await overridesFor(c);
-      const modules = effectiveModulesFor(c.role, overrides);
+      /* Through the bridge: Caller.role is still the legacy union. */
+      const role = fromLegacyRole(c.role);
+      const hasReports = legacyHasReports(c.role);
+      const modules = effectiveModulesForTenant(role, hasReports, overrides);
       /*
        * Identity travels with the permissions.
        *
@@ -2071,11 +2075,11 @@ const routes: Route[] = [
        */
       const identity = await whoAmI(c);
       return {
-        role: c.role,
-        summary: ROLE_SUMMARY[c.role],
+        role,
+        summary: ROLE_SUMMARY[role],
         modules,
         rules: Object.fromEntries(
-          modules.map((m) => [m, effectiveRule(c.role, m, overrides)]),
+          modules.map((m) => [m, effectiveRuleFor(role, hasReports, m, overrides)]),
         ),
         identity,
       };
@@ -2629,7 +2633,10 @@ export function createApp() {
           const moduleKey = moduleForPath(req.method ?? 'GET', url.pathname);
           if (moduleKey) {
             const overrides = await overridesFor(caller);
-            if (effectiveRule(caller.role, moduleKey, overrides).read === 'none') {
+            if (effectiveRuleFor(
+              fromLegacyRole(caller.role), legacyHasReports(caller.role),
+              moduleKey, overrides,
+            ).read === 'none') {
               send(res, 403, { error: 'this module is not available to your role' });
               return;
             }

@@ -1,44 +1,66 @@
 /**
  * What each role may do, in one place.
  *
- * Until now this was described in three places that disagreed: `PERMS` in the
- * frontend gated navigation, `role_permission` in the database called itself
- * "the authority" while being read by nothing and covering nine of
- * thirty-three modules, and 114 hand-written `caller.role` checks across
- * twenty-two services did the actual enforcing. This file is the description;
- * the services remain the enforcement, and `checks/roles.ts` fails the build
- * when the two drift apart.
+ * Three places used to describe this and disagree: `PERMS` in the frontend
+ * gated navigation, `role_permission` in the database called itself "the
+ * authority" while being read by nothing, and 114 hand-written `caller.role`
+ * checks did the actual enforcing. This file is the description; the services
+ * remain the enforcement, and `checks/roles.ts` fails the build when the two
+ * drift apart.
  *
  * ---------------------------------------------------------------------------
- * THE THREE ROLES
+ * THE ROLES, AND THE ONE THAT IS NOT A ROLE
  * ---------------------------------------------------------------------------
  *
- * **employee** — self-service, and the floor everyone stands on.
+ * **employee** — everyone, self-service, and the floor every other role stands
+ * on. Sees their own record and what the whole company shares: the org chart,
+ * announcements, celebrations, the project board. Raises their own requests and
+ * approves nothing, including their own.
  *
- * Sees their own record and the things the whole company shares: the org
- * chart, announcements, celebrations, the project board. Raises their own
- * requests — leave, expenses, timesheets, tickets, asset requests, letters —
- * and approves nothing, including their own. Sees their own pay and nobody
- * else's. An employee is not a lesser manager; most of what the app does for
- * them has no team dimension at all.
+ * **hr_admin** — people. The directory, job titles, the lifecycle, onboarding,
+ * exits, hiring, documents, attendance, leave, timesheets, shifts, performance,
+ * learning, benefits and the helpdesk, all at `all`. Edits compensation.
  *
- * **manager** — an employee, plus their reporting line.
+ * **finance_admin** — money. Payroll, tax, expenses and the commercial book at
+ * `all`, plus read over the people data those depend on. Sees pay and does not
+ * change what people are paid.
  *
- * Everything above for themselves, and *read* over everyone beneath them in
- * the tree, however deep. The addition that matters is `approve`: leave,
- * timesheets, regularisations, expenses, overtime and asset requests from
- * their line stop with them. Two things a manager deliberately does not get:
- * anybody else's pay — compensation is admin-only, and a manager seeing their
- * report's salary is a different product decision from seeing their leave —
- * and configuration, which changes the rules for people outside their line.
+ * **company_admin** — the whole tenant, and the only role that creates logins,
+ * assigns roles or edits company settings.
  *
- * **admin** — the whole tenant.
+ * **manager is deliberately not a role.** It used to be one, and that was
+ * wrong: whether somebody answers for other people is a fact about the
+ * reporting tree, not a title somebody is given. So `manager` below is a
+ * *layer*, applied to anyone with reports at any depth, on top of whatever role
+ * they hold. An HR administrator who runs a team is both; so is an employee who
+ * runs a team, which is the ordinary case and used to require an assigned role
+ * to express.
  *
- * Reads and writes everything, including compensation, configuration, the
- * audit trail and the commercial book. The one thing role does not buy is
- * self-approval: every approve path refuses the caller's own record
- * separately, because "senior enough to approve" and "allowed to approve your
- * own" are different questions and the second answer is always no.
+ * One consequence worth stating: on a tenant where `employee.manager_id` is
+ * empty, the layer applies to nobody and every team scope is empty. That is
+ * correct — there are no teams — but it means populating the reporting tree is
+ * what turns this half of the model on.
+ *
+ * ---------------------------------------------------------------------------
+ * THE COLUMNS ADD; THEY DO NOT REPLACE
+ * ---------------------------------------------------------------------------
+ *
+ * An assigned role's column is **what that role adds** to the person's own
+ * employee access and, where they have reports, the manager layer. Effective
+ * reach is the widest of the three, per module and per verb:
+ *
+ *     effective = max(employee, hasReports ? manager : none, assignedRole)
+ *
+ * This is why three cells below look wrong and are not. `software` gives
+ * hr_admin `none` while an employee reads their own licences; `shifts` gives
+ * finance_admin `none` while an employee reads their own; `expenses` gives
+ * hr_admin exactly what an employee has. In each case the role adds nothing to
+ * that module, and the person keeps what they already had. Reading a column as
+ * an absolute grant would take access away from somebody for being promoted,
+ * which is the opposite of what an administrative role is for.
+ *
+ * `effectiveFor` is the only correct way to ask this question. `ruleFor` answers
+ * about one layer in isolation and is for the screens that explain the model.
  *
  * ---------------------------------------------------------------------------
  * SCOPE, NOT PERMISSION
@@ -46,12 +68,47 @@
  *
  * A boolean cannot describe any of the above. Almost every rule here is about
  * *how much* rather than *whether*: a manager reads leave for their team, an
- * employee reads their own, an admin reads all — three different answers to
- * one question. So each of read, write and approve carries a scope, and
- * migration 0027 widens `role_permission` to hold it.
+ * employee reads their own, an administrator reads all — three answers to one
+ * question. So each of read, write and approve carries a scope, and
+ * `role_permission` holds it for per-tenant narrowing.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT THIS FILE DOES NOT DECIDE
+ * ---------------------------------------------------------------------------
+ *
+ * **Self-approval.** No scope can express it: `approve: 'all'` includes the
+ * caller's own row by definition. Every approve path refuses the caller
+ * separately, for every role including company_admin, because "senior enough
+ * to approve" and "allowed to approve your own" are different questions and the
+ * second answer is always no.
+ *
+ * **Which items an inbox or a report contains.** The access table qualifies two
+ * cells — hr_admin approves "HR items", finance_admin "pay/expense items", and
+ * their reports cover "people data" and "pay data" respectively. Those are not
+ * scopes and are deliberately not modelled here. An approvals queue belongs to
+ * a module and inherits that module's `approve`; a report returns rows the
+ * reader could already see. Both qualifiers are consequences of the table
+ * above, so writing them down a second time would be two authorities that can
+ * disagree.
+ *
+ * **Who may hold a role, and that somebody always can.** Only company_admin
+ * assigns roles, never their own, and a tenant keeps at least one active
+ * company_admin. The first is `ACTION_SCOPE` below; the second two are
+ * cross-row invariants that a scope cannot hold and the service and a trigger
+ * enforce.
  */
 
-export type Role = 'admin' | 'manager' | 'employee';
+export type Role = 'employee' | 'hr_admin' | 'finance_admin' | 'company_admin';
+
+/**
+ * The derived layer. Not assignable, and not a `Role`.
+ *
+ * It keeps a key in `ModulePolicy` and a set of rows in `role_permission` so
+ * that a tenant can narrow what having reports grants — narrowing the layer is
+ * a legitimate thing to want, and the alternative is a layer no tenant can
+ * reach.
+ */
+export type Layer = 'manager';
 
 /**
  * How far a grant reaches.
@@ -68,20 +125,35 @@ export interface ModuleRule {
   approve: Scope;
 }
 
-export type ModulePolicy = Record<Role, ModuleRule>;
+/** Every layer that can grant something in a module. */
+export type ModulePolicy = Record<Role | Layer, ModuleRule>;
 
-/** Shorthand: the same three scopes, written once per role. */
+type Triple = [Scope, Scope, Scope];
+
+/** Shorthand: read, write, approve for each layer, in table order. */
 const rule = (
-  employee: [Scope, Scope, Scope],
-  manager: [Scope, Scope, Scope],
-  admin: [Scope, Scope, Scope],
+  employee: Triple,
+  manager: Triple,
+  hrAdmin: Triple,
+  financeAdmin: Triple,
+  companyAdmin: Triple,
 ): ModulePolicy => ({
   employee: { read: employee[0], write: employee[1], approve: employee[2] },
   manager: { read: manager[0], write: manager[1], approve: manager[2] },
-  admin: { read: admin[0], write: admin[1], approve: admin[2] },
+  hr_admin: { read: hrAdmin[0], write: hrAdmin[1], approve: hrAdmin[2] },
+  finance_admin: { read: financeAdmin[0], write: financeAdmin[1], approve: financeAdmin[2] },
+  company_admin: { read: companyAdmin[0], write: companyAdmin[1], approve: companyAdmin[2] },
 });
 
-const NO: [Scope, Scope, Scope] = ['none', 'none', 'none'];
+const NO: Triple = ['none', 'none', 'none'];
+const OWN_R: Triple = ['own', 'none', 'none'];
+const ALL_R: Triple = ['all', 'none', 'none'];
+const ALL_RW: Triple = ['all', 'all', 'none'];
+const ALL_RWA: Triple = ['all', 'all', 'all'];
+/** Raise your own, approve nothing. */
+const SELF: Triple = ['own', 'own', 'none'];
+/** Read the line, write your own, decide the line's requests. */
+const LINE: Triple = ['team', 'own', 'team'];
 
 /**
  * Every module, by its route key.
@@ -92,218 +164,340 @@ const NO: [Scope, Scope, Scope] = ['none', 'none', 'none'];
 export const POLICY: Record<string, ModulePolicy> = {
   /* ---- everybody's own work ---- */
 
-  dashboard: rule(['own', 'none', 'none'], ['team', 'none', 'none'], ['all', 'none', 'none']),
+  dashboard: rule(OWN_R, ['team', 'none', 'none'], ALL_R, ALL_R, ALL_R),
 
   /* A punch is written by the person who made it; a manager decides the
-     regularisation when it was missed. */
-  attendance: rule(['own', 'own', 'none'], ['team', 'own', 'team'], ['all', 'all', 'all']),
-  timesheet: rule(['own', 'own', 'none'], ['team', 'own', 'team'], ['all', 'all', 'all']),
-  leave: rule(['own', 'own', 'none'], ['team', 'own', 'team'], ['all', 'all', 'all']),
-  expenses: rule(['own', 'own', 'none'], ['team', 'own', 'team'], ['all', 'all', 'all']),
-  assets: rule(['own', 'own', 'none'], ['team', 'own', 'team'], ['all', 'all', 'all']),
-  helpdesk: rule(['own', 'own', 'none'], ['team', 'own', 'team'], ['all', 'all', 'all']),
+     regularisation when it was missed. Finance reads attendance because pay is
+     derived from it, and changes none of it. */
+  attendance: rule(SELF, LINE, ALL_RWA, ALL_R, ALL_RWA),
+  leave: rule(SELF, LINE, ALL_RWA, ALL_R, ALL_RWA),
+  timesheet: rule(SELF, LINE, ALL_RWA, ALL_R, ALL_RWA),
+  helpdesk: rule(SELF, LINE, ALL_RWA, NO, ALL_RWA),
 
   /*
-   * A shift is the hours you keep, so everyone can see their own and a manager
-   * can move their line onto different ones. Overtime approval rides here too.
-   */
-  shifts: rule(['own', 'none', 'none'], ['team', 'team', 'team'], ['all', 'all', 'all']),
-
-  /*
-   * Pay stops at the person and the admin. A manager reading their report's
-   * salary is a different product decision from reading their leave, and this
-   * one is deliberately not taken — `maySeeAll` in the payroll service is
-   * admin-only and this records why.
-   */
-  payroll: rule(['own', 'none', 'none'], ['own', 'none', 'none'], ['all', 'all', 'all']),
-
-  /*
-   * Setting somebody's salary is its own module, not a corner of `payroll`.
+   * Expenses are a pay module, so both administrative roles hold them equally.
    *
-   * They are narrowed for different reasons. A tenant that wants finance to
-   * see the register but not to *change* what people are paid can take this
+   * This gave hr_admin exactly what an employee has, on the reasoning that
+   * expenses are finance's. That is not how this company runs them: HR and
+   * finance are interchangeable across everything that touches what somebody
+   * is paid, and a claim is part of that. Both now read, edit and approve the
+   * company's claims.
+   *
+   * A manager still decides their own line's first — the layer is additive and
+   * unchanged. The two-stage chain, manager then finance, is a workflow rather
+   * than a scope and is a later task; today either may approve.
+   */
+  expenses: rule(SELF, LINE, ALL_RWA, ALL_RWA, ALL_RWA),
+
+  /* An asset is issued centrally and answered for locally. */
+  assets: rule(SELF, LINE, ALL_R, ALL_R, ALL_RWA),
+
+  /*
+   * A shift is the hours you keep, so everyone sees their own and a manager
+   * moves their line onto different ones. Overtime approval rides here too.
+   */
+  shifts: rule(OWN_R, ['team', 'team', 'team'], ALL_RWA, NO, ALL_RWA),
+
+  /*
+   * Pay, and the two administrative roles are identical across all of it.
+   *
+   * hr_admin read the register and could not run it; finance_admin could not
+   * set what anybody was paid. That split described a separation of duties this
+   * company does not have — the same two people do both — and it produced the
+   * worst possible failure mode: a payroll cycle that only one named role could
+   * close, with nobody able to cover.
+   *
+   * So hr_admin and finance_admin are now the same on payroll, compensation,
+   * tax, benefits and expenses. Where they still differ is everything else: HR
+   * keeps the people modules, finance keeps the commercial book and billing,
+   * and neither reaches into the other's.
+   *
+   * A manager sees their own payslip and nobody else's. That is the one
+   * addition the layer deliberately does not make, and it is unchanged.
+   */
+  payroll: rule(OWN_R, OWN_R, ALL_RWA, ALL_RWA, ALL_RWA),
+  tax: rule(SELF, SELF, ALL_RWA, ALL_RWA, ALL_RWA),
+
+  /*
+   * Setting somebody's salary stays its own module rather than a corner of
+   * `payroll`, even though the two administrative roles now hold both equally.
+   *
+   * The split still earns its place: a tenant that later wants finance to run
+   * the cycle without being able to change what people are paid takes this
    * away without also taking away everyone's own payslip, which is what
-   * narrowing `payroll` would do.
+   * narrowing `payroll` would do. The per-tenant override layer can express
+   * exactly that, and could not if these were one module.
    *
-   * Nothing below admin, and not by oversight: a manager who can revise their
-   * own report's pay is a manager who can give themselves a team of one. An
-   * employee reading their own compensation history goes through `payroll`
-   * with its `own` scope, not through here.
+   * Nothing below an administrative role, and not by oversight: a manager who
+   * can revise their own report's pay is a manager who can give themselves a
+   * team of one.
    */
-  compensation: rule(NO, NO, ['all', 'all', 'all']),
-  tax: rule(['own', 'own', 'none'], ['own', 'own', 'none'], ['all', 'all', 'all']),
-  benefits: rule(['own', 'own', 'none'], ['own', 'own', 'none'], ['all', 'all', 'all']),
+  compensation: rule(NO, NO, ALL_RWA, ALL_RWA, ALL_RWA),
+  benefits: rule(SELF, SELF, ALL_RWA, ALL_RWA, ALL_RWA),
 
   /* Own documents and letter requests; HR issues them. */
-  documents: rule(['own', 'own', 'none'], ['own', 'own', 'none'], ['all', 'all', 'all']),
+  documents: rule(SELF, SELF, ALL_RWA, SELF, ALL_RWA),
 
   /* Goals and check-ins are written together, so a manager writes on the line. */
-  performance: rule(['own', 'own', 'none'], ['team', 'team', 'team'], ['all', 'all', 'all']),
-  learning: rule(['own', 'own', 'none'], ['team', 'own', 'none'], ['all', 'all', 'none']),
+  performance: rule(SELF, ['team', 'team', 'team'], ALL_RWA, NO, ALL_RWA),
+  learning: rule(SELF, LINE, ALL_RWA, NO, ALL_RWA),
+  devplans: rule(SELF, LINE, ALL_RWA, NO, ALL_RWA),
 
   /* ---- what the company shares ---- */
 
   /* The org chart is public on purpose — it is how people find each other. */
-  org: rule(['all', 'none', 'none'], ['all', 'none', 'none'], ['all', 'none', 'none']),
-  announcements: rule(['all', 'none', 'none'], ['all', 'none', 'none'], ['all', 'all', 'none']),
-  celebrations: rule(['all', 'none', 'none'], ['all', 'none', 'none'], ['all', 'all', 'none']),
-  /* Anyone can be assigned work and move their own card. */
-  planner: rule(['all', 'own', 'none'], ['all', 'all', 'none'], ['all', 'all', 'none']),
+  org: rule(ALL_R, ALL_R, ALL_R, ALL_R, ALL_R),
+  announcements: rule(ALL_R, ['all', 'team', 'team'], ALL_RWA, ALL_R, ALL_RWA),
+  celebrations: rule(ALL_R, ['all', 'team', 'team'], ALL_RWA, ALL_R, ALL_RWA),
+  events: rule(['all', 'own', 'none'], ['all', 'team', 'team'], ALL_RWA, ALL_R, ALL_RWA),
+
+  /*
+   * Survey results are withheld below the response floor regardless of role —
+   * that is in the service, not here, and it applies to every role alike.
+   * Answering is the one thing in this module every employee is meant to do.
+   */
+  engagement: rule(['all', 'own', 'none'], ['all', 'own', 'none'], ALL_RW, ['all', 'own', 'none'], ALL_RW),
+
+  /* Anyone can be assigned work and move their own card. Not in the access
+     table; kept as it was, with both administrative roles reading the board. */
+  planner: rule(['all', 'own', 'none'], ['all', 'all', 'none'], ALL_RW, ['all', 'own', 'none'], ALL_RW),
 
   /*
    * The directory narrows rather than opens: an employee sees themselves, a
-   * manager their line, an admin everyone. The org chart above is the public
-   * view; this one carries contact and employment detail.
+   * manager their line, HR everyone and finance everyone it needs to pay.
+   * The org chart above is the public view; this one carries contact and
+   * employment detail.
    */
-  employees: rule(['own', 'none', 'none'], ['team', 'none', 'none'], ['all', 'all', 'none']),
+  employees: rule(OWN_R, ['team', 'none', 'none'], ALL_RW, ALL_R, ALL_RW),
+  jobtitles: rule(OWN_R, ALL_R, ALL_RW, ALL_R, ALL_RW),
 
-  /* ---- a manager's line ---- */
+  /* ---- people, which is HR's ---- */
 
-  approvals: rule(NO, ['team', 'none', 'team'], ['all', 'none', 'all']),
-  onboarding: rule(NO, ['team', 'team', 'none'], ['all', 'all', 'all']),
-  hiring: rule(NO, ['team', 'team', 'team'], ['all', 'all', 'all']),
-  reports: rule(NO, ['team', 'none', 'none'], ['all', 'none', 'none']),
-  /* An exit is raised by HR or the manager and settled by finance. */
-  exit: rule(NO, ['team', 'team', 'none'], ['all', 'all', 'all']),
-  /*
-   * Survey results are withheld below the response floor regardless of role.
-   *
-   * This sat at NO for an employee, under the manager's-line heading, because
-   * it was read as a reporting module. Answering a survey is not reporting: it
-   * is the one thing in here every employee is *meant* to do, and the menu has
-   * always offered them "Surveys & polls — open questions waiting on you". The
-   * Submit button did nothing, so the contradiction never surfaced.
-   *
-   * So an employee reads and writes their own response, and a manager does the
-   * same — a manager is an employee with reports, and had no way to answer a
-   * pulse either. What stays admin-only is `write: 'all'`: creating and
-   * sending a survey. What protects the results is unchanged and is not a
-   * permission at all — the floor in the service withholds them from every
-   * role alike.
-   */
-  engagement: rule(['all', 'own', 'none'], ['all', 'own', 'none'], ['all', 'all', 'none']),
+  lifecycle: rule(SELF, ['team', 'team', 'none'], ALL_RWA, ALL_R, ALL_RWA),
+  onboarding: rule(NO, ['team', 'team', 'none'], ALL_RWA, NO, ALL_RWA),
+  hiring: rule(NO, ['team', 'team', 'team'], ALL_RWA, NO, ALL_RWA),
+  recruitment: rule(NO, ['team', 'team', 'team'], ALL_RWA, NO, ALL_RWA),
+
+  /* An exit is raised by HR or the manager and settled by finance, which is
+     why finance approves here and writes nothing. */
+  exit: rule(SELF, ['team', 'team', 'none'], ALL_RWA, ['all', 'none', 'all'], ALL_RWA),
 
   /* ---- the tenant ---- */
 
-  settings: rule(NO, NO, ['all', 'all', 'all']),
-  security: rule(NO, NO, ['all', 'none', 'none']),
-  exec: rule(NO, NO, ['all', 'none', 'none']),
-  billing: rule(NO, NO, ['all', 'none', 'none']),
+  /*
+   * The approvals inbox carries no rules of its own.
+   *
+   * Each queue belongs to a module and inherits that module's `approve`, so
+   * which rows a role actually decides falls out of the table rather than being
+   * written down twice. Both administrative roles read and approve `all` here,
+   * and because they are identical across the pay modules they now see the same
+   * pay and expense queues as each other — which needed no change here, only
+   * the five rows above.
+   */
+  approvals: rule(NO, ['team', 'none', 'team'], ['all', 'none', 'all'], ['all', 'none', 'all'], ['all', 'none', 'all']),
 
   /*
-   * Staffing is admin-only, all five screens of it.
-   *
-   * Bill rates, client credit limits and vendor markups are commercial terms,
-   * and `assertStaffing` refuses anybody else outright. A manager used to be
-   * offered these in the navigation and got a page of 403s — the navigation
-   * was wrong, not the service.
+   * A report is a saved question, and the rows it returns are whatever the
+   * reader could already see. So the access table's "people data" and "pay
+   * data" qualifiers need no expression here, and when the pay modules became
+   * common to both administrative roles their reports followed automatically —
+   * this module did not change, which is the point of deriving it.
    */
-  /* The recruitment desk. Same reasoning as the rest of the book: an order
-     carries its bill rate, its pay rate and its markup, which are commercial
-     terms. Approve is 'all' because assigning a recruiter and releasing one
-     are decisions, not edits. */
-  recruitment: rule(NO, NO, ['all', 'all', 'all']),
-  /*
-   * User administration. A manager reaches their own line — they raise
-   * joiners and offboard leavers — and everything sharper than that is
-   * bounded act by act in ACTION_SCOPE below, not here.
-   */
-  /* The catalogue is configuration, so only an admin writes it. Everybody
-     reads — an employee reads exactly one record, their own, which the
-     service enforces rather than the scope. */
-  jobtitles: rule(['own', 'none', 'none'], ['all', 'none', 'none'], ['all', 'all', 'none']),
-  /* The journey is about you, so you see your own and may tick off a task
-     assigned to you. Nothing here writes a stage — see the service. */
-  lifecycle: rule(['own', 'own', 'none'], ['team', 'team', 'none'], ['all', 'all', 'all']),
+  reports: rule(NO, ['team', 'own', 'none'], ALL_RW, ALL_RW, ALL_RW),
+  customreports: rule(NO, ['team', 'own', 'none'], ALL_RW, ALL_RW, ALL_RW),
+  exports: rule(NO, ['team', 'own', 'none'], ALL_RW, ALL_RW, ALL_RW),
+
   /* A contract is procurement and a seat is an access grant, so they part
-     ways: a manager reads the estate and revokes on their own line, and only
-     an administrator signs for anything. */
-  software: rule(['own', 'none', 'none'], ['all', 'team', 'none'], ['all', 'all', 'all']),
-  /* The one module where an employee genuinely writes. The plan is theirs —
-     they author it and tick it off — and the manager's say is the endorsement,
-     which is the approve column rather than the write one. */
-  devplans: rule(['own', 'own', 'none'], ['team', 'own', 'team'], ['all', 'all', 'all']),
-  /* Everyone reads what is on and answers for themselves; anybody who runs a
-     team can run an event, and the organiser is recorded on it. */
-  events: rule(['all', 'own', 'none'], ['all', 'team', 'team'], ['all', 'all', 'all']),
-  /* Everybody can take out what they can already see, and read their own
-     record of having done it. The whole register is an administrator's. */
-  exports: rule(NO, ['team', 'own', 'none'], ['all', 'all', 'none']),
-  /* A report is a saved question. Writing one is writing your own; the rows it
-     returns are whatever the reader could already see. */
-  customreports: rule(NO, ['team', 'own', 'none'], ['all', 'all', 'none']),
-  /* How the tenant connects to anything is a tenant-level decision. */
-  integrations: rule(NO, NO, ['all', 'all', 'all']),
+     ways: a manager reads the estate and revokes on their own line. HR adds
+     nothing — an employee still sees the licences they hold. */
+  software: rule(OWN_R, ['all', 'team', 'none'], NO, ALL_R, ALL_RWA),
+
+  /*
+   * User administration, and the one module where the table narrows what a
+   * manager used to have.
+   *
+   * A manager could create logins, resend invitations, bulk-import and assign
+   * roles on their line. They read their line now and nothing else: creating a
+   * login is company_admin's alone. A manager still raises a joiner — that is
+   * `lifecycle`, where they keep `team` write — so the act they lose is making
+   * an account, not starting somebody's employment.
+   *
+   * hr_admin reads every user and changes none, which is why every act below
+   * except `user.view` is company_admin's.
+   */
+  users: rule(NO, ['team', 'none', 'none'], ALL_R, NO, ALL_RWA),
+
+  settings: rule(NO, NO, ALL_R, NO, ALL_RWA),
+  security: rule(NO, NO, NO, NO, ALL_RWA),
+  integrations: rule(NO, NO, NO, NO, ALL_RWA),
+  billing: rule(NO, NO, NO, ALL_R, ALL_R),
+
+  /* Not in the access table. Executive reporting reads the tenant and writes
+     nothing; both administrative roles see it, as they do `dashboard`. */
+  exec: rule(NO, NO, ALL_R, ALL_R, ALL_R),
+
+  /*
+   * The commercial book. Bill rates, client credit limits and vendor markups
+   * are commercial terms, so this is finance's and company_admin's. HR reads
+   * the requirements and the bench because those are about people to hire.
+   */
+  clients: rule(NO, NO, NO, ALL_RW, ALL_RW),
+  vendors: rule(NO, NO, NO, ALL_RW, ALL_RW),
+  placements: rule(NO, NO, NO, ALL_RW, ALL_RW),
+  requirements: rule(NO, NO, ALL_R, NO, ALL_RW),
+  bench: rule(NO, NO, ALL_R, NO, ALL_RW),
+
   /*
    * Your own account, and only ever your own.
    *
-   * 'own' for every role including admin — deliberately. This module is the
-   * control that lets somebody notice a session they did not start, and it
-   * only works if it is the *person's* view. Reading somebody else's is
-   * user administration and belongs in `users`, where it is scoped.
+   * `own` for every role including company_admin — deliberately. This module is
+   * the control that lets somebody notice a session they did not start, and it
+   * only works if it is the *person's* view. Reading somebody else's is user
+   * administration and belongs in `users`, where it is scoped.
    */
-  account: rule(['own', 'own', 'none'], ['own', 'own', 'none'], ['own', 'own', 'none']),
-
-  users: rule(NO, ['team', 'team', 'none'], ['all', 'all', 'all']),
-  clients: rule(NO, NO, ['all', 'all', 'none']),
-  requirements: rule(NO, NO, ['all', 'all', 'none']),
-  bench: rule(NO, NO, ['all', 'all', 'none']),
-  placements: rule(NO, NO, ['all', 'all', 'none']),
-  vendors: rule(NO, NO, ['all', 'all', 'none']),
+  account: rule(SELF, SELF, SELF, SELF, SELF),
 };
 
-export const ROLES: Role[] = ['employee', 'manager', 'admin'];
+export const ROLES: Role[] = ['employee', 'hr_admin', 'finance_admin', 'company_admin'];
 
-/** The modules a role may open at all — anything it can read something in. */
-export const modulesFor = (role: Role): string[] =>
-  Object.keys(POLICY).filter((m) => POLICY[m]![role].read !== 'none').sort();
+/* ---------------------------------------------------------------------------
+ * A temporary bridge, which the service sweep deletes
+ * ---------------------------------------------------------------------------
+ *
+ * `Caller.role` still carries the old three values, and 203 `caller.role`
+ * comparisons across 47 services still read them. Converting those is a
+ * *semantic* change, not a rename: `caller.role !== 'admin'` has to become a
+ * question about a module and a verb, because renaming it to `company_admin`
+ * would hand hr_admin and finance_admin nothing and defeat the whole model.
+ *
+ * So that conversion is its own reviewable step, and until it lands this maps
+ * the old names onto the new ones at the handful of places that already ask
+ * the policy. The mapping is the migration's: `admin` became `company_admin`,
+ * `manager` became an employee whose team scope is derived.
+ *
+ * **This function is scheduled for deletion.** When `Caller.role` carries a
+ * `Role`, nothing needs it, and `checks/roles.ts` asserts it has no callers
+ * left so it cannot quietly become permanent.
+ */
+export type LegacyRole = 'admin' | 'manager' | 'employee';
 
-/** What this role may do in one module. Unknown modules grant nothing. */
-export const ruleFor = (role: Role, module: string): ModuleRule =>
-  POLICY[module]?.[role] ?? { read: 'none', write: 'none', approve: 'none' };
+export const fromLegacyRole = (legacy: LegacyRole): Role =>
+  (legacy === 'admin' ? 'company_admin' : 'employee');
 
 /**
- * Whether a scope covers a given reach.
+ * Whether a legacy caller should be treated as having reports.
  *
- * Ordered, so a check for `own` passes when the grant is `team` or `all`. Used
- * by the services that want to ask the policy rather than restate it.
+ * `manager` was an assigned role, so anybody holding it was presumed to answer
+ * for somebody. Until the reporting tree is the authority, holding the old role
+ * stands in for having reports — which keeps today's managers working through
+ * the bridge rather than silently losing their team the moment the policy
+ * widened.
  */
-const RANK: Record<Scope, number> = { none: 0, own: 1, team: 2, all: 3 };
-export const covers = (granted: Scope, needed: Scope): boolean =>
-  RANK[granted] >= RANK[needed] && RANK[needed] > 0;
+export const legacyHasReports = (legacy: LegacyRole): boolean => legacy === 'manager';
 
-/** The prose above, in a form the settings screen can render. */
+/** Every layer a `role_permission` row may name: the roles, plus the derived one. */
+export const POLICY_LAYERS: (Role | Layer)[] = [
+  'employee', 'manager', 'hr_admin', 'finance_admin', 'company_admin',
+];
+
+const RANK: Record<Scope, number> = { none: 0, own: 1, team: 2, all: 3 };
+
+/** The wider of two scopes. */
+export const wider = (a: Scope, b: Scope): Scope => (RANK[a] >= RANK[b] ? a : b);
+
+/** The narrower of two scopes. Used by the per-tenant override layer. */
+export const narrower = (a: Scope, b: Scope): Scope => (RANK[a] <= RANK[b] ? a : b);
+
+/** Whether a granted scope reaches as far as a needed one. */
+export const covers = (granted: Scope, needed: Scope): boolean =>
+  RANK[granted] >= RANK[needed];
+
+const EMPTY: ModuleRule = { read: 'none', write: 'none', approve: 'none' };
+
+/**
+ * One layer's rule in one module, in isolation.
+ *
+ * Not the question a service should ask — see `effectiveFor`. This is for the
+ * screens that explain the model and for the override editor, both of which
+ * are about a single layer rather than about a person.
+ */
+export const ruleFor = (layer: Role | Layer, module: string): ModuleRule =>
+  POLICY[module]?.[layer] ?? EMPTY;
+
+/**
+ * What a person actually reaches: their role, plus employee, plus the manager
+ * layer where they have reports.
+ *
+ * The union, per verb. This is the question every service asks.
+ */
+export function effectiveFor(
+  role: Role,
+  hasReports: boolean,
+  module: string,
+): ModuleRule {
+  const p = POLICY[module];
+  if (!p) return EMPTY;
+  const layers: ModuleRule[] = [p.employee, p[role]];
+  if (hasReports) layers.push(p.manager);
+  return layers.reduce((acc, r) => ({
+    read: wider(acc.read, r.read),
+    write: wider(acc.write, r.write),
+    approve: wider(acc.approve, r.approve),
+  }), EMPTY);
+}
+
+/** The modules a person may open at all — anything they can read something in. */
+export const effectiveModulesFor = (role: Role, hasReports: boolean): string[] =>
+  Object.keys(POLICY).filter((m) => effectiveFor(role, hasReports, m).read !== 'none').sort();
+
+/**
+ * The modules one layer grants a read in, in isolation.
+ *
+ * Kept for the access screen, which lists what each layer adds. A person's
+ * navigation comes from `effectiveModulesFor`.
+ */
+export const modulesFor = (layer: Role | Layer): string[] =>
+  Object.keys(POLICY).filter((m) => ruleFor(layer, m).read !== 'none').sort();
+
 export const ROLE_SUMMARY: Record<Role, { title: string; blurb: string }> = {
   employee: {
     title: 'Employee',
-    blurb: 'Their own record, their own requests, and what the company shares. '
-      + 'Approves nothing. Sees their own pay and nobody else\'s.',
+    blurb: 'Their own record and requests, and what the company shares. '
+      + 'Anyone with people reporting to them also gets their team, without '
+      + 'being given another role.',
   },
-  manager: {
-    title: 'Manager',
-    blurb: 'Everything an employee has, plus read over their reporting line at '
-      + 'any depth and the authority to decide its requests. Not pay, and not '
-      + 'configuration.',
+  hr_admin: {
+    title: 'HR administrator',
+    blurb: 'People: the directory, joining and leaving, attendance, leave, '
+      + 'performance and the helpdesk, across the company. Runs pay as well — '
+      + 'payroll, compensation, tax, benefits and expenses. Cannot create '
+      + 'logins or change roles.',
   },
-  admin: {
-    title: 'Administrator',
-    blurb: 'The whole tenant — compensation, configuration, the audit trail and '
-      + 'the commercial book. Still cannot approve their own requests.',
+  finance_admin: {
+    title: 'Finance administrator',
+    blurb: 'Pay in full — payroll, compensation, tax, benefits and expenses — '
+      + 'plus the commercial book and billing. Does not reach the people '
+      + 'records HR keeps, and cannot create logins or change roles.',
+  },
+  company_admin: {
+    title: 'Company administrator',
+    blurb: 'Everything, and the only role that creates logins, changes '
+      + 'somebody\'s role or edits company settings. Still cannot approve '
+      + 'their own requests.',
   },
 };
 
-/* ---------------- user administration ---------------- */
-
-/**
- * The individual acts of administering an account.
+/* ---------------------------------------------------------------------------
+ * Administration, act by act
+ * ---------------------------------------------------------------------------
  *
  * A module-level rule answers "may this role open user management". It cannot
- * answer "may a manager delete somebody", which is the question that matters
- * here — the module is one screen and the twelve things it does carry twelve
- * different risks. So administration is described act by act, each with the
- * reach that act is allowed, and the service asks about the act rather than
- * the screen.
+ * answer "may this person delete somebody", which is the question that matters
+ * here — the module is one screen and the acts on it carry different risks. So
+ * administration is described act by act, each with the reach that act is
+ * allowed, and the service asks about the act rather than the screen.
  */
+
 export type UserAction =
   | 'user.view'
   | 'user.create'
@@ -323,65 +517,137 @@ export type UserAction =
   | 'permission.manage';
 
 /**
- * How far each role may reach with each act.
+ * How far each layer may reach with each act.
  *
- * Three of these are deliberately narrower than the module rule would suggest,
- * and each is a decision rather than an oversight:
+ * Almost everything here is company_admin's alone, which is the access table's
+ * instruction: only company_admin creates logins, assigns or changes roles, or
+ * edits company settings.
  *
- * **A manager may deactivate but not activate.** Deactivating somebody in your
- * own line is ordinary offboarding. Re-activating is not its mirror: the
- * account may have been held by an administrator for a reason the manager
- * cannot see, and letting them undo that turns a sanction into an
- * inconvenience.
+ * What changed, and why it is a narrowing rather than an oversight:
  *
- * **A manager may not reset a password.** Password reset is account recovery,
- * and recovery is the standard route to taking over an account. A manager who
- * can reset their report's password can read their mail.
+ * **A manager no longer creates logins, resends invitations, bulk-imports or
+ * assigns roles.** They did all four on their own line. Creating an account is
+ * the act that grants access to the product, and a manager raising a joiner
+ * does not need it — `lifecycle` carries that, with `team` write. They keep
+ * `user.view` over their line, which is what the directory already gave them.
  *
- * **A manager may not approve.** They raise the request; somebody else decides
- * it. A workflow where the proposer is also the approver is not a workflow.
+ * **hr_admin reads users and changes none of them.** They run people's
+ * employment, not people's accounts, and the access table gives them
+ * view-only on Users & roles. Whether HR should be able to *request* a login
+ * is an open question; today they ask company_admin.
+ *
+ * **A manager may deactivate nothing.** Deactivating used to be theirs on the
+ * grounds that offboarding is ordinary. It is an account act, and account acts
+ * are now company_admin's; the lifecycle record they do own records the exit.
  */
-const ACTION_SCOPE: Record<UserAction, Record<Role, Scope>> = {
-  'user.view': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.create': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.edit': { employee: 'none', manager: 'team', admin: 'all' },
+const ACTION_SCOPE: Record<UserAction, Record<Role | Layer, Scope>> = {
+  'user.view': {
+    employee: 'none', manager: 'team', hr_admin: 'all', finance_admin: 'none', company_admin: 'all',
+  },
+  'user.create': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  'user.edit': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
   /* Removing an account is irreversible in a way the rest of this is not. */
-  'user.delete': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.activate': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.deactivate': { employee: 'none', manager: 'team', admin: 'all' },
+  'user.delete': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  'user.activate': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  'user.deactivate': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
   /* A sanction, not an administrative state. */
-  'user.suspend': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.approve': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.reset_password': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.resend_invite': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.bulk_import': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.bulk_update': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.export': { employee: 'none', manager: 'team', admin: 'all' },
-  /* Assigning a role at all — bounded further by the next line. */
-  'role.assign': { employee: 'none', manager: 'team', admin: 'all' },
-  /* The one that cannot be delegated: only an administrator makes one. */
-  'role.assign_admin': { employee: 'none', manager: 'none', admin: 'all' },
-  'permission.manage': { employee: 'none', manager: 'none', admin: 'all' },
+  'user.suspend': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  'user.approve': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  /* Password reset is account recovery, and recovery is the standard route to
+     taking over an account. */
+  'user.reset_password': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  'user.resend_invite': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  'user.bulk_import': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  'user.bulk_update': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  /*
+   * Exporting the user list is an account act, so it sits with the others.
+   * People-data exports are `exports`, which hr_admin has at `all` — so HR can
+   * take out a directory without this.
+   */
+  'user.export': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  /* Assigning a role at all. Bounded further by the next line, and by the
+     service, which refuses the caller's own row. */
+  'role.assign': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  /*
+   * Handing out an administrative role — any of the three. Identical to
+   * `role.assign` now that only one role assigns anything, and kept separate
+   * because the two answer different questions: one is "may you assign", the
+   * other "may you assign *this*". Collapsing them would lose the second the
+   * moment a tenant wants a role that assigns some roles and not others.
+   */
+  'role.assign_admin': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  'permission.manage': {
+    employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
 };
 
-/** How far this role may reach performing this act. `none` means not at all. */
-export const actionScope = (role: Role, action: UserAction): Scope =>
-  ACTION_SCOPE[action]?.[role] ?? 'none';
-
-/** Whether this role may perform this act at all, anywhere. */
-export const may = (role: Role, action: UserAction): boolean =>
-  actionScope(role, action) !== 'none';
+/** How far this layer may reach performing this act. `none` means not at all. */
+export const actionScope = (layer: Role | Layer, action: UserAction): Scope =>
+  ACTION_SCOPE[action]?.[layer] ?? 'none';
 
 /**
- * Whether `role` may hand out `granted`.
+ * How far this person may reach performing this act.
+ *
+ * The union again: the manager layer applies where they have reports.
+ */
+export const effectiveActionScope = (
+  role: Role,
+  hasReports: boolean,
+  action: UserAction,
+): Scope => {
+  const own = actionScope(role, action);
+  return hasReports ? wider(own, actionScope('manager', action)) : own;
+};
+
+/** Whether this person may perform this act at all, anywhere. */
+export const may = (role: Role, hasReports: boolean, action: UserAction): boolean =>
+  effectiveActionScope(role, hasReports, action) !== 'none';
+
+/**
+ * Whether this person may hand out `granted`.
  *
  * Separate from `role.assign` because the restriction is on the *value*, not
- * on the act: a manager assigns roles to their line every time they raise a
- * joiner, and the one thing they may not do is make another administrator.
+ * on the act. Every administrative role is gated behind `role.assign_admin`.
+ *
+ * **This does not answer "may they change their own role".** They may not, ever,
+ * including company_admin, and a role is a value rather than a row here — the
+ * service compares the target to the caller and refuses.
  */
-export const mayAssignRole = (role: Role, granted: Role): boolean => {
-  if (!may(role, 'role.assign')) return false;
-  return granted === 'admin' ? may(role, 'role.assign_admin') : true;
+export const mayAssignRole = (
+  role: Role,
+  hasReports: boolean,
+  granted: Role,
+): boolean => {
+  if (!may(role, hasReports, 'role.assign')) return false;
+  return granted === 'employee' ? true : may(role, hasReports, 'role.assign_admin');
 };
 
 /** Every act, for a screen that wants to show what a role can do. */
@@ -389,63 +655,63 @@ export const USER_ACTIONS = Object.keys(ACTION_SCOPE) as UserAction[];
 
 /* ---------------------------------------------------------------------------
  * Per-tenant narrowing
+ * ---------------------------------------------------------------------------
  *
- * `role_permission` has been seeded from this file since the seed script was
- * written, and read by nothing. The gap it leaves is real: one tenant wants
- * managers kept out of team cost, another does not, and today that is a code
- * change for everybody.
- *
- * **Overrides may only narrow.** The table cannot grant anything POLICY does
- * not already grant. That one rule is what makes the feature safe to have:
- *
- *   A write to `role_permission` — by a misconfigured screen, a migration, or
- *   somebody with direct database access — cannot escalate privilege. The
- *   worst it can do is take access away, which is visible and complained
- *   about, rather than quietly handing an employee the payroll register.
- *
- *   `checks/roles.ts` keeps working. It holds this file to the frontend mirror
- *   cell by cell across every module and role; if the database could widen a
- *   cell, that check would be comparing two ceilings while the real answer
- *   came from a third place nobody was looking at.
- *
- *   A missing row means "no narrowing", not "no access". A tenant seeded
- *   before a module existed must not lose it the day the module ships, and an
- *   empty table must not lock everybody out of everything.
- * ------------------------------------------------------------------------- */
-
-/** One tenant's overrides: module -> role -> rule. Absent means no narrowing. */
-export type Overrides = Record<string, Partial<Record<Role, Partial<ModuleRule>>>>;
-
-/** The tighter of two scopes. */
-export const narrower = (a: Scope, b: Scope): Scope => (RANK[a] <= RANK[b] ? a : b);
-
-/**
- * What this role may actually do, after the tenant's own restrictions.
- *
- * Every field is the narrower of the code's grant and the tenant's, so the
- * result can never exceed `ruleFor`. That is asserted exhaustively in
- * scripts/policy.test.mjs rather than left to the reader to verify.
+ * `role_permission` holds one row per layer per module and may only ever
+ * *narrow* what this file grants. A tenant that wants its HR administrators
+ * kept out of the helpdesk takes it away there; nothing in that table can hand
+ * out something this file does not.
  */
+
+export type Overrides = Record<string, Partial<Record<Role | Layer, Partial<ModuleRule>>>>;
+
+/** One layer's rule in one module, after this tenant's narrowing. */
 export function effectiveRule(
-  role: Role,
+  layer: Role | Layer,
   module: string,
-  overrides: Overrides | null | undefined,
+  overrides: Overrides,
 ): ModuleRule {
-  const base = ruleFor(role, module);
-  const o = overrides?.[module]?.[role];
+  const base = ruleFor(layer, module);
+  const o = overrides[module]?.[layer];
   if (!o) return base;
   return {
-    read: narrower(base.read, o.read ?? base.read),
-    write: narrower(base.write, o.write ?? base.write),
-    approve: narrower(base.approve, o.approve ?? base.approve),
+    read: o.read ? narrower(base.read, o.read) : base.read,
+    write: o.write ? narrower(base.write, o.write) : base.write,
+    approve: o.approve ? narrower(base.approve, o.approve) : base.approve,
   };
 }
 
-/** The modules a role may open at all, once narrowing is applied. */
-export const effectiveModulesFor = (
+/**
+ * What a person reaches, after this tenant's narrowing.
+ *
+ * The union is taken over the *narrowed* layers, not before: a tenant that
+ * takes the helpdesk away from hr_admin has not taken away the employee's own
+ * tickets, and narrowing the union would do exactly that.
+ */
+export function effectiveRuleFor(
   role: Role,
-  overrides: Overrides | null | undefined,
+  hasReports: boolean,
+  module: string,
+  overrides: Overrides,
+): ModuleRule {
+  if (!POLICY[module]) return EMPTY;
+  const layers: (Role | Layer)[] = hasReports
+    ? ['employee', 'manager', role]
+    : ['employee', role];
+  return layers
+    .map((l) => effectiveRule(l, module, overrides))
+    .reduce((acc, r) => ({
+      read: wider(acc.read, r.read),
+      write: wider(acc.write, r.write),
+      approve: wider(acc.approve, r.approve),
+    }), EMPTY);
+}
+
+export const effectiveModulesForTenant = (
+  role: Role,
+  hasReports: boolean,
+  overrides: Overrides,
 ): string[] =>
   Object.keys(POLICY)
-    .filter((m) => effectiveRule(role, m, overrides).read !== 'none')
+    .filter((m) => effectiveRuleFor(role, hasReports, m, overrides).read !== 'none')
     .sort();

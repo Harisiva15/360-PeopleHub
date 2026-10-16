@@ -24,7 +24,7 @@ import {
   mayAssignRole as clientMayAssign,
 } from '../src/state/rbac';
 import {
-  POLICY, ROLES, modulesFor,
+  POLICY, ROLES, effectiveFor, modulesFor,
   USER_ACTIONS as SERVER_ACTIONS,
   actionScope as serverScope,
   mayAssignRole as serverMayAssign,
@@ -58,26 +58,102 @@ for (const [module, byRole] of Object.entries(POLICY)) {
 if (!failed) ok('nobody can write or approve further than they can read');
 
 /*
- * The ladder: an employee's reach never exceeds a manager's, and a manager's
- * never exceeds an admin's. The three roles are cumulative by design, and a
- * rule that broke that would be a surprise rather than a policy.
+ * The lattice, which replaced a ladder.
+ *
+ * This used to assert `employee ≤ manager ≤ admin` on the raw columns, because
+ * the three roles were a straight line. Two things broke that, and the
+ * assertion is inverted rather than dropped because the property underneath it
+ * — nobody outranks the ceiling — is still the one that matters.
+ *
+ * **There is no total order any more.** `hr_admin` and `finance_admin` are
+ * deliberately incomparable: HR is wider on `compensation`, finance on
+ * `payroll` and `expenses`. Demanding a line between them would reject the
+ * access table as written.
+ *
+ * **The columns are layers, not grants.** A role's column is what it *adds* to
+ * employee and, where there are reports, the manager layer. Three cells are
+ * narrower than an employee's on purpose — `software` for hr_admin, `shifts`
+ * for finance_admin, `expenses` for hr_admin — so comparing columns would
+ * report a role taking access away from somebody for being promoted. Every
+ * comparison below is therefore on `effectiveFor`, the union.
+ *
+ * What is left to assert is the part that is still a hierarchy: company_admin
+ * is the ceiling, and no role or layer reaches past it.
  */
 {
   const rank = { none: 0, own: 1, team: 2, all: 3 };
   let broken = 0;
-  for (const [module, byRole] of Object.entries(POLICY)) {
+  for (const module of Object.keys(POLICY)) {
     for (const k of ['read', 'write', 'approve'] as const) {
-      if (rank[byRole.employee[k]] > rank[byRole.manager[k]]) {
-        fail(`${module}: employee ${k} (${byRole.employee[k]}) exceeds manager (${byRole.manager[k]})`);
-        broken += 1;
-      }
-      if (rank[byRole.manager[k]] > rank[byRole.admin[k]]) {
-        fail(`${module}: manager ${k} (${byRole.manager[k]}) exceeds admin (${byRole.admin[k]})`);
-        broken += 1;
+      /* With the manager layer on, which is the widest anybody gets. */
+      const ceiling = effectiveFor('company_admin', true, module)[k];
+      for (const role of ROLES) {
+        const reach = effectiveFor(role, true, module)[k];
+        if (rank[reach] > rank[ceiling]) {
+          fail(`${module}: ${role} ${k} (${reach}) exceeds company_admin (${ceiling})`);
+          broken += 1;
+        }
       }
     }
   }
-  if (!broken) ok('the ladder holds — employee ≤ manager ≤ admin everywhere');
+  if (!broken) ok('company_admin is the ceiling — no role reaches past it');
+}
+
+/*
+ * And the union adds. A role must never leave somebody with less than the
+ * employee floor, which is the whole meaning of "admin roles add to the
+ * person's own access, never replace it".
+ */
+{
+  const rank = { none: 0, own: 1, team: 2, all: 3 };
+  let lost = 0;
+  for (const [module, byLayer] of Object.entries(POLICY)) {
+    for (const k of ['read', 'write', 'approve'] as const) {
+      for (const role of ROLES) {
+        if (rank[effectiveFor(role, false, module)[k]] < rank[byLayer.employee[k]]) {
+          fail(`${module}: ${role} ${k} falls below the employee floor (${byLayer.employee[k]})`);
+          lost += 1;
+        }
+      }
+    }
+  }
+  if (!lost) ok('every role keeps the employee floor — the columns add, never replace');
+}
+
+/*
+ * The manager layer has to be a layer: it must widen something for somebody
+ * who holds no administrative role, or it is not doing anything and the
+ * reporting tree has stopped mattering.
+ */
+{
+  const rank = { none: 0, own: 1, team: 2, all: 3 };
+  const widened = Object.keys(POLICY).filter((m) =>
+    (['read', 'write', 'approve'] as const).some((k) =>
+      rank[effectiveFor('employee', true, m)[k]]
+      > rank[effectiveFor('employee', false, m)[k]]));
+  if (widened.length === 0) {
+    fail('having reports grants nothing anywhere — the manager layer is inert');
+  } else {
+    ok(`having reports widens ${widened.length} modules without any assigned role`);
+  }
+}
+
+/*
+ * The one addition the manager layer must never make.
+ *
+ * "Managers never see their team's pay" is a product decision rather than a
+ * consequence of the table, so it is asserted directly: somebody with reports
+ * and no administrative role reads their own payslip and no compensation at
+ * all, however deep their line goes.
+ */
+{
+  const pay = effectiveFor('employee', true, 'payroll');
+  const comp = effectiveFor('employee', true, 'compensation');
+  if (pay.read !== 'own' || comp.read !== 'none') {
+    fail(`having reports reaches pay: payroll ${pay.read}, compensation ${comp.read}`);
+  } else {
+    ok('having reports never reaches anybody else\'s pay');
+  }
 }
 
 /* ---- the navigation matches ---- */

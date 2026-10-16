@@ -42,46 +42,79 @@ import type { AppRole, Employee } from '../types/employee';
  * manager's, and a manager's are an admin's, which is why each is written out
  * in full rather than spread — the shape of the ladder should be visible.
  */
+/**
+ * Which modules each role may open, mirroring `POLICY` in
+ * `server/src/auth/policy.ts`. `checks/roles.ts` fails the build when the two
+ * disagree, which is why these are written out rather than imported — the
+ * frontend does not reach into the server's source at build time.
+ *
+ * **These are the lists for somebody with no reports.** The manager layer is
+ * additive and lives in `MANAGER_ADDS` below, because `can()` has to be able
+ * to answer for an employee who runs a team and an HR administrator who runs
+ * one, and a per-role list cannot express either.
+ *
+ * **In a configured build these are the fallback, not the authority.** The
+ * server answers `/me/permissions` with the module list it computed from the
+ * policy, the reporting tree and this tenant's narrowing, and `can()` prefers
+ * that. These lists are what the demo build uses, and what the drift check
+ * compares against.
+ */
 export const PERMS: Record<AppRole, string[]> = {
   /* Self-service. Their own work, and what the company shares. */
   employee: [
-    'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
-    'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
-    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events',
-    // Answering a survey is an employee's, and was the one thing in Engagement
-    // they were meant to do. The module sat manager-and-above because it reads
-    // as reporting; the Submit button did nothing, so nobody noticed.
-    'engagement',
-    'account',
+    'account', 'announcements', 'assets', 'attendance', 'benefits', 'celebrations',
+    'dashboard', 'devplans', 'documents', 'employees', 'engagement', 'events', 'exit',
+    'expenses', 'helpdesk', 'jobtitles', 'learning', 'leave', 'lifecycle', 'org',
+    'payroll', 'performance', 'planner', 'shifts', 'software', 'tax', 'timesheet',
   ],
 
-  /* Everything above, plus their reporting line. */
-  manager: [
-    'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'tax',
-    'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
-    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events', 'exports', 'customreports',
-    // The line.
-    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users', 'account',
+  /* People. Everything an employee has, plus the company's people records.
+     Reads payroll and does not run it; edits what people are paid. */
+  hr_admin: [
+    'account', 'announcements', 'approvals', 'assets', 'attendance', 'bench',
+    'benefits', 'celebrations', 'compensation', 'customreports', 'dashboard',
+    'devplans', 'documents', 'employees', 'engagement', 'events', 'exec', 'exit',
+    'expenses', 'exports', 'helpdesk', 'hiring', 'jobtitles', 'learning', 'leave',
+    'lifecycle', 'onboarding', 'org', 'payroll', 'performance', 'planner',
+    'recruitment', 'reports', 'requirements', 'settings', 'shifts', 'software', 'tax',
+    'timesheet', 'users',
   ],
 
-  /*
-   * Everything above, plus the tenant.
-   *
-   * Staffing — clients, requirements, bench, placements, vendors — is here and
-   * nowhere else. Bill rates, credit limits and vendor markups are commercial
-   * terms, and the staffing service refuses anybody but an admin outright.
-   * Managers used to be offered all five and got a page of refusals on each.
-   */
-  admin: [
-    'dashboard', 'attendance', 'timesheet', 'leave', 'shifts', 'payroll', 'compensation', 'tax',
-    'benefits', 'expenses', 'assets', 'helpdesk', 'documents', 'learning',
-    'performance', 'org', 'employees', 'announcements', 'celebrations', 'planner', 'jobtitles', 'lifecycle', 'software', 'devplans', 'events', 'exports', 'customreports', 'integrations',
-    'approvals', 'onboarding', 'hiring', 'reports', 'exit', 'engagement', 'users', 'account',
-    // The tenant.
-    'settings', 'security', 'exec', 'billing',
-    'clients', 'requirements', 'bench', 'placements', 'vendors', 'recruitment',
+  /* Money. Payroll, tax, expenses and the commercial book. Reads compensation
+     and does not set it. */
+  finance_admin: [
+    'account', 'announcements', 'approvals', 'assets', 'attendance', 'benefits',
+    'billing', 'celebrations', 'clients', 'compensation', 'customreports',
+    'dashboard', 'devplans', 'documents', 'employees', 'engagement', 'events', 'exec',
+    'exit', 'expenses', 'exports', 'helpdesk', 'jobtitles', 'learning', 'leave',
+    'lifecycle', 'org', 'payroll', 'performance', 'placements', 'planner', 'reports',
+    'shifts', 'software', 'tax', 'timesheet', 'vendors',
+  ],
+
+  /* The whole tenant, and the only role that creates logins, changes a role or
+     edits company settings. */
+  company_admin: [
+    'account', 'announcements', 'approvals', 'assets', 'attendance', 'bench',
+    'benefits', 'billing', 'celebrations', 'clients', 'compensation', 'customreports',
+    'dashboard', 'devplans', 'documents', 'employees', 'engagement', 'events', 'exec',
+    'exit', 'expenses', 'exports', 'helpdesk', 'hiring', 'integrations', 'jobtitles',
+    'learning', 'leave', 'lifecycle', 'onboarding', 'org', 'payroll', 'performance',
+    'placements', 'planner', 'recruitment', 'reports', 'requirements', 'security',
+    'settings', 'shifts', 'software', 'tax', 'timesheet', 'users', 'vendors',
   ],
 };
+
+/**
+ * What having reports opens that an employee cannot reach alone.
+ *
+ * The additive half of the model. Anybody with people below them in the tree
+ * gets these on top of their role's list, at any depth — a skip-level manager
+ * still answers for the people two levels down.
+ */
+export const MANAGER_ADDS: string[] = [
+  'approvals', 'customreports', 'exports', 'hiring', 'onboarding', 'recruitment',
+  'reports', 'users',
+];
 
 export interface ScopeInfo {
   label: string;
@@ -90,14 +123,20 @@ export interface ScopeInfo {
 
 /** How wide each role's data scope is — surfaced in the UI so it is legible. */
 export const SCOPE: Record<AppRole, ScopeInfo> = {
-  admin: {
+  company_admin: {
     label: 'Organisation-wide',
-    desc: 'Creates and modifies people, runs payroll, configures the tenant and reads every report.',
+    desc: 'Everything, and the only role that creates logins, changes a role or '
+      + 'configures the tenant.',
   },
-  manager: {
-    label: 'My team',
-    desc: 'Raises joining requests, approves leave, timesheets and expenses, and reads the trackers — '
-      + 'all within your reporting tree.',
+  hr_admin: {
+    label: 'People, organisation-wide',
+    desc: 'The directory, joining and leaving, attendance, leave, performance and '
+      + 'the helpdesk. Sets what people are paid; cannot create logins.',
+  },
+  finance_admin: {
+    label: 'Money, organisation-wide',
+    desc: 'Payroll, tax, expenses and the commercial book. Sees pay and does not '
+      + 'change what people are paid.',
   },
   employee: {
     label: 'Myself',
@@ -145,8 +184,23 @@ export const LIVE_MODULES = new Set([
  * Two gates, not one: the role has to permit it, and — in a configured build —
  * the module has to be backed by real data.
  */
-export const can = (role: AppRole, k: string): boolean =>
-  PERMS[role].includes(k) && (!apiConfigured || LIVE_MODULES.has(k));
+export const can = (
+  role: AppRole,
+  k: string,
+  hasReports = false,
+  serverModules?: readonly string[] | null,
+): boolean => {
+  /*
+   * The server's own list wins where there is one. It was computed from the
+   * policy, the reporting tree and the tenant's narrowing, so it already
+   * answers both of the questions the arguments above exist to answer — and a
+   * menu that disagrees with the server is a menu that offers 403s.
+   */
+  const granted = serverModules && serverModules.length
+    ? serverModules.includes(k)
+    : PERMS[role].includes(k) || (hasReports && MANAGER_ADDS.includes(k));
+  return granted && (!apiConfigured || LIVE_MODULES.has(k));
+};
 
 export interface Account {
   role: AppRole;
@@ -160,22 +214,35 @@ export interface Account {
  * had already drifted into three different words for the same thing.
  */
 export const ROLE_LABEL: Record<AppRole, string> = {
-  admin: 'Administrator',
-  manager: 'Manager',
+  company_admin: 'Company administrator',
+  hr_admin: 'HR administrator',
+  finance_admin: 'Finance administrator',
   employee: 'Employee',
 };
 
 /** The three demo identities the topbar role-switcher signs in as. */
 export const ACCOUNTS = (): Account[] => [
-  { role: 'admin', empId: HRHEAD.id, label: 'HR Administrator' },
-  { role: 'manager', empId: DEMO_MGR.id, label: 'Reporting Manager' },
+  { role: 'company_admin', empId: HRHEAD.id, label: 'Company Administrator' },
+  { role: 'hr_admin', empId: HRHEAD.id, label: 'HR Administrator' },
+  { role: 'employee', empId: DEMO_MGR.id, label: 'Reporting Manager (has reports)' },
   { role: 'employee', empId: DEMO_EMP.id, label: 'Employee (Self-service)' },
 ];
 
 /** Employee ids the signed-in user may see: everyone, their tree, or themselves. */
 export function visibleIds(role: AppRole, meId: string): string[] {
-  if (role === 'admin') return ACTIVE().map((e) => e.id);
-  if (role === 'manager') return [meId].concat(teamOf(meId, true));
+  /*
+   * Breadth by role, then by the tree.
+   *
+   * It used to read `role === 'manager'` for the team case. Whether somebody
+   * answers for other people is now a fact about `manager_id`, so the team
+   * branch is taken by anybody who has reports, whatever role they hold — an
+   * employee who runs a team, or an HR administrator who does.
+   */
+  if (role === 'hr_admin' || role === 'finance_admin' || role === 'company_admin') {
+    return ACTIVE().map((e) => e.id);
+  }
+  const team = teamOf(meId, true);
+  if (team.length) return [meId].concat(team);
   return [meId];
 }
 
@@ -212,27 +279,56 @@ export type UserAction =
 
 export type Scope = 'none' | 'own' | 'team' | 'all';
 
-const ACTION_SCOPE: Record<UserAction, Record<AppRole, Scope>> = {
-  'user.view': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.create': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.edit': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.delete': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.activate': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.deactivate': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.suspend': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.approve': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.reset_password': { employee: 'none', manager: 'none', admin: 'all' },
-  'user.resend_invite': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.bulk_import': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.bulk_update': { employee: 'none', manager: 'team', admin: 'all' },
-  'user.export': { employee: 'none', manager: 'team', admin: 'all' },
-  'role.assign': { employee: 'none', manager: 'team', admin: 'all' },
-  'role.assign_admin': { employee: 'none', manager: 'none', admin: 'all' },
-  'permission.manage': { employee: 'none', manager: 'none', admin: 'all' },
+const ACTION_SCOPE: Record<UserAction, Record<AppRole | 'manager', Scope>> = {
+  /*
+   * Reading the user list is the only act below company_admin, and it is where
+   * the access table puts it: hr_admin sees every user, somebody with reports
+   * sees their line, and neither changes anything.
+   */
+  'user.view': { employee: 'none', manager: 'team', hr_admin: 'all', finance_admin: 'none', company_admin: 'all' },
+  /*
+   * Everything else is company_admin's alone — "only company_admin creates
+   * logins, assigns or changes roles".
+   *
+   * A manager used to create accounts, resend invitations, bulk-import and
+   * assign roles on their line. They keep raising a joiner, which is
+   * `lifecycle`; what they lose is making the account, because that is the act
+   * that grants access to the product.
+   */
+  'user.create': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.edit': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.delete': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.activate': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.deactivate': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.suspend': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.approve': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.reset_password': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.resend_invite': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.bulk_import': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.bulk_update': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'user.export': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'role.assign': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'role.assign_admin': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  'permission.manage': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
 };
 
-export const actionScope = (role: AppRole, action: UserAction): Scope =>
+export const actionScope = (role: AppRole | 'manager', action: UserAction): Scope =>
   ACTION_SCOPE[action]?.[role] ?? 'none';
+
+/** The widest of two scopes, for composing the manager layer onto a role. */
+const widerScope = (a: Scope, b: Scope): Scope => {
+  const rank: Record<Scope, number> = { none: 0, own: 1, team: 2, all: 3 };
+  return rank[a] >= rank[b] ? a : b;
+};
+
+/** How far this person reaches, with the layer applied where they have reports. */
+export const effectiveActionScope = (
+  role: AppRole,
+  hasReports: boolean,
+  action: UserAction,
+): Scope => (hasReports
+  ? widerScope(actionScope(role, action), actionScope('manager', action))
+  : actionScope(role, action));
 
 /** Whether this role may perform this act at all. */
 export const may = (role: AppRole, action: UserAction): boolean =>
@@ -241,7 +337,7 @@ export const may = (role: AppRole, action: UserAction): boolean =>
 /** Whether this role may hand out that role. Only an admin makes an admin. */
 export const mayAssignRole = (role: AppRole, granted: AppRole): boolean => {
   if (!may(role, 'role.assign')) return false;
-  return granted === 'admin' ? may(role, 'role.assign_admin') : true;
+  return granted === 'employee' ? true : may(role, 'role.assign_admin');
 };
 
 export const USER_ACTIONS = Object.keys(ACTION_SCOPE) as UserAction[];
