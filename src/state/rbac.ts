@@ -116,6 +116,50 @@ export const MANAGER_ADDS: string[] = [
   'reports', 'users',
 ];
 
+/** One module's three verbs, as the server reports them in `Me.rules`. */
+export interface RuleScopes {
+  read: string;
+  write: string;
+  approve: string;
+}
+
+/**
+ * Does this person answer for anybody?
+ *
+ * `manager` is not a role, so there is nothing to compare against. It is a fact
+ * about the reporting tree, and the server has already applied it: the union it
+ * computes gives a manager `team` where the same role without reports gets
+ * `own`. So the answer is already in the scopes it sent, and reading it back
+ * out keeps one authority for the question instead of two that can disagree.
+ *
+ * Deliberately not a field of its own on the payload. A second statement of the
+ * same fact is a second thing to keep in step, and the one that drifts is
+ * always the one the UI reads.
+ */
+export const hasReportsFromRules = (
+  rules: Record<string, RuleScopes> | null | undefined,
+): boolean => Object.values(rules ?? {})
+  .some((r) => r.read === 'team' || r.write === 'team' || r.approve === 'team');
+
+/**
+ * One module's scope in the demo build, where there is no server to ask.
+ *
+ * The verb is not a parameter because the demo dataset draws no distinction
+ * between reading and writing - it has no enforcement at all, being a
+ * demonstration. Anything finer would be invention dressed as a permission.
+ */
+export const scopeOfDemo = (
+  role: AppRole,
+  hasReports: boolean,
+  module: string,
+): Scope => {
+  const byRole = PERMS[role].includes(module);
+  const byTree = hasReports && MANAGER_ADDS.includes(module);
+  if (!byRole && !byTree) return 'none';
+  if (role !== 'employee') return 'all';
+  return byTree ? 'team' : 'own';
+};
+
 export interface ScopeInfo {
   label: string;
   desc: string;
