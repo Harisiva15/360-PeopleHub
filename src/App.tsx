@@ -160,24 +160,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
    * Costs a moment after sign-in. In the demo build `identityReady` is true
    * from the first render, so this is not in that path at all.
    */
-  /*
-   * A session that is gone is a reason to sign in, not a broken identity.
-   *
-   * This branch is the reported bug. The resolver used to run before
-   * `AuthProvider` had restored the session, get `401 You are not signed in`
-   * from the HTTP client, and latch it into `identityError` — and by the time
-   * the session did arrive, `auth.session` was non-null so the gate had already
-   * walked past its own login branch above. A signed-in person deep-linking to
-   * `/#/settings?v=company` landed on "We could not tell who you are — You are
-   * not signed in", with Try again and Sign out as the only ways out.
-   *
-   * The resolver no longer asks before there is a token and re-asks when one
-   * arrives, so this should be rare: an expired session whose refresh failed,
-   * or a sign-out in another tab. When it happens, the honest screen is the one
-   * that lets them sign in.
-   */
-  if (app.identitySessionLost) return <LoginPage theme={app.theme} />;
-
   if (!app.identityReady) {
     if (app.identityError) {
       return (

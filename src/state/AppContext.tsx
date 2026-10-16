@@ -1,14 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ACCOUNTS, can, SCOPE, visibleIds } from './rbac';
 import { EMAP } from '../data/employees';
 import { onQueryFailure, subscribe } from '../services/react';
 import { apiConfigured } from '../services/http';
 import { authConfigured } from '../auth/supabase';
-import { useAuth } from '../auth/AuthContext';
-import {
-  IDENTITY_START, identityFailure, identityOnPlan, identityOnSettled, identityPlan,
-} from './identity';
 import type { MeIdentity } from '../services';
 import type { AppRole, Employee } from '../types/employee';
 
@@ -41,12 +37,6 @@ interface AppState {
   identityReady: boolean;
   /** Why the identity could not be established, if it could not. */
   identityError: string | null;
-  /**
-   * True when there is no usable session. The gate shows the sign-in screen
-   * for this rather than the identity error, which was a dead end for anybody
-   * whose session had simply expired.
-   */
-  identitySessionLost: boolean;
   retryIdentity: () => void;
   theme: Theme;
   /** Bumped by `bump()` to re-render views after the mutable dataset changes. */
@@ -134,64 +124,24 @@ const apiMode = apiConfigured && authConfigured;
 function useResolvedIdentity(
   setRole: (r: AppRole) => void,
   setMeId: (id: string) => void,
-  authReady: boolean,
-  accessToken: string | null,
 ): {
   identity: MeIdentity | null;
   me: Employee | null;
-  /** True when there is no usable session, so the gate shows sign-in. */
-  sessionLost: boolean;
   ready: boolean;
   error: string | null;
   retry: () => void;
 } {
   const [identity, setIdentity] = useState<MeIdentity | null>(null);
   const [me, setMe] = useState<Employee | null>(null);
-  /*
-   * One piece of state, moved by the two transitions in ./identity.
-   *
-   * It was three setters called from five places, and whether the application
-   * stayed mounted through an hourly token refresh depended on which of them a
-   * given path happened not to call. That is not a property worth leaving to
-   * the shape of an effect, so it is a function with assertions on it.
-   */
-  const [state, setState] = useState(apiMode ? IDENTITY_START : { ...IDENTITY_START, ready: true });
+  const [ready, setReady] = useState(!apiMode);
+  const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  /*
-   * The token the current answer belongs to.
-   *
-   * A ref rather than state: it is read inside the effect to decide whether to
-   * ask again, and putting it in the dependency list would re-run the effect
-   * with the value it had just written.
-   */
-  const resolvedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    const plan = identityPlan({
-      apiMode, authReady, accessToken, resolvedFor: resolvedFor.current,
-    });
-
-    /*
-     * Nothing to do, and nothing to say. 'keep' is the demo build and the
-     * already-answered case; 'wait' is the window before the session check
-     * settles, which is the window the original bug asked the API in.
-     */
-    setState((prev) => identityOnPlan(prev, plan));
-    if (plan.do === 'keep' || plan.do === 'wait') return undefined;
-
-    /*
-     * No session. Not an identity failure — the gate shows the sign-in screen
-     * for this, which is what somebody who needs to sign in again should see
-     * rather than "We could not tell who you are".
-     */
-    if (plan.do === 'sign-in') {
-      resolvedFor.current = null;
-      setIdentity(null);
-      setMe(null);
-      return undefined;
-    }
+    if (!apiMode) return undefined;
 
     let cancelled = false;
+    setError(null);
     void (async () => {
       try {
         const { getServices } = await import('../services');
@@ -222,49 +172,26 @@ function useResolvedIdentity(
         const row = rows.find((e) => e.id === empId) ?? null;
         if (!row) throw new Error('Your employee record could not be read.');
 
-        resolvedFor.current = plan.token;
         setIdentity(who.identity);
         setRole(who.role);
         setMeId(empId);
         setMe(row);
-        setState((prev) => identityOnSettled(prev, { kind: 'resolved' }));
+        setReady(true);
       } catch (e) {
         if (cancelled) return;
         /*
-         * Two outcomes, because they need different screens.
-         *
-         * A session that evaporated between the plan and the request — expired
-         * and failed to refresh, or signed out in another tab — is not a broken
-         * account. It latched "You are not signed in" into the identity error
-         * before, which the gate renders as a dead end for somebody whose only
-         * problem was needing to sign in again.
-         *
-         * Anything else is reported. Not swallowed, and not fallen back to the
-         * demo row: falling back is what sent E008 to the database, and showing
-         * the shell with somebody else's identity is worse than showing why it
-         * stopped.
+         * Not swallowed, and not fallen back to the demo row. Falling back is
+         * what sent E008 to the database; showing the shell with somebody
+         * else's identity is worse than showing why it stopped.
          */
-        const failure = identityFailure(e);
-        if (failure === 'session-lost') resolvedFor.current = null;
-        setState((prev) => identityOnSettled(prev, {
-          kind: 'failed',
-          failure,
-          message: e instanceof Error ? e.message : 'Could not establish who you are.',
-        }));
+        setError(e instanceof Error ? e.message : 'Could not establish who you are.');
       }
     })();
     return () => { cancelled = true; };
-  }, [setRole, setMeId, attempt, authReady, accessToken]);
+  }, [setRole, setMeId, attempt]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
-  return {
-    identity,
-    me,
-    sessionLost: state.sessionLost,
-    ready: state.ready,
-    error: state.error,
-    retry,
-  };
+  return { identity, me, ready, error, retry };
 }
 
 export function AppProvider({ children, initialRole = 'admin' }: { children: ReactNode; initialRole?: AppRole }) {
@@ -350,14 +277,7 @@ export function AppProvider({ children, initialRole = 'admin' }: { children: Rea
     [dismissToast],
   );
 
-  /*
-   * The session, from the layer that owns it. The resolver used to run on
-   * mount regardless, which raced AuthProvider restoring the session and
-   * produced a 401 it then latched forever.
-   */
-  const auth = useAuth();
-  const resolved = useResolvedIdentity(
-    setRole, setMeId, auth.ready, auth.session?.access_token ?? null);
+  const resolved = useResolvedIdentity(setRole, setMeId);
   const { identity } = resolved;
 
   /*
@@ -375,7 +295,6 @@ export function AppProvider({ children, initialRole = 'admin' }: { children: Rea
       identity,
       identityReady: resolved.ready,
       identityError: resolved.error,
-      identitySessionLost: resolved.sessionLost,
       retryIdentity: resolved.retry,
       theme,
       revision,
@@ -389,8 +308,7 @@ export function AppProvider({ children, initialRole = 'admin' }: { children: Rea
       toast,
       dismissToast,
     }),
-    [role, meId, me, identity, resolved.ready, resolved.error, resolved.sessionLost,
-      resolved.retry,
+    [role, meId, me, identity, resolved.ready, resolved.error, resolved.retry,
       theme, revision, signInAs, toggleTheme, bump, toasts, toast, dismissToast],
   );
 
