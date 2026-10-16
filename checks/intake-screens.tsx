@@ -100,7 +100,13 @@ const spare = cands.find((c) => !c.offer && c.stage !== 'rejected' && c.stage !=
 check('the fixture has a candidate who can be offered', Boolean(spare), true);
 if (spare) {
   const drafted = await s.hiring.makeOffer(
-    { candId: spare.id, ctc: 1800000, doj: '2026-12-01', grade: 'L3' });
+    {
+      candId: spare.id,
+      designation: 'Senior Engineer',
+      ctc: 1800000,
+      doj: '2026-12-01',
+      grade: 'L3',
+    });
   check('making an offer produces a draft', drafted.offer?.status, 'Draft');
 
   const html = render(<OfferLetter c={drafted} />);
