@@ -327,7 +327,7 @@ export const configService: ConfigService = {
   },
 
   setPermissions(c, patches: GridPatch[]) {
-    if (!callerCovers(c, 'settings', 'all')) {
+    if (!callerCovers(c, 'settings', 'all', 'write')) {
       return Promise.reject(new Error('Only an administrator can change permissions'));
     }
     for (const p of patches) {
@@ -347,7 +347,7 @@ export const configService: ConfigService = {
   },
 
   resetPermissions(c, module) {
-    if (!callerCovers(c, 'settings', 'all')) {
+    if (!callerCovers(c, 'settings', 'all', 'write')) {
       return Promise.reject(new Error('Only an administrator can change permissions'));
     }
     for (const k of [...NARROWED.keys()]) {

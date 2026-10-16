@@ -15,6 +15,7 @@
  */
 
 import { can } from '../src/state/rbac';
+import { POLICY } from '../server/src/auth/policy';
 import { getServices } from '../src/services';
 import { DATASETS, EXPORT_LOG, datasetOf } from '../src/data/exports';
 import { ACTIVE, DEMO_EMP, DEMO_MGR, HRHEAD } from '../src/data/employees';
@@ -58,10 +59,24 @@ const seeded = new Set(EXPORT_LOG.map((r) => r.id));
    * is the hole this whole design exists to close, so it fails here rather
    * than being discovered in a spreadsheet.
    */
-  const unscoped = DATASETS.filter((d) =>
-    d.scope !== 'caller' && can('employee', d.k, true));
-  check('every dataset is caller-scoped or administrators only',
-    unscoped.map((d) => d.id), []);
+  /*
+   * The invariant that is still worth asserting.
+   *
+   * "caller-scoped or administrators only" is carried by DatasetScope itself
+   * now, so asserting it would assert the type. What is not carried by any
+   * type is that `k` names a module the policy knows: a typo there would
+   * make a caller-scoped dataset silently unreachable, or reachable through
+   * the wrong module.
+   */
+  const unknownModule = DATASETS.filter((d) => !POLICY[d.k]);
+  check('every dataset names a module the policy knows',
+    unknownModule.map((d) => `${d.id}:${d.k}`), []);
+
+  /* And the rule decision (2) settles: an employee's catalogue holds no
+     admin-only dataset, whatever module its rows come from. */
+  const empCatalogue = await s.exports.datasets(EMPLOYEE);
+  check('an employee is offered no admin-only dataset',
+    empCatalogue.filter((d) => d.scope === 'admin-only').map((d) => d.id), []);
 
   const scopedCount = DATASETS.filter((d) => d.scope === 'caller').length;
   console.log(`  ${scopedCount} caller-scoped, ${DATASETS.length - scopedCount} admin-only\n`);

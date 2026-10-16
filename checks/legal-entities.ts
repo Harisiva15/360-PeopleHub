@@ -164,7 +164,9 @@ ok('and in no other role\'s',
   && !MANAGER_ADDS.includes('settings'),
   'the whole tab is unreachable for them, which App.tsx turns into AccessDenied');
 
-ok('the card still derives the role itself', /const admin = app\.role === 'admin'/.test(card),
+ok('the card works out for itself what the viewer may do',
+  /app\.(reaches|can|hasReports|scopeOf)\b/.test(card)
+  && !/\brole\??: AppRole/.test(card),
   'a hidden route is not the same as a withheld control');
 ok('the edit control is gated on it', /actions=\{admin && entity &&/.test(card));
 ok('and so is moving the default', /admin && !e\.isDefault &&/.test(card));

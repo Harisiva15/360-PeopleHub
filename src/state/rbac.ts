@@ -113,15 +113,59 @@ export const PERMS: Record<AppRole, string[]> = {
  * gets these on top of their role's list, at any depth — a skip-level manager
  * still answers for the people two levels down.
  */
-export const MANAGER_ADDS: string[] = [
-   'account', 'announcements', 'approvals', 'assets', 'attendance',
-   'benefits', 'celebrations', 'customreports', 'dashboard', 'devplans',
-   'documents', 'employees', 'engagement', 'events', 'exit', 'expenses',
-   'exports', 'helpdesk', 'hiring', 'jobtitles', 'learning', 'leave',
-   'lifecycle', 'onboarding', 'org', 'payroll', 'performance', 'planner',
-   'recruitment', 'reports', 'shifts', 'software', 'tax', 'timesheet',
-   'users',
-];
+/**
+ * What having reports adds, and how far, per verb.
+ *
+ * The layer's own rule per module, mirroring ruleFor('manager', m) on the
+ * server. checks/roles.ts holds it to that, verb by verb.
+ *
+ * It carried only a read scope at first, and the gates used that scope for
+ * writes as well. Several modules the layer may read widely and write not at
+ * all - jobtitles is read 'all', write 'none' - so a manager could add a job
+ * title, add software and edit anybody's event. One scope cannot answer three
+ * questions.
+ */
+export const MANAGER_LAYER: Record<string, ModuleRule> = {
+  account: { read: 'own', write: 'own', approve: 'none' },
+  announcements: { read: 'all', write: 'team', approve: 'team' },
+  approvals: { read: 'team', write: 'none', approve: 'team' },
+  assets: { read: 'team', write: 'own', approve: 'team' },
+  attendance: { read: 'team', write: 'own', approve: 'team' },
+  benefits: { read: 'own', write: 'own', approve: 'none' },
+  celebrations: { read: 'all', write: 'team', approve: 'team' },
+  customreports: { read: 'team', write: 'own', approve: 'none' },
+  dashboard: { read: 'team', write: 'none', approve: 'none' },
+  devplans: { read: 'team', write: 'own', approve: 'team' },
+  documents: { read: 'own', write: 'own', approve: 'none' },
+  employees: { read: 'team', write: 'none', approve: 'none' },
+  engagement: { read: 'all', write: 'own', approve: 'none' },
+  events: { read: 'all', write: 'team', approve: 'team' },
+  exit: { read: 'team', write: 'team', approve: 'none' },
+  expenses: { read: 'team', write: 'own', approve: 'team' },
+  exports: { read: 'team', write: 'own', approve: 'none' },
+  helpdesk: { read: 'team', write: 'own', approve: 'team' },
+  hiring: { read: 'team', write: 'team', approve: 'team' },
+  jobtitles: { read: 'all', write: 'none', approve: 'none' },
+  learning: { read: 'team', write: 'own', approve: 'team' },
+  leave: { read: 'team', write: 'own', approve: 'team' },
+  lifecycle: { read: 'team', write: 'team', approve: 'none' },
+  onboarding: { read: 'team', write: 'team', approve: 'none' },
+  org: { read: 'all', write: 'none', approve: 'none' },
+  payroll: { read: 'own', write: 'none', approve: 'none' },
+  performance: { read: 'team', write: 'team', approve: 'team' },
+  planner: { read: 'all', write: 'all', approve: 'none' },
+  recruitment: { read: 'team', write: 'team', approve: 'team' },
+  reports: { read: 'team', write: 'own', approve: 'none' },
+  shifts: { read: 'team', write: 'team', approve: 'team' },
+  software: { read: 'all', write: 'team', approve: 'none' },
+  tax: { read: 'own', write: 'own', approve: 'none' },
+  timesheet: { read: 'team', write: 'own', approve: 'team' },
+  users: { read: 'team', write: 'none', approve: 'none' },
+};
+
+/** The modules the layer reaches at all. Derived, so it cannot disagree. */
+export const MANAGER_ADDS: string[] = Object.keys(MANAGER_LAYER)
+  .filter((m) => MANAGER_LAYER[m]!.read !== 'none');
 
 /** One module's three verbs, as the server reports them in `Me.rules`. */
 export interface RuleScopes {
@@ -163,17 +207,26 @@ export const covers = (granted: Scope, needed: Scope): boolean => RANK[granted] 
  * dataset's own reporting tree answers that half. The shape is the same as the
  * server's union: role first, then the tree widens it.
  */
+/**
+ * A caller's scope on one module and verb, for the in-memory services.
+ *
+ * The mock has no server to ask and no `hasReports` on `Caller`, so the demo
+ * dataset's own reporting tree answers that half. The shape is the same as the
+ * server's union: role first, then the tree widens it.
+ */
 export const callerScope = (
   c: { role: AppRole; meId: string },
   module: string,
-): Scope => scopeOfDemo(c.role, teamOf(c.meId, true).length > 0, module);
+  verb: Verb = 'read',
+): Scope => scopeOfDemo(c.role, teamOf(c.meId, true).length > 0, module, verb);
 
-/** Does this caller reach `needed` on `module`? */
+/** Does this caller reach `needed` on `module` for `verb`? */
 export const callerCovers = (
   c: { role: AppRole; meId: string },
   module: string,
   needed: Scope,
-): boolean => covers(callerScope(c, module), needed);
+  verb: Verb = 'read',
+): boolean => covers(callerScope(c, module, verb), needed);;
 
 /**
  * One module's scope in the demo build, where there is no server to ask.
@@ -186,13 +239,15 @@ export const scopeOfDemo = (
   role: AppRole,
   hasReports: boolean,
   module: string,
+  verb: Verb = 'read',
 ): Scope => {
   if (!isAppRole(role)) return 'none';
   const byRole = PERMS[role].includes(module);
-  const byTree = hasReports && MANAGER_ADDS.includes(module);
-  if (!byRole && !byTree) return 'none';
+  const fromTree = hasReports ? (MANAGER_LAYER[module]?.[verb] ?? 'none') : 'none';
+  if (!byRole && fromTree === 'none') return 'none';
   if (role !== 'employee') return 'all';
-  return byTree ? 'team' : 'own';
+  /* The layer answers for an employee who has reports; otherwise themselves. */
+  return fromTree === 'none' ? 'own' : fromTree;
 };
 
 /**
@@ -374,13 +429,20 @@ export const meOf = (meId: string): Employee => EMAP[meId];
  * relies on a hidden button is a screen somebody reaches with a URL.
  */
 export type UserAction =
-  | 'user.view' | 'user.create' | 'user.edit' | 'user.delete'
+  | 'user.view' | 'user.create' | 'user.request' | 'user.edit' | 'user.delete'
   | 'user.activate' | 'user.deactivate' | 'user.suspend' | 'user.approve'
   | 'user.reset_password' | 'user.resend_invite'
   | 'user.bulk_import' | 'user.bulk_update' | 'user.export'
   | 'role.assign' | 'role.assign_admin' | 'permission.manage';
 
 export type Scope = 'none' | 'own' | 'team' | 'all';
+
+/** The three questions a gate can ask about a module. */
+export type Verb = 'read' | 'write' | 'approve';
+
+/** One module's three scopes. Named here rather than imported: the frontend
+ * must not depend on server code, so the mirror carries its own shape. */
+export type ModuleRule = Record<Verb, Scope>;
 
 const ACTION_SCOPE: Record<UserAction, Record<AppRole | 'manager', Scope>> = {
   /*
@@ -399,6 +461,8 @@ const ACTION_SCOPE: Record<UserAction, Record<AppRole | 'manager', Scope>> = {
    * that grants access to the product.
    */
   'user.create': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
+  /* A request, not an account: theirs for their own line. */
+  'user.request': { employee: 'none', manager: 'team', hr_admin: 'all', finance_admin: 'none', company_admin: 'all' },
   'user.edit': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
   'user.delete': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },
   'user.activate': { employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all' },

@@ -68,7 +68,7 @@ function matches(r: SoftwareRow, f: SoftwareFilter): boolean {
 }
 
 /** An administrator writes the estate; everyone else reads. */
-const mayWrite = (c: Caller) => callerCovers(c, 'software', 'all');
+const mayWrite = (c: Caller) => callerCovers(c, 'software', 'all', 'write');
 
 /**
  * Whose seat this caller may revoke.
@@ -78,7 +78,7 @@ const mayWrite = (c: Caller) => callerCovers(c, 'software', 'all');
  * seats accumulate. Taking one from outside their line is not theirs to do.
  */
 function mayRevoke(c: Caller, empId: string): boolean {
-  if (callerCovers(c, 'software', 'all')) return true;
+  if (callerCovers(c, 'software', 'all', 'write')) return true;
   /* Their own line, and not themselves: taking back your own seat is not
    * housekeeping, it is leaving the product you were given. */
   return teamOf(c.meId, true).includes(empId);

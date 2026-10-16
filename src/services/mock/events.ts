@@ -60,7 +60,7 @@ const rsvpRow = (r: Rsvp): RsvpRow => ({
 
 /** An event this caller runs, or is allowed to run. */
 const mayManage = (c: Caller, e: CompanyEvent) =>
-  callerCovers(c, 'events', 'all') || e.organiserId === c.meId;
+  callerCovers(c, 'events', 'all', 'write') || e.organiserId === c.meId;
 
 /**
  * What this caller can see at all.
@@ -191,7 +191,7 @@ export const eventService: EventService = {
      * a team lunch is how a module like this ends up unused — and the organiser
      * is recorded, so it is never unclear who to ask about it.
      */
-    if (!callerCovers(c, 'events', 'team')) return refuse('Your role cannot create events');
+    if (!callerCovers(c, 'events', 'team', 'write')) return refuse('Your role cannot create events');
     const bad = validate(draft);
     if (bad) return refuse(bad);
 
@@ -209,7 +209,7 @@ export const eventService: EventService = {
       venue: draft.venue?.trim() ?? (draft.online ? 'Online' : ''),
       online: draft.online ?? false,
       capacity: draft.capacity ?? null,
-      organiserId: draft.organiserId && callerCovers(c, 'events', 'all')
+      organiserId: draft.organiserId && callerCovers(c, 'events', 'all', 'write')
         ? draft.organiserId
         : c.meId,
       forSites: draft.forSites ?? [],

@@ -39,7 +39,7 @@ import { ok } from './util';
 const refuse = (why: string) => Promise.reject(new Error(why));
 
 const adminOnly = (c: Caller) => {
-  if (!callerCovers(c, 'integrations', 'all')) {
+  if (!callerCovers(c, 'integrations', 'all', 'write')) {
     throw new Error('Only an administrator can change how this tenant connects to anything');
   }
 };
@@ -179,7 +179,7 @@ export const integrationService: IntegrationService = {
   },
 
   webhooks(c) {
-    if (!callerCovers(c, 'integrations', 'all')) {
+    if (!callerCovers(c, 'integrations', 'all', 'write')) {
       return refuse('Only an administrator can see the endpoints');
     }
     return ok(sortBy(WEBHOOKS, (w) => w.n).map(webhookRow));
@@ -231,7 +231,7 @@ export const integrationService: IntegrationService = {
   },
 
   apiKeys(c) {
-    if (!callerCovers(c, 'integrations', 'all')) {
+    if (!callerCovers(c, 'integrations', 'all', 'write')) {
       return refuse('Only an administrator can see the keys');
     }
     return ok(sortBy(API_KEYS, (k) => k.n).map(keyRow));

@@ -69,7 +69,7 @@ function inScope(c: Caller): DevPlan[] {
  * document has in every company that has ever run one, and the endorsement
  * step below is the manager's actual say.
  */
-const mayEdit = (c: Caller, p: DevPlan) => callerCovers(c, 'devplans', 'all')
+const mayEdit = (c: Caller, p: DevPlan) => callerCovers(c, 'devplans', 'all', 'write')
   || p.empId === c.meId;
 
 /** Who may endorse it — the manager of record, or an administrator. */
@@ -159,7 +159,7 @@ export const devPlanService: DevPlanService = {
      * person has never read.
      */
     const empId = draft.empId ?? c.meId;
-    if (empId !== c.meId && !callerCovers(c, 'devplans', 'all')) {
+    if (empId !== c.meId && !callerCovers(c, 'devplans', 'all', 'write')) {
       return refuse('A development plan is written by the person it is about');
     }
     if (!EMAP[empId]) return refuse('No such employee');

@@ -148,6 +148,26 @@ const describe = (d: Dataset, f: ExportFilter) =>
     ? `${f.from || 'the beginning'} to ${f.to || 'today'}`
     : 'Everything visible';
 
+/**
+ * Whether this caller may take this dataset.
+ *
+ * Two questions, because a dataset is one of two things.
+ *
+ * Caller-scoped: built from a service that takes the caller, so the rows are
+ * already narrowed to them and reaching the module is the whole test.
+ *
+ * Admin-only: built from a service with no caller, so it is the entire table.
+ * The module says nothing useful about that - `leave` and `assets` are both
+ * readable by an employee, who may see their own leave and must not be able
+ * to take the company's. Gating these on `k` offered an employee eight
+ * datasets the run path would then refuse.
+ */
+const mayExport = (c: Caller, d: Dataset): boolean => (
+  d.scope === 'admin-only'
+    ? callerCovers(c, 'exports', 'all')
+    : can(c.role, d.k, teamOf(c.meId, true).length > 0)
+);
+
 export const makeExportService = (getSvc: () => Services): ExportService => ({
   datasets(c) {
     /*
@@ -155,7 +175,7 @@ export const makeExportService = (getSvc: () => Services): ExportService => ({
      * person cannot run, greyed out, tells them what exists and that they
      * cannot have it — which is a worse answer than not raising it.
      */
-    return ok(DATASETS.filter((d) => can(c.role, d.k, teamOf(c.meId, true).length > 0)));
+    return ok(DATASETS.filter((d) => mayExport(c, d)));
   },
 
   history(c, f = {}) {
@@ -206,7 +226,7 @@ export const makeExportService = (getSvc: () => Services): ExportService => ({
      * is looking for the attempts as much as the successes, and an exception
      * that leaves no trace is the one thing this register cannot afford.
      */
-    if (!can(c.role, d.k, teamOf(c.meId, true).length > 0)) {
+    if (!mayExport(c, d)) {
       record(0, 'Refused', `${c.role} cannot export ${d.n.toLowerCase()}`);
       return refuse(`Your role cannot export ${d.n.toLowerCase()}`);
     }

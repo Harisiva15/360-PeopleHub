@@ -158,7 +158,9 @@ ok('and in no other role\'s',
   && !PERMS.employee.includes('settings')
   && !MANAGER_ADDS.includes('settings'),
   'App.tsx turns that into AccessDenied, so the tab is unreachable for them');
-ok('the card derives the role itself', /const admin = app\.role === 'admin'/.test(card),
+ok('the card works out for itself what the viewer may do',
+  /app\.(reaches|can|hasReports|scopeOf)\b/.test(card)
+  && !/\brole\??: AppRole/.test(card),
   'a hidden route is not the same as a withheld control');
 ok('and the rename control is gated on it', /actions=\{admin && tenant &&/.test(card));
 

@@ -42,7 +42,7 @@ const rowOf = (r: ReportDef, c: Caller): ReportRow => ({
   runnable: can(c.role, datasetOf(r.datasetId)?.k ?? '', teamOf(c.meId, true).length > 0),
 });
 
-const mayEdit = (c: Caller, r: ReportDef) => callerCovers(c, 'customreports', 'all')
+const mayEdit = (c: Caller, r: ReportDef) => callerCovers(c, 'customreports', 'all', 'write')
   || r.ownerId === c.meId;
 
 /** A number from a cell, treating anything unparseable as absent rather than zero. */

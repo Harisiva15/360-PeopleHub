@@ -519,6 +519,17 @@ export const ROLE_SUMMARY: Record<Role, { title: string; blurb: string }> = {
 export type UserAction =
   | 'user.view'
   | 'user.create'
+  /**
+   * Ask for an account, rather than open one.
+   *
+   * A manager knows a joiner is starting before anybody in HR does, and the
+   * product has always had the Pending Approval state for it. What it did
+   * not have was a permission: the flow existed and `user.create` refused
+   * it, so the button submitted into a refusal. This is that permission,
+   * and it is deliberately not user.create - a request carries no sign-in,
+   * no role above employee, and no way to activate what it made.
+   */
+  | 'user.request'
   | 'user.edit'
   | 'user.delete'
   | 'user.activate'
@@ -564,6 +575,10 @@ const ACTION_SCOPE: Record<UserAction, Record<Role | Layer, Scope>> = {
   },
   'user.create': {
     employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',
+  },
+  /* Theirs for their own line, and it produces a request, not an account. */
+  'user.request': {
+    employee: 'none', manager: 'team', hr_admin: 'all', finance_admin: 'none', company_admin: 'all',
   },
   'user.edit': {
     employee: 'none', manager: 'none', hr_admin: 'none', finance_admin: 'none', company_admin: 'all',

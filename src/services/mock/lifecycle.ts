@@ -113,7 +113,7 @@ export const lifecycleService: LifecycleService = {
   },
 
   addTask(c, empId, draft) {
-    if (!callerCovers(c, 'lifecycle', 'team')) return refuse('Your role cannot assign lifecycle tasks');
+    if (!callerCovers(c, 'lifecycle', 'team', 'write')) return refuse('Your role cannot assign lifecycle tasks');
     const row = inScope(c).find((r) => r.subject.id === empId);
     if (!row) return refuse('That person is outside the people you can see');
     if (!draft.n?.trim()) return refuse('Say what the task is');
@@ -161,7 +161,7 @@ export const lifecycleService: LifecycleService = {
   },
 
   removeTask(c, taskId) {
-    if (!callerCovers(c, 'lifecycle', 'all')) {
+    if (!callerCovers(c, 'lifecycle', 'all', 'write')) {
       return refuse('Only an administrator can remove a lifecycle task');
     }
     const i = LIFECYCLE_TASKS.findIndex((t) => t.id === taskId);
@@ -181,7 +181,7 @@ export const lifecycleService: LifecycleService = {
    * report what would have been written.
    */
   confirmProbation(c, empId, opts = {}) {
-    if (!callerCovers(c, 'lifecycle', 'team')) return refuse('Your role cannot confirm probation');
+    if (!callerCovers(c, 'lifecycle', 'team', 'write')) return refuse('Your role cannot confirm probation');
     const row = inScope(c).find((r) => r.subject.id === empId);
     if (!row) return refuse('No such person');
     if (row.subject.onProbation === false && row.standing.stage !== 'Joined') {
@@ -201,7 +201,7 @@ export const lifecycleService: LifecycleService = {
   },
 
   promote(c, empId, draft) {
-    if (!callerCovers(c, 'lifecycle', 'team')) return refuse('Your role cannot promote somebody');
+    if (!callerCovers(c, 'lifecycle', 'team', 'write')) return refuse('Your role cannot promote somebody');
     const wantsGrade = Boolean(draft.gradeCode?.trim());
     const wantsTitle = Boolean(draft.designation?.trim());
     if (!wantsGrade && !wantsTitle) {

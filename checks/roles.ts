@@ -19,6 +19,7 @@
 
 import {
   MANAGER_ADDS,
+  MANAGER_LAYER,
   PERMS,
   USER_ACTIONS as CLIENT_ACTIONS,
   actionScope as clientScope,
@@ -30,7 +31,7 @@ import {
 import { HRHEAD } from '../src/data/employees';
 import type { AppRole } from '../src/types/employee';
 import {
-  POLICY, ROLES, effectiveFor, effectiveModulesFor, modulesFor,
+  POLICY, ROLES, effectiveFor, effectiveModulesFor, modulesFor, ruleFor,
   USER_ACTIONS as SERVER_ACTIONS,
   actionScope as serverScope,
   mayAssignRole as serverMayAssign,
@@ -302,12 +303,96 @@ console.log('\nthe manager layer says the same thing on both sides\n');
 const layer = modulesFor('manager');
 const missing = layer.filter((m) => !MANAGER_ADDS.includes(m));
 const extra = MANAGER_ADDS.filter((m) => !layer.includes(m));
-if (missing.length || extra.length) {
-  if (missing.length) fail(`MANAGER_ADDS is missing: ${missing.join(', ')}`);
-  if (extra.length) fail(`MANAGER_ADDS claims what the layer does not grant: ${extra.join(', ')}`);
-} else {
+if (missing.length) fail(`MANAGER_ADDS is missing: ${missing.join(', ')}`);
+if (extra.length) fail(`MANAGER_ADDS claims what the layer does not grant: ${extra.join(', ')}`);
+if (!missing.length && !extra.length) {
   ok(`MANAGER_ADDS matches the policy's manager layer, all ${layer.length} modules`);
 }
+
+/*
+ * And the scopes, not just the names.
+ *
+ * MANAGER_LAYER was a flat list that scopeOfDemo read as 'team' everywhere.
+ * The policy gives the layer 'own' on payroll and tax and nothing on
+ * compensation, so the mirror was granting a manager their whole line's pay.
+ */
+/*
+ * All three verbs, not just read.
+ *
+ * The mirror carried a read scope alone at first and the gates used it for
+ * writes as well. jobtitles is read 'all' and write 'none', so a manager
+ * could add a job title; software and events were the same shape. Checking
+ * one verb is what let that through.
+ */
+let scopeDrift = false;
+for (const m of layer) {
+  const want = ruleFor('manager', m);
+  const got = MANAGER_LAYER[m];
+  for (const verb of ['read', 'write', 'approve'] as const) {
+    if (got?.[verb] !== want[verb]) {
+      scopeDrift = true;
+      fail(`MANAGER_LAYER[${m}].${verb} is ${got?.[verb]}, the policy grants ${want[verb]}`);
+    }
+  }
+}
+if (!scopeDrift) ok(`and all three verbs match the policy, across ${layer.length} modules`);
+
+/* ------------------------------------------------------------------ *
+ * A manager answers for people, not for pay
+ * ------------------------------------------------------------------ */
+
+console.log('\nthe manager layer reaches a team on people, and only itself on pay\n');
+
+/*
+ * Having reports widens what somebody sees of their line. It must not widen
+ * what they see of anybody's pay: a manager sees their own payslip and their
+ * own tax, and the single carve-out is approving their reports' expense
+ * claims, which is their job.
+ */
+const PEOPLE_OPS = ['leave', 'attendance', 'timesheet', 'performance', 'helpdesk', 'devplans'];
+const PAY = ['payroll', 'compensation', 'tax', 'benefits', 'expenses'];
+const VERBS = ['read', 'write', 'approve'] as const;
+
+let payLeak = false;
+for (const m of PAY) {
+  for (const verb of VERBS) {
+    const server = ruleFor('manager', m)[verb];
+    /*
+     * Expenses is the exception, and only for approving: a manager approves
+     * what their reports claim, which needs to see them too. Writing one on
+     * somebody else's behalf is still not theirs.
+     */
+    const allowed = m === 'expenses' && verb !== 'write' ? 'team' : 'own';
+    if (RANK[server] > RANK[allowed]) {
+      payLeak = true;
+      fail(`the manager layer grants ${verb} ${server} on ${m}, past ${allowed}`);
+    }
+    /* The client mirror only carries a read scope, so that is what it answers for. */
+    if (verb === 'read') {
+      const client = MANAGER_LAYER[m]?.read ?? 'none';
+      if (RANK[client] > RANK[allowed]) {
+        payLeak = true;
+        fail(`MANAGER_LAYER grants read ${client} on ${m}, past ${allowed}`);
+      }
+    }
+  }
+}
+if (!payLeak) ok('no pay module reaches past the manager themselves, bar approving expenses');
+
+let peopleShort = false;
+for (const m of PEOPLE_OPS) {
+  const server = ruleFor('manager', m).read;
+  const client = MANAGER_LAYER[m]?.read ?? 'none';
+  if (server !== 'team') {
+    peopleShort = true;
+    fail(`the manager layer reads ${server} on ${m}, not team`);
+  }
+  if (client !== 'team') {
+    peopleShort = true;
+    fail(`MANAGER_LAYER reads ${client} on ${m}, not team`);
+  }
+}
+if (!peopleShort) ok(`and a team on all ${PEOPLE_OPS.length} people-ops modules`);
 
 /* ------------------------------------------------------------------ *
  * An administrator is also an employee

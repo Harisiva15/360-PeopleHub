@@ -230,7 +230,8 @@ ok('20. the UI does not reimplement the same-day amend',
 console.log('\nan employee may read their pattern and not set it\n');
 
 ok('21. the assign control is withheld from an employee',
-  /app\.role === 'admin' \|\| app\.role === 'manager'/.test(empUi));
+  /app\.(reaches|can|hasReports|scopeOf)\b/.test(empUi),
+  'the control is gated on what the viewer reaches, not on a role name');
 ok('    and from anybody looking at their own record',
   /mayAssign && !own/.test(empUi),
   'a manager does not assign their own pattern either');
@@ -406,8 +407,8 @@ ok('43. and the employee assignment is a tab in the existing lifecycle drawer',
 ok('44. every role can read the patterns, as the service allows',
   /app\.role === 'employee'[\s\S]{0,400}'Working patterns'/.test(shiftsUi),
   'which days a company works is not privileged');
-ok('45. while the write controls are an admin\'s',
-  /const admin = app\.role === 'admin'/.test(schedUi)
+ok('45. while the write controls are gated on what the viewer reaches',
+  /app\.(reaches|can|hasReports|scopeOf)\b/.test(schedUi)
   && /admin && \(/.test(schedUi));
 
 ok('46. a draft round-trips an existing pattern without losing a weekday',

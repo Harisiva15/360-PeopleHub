@@ -30,7 +30,7 @@ import { ok } from './util';
 const refuse = (why: string) => Promise.reject(new Error(why));
 
 /** Who may do what. Admin configures; a manager reads; an employee reads one. */
-const mayWrite = (c: Caller) => callerCovers(c, 'jobtitles', 'all');
+const mayWrite = (c: Caller) => callerCovers(c, 'jobtitles', 'all', 'write');
 const mayRead = (c: Caller) => callerCovers(c, 'jobtitles', 'team');
 
 /** The catalogue row a list renders: the title, and what it costs to know. */
