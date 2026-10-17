@@ -33,8 +33,8 @@ interface Row { name: string; total: number; live: number; missing: string[] }
 const rows: Row[] = [];
 
 for (const name of Object.keys(mockServices).sort()) {
-  const mock = (mockServices as unknown as Record<string, Record<string, unknown>>)[name];
-  const live = (merged as unknown as Record<string, Record<string, unknown>>)[name];
+  const mock = (mockServices as Record<string, Record<string, unknown>>)[name];
+  const live = (merged as Record<string, Record<string, unknown>>)[name];
   if (!mock || !live) continue;
 
   const methods = Object.keys(mock).filter((k) => typeof mock[k] === 'function');
@@ -76,7 +76,7 @@ const live = rows.reduce((a, r) => a + r.live, 0);
 /** Every real `<service>.<method>` pair, so a lookalike cannot be mistaken for one. */
 const METHODS = new Set<string>();
 for (const name of Object.keys(mockServices)) {
-  const svc = (mockServices as unknown as Record<string, Record<string, unknown>>)[name]!;
+  const svc = (mockServices as Record<string, Record<string, unknown>>)[name]!;
   for (const k of Object.keys(svc)) {
     if (typeof svc[k] === 'function') METHODS.add(`${name}.${k}`);
   }
@@ -90,7 +90,7 @@ for (const name of Object.keys(mockServices)) {
  */
 const backed = new Set<string>();
 for (const r of rows) {
-  const mock = (mockServices as unknown as Record<string, Record<string, unknown>>)[r.name]!;
+  const mock = (mockServices as Record<string, Record<string, unknown>>)[r.name]!;
   for (const k of Object.keys(mock)) {
     if (typeof mock[k] === 'function' && !r.missing.includes(k)) backed.add(`${r.name}.${k}`);
   }

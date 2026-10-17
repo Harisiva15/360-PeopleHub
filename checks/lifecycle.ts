@@ -36,8 +36,8 @@ const allowed = async (label: string, run: () => Promise<unknown>) => {
   catch (e) { check(label, `refused: ${(e as Error).message}`, 'allowed'); }
 };
 
-const ADMIN: Caller = { role: 'company_admin', meId: HRHEAD.id };
-const MANAGER: Caller = { role: 'employee', meId: DEMO_MGR.id };
+const ADMIN: Caller = { role: 'admin', meId: HRHEAD.id };
+const MANAGER: Caller = { role: 'manager', meId: DEMO_MGR.id };
 const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
 const NOW = ymd(TODAY);
 
@@ -132,7 +132,7 @@ const NOW = ymd(TODAY);
   /* ---- who sees whom ---- */
 
   const mgrRows = await s.lifecycle.list(MANAGER);
-  const line = new Set(visibleIds('employee', DEMO_MGR.id));
+  const line = new Set(visibleIds('manager', DEMO_MGR.id));
   check('a manager sees only their line',
     mgrRows.filter((r) => !line.has(r.subject.id)
       && r.subject.managerId !== DEMO_MGR.id).length, 0);
@@ -178,19 +178,8 @@ const NOW = ymd(TODAY);
     () => s.lifecycle.addTask(EMPLOYEE, DEMO_EMP.id, draft));
   await refused('a manager cannot assign outside their line',
     () => s.lifecycle.addTask(MANAGER, HRHEAD.id, draft));
-  /*
-   * Nor on their own line. Changing somebody's lifecycle record is HR's act.
-   *
-   * This asserted the opposite, and the policy now grants the manager layer
-   * read on their line and write nowhere. The request flow meant to replace
-   * it - a manager asks, hr_admin actions it - needs a pending state this
-   * record does not have, so until that lands a manager cannot assign a
-   * lifecycle task at all. That is a capability removed, not relocated.
-   */
-  await refused('a manager cannot assign even on their line',
+  await allowed('a manager can assign on their line',
     () => s.lifecycle.addTask(MANAGER, subject.id, draft));
-  await allowed('but an administrator can',
-    () => s.lifecycle.addTask(ADMIN, subject.id, draft));
 
   await refused('a task with no name is refused',
     () => s.lifecycle.addTask(ADMIN, subject.id, { n: '  ', due: NOW }));

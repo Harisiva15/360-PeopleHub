@@ -511,7 +511,7 @@ export function TimesheetProjects() {
   const dir = useVisiblePeople();
   const q = useSheets(dir.ids, { since: windowStart() });
   const sheets = q.data ?? [];
-  const mayShape = app.reaches('timesheet', 'write', 'all');
+  const mayShape = app.role === 'admin';
   const status = useSetProjectStatus();
 
   const edit = (existing: TimesheetProject | null) => layer.modal({

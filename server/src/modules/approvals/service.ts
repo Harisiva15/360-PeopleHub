@@ -17,7 +17,6 @@
  * differently and a shared helper would have to take the column name anyway.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -37,10 +36,10 @@ export interface PendingItem {
  * slots into `WHERE <col> IN (...)`.
  */
 function actionable(caller: Caller): { sql: string; params: unknown[] } | null {
-  if (!caller.employeeId && !reaches(caller, 'approvals', 'read', 'all')) return null;
-  if (!reaches(caller, 'approvals', 'read', 'team')) return null;
+  if (!caller.employeeId && caller.role !== 'admin') return null;
+  if (caller.role === 'employee') return null;
 
-  if (reaches(caller, 'approvals', 'read', 'all')) {
+  if (caller.role === 'admin') {
     /* Every active person except the caller — an admin with no employee row
        still sees the whole queue, hence the null-safe comparison. */
     return {

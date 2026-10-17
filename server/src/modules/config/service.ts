@@ -12,7 +12,6 @@
  * sitting in the Chennai office. A fence move is a fence move.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 
@@ -157,7 +156,7 @@ export async function updateFence(
   siteCode: string,
   patch: FenceUpdate,
 ): Promise<Site> {
-  if (!reaches(caller, 'settings', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ConfigError('only an admin may change a fence', 'forbidden');
   }
   if (!Number.isFinite(patch.lat) || !Number.isFinite(patch.lng)) {
@@ -272,7 +271,7 @@ async function nominateHeadquarters(
 
 /** Open a location. Admin only — this is what every posting screen offers. */
 export async function createSite(caller: Caller, draft: SiteDraft): Promise<Site> {
-  if (!reaches(caller, 'settings', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ConfigError('only an admin may add a location', 'forbidden');
   }
   checkDraft(draft, false);
@@ -310,7 +309,7 @@ export async function createSite(caller: Caller, draft: SiteDraft): Promise<Site
 export async function updateSite(
   caller: Caller, siteCode: string, patch: SitePatch,
 ): Promise<Site> {
-  if (!reaches(caller, 'settings', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ConfigError('only an admin may change a location', 'forbidden');
   }
   checkDraft(patch, true);
@@ -376,7 +375,7 @@ export async function updateSite(
 export async function setSiteActive(
   caller: Caller, siteCode: string, active: boolean,
 ): Promise<Site> {
-  if (!reaches(caller, 'settings', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ConfigError('only an admin may open or close a location', 'forbidden');
   }
 
@@ -423,7 +422,7 @@ export async function setLeaveQuota(
   typeCode: string,
   quota: number,
 ): Promise<{ type: string; quota: number; repriced: number }> {
-  if (!reaches(caller, 'settings', 'write', 'all')) throw new ConfigError('only an admin may change quotas', 'forbidden');
+  if (caller.role !== 'admin') throw new ConfigError('only an admin may change quotas', 'forbidden');
   if (quota < 0) throw new ConfigError('a quota cannot be negative', 'invalid');
 
   return withTenant(caller, async (db) => {
@@ -466,7 +465,7 @@ export async function addHoliday(
   name: string,
   optional: boolean,
 ): Promise<Holiday[]> {
-  if (!reaches(caller, 'settings', 'write', 'all')) throw new ConfigError('only an admin may add holidays', 'forbidden');
+  if (caller.role !== 'admin') throw new ConfigError('only an admin may add holidays', 'forbidden');
 
   return withTenant(caller, async (db) => {
     try {
@@ -574,7 +573,7 @@ export async function listDepartments(caller: Caller): Promise<Department[]> {
 
 /** Shaping the organisation is an administrator's, as the rest of settings is. */
 function mayShape(caller: Caller, verb: string) {
-  if (!reaches(caller, 'settings', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ConfigError(`only an admin may ${verb} a department`, 'forbidden');
   }
 }
@@ -905,7 +904,7 @@ const toBusinessUnit = (r: Record<string, unknown>): BusinessUnit => ({
 
 /** Shaping the organisation is an administrator's, as the rest of settings is. */
 function mayShapeUnit(caller: Caller, verb: string): void {
-  if (!reaches(caller, 'settings', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ConfigError(`only an admin may ${verb} a business unit`, 'forbidden');
   }
 }
@@ -1210,7 +1209,7 @@ const LE_CODE = /^[A-Z0-9]{2,10}$/;
 
 /** Configuring the tenant is an administrator's, as the rest of settings is. */
 function mayShapeEntity(caller: Caller, verb: string): void {
-  if (!reaches(caller, 'settings', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ConfigError(`only an admin may ${verb} a legal entity`, 'forbidden');
   }
 }
@@ -1570,7 +1569,7 @@ export async function updateTenantDisplayName(
   caller: Caller,
   displayName: unknown,
 ): Promise<TenantProfile> {
-  if (!reaches(caller, 'settings', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ConfigError('only an admin may rename the company', 'forbidden');
   }
   if (typeof displayName !== 'string' || !displayName.trim()) {

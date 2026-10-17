@@ -1,5 +1,3 @@
-import type { Scope } from '../../auth/policy.ts';
-
 /**
  * The one query behind every employee read.
  *
@@ -69,21 +67,13 @@ export const EMPLOYEE_PROJECTION = `
  * job, and getting it wrong shows one manager another's team — a smaller
  * breach than crossing tenants, and still a breach.
  */
-/*
- * Which employees a caller may see, as SQL.
- *
- * Took a role and branched three ways; takes the scope the policy gave,
- * which is the same three answers named for what they mean. 'none' is
- * FALSE, because a caller who reaches nothing must match no row.
- */
 export function scopeClause(
-  scope: Scope,
+  role: 'admin' | 'manager' | 'employee',
   employeeId: string | null,
 ): { sql: string; params: unknown[] } {
-  if (scope === 'all') return { sql: 'TRUE', params: [] };
-  if (scope === 'none') return { sql: 'FALSE', params: [] };
+  if (role === 'admin') return { sql: 'TRUE', params: [] };
 
-  if (scope === 'team') {
+  if (role === 'manager') {
     return {
       sql: `e.id = $1 OR e.id IN (
               WITH RECURSIVE reports AS (

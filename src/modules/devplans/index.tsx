@@ -340,7 +340,7 @@ function PlanBody({ d, refetchKey }: { d: DevPlanDetail; refetchKey?: string }) 
 
   const p = d.plan;
   const mine = p.empId === app.meId;
-  const canEdit = mine || app.reaches('devplans', 'write', 'all');
+  const canEdit = mine || app.role === 'admin';
   const canEndorse = !mine && app.role !== 'employee';
   const closed = p.status === 'Completed' || p.status === 'Cancelled';
 

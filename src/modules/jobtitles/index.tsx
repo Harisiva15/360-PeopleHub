@@ -363,7 +363,7 @@ function JobTitlesView() {
     );
   }
 
-  const canWrite = app.reaches('jobtitles', 'write', 'all');
+  const canWrite = app.role === 'admin';
 
   const act = async (run: () => Promise<unknown>, done: string) => {
     try { await run(); app.toast(done, 'ok'); }

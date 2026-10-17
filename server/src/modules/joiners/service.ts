@@ -10,7 +10,6 @@
  * and making them click twice would teach them to distrust the queue.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import { provisionEmployee } from '../people/provision.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
@@ -127,7 +126,7 @@ export async function requestJoiner(
   caller: Caller,
   input: NewJoiner,
 ): Promise<JoiningRequest> {
-  if (!reaches(caller, 'onboarding', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new JoinerError('only a manager or an admin may add a joiner', 'forbidden');
   }
   if (!input.fullName?.trim()) throw new JoinerError('a name is required', 'invalid');
@@ -180,7 +179,7 @@ export async function requestJoiner(
       [caller.employeeId, id, input.workEmail]);
 
     // An admin is the approver, so their own request is already decided.
-    if (reaches(caller, 'onboarding', 'read', 'all')) {
+    if (caller.role === 'admin') {
       /*
        * An admin raising a request approves it immediately, so the pattern they
        * chose on the request travels straight through.
@@ -266,7 +265,7 @@ export async function approveJoiner(
    */
   workScheduleCode?: string | null,
 ): Promise<JoiningRequest> {
-  if (!reaches(caller, 'onboarding', 'read', 'all')) {
+  if (caller.role !== 'admin') {
     throw new JoinerError('only an admin may approve a joiner', 'forbidden');
   }
   return withTenant(caller, (db) =>
@@ -278,7 +277,7 @@ export async function rejectJoiner(
   id: string,
   note?: string,
 ): Promise<JoiningRequest> {
-  if (!reaches(caller, 'onboarding', 'read', 'all')) {
+  if (caller.role !== 'admin') {
     throw new JoinerError('only an admin may reject a joiner', 'forbidden');
   }
   return withTenant(caller, async (db) => {
@@ -299,11 +298,11 @@ export async function listJoiners(
   caller: Caller,
   status?: JoiningRequest['status'],
 ): Promise<JoiningRequest[]> {
-  if (!reaches(caller, 'onboarding', 'read', 'team')) return [];
+  if (caller.role === 'employee') return [];
 
   const where: string[] = [];
   const params: unknown[] = [];
-  if (caller.hasReports) {
+  if (caller.role === 'manager') {
     params.push(caller.employeeId);
     where.push(`jr.requested_by = $${params.length}`);
   }

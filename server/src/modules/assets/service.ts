@@ -19,7 +19,6 @@
  * it is computed once here rather than in each screen that shows it.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -165,10 +164,10 @@ const toRequest = (r: Record<string, unknown>): AssetRequest => ({
  * is a list of what is worth stealing and who has it, so it is not a directory.
  */
 function scope(caller: Caller, column: string, params: unknown[]): string {
-  if (reaches(caller, 'assets', 'read', 'all')) return '';
+  if (caller.role === 'admin') return '';
   params.push(caller.employeeId);
   const p = `$${params.length}`;
-  if (!reaches(caller, 'assets', 'read', 'team')) return `${column} = ${p}`;
+  if (caller.role === 'employee') return `${column} = ${p}`;
   return `(${column} = ${p} OR ${column} IN (
      WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = ${p}
@@ -210,24 +209,13 @@ export async function listOpenRequests(caller: Caller): Promise<AssetRequest[]> 
 
 /** Kit a leaver still holds — the exit clearance checklist. */
 export async function pendingRecovery(caller: Caller): Promise<Asset[]> {
-  if (!reaches(caller, 'assets', 'read', 'team')) return [];
-  /*
-   * Scoped, like every other listing in this file.
-   *
-   * It was gated at `team` and then queried company-wide, so a manager saw
-   * every leaver's outstanding kit and their name — the same shape as the
-   * onboarding listing that returned the whole company's joiners. `scope`
-   * returns '' for an all-scope reader, so HR and finance still see the lot.
-   */
-  const params: unknown[] = [];
-  const mine = scope(caller, 'a.employee_id', params);
+  if (caller.role === 'employee') return [];
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
       `${ASSET_PROJECTION}
         JOIN employee holder ON holder.id = a.employee_id
        WHERE a.status = 'assigned' AND holder.status IN ('exited', 'on_notice')
-         ${mine ? `AND ${mine}` : ''}
-       ORDER BY holder.full_name, a.tag`, params);
+       ORDER BY holder.full_name, a.tag`);
     return rows.map(toAsset);
   });
 }
@@ -277,9 +265,9 @@ export async function listMovements(
    */
   const n = Math.min(Math.max(1, Math.trunc(limit)), 200);
   const params: unknown[] = [n];
-  const mine = reaches(caller, 'assets', 'read', 'all') ? '' :
+  const mine = caller.role === 'admin' ? '' :
     ` WHERE m.from_employee_id = $2 OR m.to_employee_id = $2`;
-  if (!reaches(caller, 'assets', 'read', 'all')) params.push(caller.employeeId);
+  if (caller.role !== 'admin') params.push(caller.employeeId);
 
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
@@ -317,7 +305,7 @@ export async function listMovements(
 }
 
 export async function assetKpi(caller: Caller): Promise<AssetKPI> {
-  if (!reaches(caller, 'assets', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new AssetError('only a manager or admin may see the register summary', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
@@ -389,7 +377,7 @@ async function reloadAsset(db: TenantClient, id: string): Promise<Asset> {
  * ago from still looking open.
  */
 export async function allocate(caller: Caller, assetId: string, empId: string): Promise<Asset> {
-  if (!reaches(caller, 'assets', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new AssetError('only a manager or admin may issue an asset', 'forbidden');
   }
 
@@ -435,7 +423,7 @@ export async function allocate(caller: Caller, assetId: string, empId: string): 
 
 /** Take an asset back. The custody trail records who it came from. */
 export async function markReturned(caller: Caller, assetId: string): Promise<Asset> {
-  if (!reaches(caller, 'assets', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new AssetError('only a manager or admin may take an asset back', 'forbidden');
   }
 
@@ -487,7 +475,7 @@ export interface NewAsset {
  * this turns that into a sentence.
  */
 export async function addAsset(caller: Caller, draft: NewAsset): Promise<Asset> {
-  if (!reaches(caller, 'assets', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new AssetError('only a manager or admin may add to the register', 'forbidden');
   }
   if (!draft.type?.trim()) throw new AssetError('say which item this is', 'invalid');
@@ -603,7 +591,7 @@ export async function actOnRequest(
   id: string,
   status: string,
 ): Promise<AssetRequest> {
-  if (!reaches(caller, 'assets', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new AssetError('only a manager or admin may decide a request', 'forbidden');
   }
   const to = FROM_REQ_STATUS[status];

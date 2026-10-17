@@ -35,8 +35,8 @@ const allowed = async (label: string, run: () => Promise<unknown>) => {
   catch (e) { check(label, `refused: ${(e as Error).message}`, 'allowed'); }
 };
 
-const ADMIN: Caller = { role: 'company_admin', meId: HRHEAD.id };
-const MANAGER: Caller = { role: 'employee', meId: DEMO_MGR.id };
+const ADMIN: Caller = { role: 'admin', meId: HRHEAD.id };
+const MANAGER: Caller = { role: 'manager', meId: DEMO_MGR.id };
 const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
 
 (async () => {
@@ -77,7 +77,7 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
   const mgrSees = await s.users.list(MANAGER);
   check('an administrator sees more than a manager', adminSees.length > mgrSees.length, true);
 
-  const mgrTeam = new Set(visibleIds('employee', DEMO_MGR.id));
+  const mgrTeam = new Set(visibleIds('manager', DEMO_MGR.id));
   check('every account a manager sees is in their line',
     mgrSees.filter((u) => !u.empId || !mgrTeam.has(u.empId)).length, 0);
 
@@ -103,11 +103,11 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
   });
 
   await refused('a manager cannot create an administrator',
-    () => s.users.create(MANAGER, base({ role: 'company_admin' })));
+    () => s.users.create(MANAGER, base({ role: 'admin' })));
   await allowed('a manager can create an employee',
     () => s.users.create(MANAGER, base()));
   await allowed('an administrator can create an administrator',
-    () => s.users.create(ADMIN, base({ role: 'company_admin' })));
+    () => s.users.create(ADMIN, base({ role: 'admin' })));
 
   const mgrMade = USERS.find((u) => u.requestedById === DEMO_MGR.id && u.status === 'Pending Approval')!;
   check("a manager's creation waits for approval", mgrMade.status, 'Pending Approval');
@@ -120,9 +120,9 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
 
   const teamMember = mgrSees.find((u) => u.role === 'employee' && u.status === 'Active')!;
   await refused('a manager cannot promote somebody to administrator',
-    () => s.users.update(MANAGER, teamMember.id, { role: 'company_admin' }));
+    () => s.users.update(MANAGER, teamMember.id, { role: 'admin' }));
   await allowed('an administrator can',
-    () => s.users.update(ADMIN, teamMember.id, { role: 'employee' }));
+    () => s.users.update(ADMIN, teamMember.id, { role: 'manager' }));
   await s.users.update(ADMIN, teamMember.id, { role: 'employee' });   /* put it back */
 
   /* ---- validation ---- */
@@ -157,18 +157,8 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
     () => s.users.setStatus(MANAGER, teamMember.id, 'Active'));
   await refused('a manager cannot suspend',
     () => s.users.setStatus(MANAGER, teamMember.id, 'Suspended', 'held'));
-  /*
-   * Deactivating is an account act, and account acts are company_admin's.
-   *
-   * This asserted the opposite, on the old grounds that offboarding is
-   * ordinary. The lifecycle record a manager does own is what records the
-   * exit; closing the login is a different decision with a different blast
-   * radius, and the policy says so in as many words.
-   */
-  await refused('a manager cannot deactivate anybody, even in their line',
+  await allowed('a manager can deactivate somebody in their line',
     () => s.users.setStatus(MANAGER, teamMember.id, 'Inactive', 'Left the team'));
-  await allowed('but an administrator can',
-    () => s.users.setStatus(ADMIN, teamMember.id, 'Inactive', 'Left the team'));
   await s.users.setStatus(ADMIN, teamMember.id, 'Active');
 
   /* ---- password reset ---- */
@@ -222,13 +212,10 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
   /* ---- bulk ---- */
 
   const two = mgrSees.filter((u) => u.status !== 'Deleted').slice(0, 2).map((u) => u.id);
-  /* A bulk update is an account act too, whoever the rows belong to. */
-  await refused('a manager cannot bulk update, even their own line',
+  await allowed('a manager can bulk update their own line',
     () => s.users.bulkUpdate(MANAGER, two, { site: 'CHN' }));
-  await allowed('but an administrator can',
-    () => s.users.bulkUpdate(ADMIN, two, { site: 'CHN' }));
   await refused('a manager cannot bulk promote to administrator',
-    () => s.users.bulkUpdate(MANAGER, two, { role: 'company_admin' }));
+    () => s.users.bulkUpdate(MANAGER, two, { role: 'admin' as AppRole }));
   await refused('a manager cannot bulk update outside their line',
     () => s.users.bulkUpdate(MANAGER, [outside.id], { site: 'CHN' }));
 

@@ -70,7 +70,7 @@ function OnbDetail({ o }: { o: Onboarding }) {
               ['Reporting manager', dir.name(o.managerId)],
               ['Onboarding buddy', dir.name(o.buddyId)],
               ['Location', siteOf(o.site).name],
-              ['Offered CTC', app.reaches('compensation', 'read', 'all') ? inr(o.ctc) : <span className="muted">Restricted</span>],
+              ['Offered CTC', app.role === 'admin' ? inr(o.ctc) : <span className="muted">Restricted</span>],
               ['Background check', <StatusBadge status={o.bgv} />],
               ['Tasks complete', `${done} of ${o.tasks.length}`],
             ]} />
@@ -129,7 +129,7 @@ function JourneysView() {
   const { data: people = [] } = useAllEmployees();
   const app = useApp();
   const layer = useLayer();
-  const list = app.reaches('onboarding', 'read', 'all')
+  const list = app.role === 'admin'
     ? ONBOARD
     : ONBOARD.filter((o) => o.managerId === app.meId || isMyReport(app.meId, o.managerId));
 
@@ -140,7 +140,7 @@ function JourneysView() {
     <div className="stack">
       <div className="toolbar">
         <div className="spacer" />
-        {app.reaches('onboarding', 'write', 'team') && (
+        {(app.role === 'admin' || app.role === 'manager') && (
           <button className="btn primary" onClick={() => layer.modal({
             title: 'Start an onboarding journey',
             sub: 'For somebody joining outside the recruitment pipeline',

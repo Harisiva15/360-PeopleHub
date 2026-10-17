@@ -12,7 +12,6 @@
  * that gets presented to a board.
  */
 
-import { can } from '../src/state/rbac';
 import { getServices } from '../src/services';
 import { REPORT_DEFS } from '../src/data/reportdefs';
 import { DATASETS } from '../src/data/exports';
@@ -37,8 +36,8 @@ const allowed = async (label: string, run: () => Promise<unknown>) => {
   catch (e) { check(label, `refused: ${(e as Error).message}`, 'allowed'); }
 };
 
-const ADMIN: Caller = { role: 'company_admin', meId: HRHEAD.id };
-const MANAGER: Caller = { role: 'employee', meId: DEMO_MGR.id };
+const ADMIN: Caller = { role: 'admin', meId: HRHEAD.id };
+const MANAGER: Caller = { role: 'manager', meId: DEMO_MGR.id };
 const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
 
 const seeded = new Set(REPORT_DEFS.map((r) => r.id));
@@ -181,8 +180,7 @@ const seeded = new Set(REPORT_DEFS.map((r) => r.id));
    * A manager cannot build a report on a dataset their role cannot export.
    * Without this the builder would be a way around the export catalogue.
    */
-  /* A dataset no non-administrator can reach, however many reports they have. */
-  const adminOnlyDs = DATASETS.find((d) => !can('employee', d.k, true))!;
+  const adminOnlyDs = DATASETS.find((d) => d.roles.length === 1 && d.roles[0] === 'admin')!;
   await refused('a manager cannot report on an administrators-only dataset',
     () => s.reports.create(MANAGER, base({ datasetId: adminOnlyDs.id })));
 

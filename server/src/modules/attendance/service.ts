@@ -23,7 +23,6 @@
  * punch look like a violation.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -119,9 +118,9 @@ const toRecord = (r: Record<string, unknown>): AttRecord => ({
 
 /** Who the caller may see attendance for. */
 async function maySee(db: TenantClient, caller: Caller, empId: string): Promise<boolean> {
-  if (reaches(caller, 'attendance', 'read', 'all')) return true;
+  if (caller.role === 'admin') return true;
   if (empId === caller.employeeId) return true;
-  if (!caller.hasReports) return false;
+  if (caller.role !== 'manager') return false;
   const r = await db.query(
     `WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = $1
@@ -350,7 +349,7 @@ export async function punchIn(
   date: string,
   at: PunchAt,
 ): Promise<AttRecord> {
-  if (empId !== caller.employeeId && !reaches(caller, 'attendance', 'read', 'all')) {
+  if (empId !== caller.employeeId && caller.role !== 'admin') {
     throw new AttendanceError('you can only punch for yourself', 'forbidden');
   }
 
@@ -415,7 +414,7 @@ export async function punchOut(
   date: string,
   at: PunchAt,
 ): Promise<AttRecord> {
-  if (empId !== caller.employeeId && !reaches(caller, 'attendance', 'read', 'all')) {
+  if (empId !== caller.employeeId && caller.role !== 'admin') {
     throw new AttendanceError('you can only punch for yourself', 'forbidden');
   }
 
@@ -492,10 +491,10 @@ export async function listAttendance(
 
   // Scope first and unconditionally: empIds narrows what the caller can
   // already see, it never widens it.
-  if (!reaches(caller, 'attendance', 'read', 'team')) {
+  if (caller.role === 'employee') {
     params.push(caller.employeeId);
     where.push(`a.employee_id = $${params.length}`);
-  } else if (caller.hasReports) {
+  } else if (caller.role === 'manager') {
     params.push(caller.employeeId);
     where.push(`(a.employee_id = $${params.length} OR a.employee_id IN (
        WITH RECURSIVE t AS (
@@ -552,7 +551,7 @@ export async function raiseRegularisation(
   outT: string,
   reason: string,
 ): Promise<AttRecord> {
-  if (empId !== caller.employeeId && !reaches(caller, 'attendance', 'read', 'all')) {
+  if (empId !== caller.employeeId && caller.role !== 'admin') {
     throw new AttendanceError('you can only regularise your own attendance', 'forbidden');
   }
   // `reason` is whatever the body carried, which may be nothing at all — a
@@ -598,7 +597,7 @@ export async function actOnRegularisation(
   date: string,
   decision: 'Approved' | 'Rejected',
 ): Promise<AttRecord> {
-  if (!reaches(caller, 'attendance', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new AttendanceError('only a manager or admin may decide this', 'forbidden');
   }
   if (empId === caller.employeeId) {

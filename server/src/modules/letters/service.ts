@@ -18,7 +18,6 @@
  * answered when it went out, and the difference is what somebody will dispute.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -86,7 +85,7 @@ const toRequest = (r: Record<string, unknown>): LetterRequest => ({
  * open up to the reporting line.
  */
 function scope(caller: Caller, params: unknown[]): string {
-  if (reaches(caller, 'documents', 'read', 'all')) return '';
+  if (caller.role === 'admin') return '';
   if (!caller.employeeId) throw new LetterError('this login has no employee record', 'forbidden');
   params.push(caller.employeeId);
   return `lr.employee_id = $${params.length}`;
@@ -319,7 +318,7 @@ export async function requestLetter(
     throw new LetterError('this login has no employee record', 'forbidden');
   }
   const empId = draft.empId || caller.employeeId;
-  if (empId !== caller.employeeId && !reaches(caller, 'documents', 'read', 'all')) {
+  if (empId !== caller.employeeId && caller.role !== 'admin') {
     throw new LetterError('you can only request your own letters', 'forbidden');
   }
   if (!draft.type?.trim()) throw new LetterError('say which letter you need', 'invalid');
@@ -398,7 +397,7 @@ async function issueInto(
  * make the company say anything in.
  */
 export async function issueLetter(caller: Caller, id: string): Promise<LetterRequest> {
-  if (!reaches(caller, 'documents', 'read', 'team') || !caller.employeeId) {
+  if (caller.role === 'employee' || !caller.employeeId) {
     throw new LetterError('only HR may issue a letter', 'forbidden');
   }
 
@@ -430,7 +429,7 @@ export async function rejectLetter(
   id: string,
   reason: string,
 ): Promise<LetterRequest> {
-  if (!reaches(caller, 'documents', 'read', 'team') || !caller.employeeId) {
+  if (caller.role === 'employee' || !caller.employeeId) {
     throw new LetterError('only HR may act on a letter request', 'forbidden');
   }
   if (!reason?.trim()) {

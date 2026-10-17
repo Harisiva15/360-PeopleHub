@@ -14,7 +14,6 @@
  * happens over rows the export already narrowed.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { datasets as exportDatasets, run as runExport } from '../exports/service.ts';
@@ -91,7 +90,7 @@ const toDef = (r: Row): ReportDef => ({
 });
 
 const mayBuild = (caller: Caller) => {
-  if (!reaches(caller, 'reports', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new ReportError('Your role cannot build reports', 'forbidden');
   }
 };
@@ -104,7 +103,7 @@ const mayBuild = (caller: Caller) => {
  * exist" stay distinguishable.
  */
 function visibility(caller: Caller, params: unknown[]): string {
-  if (reaches(caller, 'reports', 'read', 'all')) return 'TRUE';
+  if (caller.role === 'admin') return 'TRUE';
   params.push(caller.employeeId);
   return `(r.shared OR r.owner_id = $${params.length})`;
 }
@@ -330,7 +329,7 @@ export async function createReport(caller: Caller, d: ReportDraft): Promise<Repo
 }
 
 const mayEdit = (caller: Caller, ownerId: string) =>
-  reaches(caller, 'reports', 'read', 'all') || caller.employeeId === ownerId;
+  caller.role === 'admin' || caller.employeeId === ownerId;
 
 export async function updateReport(
   caller: Caller,

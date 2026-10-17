@@ -183,7 +183,7 @@ export function RosterView() {
   }).length;
   const loading = roster.loading && !roster.data;
 
-  const mayEdit = app.reaches('shifts', 'write', 'team');
+  const mayEdit = app.role === 'admin' || app.role === 'manager';
 
   const assign = async (empId: string, shiftCode: string) => {
     try {

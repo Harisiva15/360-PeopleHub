@@ -57,8 +57,8 @@ function ProfileView({ p, jump }: { p: EmployeeProfile; jump: (id: string) => vo
   const isSelf = e.id === app.meId;
 
   /* compensation is HR-and-self only; personal details also open to the line manager */
-  const canSeeComp = app.reaches('compensation', 'read', 'all') || isSelf;
-  const canSeePersonal = canSeeComp || (app.hasReports && app.isMyReport(e.id));
+  const canSeeComp = app.role === 'admin' || isSelf;
+  const canSeePersonal = canSeeComp || (app.role === 'manager' && app.isMyReport(e.id));
 
   const s = p.salary;
   const ctry = countryOf(e.country);

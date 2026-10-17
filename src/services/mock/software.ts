@@ -11,14 +11,14 @@
 import { sortBy } from '../../lib/collections';
 import { uid } from '../../lib/rng';
 import { TODAY, ymd } from '../../lib/dates';
-import { EMAP, teamOf } from '../../data/employees';
+import { EMAP } from '../../data/employees';
 import {
   SEATS, SOFTWARE, SOFTWARE_CATS, annualCost, isDormant, isOverAllocated,
   productOf, renewalCalendar, renewsInDays, seatsHeldBy, seatsOf, softwareKPI, wastedCost,
 } from '../../data/software';
 import type { SoftwareProduct, SoftwareSeat } from '../../data/software';
 import { recordAudit } from '../../data/audit';
-import { callerCovers } from '../../state/rbac';
+import { visibleIds } from '../../state/rbac';
 import type {
   Caller, SoftwareDetail, SoftwareDraft, SoftwareFilter, SoftwareRow,
   SoftwareSeatRow, SoftwareService,
@@ -68,7 +68,7 @@ function matches(r: SoftwareRow, f: SoftwareFilter): boolean {
 }
 
 /** An administrator writes the estate; everyone else reads. */
-const mayWrite = (c: Caller) => callerCovers(c, 'software', 'all', 'write');
+const mayWrite = (c: Caller) => c.role === 'admin';
 
 /**
  * Whose seat this caller may revoke.
@@ -78,10 +78,9 @@ const mayWrite = (c: Caller) => callerCovers(c, 'software', 'all', 'write');
  * seats accumulate. Taking one from outside their line is not theirs to do.
  */
 function mayRevoke(c: Caller, empId: string): boolean {
-  if (callerCovers(c, 'software', 'all', 'write')) return true;
-  /* Their own line, and not themselves: taking back your own seat is not
-   * housekeeping, it is leaving the product you were given. */
-  return teamOf(c.meId, true).includes(empId);
+  if (c.role === 'admin') return true;
+  if (c.role === 'manager') return visibleIds('manager', c.meId).includes(empId);
+  return false;
 }
 
 const validate = (d: Partial<SoftwareDraft>, existing?: SoftwareProduct): string | null => {
@@ -105,13 +104,13 @@ const validate = (d: Partial<SoftwareDraft>, existing?: SoftwareProduct): string
 
 export const softwareService: SoftwareService = {
   list(c, f = {}) {
-    if (!callerCovers(c, 'software', 'team')) return refuse('Your role cannot browse the software estate');
+    if (c.role === 'employee') return refuse('Your role cannot browse the software estate');
     const rows = SOFTWARE.map(rowOf).filter((r) => matches(r, f));
     return ok(sortBy(rows, (r) => -r.annualCost));
   },
 
   get(c, id) {
-    if (!callerCovers(c, 'software', 'team')) return refuse('Your role cannot browse the software estate');
+    if (c.role === 'employee') return refuse('Your role cannot browse the software estate');
     const p = productOf(id);
     if (!p) return ok(null);
     const detail: SoftwareDetail = {
@@ -141,12 +140,12 @@ export const softwareService: SoftwareService = {
   },
 
   stats(c) {
-    if (!callerCovers(c, 'software', 'team')) return refuse('Your role cannot browse the software estate');
+    if (c.role === 'employee') return refuse('Your role cannot browse the software estate');
     return ok(softwareKPI());
   },
 
   renewals(c, withinDays = 90) {
-    if (!callerCovers(c, 'software', 'team')) return refuse('Your role cannot browse the software estate');
+    if (c.role === 'employee') return refuse('Your role cannot browse the software estate');
     return ok(renewalCalendar().filter((r) => r.inDays <= withinDays));
   },
 

@@ -1,7 +1,6 @@
 /*
  * Last in the RNG chain, after the events calendar.
  */
-import { can } from '../state/rbac';
 import './events';
 
 import { sortBy } from '../lib/collections';
@@ -48,26 +47,7 @@ export interface Dataset {
   desc: string;
   /** A name in `src/components/icons.tsx`, not a glyph. */
   ic: string;
-  /**
-   * The module that owns the rows, not a list of roles.
-   *
-   * A restated role list is a second copy of the access matrix. `can` asks the
-   * policy, so a dataset becomes exportable exactly when its module is
-   * reachable - and a manager's reach comes from the reporting tree, which no
-   * list of roles here could express.
-   */
-  k: string;
-  /**
-   * The least scope on `k` this dataset needs, when reaching the module is
-   * not enough.
-   *
-   * Most caller-scoped datasets need 'own': the service narrows the rows to
-   * whoever asked. A few are the whole catalogue of something rather than
-   * anybody's slice of it - the software estate, the job-title list - and the
-   * services behind them serve at team and above. Without this the export
-   * catalogue offered an employee two datasets the run path then refused.
-   */
-  needs?: 'own' | 'team' | 'all';
+  roles: AppRole[];
   scope: DatasetScope;
   /**
    * True where the rows are about identifiable people in a way that would
@@ -92,7 +72,7 @@ export const DATASETS: Dataset[] = [
     n: 'Employee directory',
     desc: 'Everybody you can see, with their department, role and manager.',
     ic: 'people',
-    k: 'employees',
+    roles: ['admin', 'manager'],
     scope: 'caller',
     personal: true,
     dated: false,
@@ -113,7 +93,7 @@ export const DATASETS: Dataset[] = [
     n: 'Employment lifecycle',
     desc: 'Where each person stands, how long they have been there and what is next.',
     ic: 'swap',
-    k: 'lifecycle',
+    roles: ['admin', 'manager'],
     scope: 'caller',
     personal: true,
     dated: false,
@@ -134,7 +114,7 @@ export const DATASETS: Dataset[] = [
     n: 'Development plans',
     desc: 'Aspirations, focus areas, progress and when each is next reviewed.',
     ic: 'rocket',
-    k: 'devplans',
+    roles: ['admin', 'manager'],
     scope: 'caller',
     personal: true,
     dated: false,
@@ -156,7 +136,7 @@ export const DATASETS: Dataset[] = [
     n: 'Company events',
     desc: 'What was on, how many came and what the turnout was.',
     ic: 'calendar',
-    k: 'events',
+    roles: ['admin', 'manager'],
     scope: 'caller',
     personal: false,
     dated: true,
@@ -178,8 +158,7 @@ export const DATASETS: Dataset[] = [
     n: 'Software estate',
     desc: 'Subscriptions, seats, renewals and what the idle seats cost.',
     ic: 'puzzle',
-    k: 'software',
-    needs: 'team',
+    roles: ['admin', 'manager'],
     scope: 'caller',
     personal: false,
     dated: false,
@@ -201,8 +180,7 @@ export const DATASETS: Dataset[] = [
     n: 'Job title catalogue',
     desc: 'Every title, its level and family, and how many people hold it.',
     ic: 'briefcase',
-    k: 'jobtitles',
-    needs: 'team',
+    roles: ['admin', 'manager'],
     scope: 'caller',
     personal: false,
     dated: false,
@@ -227,7 +205,7 @@ export const DATASETS: Dataset[] = [
     n: 'Leave requests',
     desc: 'Every request in the period, with its type, days and outcome.',
     ic: 'leave',
-    k: 'leave',
+    roles: ['admin'],
     scope: 'admin-only',
     personal: true,
     dated: true,
@@ -247,7 +225,7 @@ export const DATASETS: Dataset[] = [
     n: 'Asset register',
     desc: 'Every item, where it is, who holds it and what it is worth.',
     ic: 'laptop',
-    k: 'assets',
+    roles: ['admin'],
     scope: 'admin-only',
     /* It names who holds each item, which makes it a list of people with
        their kit — personal data, however much it reads as an inventory. */
@@ -324,8 +302,8 @@ export function exportKPI(scope: ExportRun[] = EXPORT_LOG, asOf = ymd(TODAY)) {
 /* ---------------- a history to read ---------------- */
 
 (function genExportHistory() {
-  const admins = ACTIVE().filter((e) => e.role === 'company_admin');
-  const managers = ACTIVE().filter((e) => e.reports.length > 0);
+  const admins = ACTIVE().filter((e) => e.role === 'admin');
+  const managers = ACTIVE().filter((e) => e.role === 'manager');
   if (!admins.length) return;
 
   for (let i = 0; i < 34; i++) {
@@ -361,16 +339,15 @@ export function exportKPI(scope: ExportRun[] = EXPORT_LOG, asOf = ymd(TODAY)) {
     const who = refusal
       ? pick(managers)
       : (chance(0.7) || !managers.length ? pick(admins) : pick(managers));
-    const mayTake = (d: Dataset) => can(who.role, d.k, who.reports.length > 0);
-    const allowed = DATASETS.filter(mayTake);
+    const allowed = DATASETS.filter((d) => d.roles.includes(who.role));
     const d = refusal
-      ? pick(DATASETS.filter((x) => !mayTake(x))) ?? pick(allowed)
+      ? pick(DATASETS.filter((x) => !x.roles.includes(who.role))) ?? pick(allowed)
       : pick(allowed);
     if (!d) continue;
 
     const day = ymd(addDays(TODAY, -ri(0, 180)));
     const at = `${day} ${String(ri(8, 19)).padStart(2, '0')}:${String(ri(0, 59)).padStart(2, '0')}`;
-    const refused = !mayTake(d);
+    const refused = !d.roles.includes(who.role);
 
     EXPORT_LOG.push({
       id: uid('EXP'),

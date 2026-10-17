@@ -22,7 +22,7 @@ import { daysBetween, fmtD, TODAY, ymd } from '../../lib/dates';
 import { DEPTS, deptOf } from '../../data/org';
 import { Avatar, Badge, Card, EmptyState } from '../../components/ui';
 import { ListRow } from '../../components/common';
-import { can, covers, scopeOfDemo } from '../../state/rbac';
+import { can } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
 import { Icon } from '../../components/icons';
 
@@ -235,7 +235,7 @@ export function AnnouncementsView({
           {canPost && (
             <Card title="Posting as" sub={meName}>
               <div className="muted" style={{ fontSize: 12.5 }}>
-                {covers(scopeOfDemo(role, false, 'announcements'), 'all')
+                {role === 'admin'
                   ? 'Your posts go to everyone.'
                   : 'Your posts go to your own department.'}
               </div>

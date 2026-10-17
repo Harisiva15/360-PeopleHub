@@ -1,4 +1,3 @@
-import { can } from '../../state/rbac';
 import type { ComponentType } from 'react';
 import type { IconName } from '../../components/icons';
 import { Card, EmptyState } from '../../components/ui';
@@ -18,16 +17,7 @@ interface ReportDef {
   d: string;
   /** Name in `src/components/icons.tsx`, not a glyph. */
   ic: IconName;
-  /**
-   * The module that owns the data, not a list of roles.
-   *
-   * A restated role list is a second copy of the access matrix, and the copy
-   * that drifts is always the one furthest from the policy. Asking `can` means
-   * a report appears exactly when its module does - including for a manager,
-   * whose reach comes from the reporting tree and could not be written down
-   * here at all.
-   */
-  k: string;
+  roles: AppRole[];
   Body: ComponentType;
 }
 
@@ -36,28 +26,27 @@ interface ReportDef {
  * manager sees only the ones that stay meaningful inside their own team.
  */
 const REPORTS: ReportDef[] = [
-  { id: 'attendance', n: 'Attendance Summary', d: 'Presence, WFH, late marks and absence', ic: 'attendance', k: 'attendance', Body: RepAttendance },
-  { id: 'payroll', n: 'Payroll Cost Analysis', d: 'Gross, deductions and net across months and departments', ic: 'rupee', k: 'payroll', Body: RepPayroll },
-  { id: 'headcount', n: 'Headcount & Diversity', d: 'Distribution by department, grade, location and gender', ic: 'people', k: 'employees', Body: RepHeadcount },
-  { id: 'attrition', n: 'Attrition & Retention', d: 'Exits, reasons, tenure at exit and retention rate', ic: 'down', k: 'exit', Body: RepAttrition },
-  { id: 'hiring', n: 'Hiring Effectiveness', d: 'Funnel conversion, source quality and time to hire', ic: 'hiring', k: 'hiring', Body: RepHiring },
-  { id: 'leave', n: 'Leave Liability', d: 'Balances, utilisation and encashment liability', ic: 'up', k: 'leave', Body: RepLeave },
-  { id: 'utilisation', n: 'Timesheet Utilisation', d: 'Billable vs non-billable effort by project and person', ic: 'timesheet', k: 'timesheet', Body: RepUtil },
-  { id: 'compliance', n: 'Statutory Compliance', d: 'PF, ESI, PT and TDS remittance summary', ic: 'policy', k: 'reports', Body: RepCompliance },
-  { id: 'talent', n: 'Performance & Talent', d: 'Goal achievement, rating spread, 9-box and recognition', ic: 'performance', k: 'performance', Body: RepTalent },
-  { id: 'spend', n: 'Expense & Employee Cost', d: 'Claims, loans, benefits and total cost per employee', ic: 'invoice', k: 'expenses', Body: RepSpend },
-  { id: 'service', n: 'Helpdesk & Engagement', d: 'Ticket SLAs, survey scores and learning completion', ic: 'helpdesk', k: 'helpdesk', Body: RepService },
+  { id: 'attendance', n: 'Attendance Summary', d: 'Presence, WFH, late marks and absence', ic: 'attendance', roles: ['admin', 'manager'], Body: RepAttendance },
+  { id: 'payroll', n: 'Payroll Cost Analysis', d: 'Gross, deductions and net across months and departments', ic: 'rupee', roles: ['admin'], Body: RepPayroll },
+  { id: 'headcount', n: 'Headcount & Diversity', d: 'Distribution by department, grade, location and gender', ic: 'people', roles: ['admin', 'manager'], Body: RepHeadcount },
+  { id: 'attrition', n: 'Attrition & Retention', d: 'Exits, reasons, tenure at exit and retention rate', ic: 'down', roles: ['admin'], Body: RepAttrition },
+  { id: 'hiring', n: 'Hiring Effectiveness', d: 'Funnel conversion, source quality and time to hire', ic: 'hiring', roles: ['admin', 'manager'], Body: RepHiring },
+  { id: 'leave', n: 'Leave Liability', d: 'Balances, utilisation and encashment liability', ic: 'up', roles: ['admin', 'manager'], Body: RepLeave },
+  { id: 'utilisation', n: 'Timesheet Utilisation', d: 'Billable vs non-billable effort by project and person', ic: 'timesheet', roles: ['admin', 'manager'], Body: RepUtil },
+  { id: 'compliance', n: 'Statutory Compliance', d: 'PF, ESI, PT and TDS remittance summary', ic: 'policy', roles: ['admin'], Body: RepCompliance },
+  { id: 'talent', n: 'Performance & Talent', d: 'Goal achievement, rating spread, 9-box and recognition', ic: 'performance', roles: ['admin', 'manager'], Body: RepTalent },
+  { id: 'spend', n: 'Expense & Employee Cost', d: 'Claims, loans, benefits and total cost per employee', ic: 'invoice', roles: ['admin'], Body: RepSpend },
+  { id: 'service', n: 'Helpdesk & Engagement', d: 'Ticket SLAs, survey scores and learning completion', ic: 'helpdesk', roles: ['admin', 'manager'], Body: RepService },
 ];
 
-const availableTo = (role: AppRole, hasReports: boolean) =>
-  REPORTS.filter((r) => can(role, r.k, hasReports));
+const availableTo = (role: AppRole) => REPORTS.filter((r) => r.roles.includes(role));
 
 /** Every report id, so a link can name one. */
 const REPORT_IDS = REPORTS.map((r) => r.id);
 
 function ReportsView() {
   const app = useApp();
-  const avail = availableTo(app.role, app.hasReports);
+  const avail = availableTo(app.role);
   /*
    * Which report, from the URL. It was local state, which meant the menu could
    * only ever link to the catalogue and leave somebody to find the report they

@@ -17,9 +17,6 @@
  *      present. Empty is honest; fabricated would not be.
  */
 
-import { normaliseRole } from '../../auth/policy.ts';
-import type { Role } from '../../auth/policy.ts';
-
 /*
  * Declared here rather than imported from the frontend. Importing across the
  * two packages looked tempting — one definition, no drift — but their
@@ -59,12 +56,7 @@ export interface Employee {
   address: string;
   emergency: string;
   skills: string[];
-  /*
-   * The policy's vocabulary. It was the old three spelled out here, which is
-   * what made `setEmployeeRole` take an old role and made the cast at the HTTP
-   * boundary typecheck while admitting anything.
-   */
-  role: Role;
+  role: 'admin' | 'manager' | 'employee';
   reports: string[];
   shift: string;
   probation: boolean;
@@ -168,17 +160,9 @@ export function toEmployee(r: EmployeeRow, showCompensation: boolean): Employee 
     address: r.address ?? '',
     emergency: r.emergency_contact ?? '',
     skills: r.skills ?? [],
-    /*
-     * Normalised, not cast.
-     *
-     * The comment here used to say a CHECK constraint restricted this column
-     * to three values so the narrowing was safe. 0056 widened that constraint
-     * to six, which made the claim false and the cast a lie: during expand the
-     * column may hold 'admin', and this field is typed `Role`, so an old value
-     * would travel to the frontend as though it were a new one and fail the
-     * `isAppRole` guard there.
-     */
-    role: normaliseRole(r.app_role),
+    // A CHECK constraint restricts this column to the three values, so the
+    // narrowing is safe; the driver simply types every text column as string.
+    role: r.app_role as Employee['role'],
     reports: r.reports ?? [],
     shift: r.shift_code ?? 'GEN',
     probation: r.on_probation,

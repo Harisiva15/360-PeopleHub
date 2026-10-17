@@ -2360,28 +2360,17 @@ export interface ConfigService {
  * every tenant; `effective` is what this tenant has narrowed it to. An
  * override can only ever lower a value, so effective never exceeds ceiling.
  */
-/**
- * The rows of the permission grid: the four assignable roles, plus the manager
- * layer.
- *
- * `manager` is not assignable and is still narrowable - a tenant that does not
- * want managers approving leave must be able to say so, and the only place to
- * say it is the row the layer grants. Mirrors `Layer` in
- * server/src/auth/policy.ts.
- */
-export type GridRole = AppRole | 'manager';
-
 export interface ModuleGrid {
   module: string;
-  ceiling: Record<GridRole, ModuleRule>;
-  effective: Record<GridRole, ModuleRule>;
+  ceiling: Record<AppRole, ModuleRule>;
+  effective: Record<AppRole, ModuleRule>;
 }
 
 export type PermScope = 'none' | 'own' | 'team' | 'all';
 export interface ModuleRule { read: PermScope; write: PermScope; approve: PermScope }
 export interface GridPatch {
   module: string;
-  role: GridRole;
+  role: AppRole;
   read?: PermScope;
   write?: PermScope;
   approve?: PermScope;

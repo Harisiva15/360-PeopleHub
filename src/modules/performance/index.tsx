@@ -197,7 +197,7 @@ function PfTeam({ openReview }: { openReview: (id: string) => void }) {
   if (!cycle) return <Card><EmptyState msg="Loading the team's goals…" icon={<Icon n="target" size="lg" />} /></Card>;
 
   /* An admin sees the whole organisation, not only their own reports. */
-  const team = app.reaches('performance', 'read', 'all')
+  const team = app.role === 'admin'
     ? everyone.filter((e) => e.id !== app.meId)
     : teamList;
 
@@ -470,7 +470,7 @@ function PfReview({ target, setTarget }: { target: string | null; setTarget: (id
                 ['Final rating', <><b>{rv.final.rating} / 5</b> · {ratingOf(rv.final.rating).label}</>],
                 ['Rating band', ratingOf(rv.final.rating).band],
                 ['Increment', <><b>{rv.final.hike}%</b> effective 1 October 2026</>],
-                ['New CTC', app.reaches('compensation', 'read', 'all') || isSelf
+                ['New CTC', app.role === 'admin' || isSelf
                   ? inr(Math.round((e.ctc * (1 + rv.final.hike / 100)) / 1000) * 1000)
                   : <span className="muted">Restricted</span>],
                 ['Promotion', rv.final.promoted ? <Badge kind="good">Recommended</Badge> : 'Not this cycle'],
@@ -514,7 +514,7 @@ function PfCalib() {
   /* After every hook. */
   if (!cycle) return <Card><EmptyState msg="Loading calibration…" icon={<Icon n="policy" size="lg" />} /></Card>;
 
-  const scope = app.reaches('performance', 'read', 'all') ? everyone : teamList;
+  const scope = app.role === 'admin' ? everyone : teamList;
   const rows = scope
     .map((e) => ({ e, rv: findReview(REVIEWS, e.id, cycle.id) }))
     .filter((r) => r.rv && r.rv.manager.rating) as { e: typeof scope[number]; rv: Review }[];
@@ -598,7 +598,7 @@ function PfCalib() {
                 <Badge kind="good">+{r.rv.final!.hike}%</Badge>
               </ListRow>
             ))}
-            {app.reaches('performance', 'write', 'all') && (
+            {app.role === 'admin' && (
               <ListRow>
                 <button className="btn primary sm" style={{ width: '100%' }}
                   {...notBacked('a revision is recorded against the employee in Compensation; there is no letter run yet')}

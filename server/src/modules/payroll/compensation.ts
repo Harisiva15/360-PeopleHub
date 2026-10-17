@@ -26,7 +26,6 @@
  * offer letter, and neither party can say which was wrong.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { applyComponents, COMPONENT_KINDS } from './components.ts';
@@ -80,7 +79,7 @@ const COMPONENT_COLUMNS =
      FROM salary_component`;
 
 function assertAdmin(caller: Caller, what: string): void {
-  if (!reaches(caller, 'compensation', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     refuse(`only an admin may ${what}`, 'forbidden');
   }
 }
@@ -275,7 +274,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
  * with the first.
  */
 export async function salaryHistory(caller: Caller, empId: string): Promise<StructureRow[]> {
-  if (!reaches(caller, 'compensation', 'read', 'all')) {
+  if (empId !== caller.employeeId && caller.role !== 'admin') {
     refuse('you can only see your own compensation', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {

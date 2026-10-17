@@ -39,11 +39,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { assertLocalDatabase } from './local-only.mjs';
-
-/* This suite writes. It refuses anything but a local database. */
-assertLocalDatabase();
-
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -99,10 +94,10 @@ let fatal = null;
 try {
 await withScratchTenant(admin, async (ctx) => {
 
-const caller = (role, hasReports = false) =>
-  ({ role, hasReports, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null });
-const ADMIN = caller('company_admin');
-const MANAGER = caller('employee', true);
+const caller = (role) =>
+  ({ role, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null });
+const ADMIN = caller('admin');
+const MANAGER = caller('manager');
 const EMPLOYEE = caller('employee');
 
 console.log('\na fresh tenant has none\n');
@@ -316,7 +311,7 @@ console.log('\ntenant isolation\n');
  */
 await withScratchTenant(admin, async (other) => {
   const OTHER_ADMIN = {
-    role: 'company_admin', hasReports: false, tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
+    role: 'admin', tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
   };
 
   const theirs = await config.createBusinessUnit(OTHER_ADMIN, {

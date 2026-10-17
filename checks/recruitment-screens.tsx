@@ -73,10 +73,10 @@ const order = REQUIREMENTS.find((r) => r.status === 'Open')!;
 
 /* ---- every screen mounts for an admin, which is who may reach them ---- */
 
-tryMount('the dashboard mounts', <RecruitmentDashboard />, 'company_admin');
-tryMount('the create form mounts', <CreateJobOrder done={() => {}} />, 'company_admin');
+tryMount('the dashboard mounts', <RecruitmentDashboard />, 'admin');
+tryMount('the create form mounts', <CreateJobOrder done={() => {}} />, 'admin');
 const detail = tryMount('the job order page mounts',
-  <JobOrderPage id={order.id} back={() => {}} />, 'company_admin');
+  <JobOrderPage id={order.id} back={() => {}} />, 'admin');
 
 /*
  * The order itself arrives from a query, so the first synchronous render is
@@ -91,7 +91,7 @@ ok('the job page says it is loading rather than showing an empty shell',
 /* ---- an id that does not exist says so rather than throwing ---- */
 
 try {
-  const html = mount(<JobOrderPage id="REQ-does-not-exist" back={() => {}} />, 'company_admin');
+  const html = mount(<JobOrderPage id="REQ-does-not-exist" back={() => {}} />, 'admin');
   ok('an unknown job order renders an empty state, not a crash',
     html.includes('Loading') || html.includes('could not be found'));
 } catch (e) {

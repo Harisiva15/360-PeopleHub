@@ -38,19 +38,3 @@ scratch/
 # tree instead: a cluster's data directory must never be stageable.
 .data/
 pgtest/
-
-# Every dotenv variant, not just .env and .env.local.
-.env.*
-!.env.example
-
-# Database dumps. A backup of this database contains every employee's personal
-# data, so it must never be committed. Root-anchored, so migrations under
-# server/db/migrations stay tracked.
-#
-# The runbook writes backups outside the repo entirely — the repo lives in
-# OneDrive, so a dump written anywhere inside it is also synced to the cloud.
-# These rules are the second line of defence, not the first.
-/backup-*.sql
-/backup-*.sql.gz
-/*.dump
-/pg_dump-*.sql

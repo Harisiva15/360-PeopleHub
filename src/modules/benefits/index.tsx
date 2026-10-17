@@ -321,7 +321,7 @@ function BnLoans() {
       {app.role !== 'employee' && (
         <Card title="Team loans"
           sub={`${team.length} records · ${inr(sum(team.filter((l) => l.status === 'Active'), (l) => l.outstanding))} outstanding`} flush>
-          <LoanTable list={team} dir={dir} act={app.reaches('benefits', 'approve', 'all')} onApprove={approve} />
+          <LoanTable list={team} dir={dir} act={app.role === 'admin'} onApprove={approve} />
         </Card>
       )}
 
@@ -446,7 +446,7 @@ type Tab = 'mine' | 'fbp' | 'loans' | 'admin';
 
 function Benefits() {
   const app = useApp();
-  const tabs: { v: Tab; label: string }[] = app.reaches('benefits', 'read', 'all')
+  const tabs: { v: Tab; label: string }[] = app.role === 'admin'
     ? [
         { v: 'mine', label: 'My Benefits' }, { v: 'fbp', label: 'Flexi Benefits' },
         { v: 'loans', label: 'Loans & Advances' }, { v: 'admin', label: 'Benefits Administration' },

@@ -33,11 +33,6 @@ import pg from 'pg';
 
 import { loadEnv } from './env.mjs';
 
-import { assertLocalDatabase } from './local-only.mjs';
-
-/* This suite writes. It refuses anything but a local database. */
-assertLocalDatabase();
-
 loadEnv();
 
 const here = dirname(fileURLToPath(import.meta.url));

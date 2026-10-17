@@ -9,7 +9,7 @@
 import { addDays, parseYmd, TODAY, ymd } from '../../lib/dates';
 import { sum } from '../../lib/collections';
 import { DOCS, DOC_TYPES, ASSETS } from '../../data/announcements';
-import { DEMO_EMP, EMAP, HRHEAD, empName } from '../../data/employees';
+import { DEMO_EMP, EMAP, empName, HRHEAD } from '../../data/employees';
 import { salaryStructure, taxNewRegime } from '../../data/salary';
 import { ytdFor } from '../../data/letters';
 import { CUR_CYCLE, reviewOf } from '../../data/performance';

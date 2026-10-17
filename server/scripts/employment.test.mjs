@@ -22,11 +22,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { assertLocalDatabase } from './local-only.mjs';
-
-/* This suite writes. It refuses anything but a local database. */
-assertLocalDatabase();
-
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -154,7 +149,7 @@ await sweepScratchTenants(db);
 let fatal = null;
 try {
 await withScratchTenant(db, async (ctx) => {
-  const ADMIN = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const ADMIN = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const tag = Math.random().toString(36).slice(2, 7);
 
   const history = async (empId) => (await db.query(
@@ -181,7 +176,7 @@ await withScratchTenant(db, async (ctx) => {
   const make = async (name, extra = {}) => {
     const a = await users.createUser(ADMIN, {
       name, email: `zz-emp-${Math.random().toString(36).slice(2, 9)}@360.technology`,
-      dept: ctx.dept, site: ctx.site, designation: 'ZZ Engineer', role: 'employee', hasReports: false,
+      dept: ctx.dept, site: ctx.site, designation: 'ZZ Engineer', role: 'employee',
       joinedOn: daysAgo(60), ...extra,
     });
     const empId = (await db.query(
@@ -210,7 +205,7 @@ await withScratchTenant(db, async (ctx) => {
 
   console.log('\nB. a reporting-line change is recorded\n');
 
-  const { empId: bossId } = await make(`ZZ Boss ${tag}`, { role: 'employee', hasReports: true });
+  const { empId: bossId } = await make(`ZZ Boss ${tag}`, { role: 'manager' });
   await users.updateUser(ADMIN, acct.id, { managerId: bossId });
 
   const h1 = await history(empId);
@@ -386,8 +381,8 @@ await withScratchTenant(db, async (ctx) => {
 
   console.log('\nauthorization\n');
 
-  const EMP = { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: empId, userId: null };
-  const MGR = { role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: bossId, userId: null };
+  const EMP = { role: 'employee', tenantId: ctx.tenant, employeeId: empId, userId: null };
+  const MGR = { role: 'manager', tenantId: ctx.tenant, employeeId: bossId, userId: null };
 
   const byEmployee = await attempt(() => users.updateUser(EMP, acct.id, { designation: 'ZZ Boss' }));
   ok('an employee cannot change their own designation', byEmployee !== null);
@@ -480,8 +475,8 @@ await withScratchTenant(db, async (ctx) => {
 
   const { account: mine2, empId: mineId } = await make(`ZZ Mine ${tag}`, {});
   await users.updateUser(ADMIN, mine2.id, { managerId: bossId });
-  const MGR2 = { role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: bossId, userId: null };
-  const EMP2 = { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: mineId, userId: null };
+  const MGR2 = { role: 'manager', tenantId: ctx.tenant, employeeId: bossId, userId: null };
+  const EMP2 = { role: 'employee', tenantId: ctx.tenant, employeeId: mineId, userId: null };
 
   const selfConfirm = await attempt(() => lifecycle.confirmProbation(EMP2, mineId));
   ok('an employee cannot confirm their own probation', selfConfirm !== null);

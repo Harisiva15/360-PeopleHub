@@ -30,7 +30,6 @@
  * Those columns are a decision to revisit, not an oversight to work around.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import {
@@ -85,13 +84,7 @@ export interface Payslip {
 
 /** Only an admin sees other people's pay. Everyone sees their own. */
 function maySeeAll(caller: Caller): boolean {
-  /*
-   * Whoever reaches the whole company's payroll. All three administrative
-   * roles do, identically: HR and finance being the same on pay is the
-   * correction that produced this model, since view-only each on the
-   * other's half left nobody able to run it.
-   */
-  return reaches(caller, 'payroll', 'read', 'all');
+  return caller.role === 'admin';
 }
 
 function assertOwnOrAdmin(caller: Caller, empId: string): void {

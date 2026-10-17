@@ -16,7 +16,6 @@
  * whether somebody is paid for a day they did not work.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { toBalanceRow, toHalfDayColumn, toLeaveRequest } from './mapper.ts';
@@ -118,7 +117,7 @@ export async function applyForLeave(
   caller: Caller,
   input: ApplyLeaveInput,
 ): Promise<LeaveRequest> {
-  if (!reaches(caller, 'leave', 'read', 'all') && input.employeeId !== caller.employeeId) {
+  if (caller.role !== 'admin' && input.employeeId !== caller.employeeId) {
     throw new LeaveError('you can only apply for your own leave', 'forbidden');
   }
   const half = input.half ?? null;
@@ -207,7 +206,7 @@ export async function approveLeave(
   caller: Caller,
   requestId: string,
 ): Promise<LeaveRequest> {
-  if (!reaches(caller, 'leave', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new LeaveError('only a manager or admin may approve leave', 'forbidden');
   }
 
@@ -227,7 +226,7 @@ export async function approveLeave(
     if (request.employee_id === caller.employeeId) {
       throw new LeaveError('you cannot approve your own leave', 'self_approval');
     }
-    if (caller.hasReports) {
+    if (caller.role === 'manager') {
       const reports = await db.query(
         `WITH RECURSIVE r AS (
            SELECT id FROM employee WHERE manager_id = $1
@@ -310,7 +309,7 @@ export async function cancelLeave(caller: Caller, requestId: string): Promise<Le
     const request = rows[0];
     if (!request) throw new LeaveError('no such leave request', 'not_found');
 
-    if (!reaches(caller, 'leave', 'read', 'all') && request.employee_id !== caller.employeeId) {
+    if (caller.role !== 'admin' && request.employee_id !== caller.employeeId) {
       throw new LeaveError('you can only cancel your own leave', 'forbidden');
     }
     if (request.status === 'cancelled') {
@@ -389,10 +388,10 @@ export async function listLeave(
   const where: string[] = [];
   const params: unknown[] = [];
 
-  if (!reaches(caller, 'leave', 'read', 'team')) {
+  if (caller.role === 'employee') {
     params.push(caller.employeeId);
     where.push(`lr.employee_id = $${params.length}`);
-  } else if (caller.hasReports) {
+  } else if (caller.role === 'manager') {
     params.push(caller.employeeId);
     where.push(`(lr.employee_id = $${params.length} OR lr.employee_id IN (
        WITH RECURSIVE r AS (
@@ -437,9 +436,9 @@ export async function listLeave(
 
 /** Whether the caller may see this person's balances. */
 async function maySee(db: TenantClient, caller: Caller, empId: string): Promise<boolean> {
-  if (reaches(caller, 'leave', 'read', 'all')) return true;
+  if (caller.role === 'admin') return true;
   if (empId === caller.employeeId) return true;
-  if (!caller.hasReports) return false;
+  if (caller.role !== 'manager') return false;
   const r = await db.query(
     `WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = $1
@@ -526,7 +525,7 @@ export async function rejectLeave(
   requestId: string,
   note?: string,
 ): Promise<LeaveRequest> {
-  if (!reaches(caller, 'leave', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new LeaveError('only a manager or admin may reject leave', 'forbidden');
   }
 

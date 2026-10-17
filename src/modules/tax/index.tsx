@@ -365,7 +365,7 @@ function TaxAll() {
 
 function Tax() {
   const app = useApp();
-  const tabs: { v: 'me' | 'all'; label: string }[] = app.reaches('tax', 'read', 'all')
+  const tabs: { v: 'me' | 'all'; label: string }[] = app.role === 'admin'
     ? [{ v: 'me', label: 'My Declaration' }, { v: 'all', label: 'All Declarations' }]
     : [{ v: 'me', label: 'My Declaration' }];
   const [tab, setTab] = useState<'me' | 'all'>('me');

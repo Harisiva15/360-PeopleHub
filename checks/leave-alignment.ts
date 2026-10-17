@@ -31,7 +31,7 @@ import {
   actualLabel, awaitingRecord, composeDays, expectedLabel, leaveByEmployee,
   leaveLabel, leaveOn, NO_ATTENDANCE, recordedDuringLeave, type AttendanceDay,
 } from '../src/modules/attendance/day';
-import type { AttRecord, AttStatus, DayVerdict, LeaveRequest } from '../src/services';
+import type { AttRecord, DayVerdict, LeaveRequest } from '../src/services';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
@@ -63,7 +63,7 @@ const verdict = (date: string, reason: DayVerdict['reason'], over: Partial<DayVe
   date, reason, workingDay: reason === 'WORKING', holiday: null,
   schedule: 'ZZMF', shift: 'IN', ...over,
 });
-const record = (date: string, status: AttStatus): AttRecord => ({
+const record = (date: string, status: string): AttRecord => ({
   id: `a-${date}`, empId: 'E1', date, status, inT: '09:02', outT: '18:04', mins: 480,
   site: 'CHN', lat: null, lng: null, dist: null, geoOk: null, src: 'web',
   late: false, reg: null, notes: '',

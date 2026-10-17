@@ -115,17 +115,12 @@ for (const role of ROLES) {
  * And the whole point: a narrowed module refuses, while the same role on the
  * same route without narrowing does not.
  */
-/*
- * 'admin' is not a layer any more, so POLICY rows have no .admin and this
- * read undefined.read. company_admin is the role that replaced it.
- */
-const sample = Object.keys(ROUTE_MODULE)
-  .find((p) => POLICY[ROUTE_MODULE[p]]?.company_admin?.read !== 'none');
+const sample = Object.keys(ROUTE_MODULE).find((p) => POLICY[ROUTE_MODULE[p]]?.admin.read !== 'none');
 const mod = ROUTE_MODULE[sample];
-ok(`company_admin reaches "${mod}" with no overrides`,
-  effectiveRule('company_admin', mod, {}).read !== 'none');
-ok(`company_admin is refused "${mod}" once the tenant narrows it to none`,
-  effectiveRule('company_admin', mod, { [mod]: { company_admin: { read: 'none' } } }).read === 'none',
+ok(`admin reaches "${mod}" with no overrides`,
+  effectiveRule('admin', mod, {}).read !== 'none');
+ok(`admin is refused "${mod}" once the tenant narrows it to none`,
+  effectiveRule('admin', mod, { [mod]: { admin: { read: 'none' } } }).read === 'none',
   'Narrowing would remove the menu entry and leave the routes answering.');
 
 console.log(`\n${failed ? `${failed} FAILED` : 'every route is accounted for'}\n`);

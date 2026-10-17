@@ -25,11 +25,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { assertLocalDatabase } from './local-only.mjs';
-
-/* This suite writes. It refuses anything but a local database. */
-assertLocalDatabase();
-
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -101,8 +96,8 @@ const ctx = (await admin.query(`
     FROM tenant t JOIN employee e ON e.tenant_id = t.id
    WHERE t.slug = $1 AND e.code = $2`, [TENANT_SLUG, ADMIN_CODE])).rows[0];
 
-const caller = (role, employeeId, hasReports = false) =>
-  ({ role, hasReports, tenantId: ctx.tenant, employeeId, userId: null });
+const caller = (role, employeeId) =>
+  ({ role, tenantId: ctx.tenant, employeeId, userId: null });
 
 /** Two throwaway employees, one reporting to the other. Removed either way. */
 async function withLine(body) {
@@ -150,7 +145,7 @@ const contractFields = (() => {
 ok(`the contract declares ${contractFields.length} fields`, contractFields.length >= 18,
   `read ${contractFields.length} — if the interface moved, this test is reading the wrong block`);
 
-const self = await buildEmployeeProfile(caller('company_admin', ctx.emp), ctx.emp);
+const self = await buildEmployeeProfile(caller('admin', ctx.emp), ctx.emp);
 ok('an administrator reading their own record gets a profile', self !== null);
 
 if (self) {
@@ -189,7 +184,7 @@ ok('  and the tax regime is a string, not absent',
   typeof self?.taxRegime === 'string' && self.taxRegime.length > 0);
 
 await withLine(async ({ boss, report }) => {
-  const asBoss = await buildEmployeeProfile(caller('employee', boss, true), report);
+  const asBoss = await buildEmployeeProfile(caller('manager', boss), report);
   ok('a manager can open a report’s profile', asBoss !== null,
     'the drawer is how a manager reaches their own line');
 

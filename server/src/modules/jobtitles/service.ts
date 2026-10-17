@@ -17,7 +17,6 @@
  * shape from a filtered list, so it is a different method.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 
@@ -126,13 +125,13 @@ const toTitle = (r: Row): JobTitleRow => ({
 
 /** Anybody but an employee may browse; an employee gets `mine` instead. */
 function mayBrowse(caller: Caller) {
-  if (!reaches(caller, 'jobtitles', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new JobTitleError('Your role cannot browse the catalogue', 'forbidden');
   }
 }
 
 const mayWrite = (caller: Caller) => {
-  if (!reaches(caller, 'jobtitles', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new JobTitleError('Only an administrator can change the catalogue', 'forbidden');
   }
 };
@@ -175,7 +174,7 @@ export async function getJobTitle(caller: Caller, id: string): Promise<JobTitleR
    * answers — a filtered list would say the title does not exist, which is a
    * lie somebody would act on.
    */
-  if (!reaches(caller, 'jobtitles', 'read', 'team')) {
+  if (caller.role === 'employee') {
     const own = await mineJobTitle(caller);
     if (!own || own.title.id !== id) {
       throw new JobTitleError('That title is not yours to read', 'forbidden');

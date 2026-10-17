@@ -22,11 +22,6 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { assertLocalDatabase } from './local-only.mjs';
-
-/* This suite writes. It refuses anything but a local database. */
-assertLocalDatabase();
-
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -106,9 +101,9 @@ const ctx = (await admin.query(`
     FROM tenant t JOIN employee e ON e.tenant_id = t.id
    WHERE t.slug = $1 AND e.code = $2`, [TENANT_SLUG, ADMIN_CODE])).rows[0];
 
-const ADMIN = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
-const MANAGER = { role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
-const EMPLOYEE = { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
+const ADMIN = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
+const MANAGER = { role: 'manager', tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
+const EMPLOYEE = { role: 'employee', tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
 
 /** A provider that records what it was asked and answers how it was told to. */
 const spy = (behaviour) => {
@@ -316,19 +311,6 @@ console.log('\nwhat is sent, and what is written down\n');
   const api = spy(() => Promise.resolve({ kind: 'invited' }));
   const was = setAuthAdmin(api);
   try {
-    /*
-     * `role` here is a `tenant_membership` column value, not a Caller.
-     *
-     * `sweep-fixtures.mjs` rewrote it as though it were one — 'manager' became
-     * `role: 'employee', hasReports: true` — which changed what the row holds
-     * and broke the assertion below that the audit detail carries the role.
-     * The sweep had no way to tell a database value from a caller fixture, and
-     * this is the one place in these suites where that mattered.
-     *
-     * 'manager' is a legitimate membership value during expand: 0056 widened
-     * the CHECK to accept both vocabularies. Step C tightens it to the new
-     * names only, and this fixture has to change then.
-     */
     await withMembership('invited', { role: 'manager' }, async ({ mem, email }) => {
       await inviteUser(ADMIN, mem);
       ok('8. the address invited is the employee\'s own', api.calls[0]?.email === email,

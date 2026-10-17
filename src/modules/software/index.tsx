@@ -308,7 +308,7 @@ function ProductDetail({ id }: { id: string }) {
             ['Single sign-on', p.sso ? 'Enforced' : 'Not enforced'],
           ]} />
           {p.notes && <Card title="Notes"><p className="muted">{p.notes}</p></Card>}
-          {app.reaches('software', 'write', 'all') && (
+          {app.role === 'admin' && (
             <div className="row" style={{ gap: 9, justifyContent: 'flex-end' }}>
               <button className="btn" onClick={() => layer.modal({
                 title: 'Edit software',
@@ -334,7 +334,7 @@ function ProductDetail({ id }: { id: string }) {
             <span className="muted" style={{ fontSize: 12.5 }}>
               {d.assigned} of {p.seats} seats · {d.free} free
             </span>
-            {app.reaches('software', 'write', 'all') && (
+            {app.role === 'admin' && (
               <button className="btn sm" onClick={() => layer.modal({
                 title: 'Assign a seat',
                 sub: p.n,
@@ -559,7 +559,7 @@ function SoftwareView() {
 
   return (
     <div className="stack">
-      {app.reaches('software', 'write', 'all') && (
+      {app.role === 'admin' && (
         <PageActions>
           <button className="btn" onClick={exportCsv} disabled={!rows.length}>
             <Icon n="download" size="lg" /> Export

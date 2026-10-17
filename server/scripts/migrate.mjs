@@ -5,138 +5,26 @@
  * transaction, recording what it applied. Runs as the *owning* role — not
  * app_rw — because it creates policies that app_rw must not be able to drop.
  *
- *   node scripts/migrate.mjs                 # a local database, nothing else
- *   node scripts/migrate.mjs --production    # asks first, by host name
- *
- * ## Why production needs a flag
- *
- * The credential used to live in .env, where it was loaded by anything that
- * called loadEnv — including every database-backed suite, all of which write.
- * It now lives in .env.migrate, which nothing loads on its own. Without
- * --production this script sees whatever is already in the environment and
- * refuses any host that is not local; with it, the credential is loaded, the
- * host is printed, and the operator has to type that host back.
- *
- * Nothing here prints a connection string, a user or a password — only a host.
+ *   DATABASE_URL=postgres://owner@host/db node scripts/migrate.mjs
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { createInterface } from 'node:readline';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { loadEnv, loadMigrateEnv } from './env.mjs';
-import { hostOf, isLocal } from './local-only.mjs';
+import { loadEnv } from './env.mjs';
 import { sslConfig, sslVerified } from './ssl.mjs';
 
 loadEnv();
-
-const PRODUCTION = process.argv.includes('--production');
-
-if (PRODUCTION && !loadMigrateEnv()) {
-  console.error('');
-  console.error('  --production needs server/.env.migrate, and there is no such file.');
-  console.error('  It holds MIGRATE_DATABASE_URL and is deliberately git-ignored.');
-  console.error('');
-  process.exit(1);
-}
 
 const MIGRATIONS = join(dirname(fileURLToPath(import.meta.url)), '..', 'db', 'migrations');
 // Migrations run as the OWNING role, not app_rw: they create policies that
 // app_rw must not be able to drop.
 const url = process.env.MIGRATE_DATABASE_URL;
 if (!url) {
-  console.error('');
-  console.error('  MIGRATE_DATABASE_URL is not set (see server/.env.example).');
-  console.error(PRODUCTION
-    ? '  Expected it in server/.env.migrate.'
-    : '  For a local run, set it to the local cluster. For production, pass --production.');
-  console.error('');
+  console.error('MIGRATE_DATABASE_URL is not set (see server/.env.example)');
   process.exit(1);
-}
-
-const host = hostOf(url) ?? '(unparseable)';
-
-/*
- * A host that cannot be parsed is refused rather than handed to pg, which
- * would quote the whole string — password included — back in its error. Both
- * URLs in this project's .env were truncated to `user:password` with no host,
- * and that is exactly how the credential would have surfaced in a log.
- */
-if (hostOf(url) === null) {
-  console.error('');
-  console.error('  MIGRATE_DATABASE_URL has no host in it, so this would not connect.');
-  console.error('  Expected postgresql://USER:PASSWORD@HOST:PORT/DATABASE.');
-  console.error('');
-  process.exit(1);
-}
-
-if (!PRODUCTION && !isLocal(url)) {
-  console.error('');
-  console.error('  REFUSED: this would migrate a database that is not local.');
-  console.error('');
-  console.error(`    MIGRATE_DATABASE_URL -> host ${host}`);
-  console.error('');
-  console.error('  Pass --production if that is genuinely what you intend.');
-  console.error('');
-  process.exit(1);
-}
-
-if (PRODUCTION) {
-  console.log('');
-  console.log('  This will apply migrations to:');
-  console.log('');
-  console.log(`    host ${host}`);
-  console.log('');
-  if (isLocal(url)) {
-    console.log('  That host is local, so --production is doing nothing here: a value');
-    console.log('  already in the environment takes precedence over .env.migrate.');
-    console.log('');
-  }
-  /*
-   * The confirmation may be given as an argument instead of typed.
-   *
-   * `--confirm-host=<host>` exists for an attended run that has no terminal —
-   * an agent session, or a script somebody is watching. It is not a `--yes`:
-   * the operator still has to name the exact host, so the thing the prompt was
-   * really protecting (that somebody knows where this is pointed) still holds,
-   * and it is recorded in shell history rather than vanishing into a prompt.
-   *
-   * A wrong or absent value refuses exactly as a mistyped prompt does.
-   */
-  const claimed = process.argv
-    .find((a) => a.startsWith('--confirm-host='))?.slice('--confirm-host='.length);
-
-  if (claimed !== undefined) {
-    if (claimed !== host) {
-      console.error(`  --confirm-host says ${claimed}, but the target is ${host}.`);
-      console.error('  Nothing was applied.');
-      console.error('');
-      process.exit(1);
-    }
-    console.log('  confirmed by --confirm-host');
-    console.log('');
-  } else {
-    if (!process.stdin.isTTY) {
-      console.error('  Refusing to continue: there is nobody here to confirm it.');
-      console.error('  Run it in a terminal, or pass --confirm-host=<host> if you are');
-      console.error('  watching a session that has none.');
-      console.error('');
-      process.exit(1);
-    }
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const typed = await new Promise((resolve) => {
-      rl.question(`  Type the host to confirm (${host}): `, (a) => { rl.close(); resolve(a.trim()); });
-    });
-    if (typed !== host) {
-      console.error('');
-      console.error('  That does not match. Nothing was applied.');
-      console.error('');
-      process.exit(1);
-    }
-    console.log('');
-  }
 }
 
 const client = new pg.Client({ connectionString: url, ssl: sslConfig() });

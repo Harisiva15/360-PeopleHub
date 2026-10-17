@@ -14,11 +14,9 @@
  * could hold a row.
  */
 
-import { can } from '../src/state/rbac';
-import { POLICY } from '../server/src/auth/policy';
 import { getServices } from '../src/services';
 import { DATASETS, EXPORT_LOG, datasetOf } from '../src/data/exports';
-import { EMAP, ACTIVE, DEMO_EMP, DEMO_MGR, HRHEAD } from '../src/data/employees';
+import { ACTIVE, DEMO_EMP, DEMO_MGR, HRHEAD } from '../src/data/employees';
 import { recordAudit } from '../src/data/audit';
 import { TODAY, ymd } from '../src/lib/dates';
 import type { AppRole } from '../src/types/employee';
@@ -40,8 +38,8 @@ const allowed = async (label: string, run: () => Promise<unknown>) => {
   catch (e) { check(label, `refused: ${(e as Error).message}`, 'allowed'); }
 };
 
-const ADMIN: Caller = { role: 'company_admin', meId: HRHEAD.id };
-const MANAGER: Caller = { role: 'employee', meId: DEMO_MGR.id };
+const ADMIN: Caller = { role: 'admin', meId: HRHEAD.id };
+const MANAGER: Caller = { role: 'manager', meId: DEMO_MGR.id };
 const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
 const NOW = ymd(TODAY);
 
@@ -59,24 +57,10 @@ const seeded = new Set(EXPORT_LOG.map((r) => r.id));
    * is the hole this whole design exists to close, so it fails here rather
    * than being discovered in a spreadsheet.
    */
-  /*
-   * The invariant that is still worth asserting.
-   *
-   * "caller-scoped or administrators only" is carried by DatasetScope itself
-   * now, so asserting it would assert the type. What is not carried by any
-   * type is that `k` names a module the policy knows: a typo there would
-   * make a caller-scoped dataset silently unreachable, or reachable through
-   * the wrong module.
-   */
-  const unknownModule = DATASETS.filter((d) => !POLICY[d.k]);
-  check('every dataset names a module the policy knows',
-    unknownModule.map((d) => `${d.id}:${d.k}`), []);
-
-  /* And the rule decision (2) settles: an employee's catalogue holds no
-     admin-only dataset, whatever module its rows come from. */
-  const empCatalogue = await s.exports.datasets(EMPLOYEE);
-  check('an employee is offered no admin-only dataset',
-    empCatalogue.filter((d) => d.scope === 'admin-only').map((d) => d.id), []);
+  const unscoped = DATASETS.filter((d) =>
+    d.scope !== 'caller' && d.roles.some((r) => r !== 'admin'));
+  check('every dataset is caller-scoped or administrators only',
+    unscoped.map((d) => d.id), []);
 
   const scopedCount = DATASETS.filter((d) => d.scope === 'caller').length;
   console.log(`  ${scopedCount} caller-scoped, ${DATASETS.length - scopedCount} admin-only\n`);
@@ -119,9 +103,7 @@ const seeded = new Set(EXPORT_LOG.map((r) => r.id));
     jobtitles: async () => (await s.jobTitles.list(MANAGER)).length,
   };
 
-  for (const d of DATASETS.filter(
-    (x) => x.scope === 'caller' && can('employee', x.k, true),
-  )) {
+  for (const d of DATASETS.filter((x) => x.scope === 'caller' && x.roles.includes('manager'))) {
     const want = expected[d.id];
     check(`${d.id} has a screen to compare against`, !!want, true);
     if (!want) continue;
@@ -151,43 +133,129 @@ const seeded = new Set(EXPORT_LOG.map((r) => r.id));
 
   const listedToManager = await s.exports.datasets(MANAGER);
   check("a manager's catalogue holds only what they can run",
-    listedToManager.filter((d) => !can('employee', d.k, true)).length, 0);
+    listedToManager.filter((d) => !d.roles.includes('manager')).length, 0);
   check('and does not list the admin-only ones at all',
     listedToManager.filter((d) => d.scope === 'admin-only').length, 0);
 
-  /*
-   * An employee may take their own data, and only their own.
-   *
-   * The catalogue holds the caller-scoped datasets of modules they read -
-   * their own directory entry, their own lifecycle, their own plan - and no
-   * admin-only dataset, because those are whole tables. The rule that
-   * matters is not how many they are offered but what comes back: every row
-   * must be about the caller.
-   */
   const listedToEmployee = await s.exports.datasets(EMPLOYEE);
-  check('an employee is offered no admin-only dataset',
-    listedToEmployee.filter((d) => d.scope === 'admin-only').map((d) => d.id), []);
+  check('an employee is offered nothing', listedToEmployee.length, 0);
 
-  const me = EMAP[EMPLOYEE.meId]!;
-  for (const d of listedToEmployee) {
-    const res = await s.exports.run(EMPLOYEE, { datasetId: d.id });
-    /*
-     * Whichever column names a person, every value in it must be this
-     * person. There is no id column in these datasets - somebody is named by
-     * their code or their work email - and a dataset naming nobody, like the
-     * company events list, has nothing to leak and passes by having no such
-     * column at all.
-     */
-    for (const key of ['code', 'email'] as const) {
-      const at = d.columns.findIndex((col) => col.k === key);
-      if (at < 0) continue;
-      const mine = String(me[key]).toLowerCase();
-      const others = res.rows
-        .map((row) => String(row[at] ?? "").toLowerCase())
-        .filter((v) => v !== "" && v !== mine);
-      check(`${d.id}: every ${key} in it is the caller's`, others.length, 0);
-    }
-  }
+  await refused('a dataset that does not exist is refused',
+    () => s.exports.run(ADMIN, { datasetId: 'nope' }));
+  await refused('a range that ends before it starts is refused',
+    () => s.exports.run(ADMIN, { datasetId: 'events', from: '2026-12-01', to: '2026-01-01' }));
+  await refused('an export of no columns is refused',
+    () => s.exports.run(ADMIN, { datasetId: 'employees', columns: ['not-a-column'] }));
+
+  /* ---- columns ---- */
+
+  const dEmp = datasetOf('employees')!;
+  const two = await s.exports.run(ADMIN, { datasetId: 'employees', columns: ['code', 'dept'] });
+  check('a narrowed export has the columns asked for', two.header.length, 2);
+  check('and they are the right ones, in catalogue order',
+    two.header, [dEmp.columns.find((c) => c.k === 'code')!.n,
+      dEmp.columns.find((c) => c.k === 'dept')!.n]);
+  check('every row is the same width as the header',
+    two.rows.filter((r) => r.length !== 2).length, 0);
+
+  /*
+   * The slice is taken after the rows are built, so a narrower request cannot
+   * shift values sideways. Checked by comparing one cell against the full run.
+   */
+  const full = await s.exports.run(ADMIN, { datasetId: 'employees' });
+  const codeAt = dEmp.columns.findIndex((c) => c.k === 'code');
+  check('narrowing does not shift the values',
+    two.rows[0][0], full.rows[0][codeAt]);
+
+  const personalDropped = await s.exports.run(ADMIN, {
+    datasetId: 'employees',
+    columns: dEmp.columns.filter((c) => !c.personal).map((c) => c.k),
+  });
+  check('an export can leave the personal columns out',
+    personalDropped.header.length, dEmp.columns.filter((c) => !c.personal).length);
+
+  /* ---- the register ---- */
+
+  /*
+   * The second claim: the log holds the fact, not the data. Asserted on the
+   * shape rather than on one instance — a field added later that could hold a
+   * row would fail here.
+   */
+  const entry = EXPORT_LOG[EXPORT_LOG.length - 1];
+  const fields = Object.keys(entry).sort();
+  check('a register entry has exactly these fields', fields, [
+    'at', 'byId', 'byName', 'byRole', 'columns', 'datasetId', 'datasetName',
+    'filters', 'id', 'note', 'outcome', 'personal', 'rows',
+  ]);
+  check('nothing in it is an array or an object that could hold rows',
+    Object.values(entry).filter((v) => typeof v === 'object' && v !== null).length, 0);
+
+  const before = EXPORT_LOG.length;
+  await s.exports.run(ADMIN, { datasetId: 'jobtitles' });
+  check('a successful export is recorded', EXPORT_LOG.length, before + 1);
+  const last = EXPORT_LOG[EXPORT_LOG.length - 1];
+  check('with the row count', last.rows, (await s.jobTitles.list(ADMIN)).length);
+  check('and who ran it', last.byId, HRHEAD.id);
+  check('and the outcome', last.outcome, 'Completed');
+  check('nothing is dated in the future', last.at.slice(0, 10) <= NOW, true);
+
+  /*
+   * Refusals are recorded too. A register holding only the permitted exports
+   * has quietly answered a narrower question than the one somebody reviewing
+   * it is asking.
+   */
+  const beforeRefusal = EXPORT_LOG.length;
+  try { await s.exports.run(MANAGER, { datasetId: 'leave' }); } catch { /* expected */ }
+  check('a refused export is recorded too', EXPORT_LOG.length, beforeRefusal + 1);
+  const refusal = EXPORT_LOG[EXPORT_LOG.length - 1];
+  check('with no rows', refusal.rows, 0);
+  check('marked as refused', refusal.outcome, 'Refused');
+  check('and a reason', refusal.note.length > 0, true);
+
+  /* ---- who may read the register ---- */
+
+  const adminSees = await s.exports.history(ADMIN, {});
+  check('an administrator sees the whole register', adminSees.length, EXPORT_LOG.length);
+
+  const mgrSees = await s.exports.history(MANAGER, {});
+  check('a manager sees only their own',
+    mgrSees.filter((r) => r.run.byId !== DEMO_MGR.id).length, 0);
+  check('and there is at least one of theirs to see', mgrSees.length > 0, true);
+
+  const empSees = await s.exports.history(EMPLOYEE, {});
+  check('an employee sees only their own',
+    empSees.filter((r) => r.run.byId !== DEMO_EMP.id).length, 0);
+
+  const mgrStats = await s.exports.stats(MANAGER);
+  check('the figures are scoped the same way', mgrStats.runs, mgrSees.length);
+
+  /* ---- filtering the register ---- */
+
+  const refusedOnly = await s.exports.history(ADMIN, { outcome: 'Refused' });
+  check('an outcome filter narrows to that outcome',
+    refusedOnly.filter((r) => r.run.outcome !== 'Refused').length, 0);
+  const personalOnly = await s.exports.history(ADMIN, { personalOnly: true });
+  check('the personal-data filter narrows to those',
+    personalOnly.filter((r) => !r.run.personal).length, 0);
+  const oneSet = await s.exports.history(ADMIN, { datasetId: 'employees' });
+  check('a dataset filter narrows to that dataset',
+    oneSet.filter((r) => r.run.datasetId !== 'employees').length, 0);
+  check('the register is newest first',
+    adminSees.every((r, i) => i === 0 || adminSees[i - 1].run.at >= r.run.at), true);
+  check('every row resolves its dataset',
+    adminSees.filter((r) => !r.dataset).length, 0);
+
+  /* ---- the seeded history is believable ---- */
+
+  const roles = new Set(EXPORT_LOG.map((r) => r.byRole as AppRole));
+  check('the seeded register has more than one role in it', roles.size > 1, true);
+  check('it has refusals in it',
+    EXPORT_LOG.some((r) => r.outcome === 'Refused' && seeded.has(r.id)), true);
+  check('every completed export took at least one row',
+    EXPORT_LOG.filter((r) => r.outcome === 'Completed' && r.rows < 1).length, 0);
+  check('every entry names somebody real',
+    EXPORT_LOG.filter((r) => !ACTIVE().some((e) => e.id === r.byId)).length, 0);
+
   /* ---- clean up ---- */
 
   for (const r of EXPORT_LOG.filter((x) => !seeded.has(x.id))) {

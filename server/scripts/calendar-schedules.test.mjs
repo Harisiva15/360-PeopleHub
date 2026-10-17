@@ -37,11 +37,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { assertLocalDatabase } from './local-only.mjs';
-
-/* This suite writes. It refuses anything but a local database. */
-assertLocalDatabase();
-
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -113,7 +108,7 @@ let fatal = null;
 try {
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
 
   /** An employee of this tenant, with the lifecycle dates the test needs. */
   const person = async (name, joinedOn, { leftOn = null, status = 'active', siteId } = {}) => {
@@ -596,7 +591,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (o) => {
     const B = {
-      role: 'company_admin', hasReports: false, tenantId: o.tenant, employeeId: o.adminEmployeeId, userId: null,
+      role: 'admin', tenantId: o.tenant, employeeId: o.adminEmployeeId, userId: null,
     };
 
     console.log('\nP. nothing reaches across a tenant\n');

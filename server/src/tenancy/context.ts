@@ -12,7 +12,6 @@
  * shared-pool multi-tenant service leaks.
  */
 
-import type { Role } from '../auth/policy.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PoolClient } from 'pg';
 import { pool } from '../db/pool.ts';
@@ -23,25 +22,7 @@ export interface Caller {
   userId: string;
   /** The employee this login acts as. Null for an admin who is not on payroll. */
   employeeId: string | null;
-  /**
-   * The role this login holds, in the current vocabulary.
-   *
-   * It carried 'admin' | 'manager' | 'employee' until the cutover, which is
-   * a different set from `Role` in ../auth/policy.ts — two vocabularies in
-   * one process, never meeting, so the compiler was content while the guards
-   * asked a question the policy could not answer. `callerFromToken` maps the
-   * database value onto this at the single entry point.
-   */
-  role: Role;
-  /**
-   * Whether anybody reports to this person, at any depth.
-   *
-   * Here rather than derived at each call site because it is half of every
-   * authorisation question: the union is
-   * max(employee, hasReports ? manager : none, role), and a site that forgets
-   * it silently answers as though the reporting tree were empty.
-   */
-  hasReports: boolean;
+  role: 'admin' | 'manager' | 'employee';
 }
 
 /** A database handle that is already inside a tenant-scoped transaction. */

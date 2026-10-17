@@ -13,7 +13,6 @@
  * match, which is not what "view their own job title" means.
  */
 
-import { callerCovers } from '../../state/rbac';
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
 import { uid } from '../../lib/rng';
@@ -30,8 +29,8 @@ import { ok } from './util';
 const refuse = (why: string) => Promise.reject(new Error(why));
 
 /** Who may do what. Admin configures; a manager reads; an employee reads one. */
-const mayWrite = (c: Caller) => callerCovers(c, 'jobtitles', 'all', 'write');
-const mayRead = (c: Caller) => callerCovers(c, 'jobtitles', 'team');
+const mayWrite = (c: Caller) => c.role === 'admin';
+const mayRead = (c: Caller) => c.role === 'admin' || c.role === 'manager';
 
 /** The catalogue row a list renders: the title, and what it costs to know. */
 function rowOf(t: JobTitle): JobTitleRow {
@@ -106,7 +105,7 @@ export const jobTitleService: JobTitleService = {
     const detail: JobTitleDetail = {
       ...rowOf(t),
       /* A manager sees their line's holders; an admin sees everybody's. */
-      holders: callerCovers(c, 'jobtitles', 'all')
+      holders: c.role === 'admin'
         ? holders
         : holders.filter((e) => e.managerId === c.meId || e.id === c.meId),
       history: recordAudit.forSubject('job_title', t.id),

@@ -40,11 +40,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { assertLocalDatabase } from './local-only.mjs';
-
-/* This suite writes. It refuses anything but a local database. */
-assertLocalDatabase();
-
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -197,12 +192,12 @@ console.log('\nthe grant is column-level, and the table-level one is absent\n');
 }
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const MGR = {
-    role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const EMP = {
-    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const row = async () => (await db.query(
     'SELECT * FROM tenant WHERE id = $1', [ctx.tenant])).rows[0];
@@ -400,7 +395,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (other) => {
     const B = {
-      role: 'company_admin', hasReports: false, tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
+      role: 'admin', tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
     };
 
     console.log('\nwith no RLS on this table, the predicate is the whole boundary\n');
@@ -433,7 +428,7 @@ await withScratchTenant(db, async (ctx) => {
      * a silent success the caller would believe.
      */
     const GHOST = {
-      role: 'company_admin', hasReports: false, tenantId: '00000000-0000-0000-0000-0000000000ff',
+      role: 'admin', tenantId: '00000000-0000-0000-0000-0000000000ff',
       employeeId: null, userId: null,
     };
     await refused('42. a caller naming a tenant that does not exist is refused',

@@ -325,7 +325,7 @@ function IntegrationsView() {
             <span className="muted" style={{ fontSize: 12.5 }}>
               We post to these when something happens here.
             </span>
-            {app.reaches('integrations', 'write', 'all') && (
+            {app.role === 'admin' && (
               <button className="btn sm primary" onClick={() => layer.modal({
                 title: 'Add an endpoint',
                 body: (close) => <WebhookForm close={close} />,
@@ -375,7 +375,7 @@ function IntegrationsView() {
                             : <Badge kind="mute">Paused</Badge>}
                         </td>
                         <td className="num">
-                          {app.reaches('integrations', 'write', 'all') && (
+                          {app.role === 'admin' && (
                             <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
                               <button className="btn sm" onClick={() => act(
                                 () => setActive.mutate(h.webhook.id, !h.webhook.active),
@@ -410,7 +410,7 @@ function IntegrationsView() {
             <span className="muted" style={{ fontSize: 12.5 }}>
               Credentials issued to other systems to read from here.
             </span>
-            {app.reaches('integrations', 'write', 'all') && (
+            {app.role === 'admin' && (
               <button className="btn sm primary" onClick={() => layer.modal({
                 title: 'Issue an API key',
                 size: 'narrow',
@@ -465,7 +465,7 @@ function IntegrationsView() {
                                 : <Badge kind="good">Live</Badge>}
                         </td>
                         <td className="num">
-                          {app.reaches('integrations', 'write', 'all') && !k.revoked && (
+                          {app.role === 'admin' && !k.revoked && (
                             <button className="btn sm danger"
                               onClick={() => act(() => revoke.mutate(k.key.id), 'Key revoked')}>
                               Revoke

@@ -20,7 +20,6 @@
  * usable error and a 500.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -117,10 +116,10 @@ const toClaim = (r: Record<string, unknown>): Claim => ({
 
 /** Money claims are private: own, then team, then everything for an admin. */
 function scope(caller: Caller, column: string, params: unknown[]): string {
-  if (reaches(caller, 'expenses', 'read', 'all')) return '';
+  if (caller.role === 'admin') return '';
   params.push(caller.employeeId);
   const p = `$${params.length}`;
-  if (!reaches(caller, 'expenses', 'read', 'team')) return `${column} = ${p}`;
+  if (caller.role === 'employee') return `${column} = ${p}`;
   return `(${column} = ${p} OR ${column} IN (
      WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = ${p}
@@ -190,9 +189,7 @@ export interface NewClaim {
  * somebody else's behalf is how money is claimed in a colleague's name.
  */
 export async function submitClaim(caller: Caller, draft: NewClaim): Promise<Claim> {
-  if (draft.empId
-    && draft.empId !== caller.employeeId
-    && !reaches(caller, 'expenses', 'write', 'all')) {
+  if (draft.empId && draft.empId !== caller.employeeId && caller.role !== 'admin') {
     throw new ExpenseError('you can only claim for yourself', 'forbidden');
   }
   const amount = Number(draft.item?.amount);
@@ -243,13 +240,13 @@ async function assertMayDecide(
   caller: Caller,
   claimantId: string,
 ): Promise<void> {
-  if (!reaches(caller, 'expenses', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new ExpenseError('only a manager or admin may decide a claim', 'forbidden');
   }
   if (claimantId === caller.employeeId) {
     throw new ExpenseError('you cannot decide your own claim', 'self_approval');
   }
-  if (reaches(caller, 'expenses', 'approve', 'all')) return;
+  if (caller.role === 'admin') return;
   const r = await db.query(
     `WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = $1
@@ -300,7 +297,7 @@ export const rejectClaim = (caller: Caller, id: string, note: string): Promise<C
  * statement.
  */
 export async function reimburseClaim(caller: Caller, id: string): Promise<Claim> {
-  if (!reaches(caller, 'expenses', 'approve', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ExpenseError('only an admin may reimburse a claim', 'forbidden');
   }
 
@@ -373,9 +370,7 @@ export async function requestAdvance(
   amount: number,
   reason: string,
 ): Promise<Advance> {
-  if (empId
-    && empId !== caller.employeeId
-    && !reaches(caller, 'expenses', 'read', 'all')) {
+  if (empId && empId !== caller.employeeId && caller.role !== 'admin') {
     throw new ExpenseError('you can only request an advance for yourself', 'forbidden');
   }
   if (!Number.isFinite(amount) || amount <= 0) {

@@ -199,10 +199,8 @@ ok('the screen reads the three write hooks',
 ok('the Add control is gated on the role', /actions=\{admin && \(/.test(idx),
   'a control the service refuses should not be offered');
 ok('  and so are Edit and Withdraw', /\{admin && \(\s*<td className="right nowrap">/.test(idx));
-ok('what the viewer may do is derived from the session, not passed in',
-  /app\.(reaches|can|hasReports|scopeOf)\b/.test(idx)
-  && !/\brole\??: AppRole/.test(idx),
-  'a screen handed its permissions cannot be trusted to have asked for them');
+ok('the role is derived from the session, not passed in',
+  /const admin = app\.role === 'admin'/.test(idx));
 ok('the editor exists', /export function ShiftForm\(/.test(form),
   'and is exported, which is what keeps it out of the lint warning');
 ok('  and index.tsx imports it rather than declaring it',

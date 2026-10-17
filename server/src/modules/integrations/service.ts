@@ -16,7 +16,6 @@
  * cannot quietly become the place somebody stores the whole thing.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { createHash, randomBytes } from 'node:crypto';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
@@ -166,7 +165,7 @@ export async function listIntegrations(caller: Caller): Promise<IntegrationRow[]
 }
 
 const adminOnly = (caller: Caller) => {
-  if (!reaches(caller, 'integrations', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new IntegrationError(
       'Only an administrator can change how this tenant connects to anything', 'forbidden');
   }

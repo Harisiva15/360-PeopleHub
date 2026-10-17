@@ -18,7 +18,6 @@
  * which is the exact failure the `asset_id` column exists to prevent.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 
@@ -121,13 +120,13 @@ function toRow(r: Row): SoftwareRow {
 }
 
 const mayBrowse = (caller: Caller) => {
-  if (!reaches(caller, 'software', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new SoftwareError('Your role cannot browse the software estate', 'forbidden');
   }
 };
 
 const mayWrite = (caller: Caller) => {
-  if (!reaches(caller, 'software', 'read', 'all')) {
+  if (caller.role !== 'admin') {
     throw new SoftwareError('Only an administrator can change the estate', 'forbidden');
   }
 };
@@ -439,10 +438,10 @@ export async function revokeSeat(caller: Caller, seatId: string) {
      * housekeeping; making them raise a ticket is how dormant seats pile up.
      * Taking one from outside their line is not theirs to do.
      */
-    if (!reaches(caller, 'software', 'read', 'team')) {
+    if (caller.role === 'employee') {
       throw new SoftwareError('Your role cannot revoke a seat', 'forbidden');
     }
-    if (caller.hasReports) {
+    if (caller.role === 'manager') {
       const { rows: ok } = await db.query(
         `WITH RECURSIVE line AS (
            SELECT id FROM employee WHERE manager_id = $1

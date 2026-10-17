@@ -36,12 +36,12 @@ const at = (path: string, role: AppRole) => {
   );
 };
 
-const ported = ALL_ROUTES.filter((r) => !at('/' + r, 'company_admin').includes('has not been ported'));
+const ported = ALL_ROUTES.filter((r) => !at('/' + r, 'admin').includes('has not been ported'));
 console.log('ported  :', ported.join(', '));
 console.log('pending :', ALL_ROUTES.filter((r) => !ported.includes(r)).join(', '));
 console.log(`progress: ${ported.length}/${ALL_ROUTES.length} modules`);
 let failed = 0;
-for (const role of ['company_admin', 'hr_admin', 'employee'] as AppRole[]) {
+for (const role of ['admin', 'manager', 'employee'] as AppRole[]) {
   for (const r of ALL_ROUTES) {
     try {
       at('/' + r, role);

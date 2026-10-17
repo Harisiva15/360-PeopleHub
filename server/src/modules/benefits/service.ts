@@ -22,7 +22,6 @@
  * the screen says "not applicable here" instead of "you have nothing".
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { EMPLOYEE_PROJECTION } from '../employees/queries.ts';
@@ -59,7 +58,7 @@ const TO_STATUS: Record<string, string> = {
 };
 
 function assertOwnOrAdmin(caller: Caller, empId: string): void {
-  if (reaches(caller, 'benefits', 'read', 'all')) return;
+  if (caller.role === 'admin') return;
   if (caller.employeeId !== empId) {
     throw new BenefitsError('a benefits plan is only visible to its owner and finance', 'forbidden');
   }
@@ -177,7 +176,7 @@ export async function fbpTotals(
   empIds: string[],
 ): Promise<Record<string, number>> {
   if (!empIds.length) return {};
-  if (!reaches(caller, 'benefits', 'read', 'all')) {
+  if (caller.role !== 'admin') {
     const mine = empIds.filter((id) => id === caller.employeeId);
     if (mine.length !== empIds.length) {
       throw new BenefitsError('only finance may see everyone\'s allocation', 'forbidden');
@@ -202,10 +201,7 @@ export async function fbpPlan(caller: Caller, empId: string): Promise<FbpRow> {
     if (!emp.rows[0]) throw new BenefitsError('no such employee', 'not_found');
     const { plan, allocated } = await planFor(db, empId, false);
     return {
-      employee: toEmployee(
-        emp.rows[0] as never,
-        reaches(caller, 'compensation', 'read', 'all'),
-      ),
+      employee: toEmployee(emp.rows[0] as never, caller.role === 'admin'),
       plan,
       allocated,
     };
@@ -214,7 +210,7 @@ export async function fbpPlan(caller: Caller, empId: string): Promise<FbpRow> {
 
 /** The tracker across the workforce. Finance only. */
 export async function fbpRows(caller: Caller): Promise<FbpRow[]> {
-  if (!reaches(caller, 'benefits', 'read', 'all')) {
+  if (caller.role !== 'admin') {
     throw new BenefitsError('only finance may see the declaration tracker', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
@@ -316,7 +312,7 @@ export async function declareFbp(
 export async function insuranceCover(
   caller: Caller,
 ): Promise<{ totalSumAssured: number; covered: number }> {
-  if (!reaches(caller, 'benefits', 'read', 'all')) {
+  if (caller.role !== 'admin') {
     throw new BenefitsError('only finance may see the group cover', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {

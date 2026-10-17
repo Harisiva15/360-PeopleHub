@@ -32,11 +32,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { assertLocalDatabase } from './local-only.mjs';
-
-/* This suite writes. It refuses anything but a local database. */
-assertLocalDatabase();
-
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -103,7 +98,7 @@ let fatal = null;
 try {
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
 
   const person = async (name, joinedOn = '2020-01-01', over = {}) => {
     const { rows } = await db.query(
@@ -395,9 +390,9 @@ await withScratchTenant(db, async (ctx) => {
   await leave.approveLeave(A, theirs.id);
 
   const MGR = {
-    role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
-  const asSubject = { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: subject, userId: null };
+  const asSubject = { role: 'employee', tenantId: ctx.tenant, employeeId: subject, userId: null };
 
   ok('21. a manager sees leave for their own line',
     (await leave.listLeave(MGR, { empIds: [subject], from: MON, to: NEXT_MON })).length === 1);
@@ -463,7 +458,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (o) => {
     const B = {
-      role: 'company_admin', hasReports: false, tenantId: o.tenant, employeeId: o.adminEmployeeId, userId: null,
+      role: 'admin', tenantId: o.tenant, employeeId: o.adminEmployeeId, userId: null,
     };
 
     console.log('\nand no tenant sees another\'s leave\n');

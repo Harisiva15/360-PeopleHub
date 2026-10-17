@@ -38,7 +38,6 @@
  * calendars, and guessing it here would hide the gap 0054 deliberately left.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -180,7 +179,7 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Shaping how a company works is an administrator's, as the rest of setup is. */
 function mayShapeSchedule(caller: Caller, verb: string): void {
-  if (!reaches(caller, 'shifts', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ScheduleError(`only an admin may ${verb} a work schedule`, 'forbidden');
   }
 }
@@ -602,11 +601,11 @@ const LINE_SQL = `
 async function mayTouch(
   db: Db, caller: Caller, employeeId: string, write: boolean,
 ): Promise<void> {
-  if (reaches(caller, 'shifts', 'write', 'all')) return;
+  if (caller.role === 'admin') return;
   if (!caller.employeeId) {
     throw new ScheduleError('this login has no employee record', 'forbidden');
   }
-  if (!reaches(caller, 'shifts', 'read', 'team')) {
+  if (caller.role === 'employee') {
     if (write) {
       throw new ScheduleError(
         'only a manager or admin may assign a work schedule', 'forbidden');

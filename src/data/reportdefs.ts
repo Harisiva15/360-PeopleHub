@@ -1,8 +1,6 @@
 /*
  * Last in the RNG chain, after the export register.
  */
-import type { AppRole } from '../types/employee';
-import { covers, scopeOfDemo } from '../state/rbac';
 import './exports';
 
 import { sortBy } from '../lib/collections';
@@ -161,7 +159,7 @@ const SEEDS: Omit<ReportDef, 'id' | 'ownerId' | 'createdOn' | 'lastRunOn' | 'run
 ];
 
 (function genReports() {
-  const authors = ACTIVE().filter((e) => e.role === 'company_admin' || e.reports.length > 0);
+  const authors = ACTIVE().filter((e) => e.role === 'admin' || e.role === 'manager');
   if (!authors.length) return;
 
   SEEDS.forEach((seed) => {
@@ -198,11 +196,9 @@ const SEEDS: Omit<ReportDef, 'id' | 'ownerId' | 'createdOn' | 'lastRunOn' | 'run
   }
 })();
 
-export const reportsVisibleTo = (empId: string, role: AppRole) =>
+export const reportsVisibleTo = (empId: string, role: string) =>
   sortBy(
-    REPORT_DEFS.filter(
-      (r) => r.shared || r.ownerId === empId || covers(scopeOfDemo(role, false, 'customreports'), 'all'),
-    ),
+    REPORT_DEFS.filter((r) => r.shared || r.ownerId === empId || role === 'admin'),
     (r) => -r.runCount,
   );
 

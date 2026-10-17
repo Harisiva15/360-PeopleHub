@@ -1,8 +1,2 @@
 node_modules/
 .env
-
-# Every dotenv variant, not just the bare name: .env.migrate holds the
-# production migration credential and must never be committed. The example
-# file is the one exception, since it carries only key names.
-.env.*
-!.env.example

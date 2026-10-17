@@ -3,12 +3,7 @@ import type { Ymd } from '../lib/dates';
 
 export type EmpStatus = 'Active' | 'Exited';
 export type EmpType = 'Full-time' | 'Contract';
-/*
- * The assigned roles. `manager` is deliberately absent: answering for other
- * people is a fact about the reporting tree, not a title, and it applies on
- * top of whichever of these somebody holds. See server/src/auth/policy.ts.
- */
-export type AppRole = 'employee' | 'hr_admin' | 'finance_admin' | 'company_admin';
+export type AppRole = 'admin' | 'manager' | 'employee';
 
 export interface Employee {
   id: string;

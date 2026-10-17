@@ -161,13 +161,7 @@ console.log('\na manager reaches only their own pay\n');
   ok('the menu offers no team payroll', !/'\/payroll\?v=team'/.test(nav));
 
   /* Whatever the manager list becomes, it must stay self-service. */
-  /*
-   * The tabs a manager is offered, found by the branch that selects them.
-   * That branch asks app.hasReports now rather than naming a role.
-   */
-  const managerTabs = payroll.match(/app\.hasReports\s*\?\s*\[([^\]]*)\]/)?.[1]
-    ?? payroll.match(/app\.hasReports\s*\n?\s*\?\s*\[([^\]]*)\]/)?.[1]
-    ?? '';
+  const managerTabs = payroll.match(/app\.role === 'manager'\s*\?\s*\[([^\]]*)\]/)?.[1] ?? '';
   const labels = [...managerTabs.matchAll(/label: '([^']+)'/g)].map((m) => m[1]!);
   ok(`a manager is offered only their own payslips (${labels.join(', ') || 'none'})`,
     labels.length === 1 && labels[0] === 'My Payslips',

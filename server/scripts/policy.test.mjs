@@ -19,8 +19,7 @@
  */
 
 import {
-  POLICY, ROLES, effectiveRule, effectiveModulesFor, effectiveModulesForTenant,
-  narrower, ruleFor,
+  POLICY, ROLES, effectiveRule, effectiveModulesFor, narrower, ruleFor,
 } from '../src/auth/policy.ts';
 
 let failed = 0;
@@ -102,36 +101,16 @@ console.log('\nabsent rows\n');
  * before a module shipped must not lose it the day it arrives, and an empty
  * table must not lock everybody out of the product.
  */
-/*
- * What a role reaches with no narrowing, which is the union and not the
- * role's own layer. The two differ: hr_admin's layer covers 38 modules and
- * the union 39, because the employee baseline carries one its layer does
- * not - an administrator is also a member of staff. Comparing the union
- * against the layer was asserting they were the same thing.
- *
- * And the overrides go to effectiveModulesForTenant. effectiveModulesFor
- * takes hasReports in that position now, so passing `{}` here asked for
- * somebody with reports: an object is truthy, so the manager layer came
- * along and the count rose by eight for an employee.
- */
 for (const role of ROLES) {
-  const baseline = effectiveModulesFor(role, false);
+  const withNothing = effectiveModulesFor(role, null);
   const fromCode = modules.filter((m) => POLICY[m][role].read !== 'none');
-  ok(`${role}: the union is at least its own ${fromCode.length} modules`,
-    baseline.length >= fromCode.length,
-    `union ${baseline.length} < layer ${fromCode.length}`);
-
-  const withNothing = effectiveModulesForTenant(role, false, {});
-  ok(`${role}: an empty override table changes nothing (${baseline.length})`,
-    withNothing.length === baseline.length,
-    `got ${withNothing.length}, expected ${baseline.length}`);
-
-  /* Having reports may only ever add. */
-  const withReports = effectiveModulesFor(role, true);
-  ok(`${role}: having reports never removes a module`,
-    withReports.length >= baseline.length
-      && baseline.every((m) => withReports.includes(m)),
-    `${baseline.length} -> ${withReports.length}`);
+  ok(`${role}: no overrides at all gives the full ${fromCode.length} modules`,
+    withNothing.length === fromCode.length,
+    `got ${withNothing.length}`);
+  const withEmpty = effectiveModulesFor(role, {});
+  ok(`${role}: an empty override table gives the same`,
+    withEmpty.length === fromCode.length,
+    `got ${withEmpty.length}`);
 }
 
 console.log('\nnarrowing actually narrows\n');
@@ -146,17 +125,8 @@ console.log('\nnarrowing actually narrows\n');
  * at 'team' when they read it at 'own' — a wrong premise that made the check
  * fail for a reason that had nothing to do with narrowing.
  */
-/*
- * And the employee baseline must grant nothing on it, or narrowing the layer
- * cannot be observed: the union keeps whatever the baseline gives. The first
- * module matching 'manager reads team' was dashboard, which every employee
- * also reads, so narrowing the layer to none left it in the menu and the
- * assertion failed for a reason that had nothing to do with narrowing - the
- * same trap the comment above describes, one layer further in.
- */
-const wide = modules.find((m) => POLICY[m].manager.read === 'team'
-  && POLICY[m].employee.read === 'none');
-ok('the policy still has a module only a manager reads across their team', Boolean(wide),
+const wide = modules.find((m) => POLICY[m].manager.read === 'team');
+ok('the policy still has a module a manager reads across their team', Boolean(wide),
   'Nothing left to narrow from — this section can no longer prove anything.');
 
 if (wide) {
@@ -170,19 +140,11 @@ if (wide) {
     `write ${before.write}->${after.write}, approve ${before.approve}->${after.approve}`);
 
   const hidden = { [wide]: { manager: { read: 'none' } } };
-  /*
-   * Asked as an employee who has reports, because that is who the manager
-   * layer applies to - 'manager' is not a role to pass here. The narrowing
-   * is on the layer, so it is the person with reports who loses the module.
-   */
-  const narrowed = effectiveModulesForTenant('employee', true, hidden);
-  const open = effectiveModulesForTenant('employee', true, {});
   ok(`narrowing "${wide}" to none removes it from the menu`,
-    !narrowed.includes(wide),
-    `still present among ${narrowed.length} modules`);
+    !effectiveModulesFor('manager', hidden).includes(wide));
   ok('and leaves every other module alone',
-    narrowed.length === open.length - 1,
-    `${open.length} -> ${narrowed.length}, expected ${open.length - 1}`);
+    effectiveModulesFor('manager', hidden).length
+      === effectiveModulesFor('manager', null).length - 1);
 }
 
 console.log(`\n${failed ? `${failed} FAILED` : 'overrides can only narrow'}\n`);

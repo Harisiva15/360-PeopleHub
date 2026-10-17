@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { configService } from '../src/services/mock/config';
 import { ORG } from '../src/data/org';
-import { MANAGER_ADDS, PERMS } from '../src/state/rbac';
+import { PERMS } from '../src/state/rbac';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
@@ -151,16 +151,11 @@ ok('saving shows that it is in progress', /busy \? 'Saving…' : 'Save'/.test(ca
 
 console.log('\nonly an administrator is offered the rename\n');
 
-ok('settings is in the admin permission list', PERMS.company_admin.includes('settings'));
-ok('and in no other role\'s',
-  !PERMS.hr_admin.includes('settings')
-  && !PERMS.finance_admin.includes('settings')
-  && !PERMS.employee.includes('settings')
-  && !MANAGER_ADDS.includes('settings'),
+ok('settings is in the admin permission list', PERMS.admin.includes('settings'));
+ok('and in no other role\'s', !PERMS.manager.includes('settings')
+  && !PERMS.employee.includes('settings'),
   'App.tsx turns that into AccessDenied, so the tab is unreachable for them');
-ok('the card works out for itself what the viewer may do',
-  /app\.(reaches|can|hasReports|scopeOf)\b/.test(card)
-  && !/\brole\??: AppRole/.test(card),
+ok('the card derives the role itself', /const admin = app\.role === 'admin'/.test(card),
   'a hidden route is not the same as a withheld control');
 ok('and the rename control is gated on it', /actions=\{admin && tenant &&/.test(card));
 

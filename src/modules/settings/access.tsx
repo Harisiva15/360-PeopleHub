@@ -12,39 +12,24 @@ import { Badge, Banner, Card, KV, PersonCell, Table, TableWrap, Tile, StatRow } 
 import { Divide } from '../../components/common';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { ACCOUNTS, PERMS, ROLE_LABEL, SCOPE } from '../../state/rbac';
+import { ACCOUNTS, PERMS, SCOPE } from '../../state/rbac';
 import {
   useAllEmployees, useSetRole,
   usePermissionGrid, useSetPermissions, useResetPermissions,
 } from './data';
 import { Icon } from '../../components/icons';
 
-/*
- * The assignable roles, in the order the matrix reads them.
- *
- * `manager` is not among them, and that is the point of the model: answering
- * for other people is a consequence of the reporting tree, not a title
- * somebody can be given. It is shown as a second badge per person below, and
- * it cannot be picked here.
- */
-export const ROLES: AppRole[] = ['company_admin', 'hr_admin', 'finance_admin', 'employee'];
+export const ROLES: AppRole[] = ['admin', 'manager', 'employee'];
 
-/* One source for what a role is called and how wide it is: rbac.ts. This file
- * and users/shared.tsx each had their own copy, and both still said "admin". */
-export { ROLE_LABEL };
+export const ROLE_LABEL: Record<AppRole, string> = {
+  admin: 'HR Administrator',
+  manager: 'Reporting Manager',
+  employee: 'Employee',
+};
 
-const ROLE_COLOR: Record<AppRole, string> = {
-  company_admin: 'var(--s8)',
-  hr_admin: 'var(--s1)',
-  finance_admin: 'var(--s5)',
-  employee: 'var(--s3)',
-};
-const ROLE_SCOPE: Record<AppRole, string> = {
-  company_admin: SCOPE.company_admin.label,
-  hr_admin: SCOPE.hr_admin.label,
-  finance_admin: SCOPE.finance_admin.label,
-  employee: SCOPE.employee.label,
-};
+const ROLE_COLOR: Record<AppRole, string> = { admin: 'var(--s8)', manager: 'var(--s1)', employee: 'var(--s3)' };
+const ROLE_SCOPE: Record<AppRole, string> = { admin: 'All records', manager: 'Reporting tree', employee: 'Own record' };
+
 /** Every route the permission matrix accounts for, in reading order. */
 export const MODULES: { k: string; n: string }[] = [
   { k: 'dashboard', n: 'Dashboard' }, { k: 'attendance', n: 'Attendance & Geo' }, { k: 'shifts', n: 'Shifts & Roster' },
@@ -84,11 +69,15 @@ const FIELD_VISIBILITY: [string, string, string, string][] = [
   ['Documents', '✓', '✗', '✓'],
 ];
 
-const adminCount = (people: Employee[]) => people.filter((e) => e.role === 'company_admin').length;
+const adminCount = (people: Employee[]) => people.filter((e) => e.role === 'admin').length;
 const managerCount = (people: Employee[]) => people.filter((e) => e.reports.length).length;
 
-/** How many accounts hold each role today. */
-const usersInRole = (r: AppRole, people: Employee[]) => people.filter((e) => e.role === r).length;
+/** How many accounts sit in each role today. */
+const usersInRole = (r: AppRole, people: Employee[]) =>
+  r === 'admin' ? adminCount(people)
+    : r === 'manager' ? managerCount(people)
+      : people.filter((e) => !e.reports.length).length;
+
 export function RbacTab() {
   const app = useApp();
   const nav = useNavigate();
@@ -178,26 +167,20 @@ export function RbacTab() {
 
 /* ---------- User roles ---------- */
 
-/*
- * What somebody operates under is two facts, so it is shown as two badges.
- *
- * The role is granted and can be changed on this screen. The manager layer is
- * a consequence of who reports to whom and cannot be changed here at all -
- * collapsing them into one "effective role" implied you could award the second
- * one, and left no way to say that an HR administrator also has reports.
- */
-const EFF_KIND: Record<AppRole, 'crit' | 'info' | 'mute'> = {
-  company_admin: 'crit', hr_admin: 'info', finance_admin: 'info', employee: 'mute',
-};
+/** The role a user actually operates under, whatever the flag on the record says. */
+const effectiveRole = (e: Employee): AppRole => (e.role === 'admin' ? 'admin' : e.reports.length ? 'manager' : 'employee');
+const EFF_KIND: Record<AppRole, 'crit' | 'info' | 'mute'> = { admin: 'crit', manager: 'info', employee: 'mute' };
+const EFF_LABEL: Record<AppRole, string> = { admin: 'HR Administrator', manager: 'Manager', employee: 'Employee' };
+
 function ChangeRoleBody({ e, onPick }: { e: Employee; onPick: (r: AppRole) => void }) {
   return (
     <>
       <div className="field">
         <label>Access role</label>
         <select className="input" defaultValue={e.role} onChange={(ev) => onPick(ev.target.value as AppRole)}>
-          {ROLES.map((r) => (
-            <option key={r} value={r}>{`${ROLE_LABEL[r]} — ${SCOPE[r].label}`}</option>
-          ))}
+          <option value="admin">HR Administrator — full access</option>
+          <option value="manager">Manager — team scope</option>
+          <option value="employee">Employee — self-service</option>
         </select>
       </div>
       <Banner kind="warn" icon={<Icon n="warn" size="lg" />}>
@@ -262,7 +245,7 @@ export function UsersTab() {
         <Tile label="Managers" value={managerCount(people)} foot="With at least one direct report" />
         <Tile
           label="Employees"
-          value={people.filter((e) => !e.reports.length && e.role !== 'company_admin').length}
+          value={people.filter((e) => !e.reports.length && e.role !== 'admin').length}
           foot="Self-service only"
         />
         <Tile label="Total accounts" value={people.length} foot="Single sign-on enabled" />
@@ -280,18 +263,14 @@ export function UsersTab() {
               </thead>
               <tbody>
                 {sortBy(list, (e) => e.name).map((e) => {
+                  const eff = effectiveRole(e);
                   return (
                     <tr key={e.id}>
                       <td><PersonCell e={e} sub={e.code} /></td>
                       <td className="muted">{e.email}</td>
                       <td className="nowrap">{deptOf(e.dept).name}</td>
                       <td className="num">{e.reports.length || '—'}</td>
-                      <td>
-                        <Badge kind={EFF_KIND[e.role]}>{ROLE_LABEL[e.role]}</Badge>
-                        {e.reports.length > 0 && (
-                          <>{' '}<Badge kind="info">Manager</Badge></>
-                        )}
-                      </td>
+                      <td><Badge kind={EFF_KIND[eff]}>{EFF_LABEL[eff]}</Badge></td>
                       <td className="muted nowrap">{lastActive(e)}</td>
                       <td className="right">
                         <button className="btn sm" onClick={() => changeRole(e)}>Change role</button>

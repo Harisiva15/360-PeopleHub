@@ -53,7 +53,6 @@
  * `rosterFor`'s `getUTCDay()` already shows the other half of that mistake.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 
@@ -408,13 +407,13 @@ export async function workingDaysFor(
       'SELECT 1 FROM employee WHERE id = $1', [employeeId]);
     if (!known[0]) throw new CalendarError('no such employee', 'not_found');
 
-    if (!reaches(caller, 'attendance', 'read', 'all')) {
+    if (caller.role !== 'admin') {
       if (!caller.employeeId) {
         throw new CalendarError('this login has no employee record', 'forbidden');
       }
       if (caller.employeeId !== employeeId) {
         /* A manager may read their own line, however deep. Employees, only themselves. */
-        if (!reaches(caller, 'attendance', 'read', 'team')) {
+        if (caller.role === 'employee') {
           throw new CalendarError('you can only read your own calendar', 'forbidden');
         }
         const { rows } = await db.query(

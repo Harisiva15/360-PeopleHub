@@ -11,8 +11,8 @@ import { ACTIVE } from '../../data/employees';
 import { DEPTS, GRADES, HOLIDAYS, HOLIDAY_MAP, ltOf, ORG, SITES } from '../../data/org';
 import { sortBy } from '../../lib/collections';
 import { LEAVE_BAL } from '../../data/leave';
-import { MANAGER_ADDS, PERMS, callerCovers } from '../../state/rbac';
-import type { GridRole } from '../contracts';
+import { PERMS } from '../../state/rbac';
+import type { AppRole } from '../../types/employee';
 import type {
   BusinessUnit, ConfigService, Department, GridPatch, LegalEntity, LegalEntityDraft,
   ModuleGrid, PermScope, TenantProfile,
@@ -86,32 +86,24 @@ function resolveDemoUnit(code: string | null | undefined): DemoUnit | null | Err
  */
 const ALL: PermScope = 'all';
 const NONE: PermScope = 'none';
-const ruleOf = (role: GridRole, module: string) => {
-  /*
-   * The manager row is the layer's own grant, not a role's. It is what the
-   * reporting tree adds on top of whatever role somebody holds, so it reads
-   * from MANAGER_ADDS and is scoped to the team rather than to everything.
-   */
-  if (role === 'manager') {
-    const v: PermScope = MANAGER_ADDS.includes(module) ? 'team' : NONE;
-    return { read: v, write: v, approve: v };
-  }
-  const v = PERMS[role].includes(module) ? ALL : NONE;
+const ruleOf = (role: AppRole, module: string) => {
+  const reaches = PERMS[role].includes(module);
+  const v = reaches ? ALL : NONE;
   return { read: v, write: v, approve: v };
 };
 
 /* Narrowing applied in this session, so the screen responds to its own edits. */
 const NARROWED = new Map<string, PermScope>();
-const key = (module: string, role: GridRole, field: string) => `${module}|${role}|${field}`;
+const key = (module: string, role: AppRole, field: string) => `${module}|${role}|${field}`;
 
 const RANK: Record<PermScope, number> = { none: 0, own: 1, team: 2, all: 3 };
 const narrower = (a: PermScope, b: PermScope): PermScope => (RANK[a] <= RANK[b] ? a : b);
 
-/* Every module any role reaches. company_admin is the superset. */
-const MODULES: string[] = [...PERMS.company_admin].sort();
+/* Every module any role reaches — the admin list is the superset. */
+const MODULES: string[] = [...PERMS.admin].sort();
 
 const gridNow = (): ModuleGrid[] => MODULES.map((module: string) => {
-  const cell = (role: GridRole) => {
+  const cell = (role: AppRole) => {
     const base = ruleOf(role, module);
     return {
       read: narrower(base.read, NARROWED.get(key(module, role, 'read')) ?? base.read),
@@ -119,14 +111,10 @@ const gridNow = (): ModuleGrid[] => MODULES.map((module: string) => {
       approve: narrower(base.approve, NARROWED.get(key(module, role, 'approve')) ?? base.approve),
     };
   };
-  const ROWS: GridRole[] = ['employee', 'manager', 'hr_admin', 'finance_admin', 'company_admin'];
-  const byRow = <T, >(f: (r: GridRole) => T) => Object.fromEntries(
-    ROWS.map((r) => [r, f(r)]),
-  ) as Record<GridRole, T>;
   return {
     module,
-    ceiling: byRow((r) => ruleOf(r, module)),
-    effective: byRow(cell),
+    ceiling: { employee: ruleOf('employee', module), manager: ruleOf('manager', module), admin: ruleOf('admin', module) },
+    effective: { employee: cell('employee'), manager: cell('manager'), admin: cell('admin') },
   };
 });
 
@@ -320,18 +308,16 @@ const demoOptional = (v: string | null | undefined): string | null =>
 
 export const configService: ConfigService = {
   permissions(c) {
-    if (!callerCovers(c, 'settings', 'all')) {
-      return Promise.reject(new Error('Only an administrator can read this'));
-    }
+    if (c.role !== 'admin') return Promise.reject(new Error('Only an administrator can read this'));
     return ok(gridNow());
   },
 
   setPermissions(c, patches: GridPatch[]) {
-    if (!callerCovers(c, 'settings', 'all', 'write')) {
+    if (c.role !== 'admin') {
       return Promise.reject(new Error('Only an administrator can change permissions'));
     }
     for (const p of patches) {
-      if (p.module === 'settings' && p.role === 'company_admin' && p.read === 'none') {
+      if (p.module === 'settings' && p.role === 'admin' && p.read === 'none') {
         return Promise.reject(new Error(
           'Administrators cannot be removed from Settings — there would be no way '
           + 'back from inside the application'));
@@ -347,7 +333,7 @@ export const configService: ConfigService = {
   },
 
   resetPermissions(c, module) {
-    if (!callerCovers(c, 'settings', 'all', 'write')) {
+    if (c.role !== 'admin') {
       return Promise.reject(new Error('Only an administrator can change permissions'));
     }
     for (const k of [...NARROWED.keys()]) {

@@ -23,9 +23,6 @@
  * that is a dependency decision, not a technical one — see `csv.ts`.
  */
 
-import { reaches } from '../../auth/can.ts';
-import { ROLES, grantNeedsAuthority, mayAssignRole } from '../../auth/policy.ts';
-import type { Role } from '../../auth/policy.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { UserError, createUser } from './service.ts';
@@ -156,20 +153,14 @@ function judge(
   if (site && !look.sites.has(site)) errors.push(`no location ${site}`);
 
   const role = v('role').toLowerCase();
-  /* The new vocabulary only, as the single-user path does. A file naming
-     'admin' is rejected with the four names it could have used. */
-  if (role && !(ROLES as readonly string[]).includes(role)) {
-    errors.push(`${v('role')} is not a role: ${ROLES.join(', ')}`);
+  if (role && !['admin', 'manager', 'employee'].includes(role)) {
+    errors.push(`${v('role')} is not a role`);
   }
   /*
    * The same rule the single-user path enforces. A bulk file is exactly where
    * somebody would try to grant themselves an administrator.
    */
-  /* Only the elevated grant, as the single-user path does — creating ordinary
-     employees in bulk is not what this guard is about. */
-  if (role && (ROLES as readonly string[]).includes(role)
-    && grantNeedsAuthority(role as Role)
-    && !mayAssignRole(caller.role, caller.hasReports, role as Role)) {
+  if (role === 'admin' && caller.role !== 'admin') {
     errors.push('only an administrator can grant the administrator role');
   }
 
@@ -196,7 +187,7 @@ export async function previewImport(
   fileName: string,
   text: string,
 ): Promise<ImportPreview> {
-  if (!reaches(caller, 'users', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new UserError('Your role cannot import accounts', 'forbidden');
   }
   /*
@@ -301,7 +292,7 @@ export async function commitImport(
         managerId: row.values.manager
           ? (await resolveManager(caller, row.values.manager))
           : null,
-        role: (row.values.role!.toLowerCase() as Role),
+        role: (row.values.role!.toLowerCase() as 'admin' | 'manager' | 'employee'),
         empType: row.values.empType,
         joinedOn: row.values.joinedOn,
       });
@@ -348,7 +339,7 @@ async function resolveManager(caller: Caller, nameOrCode: string): Promise<strin
 
 /** What has been imported before, newest first. */
 export async function importHistory(caller: Caller) {
-  if (!reaches(caller, 'users', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new UserError('Your role cannot see the import history', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {

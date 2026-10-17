@@ -1016,14 +1016,14 @@ type Tab = 'runs' | 'inputs' | 'reg' | 'bank' | 'comply' | 'stat' | 'struct' | '
 function Payroll() {
   const app = useApp();
   const tabs: { v: Tab; label: string }[] =
-    app.reaches('payroll', 'read', 'all')
+    app.role === 'admin'
       ? [
           { v: 'runs', label: 'Payroll Runs' }, { v: 'inputs', label: 'Payroll Inputs' },
           { v: 'reg', label: 'Salary Register' }, { v: 'bank', label: 'Bank & Disbursal' },
           { v: 'comply', label: 'Compliance Payments' }, { v: 'stat', label: 'Statutory' },
           { v: 'struct', label: 'Salary Structures' }, { v: 'me', label: 'My Payslips' },
         ]
-      : app.hasReports
+      : app.role === 'manager'
         ? [{ v: 'me', label: 'My Payslips' }]
         : [{ v: 'me', label: 'My Payslips' }, { v: 'struct', label: 'My Salary Structure' }];
 
@@ -1046,9 +1046,7 @@ function Payroll() {
       {active === 'bank' && <PyBank />}
       {active === 'comply' && <PyComply />}
       {active === 'stat' && <PyStatutory mk={mk} setMk={setMk} />}
-      {active === 'struct' && (app.reaches('compensation', 'read', 'all')
-        ? <PyStructures />
-        : <PyMyStructure />)}
+      {active === 'struct' && (app.role === 'admin' ? <PyStructures /> : <PyMyStructure />)}
       {active === 'me' && <PyMe />}
     </>
   );

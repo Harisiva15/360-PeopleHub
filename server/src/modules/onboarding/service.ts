@@ -17,8 +17,6 @@
  * the checklist is the thing people actually look at.
  */
 
-import { reaches } from '../../auth/can.ts';
-import { personInScope } from '../../tenancy/scope.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { provisionEmployee } from '../people/provision.ts';
@@ -91,7 +89,7 @@ const PROJECTION = `
         FROM onboarding_task ot WHERE ot.journey_id = j.id
     ) t ON true`;
 
-const toJourney = (r: Record<string, unknown>, showPay: boolean): Onboarding => ({
+const toJourney = (r: Record<string, unknown>): Onboarding => ({
   id: r.id as string,
   candId: (r.candidate_id as string) ?? '',
   name: r.full_name as string,
@@ -102,13 +100,7 @@ const toJourney = (r: Record<string, unknown>, showPay: boolean): Onboarding => 
   doj: r.joining_on as string,
   managerId: (r.manager_id as string) ?? '',
   buddyId: (r.buddy_id as string) ?? '',
-  /*
-   * A joiner's offered CTC is compensation data, so it is compensation's to
-   * grant — not onboarding's. Running an onboarding checklist does not come
-   * with the salary attached, and the manager layer holds onboarding without
-   * holding any compensation at all.
-   */
-  ctc: showPay && r.annual_ctc !== null ? Number(r.annual_ctc) : 0,
+  ctc: r.annual_ctc === null ? 0 : Number(r.annual_ctc),
   status: TO_STATUS[r.status as string] ?? 'Pre-boarding',
   bgv: (r.background_check as string) ?? 'not_started',
   tasks: (r.tasks as Record<string, unknown>[]).map((t) => ({
@@ -122,10 +114,10 @@ const toJourney = (r: Record<string, unknown>, showPay: boolean): Onboarding => 
   })),
 });
 
-async function load(db: TenantClient, id: string, showPay: boolean): Promise<Onboarding> {
+async function load(db: TenantClient, id: string): Promise<Onboarding> {
   const { rows } = await db.query(`${PROJECTION} WHERE j.id = $1`, [id]);
   if (!rows[0]) throw new OnboardingError('no such onboarding journey', 'not_found');
-  return toJourney(rows[0], showPay);
+  return toJourney(rows[0]);
 }
 
 /**
@@ -148,88 +140,15 @@ async function restatus(db: TenantClient, id: string): Promise<void> {
 }
 
 /** HR and managers run onboarding; nobody else sees a joiner's CTC. */
-/**
- * May this caller open onboarding at all.
- *
- * `reaches(..., 'team')`, not `all || caller.hasReports`. The two admit the
- * same people today, and that is the only thing that made the old form look
- * harmless: it granted *all-scope entry* to anybody with a direct report, and
- * where the query behind it was unscoped the gate's breadth became the query's
- * breadth. That is how every joiner's offered salary became visible to any
- * manager in the company.
- *
- * The table gives the manager layer `onboarding` at team, so team is what the
- * gate asks for. Entry only: which journeys come back is `journeyScope`, and
- * which may be changed is `mayHandleJourney`.
- */
 function mayOnboard(caller: Caller): boolean {
-  return reaches(caller, 'onboarding', 'read', 'team');
-}
-
-/**
- * May this caller change this particular journey?
- *
- * A journey belongs to whoever will manage the joiner, because the joiner
- * usually has no employee row yet. So the line is walked over `manager_id`.
- *
- * A journey with no manager named is nobody's line, and only an all-scope
- * caller may touch it.
- */
-async function mayHandleJourney(
-  db: TenantClient,
-  caller: Caller,
-  journeyId: string,
-): Promise<boolean> {
-  const { rows } = await db.query<{ manager_id: string | null }>(
-    'SELECT manager_id FROM onboarding_journey WHERE id = $1', [journeyId]);
-  if (!rows[0]) return false;
-  const mgr = rows[0].manager_id;
-  if (mgr === null) return reaches(caller, 'onboarding', 'write', 'all');
-  return personInScope(db, caller, mgr, 'onboarding', 'write');
-}
-
-/** Whether this caller may see what a joiner is being paid. */
-const maySeeJoinerPay = (caller: Caller): boolean =>
-  reaches(caller, 'compensation', 'read', 'all');
-
-/**
- * Which journeys this caller may see.
- *
- * `null` means none. The listing had no scope clause at all: `mayOnboard`
- * admits anybody with reports, and every journey in the tenant was then
- * returned to them — CTC included. The policy gives the manager layer
- * `onboarding` read *team*, so the clause below is what that scope was always
- * meant to mean.
- *
- * A journey hangs off `manager_id` rather than off an employee row, because its
- * subject is a joiner who usually has no employee record yet. So the subtree is
- * walked over the journey's manager, not over the joiner.
- */
-function journeyScope(caller: Caller): { sql: string; params: unknown[] } | null {
-  if (reaches(caller, 'onboarding', 'read', 'all')) return { sql: 'TRUE', params: [] };
-  if (!caller.employeeId || !reaches(caller, 'onboarding', 'read', 'team')) return null;
-  return {
-    sql: `(j.manager_id = $1 OR j.manager_id IN (
-            WITH RECURSIVE reports AS (
-              SELECT id FROM employee WHERE manager_id = $1
-              UNION ALL
-              SELECT c.id FROM employee c JOIN reports r ON c.manager_id = r.id
-            )
-            SELECT id FROM reports
-          ))`,
-    params: [caller.employeeId],
-  };
+  return caller.role === 'admin' || caller.role === 'manager';
 }
 
 export async function listOnboarding(caller: Caller): Promise<Onboarding[]> {
   if (!mayOnboard(caller)) return [];
-  const scope = journeyScope(caller);
-  if (!scope) return [];
-  const pay = maySeeJoinerPay(caller);
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query(
-      `${PROJECTION} WHERE ${scope.sql} ORDER BY j.joining_on DESC`, scope.params);
-    return rows.map((r) => toJourney(r, pay));
+    const { rows } = await db.query(`${PROJECTION} ORDER BY j.joining_on DESC`);
+    return rows.map(toJourney);
   });
 }
 
@@ -279,21 +198,6 @@ export async function createJourney(
   if (!draft.doj) throw new OnboardingError('the joiner needs a joining date', 'invalid');
 
   return withTenant(caller, async (db) => {
-    /*
-     * A manager starts a joiner on their own line, not on somebody else's.
-     *
-     * The journey does not exist yet, so the subject is the manager the draft
-     * names — defaulting to the caller, which is what a manager adding their
-     * own joiner means. An all-scope caller passes either way.
-     */
-    const forManager = draft.managerId ?? caller.employeeId;
-    if (!forManager) {
-      throw new OnboardingError('say who the joiner will report to', 'invalid');
-    }
-    if (!(await personInScope(db, caller, forManager, 'onboarding', 'write'))) {
-      throw new OnboardingError('you can only start a joiner on your own team', 'forbidden');
-    }
-
     const dept = draft.dept
       ? (await db.query('SELECT id FROM department WHERE code = $1', [draft.dept])).rows[0]?.id
       : null;
@@ -330,7 +234,7 @@ export async function createJourney(
      */
     await openJoinerChecklist(db, id, draft.doj);
 
-    return load(db, id, maySeeJoinerPay(caller));
+    return load(db, id);
   });
 }
 
@@ -346,9 +250,6 @@ export async function setTask(
   }
 
   return withTenant(caller, async (db) => {
-    if (!(await mayHandleJourney(db, caller, id))) {
-      throw new OnboardingError('that joiner is not on your team', 'forbidden');
-    }
     const j = await db.query(
       'SELECT status FROM onboarding_journey WHERE id = $1 FOR UPDATE', [id]);
     if (!j.rows[0]) throw new OnboardingError('no such onboarding journey', 'not_found');
@@ -370,7 +271,7 @@ export async function setTask(
     }
 
     await restatus(db, id);
-    return load(db, id, maySeeJoinerPay(caller));
+    return load(db, id);
   });
 }
 
@@ -396,9 +297,6 @@ export async function completeOnboarding(
   }
 
   return withTenant(caller, async (db) => {
-    if (!(await mayHandleJourney(db, caller, id))) {
-      throw new OnboardingError('that joiner is not on your team', 'forbidden');
-    }
     const { rows } = await db.query(
       `SELECT j.*, c.email AS candidate_email
          FROM onboarding_journey j
@@ -450,6 +348,6 @@ export async function completeOnboarding(
          FROM employee e WHERE e.id = $1`,
       [caller.employeeId, employeeId, id]);
 
-    return load(db, id, maySeeJoinerPay(caller));
+    return load(db, id);
   });
 }

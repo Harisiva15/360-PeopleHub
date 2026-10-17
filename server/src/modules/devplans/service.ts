@@ -19,7 +19,6 @@
  * and carrying the signature across would make endorsement mean nothing.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
@@ -168,7 +167,7 @@ export async function listDevPlans(
   f: DevPlanFilter = {},
 ): Promise<DevPlanRow[]> {
   const params: unknown[] = [];
-  const where: string[] = [employeeScope(caller, 'p.employee_id', params, 'devplans')];
+  const where: string[] = [employeeScope(caller, 'p.employee_id', params)];
   const outer: string[] = [];
   const bind = (v: unknown) => { params.push(v); return `$${params.length}`; };
 
@@ -236,7 +235,7 @@ async function actionsFor(
 
 export async function getDevPlan(caller: Caller, id: string): Promise<DevPlanDetail | null> {
   const params: unknown[] = [id];
-  const scope = employeeScope(caller, 'p.employee_id', params, 'devplans');
+  const scope = employeeScope(caller, 'p.employee_id', params);
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query<PlanRow>(
       `${PLAN_PROJECTION} WHERE p.id = $1 AND (${scope})`, params);
@@ -303,7 +302,7 @@ export async function devFocus(caller: Caller) {
 }
 
 export async function mentorLoad(caller: Caller) {
-  if (!reaches(caller, 'devplans', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new DevPlanError('Your role cannot see who is mentoring whom', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
@@ -330,7 +329,7 @@ export async function mentorLoad(caller: Caller) {
  * decorative, which is what an audit of unguarded functions turned up.
  */
 export async function mentorOptions(caller: Caller) {
-  const showLoad = reaches(caller, 'devplans', 'read', 'team');
+  const showLoad = caller.role !== 'employee';
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query<{
       id: string; name: string; designation: string; mentees: string;
@@ -354,7 +353,7 @@ export async function mentorOptions(caller: Caller) {
 
 /** The person whose plan it is, and an administrator. Not their manager. */
 const mayEdit = (caller: Caller, empId: string) =>
-  reaches(caller, 'devplans', 'read', 'all') || caller.employeeId === empId;
+  caller.role === 'admin' || caller.employeeId === empId;
 
 const validate = (d: Partial<DevPlanDraft>) => {
   if (d.aspiration !== undefined && !d.aspiration.trim()) {
@@ -378,7 +377,7 @@ export async function createDevPlan(caller: Caller, d: DevPlanDraft): Promise<De
    * on somebody's behalf sounds helpful and produces a document the person has
    * never read.
    */
-  if (empId !== caller.employeeId && !reaches(caller, 'devplans', 'read', 'all')) {
+  if (empId !== caller.employeeId && caller.role !== 'admin') {
     throw new DevPlanError('A development plan is written by the person it is about', 'forbidden');
   }
   validate(d);
@@ -488,10 +487,10 @@ export async function endorseDevPlan(caller: Caller, id: string): Promise<DevPla
     if (plan.employee_id === caller.employeeId) {
       throw new DevPlanError('You cannot endorse your own plan', 'forbidden');
     }
-    if (!reaches(caller, 'devplans', 'read', 'team')) {
+    if (caller.role === 'employee') {
       throw new DevPlanError('Only their manager can endorse this plan', 'forbidden');
     }
-    if (caller.hasReports) {
+    if (caller.role === 'manager') {
       const { rows: ok } = await db.query(
         `WITH RECURSIVE line AS (
            SELECT id FROM employee WHERE manager_id = $1
@@ -553,7 +552,7 @@ export async function setDevPlanReview(
   if (!on) throw new DevPlanError('Give the review a date', 'invalid');
   return withTenant(caller, async (db) => {
     const params: unknown[] = [id];
-    const scope = employeeScope(caller, 'employee_id', params, 'devplans');
+    const scope = employeeScope(caller, 'employee_id', params);
     const { rowCount } = await db.query(
       `UPDATE development_plan SET review_on = $${params.push(on)}
         WHERE id = $1 AND (${scope})`, params);

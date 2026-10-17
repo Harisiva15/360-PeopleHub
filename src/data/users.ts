@@ -88,7 +88,7 @@ export const USERS: UserAccount[] = [];
  * screens that are supposed to handle the others.
  */
 (function genUsers() {
-  const admins = ACTIVE().filter((e) => e.role === 'company_admin');
+  const admins = ACTIVE().filter((e) => e.role === 'admin');
   const actorId = () => (admins.length ? pick(admins).id : null);
 
   ACTIVE().forEach((e) => {

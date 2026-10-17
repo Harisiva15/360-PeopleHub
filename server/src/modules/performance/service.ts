@@ -21,7 +21,6 @@
  * thing a review conversation is about: who said what, and when.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -110,10 +109,10 @@ export interface Review {
 
 /** Everyone reads their own; a manager reads their tree; an admin reads all. */
 function scope(caller: Caller, column: string, params: unknown[]): string {
-  if (reaches(caller, 'performance', 'read', 'all')) return '';
+  if (caller.role === 'admin') return '';
   params.push(caller.employeeId);
   const p = `$${params.length}`;
-  if (!reaches(caller, 'performance', 'read', 'team')) return `${column} = ${p}`;
+  if (caller.role === 'employee') return `${column} = ${p}`;
   return `(${column} = ${p} OR ${column} IN (
      WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = ${p}
@@ -233,7 +232,7 @@ export async function addGoal(caller: Caller, draft: NewGoal): Promise<Goal> {
   const empId = draft.empId || caller.employeeId;
 
   return withTenant(caller, async (db) => {
-    if (empId !== caller.employeeId && !reaches(caller, 'performance', 'read', 'team')) {
+    if (empId !== caller.employeeId && caller.role === 'employee') {
       throw new PerformanceError('you can only set your own goals', 'forbidden');
     }
     const cycle = await currentCycleIn(db);
@@ -296,7 +295,7 @@ export async function setGoalProgress(
     const { rows } = await db.query(
       'SELECT employee_id FROM goal WHERE id = $1 FOR UPDATE', [goalId]);
     if (!rows[0]) throw new PerformanceError('no such goal', 'not_found');
-    if (rows[0].employee_id !== caller.employeeId && !reaches(caller, 'performance', 'read', 'team')) {
+    if (rows[0].employee_id !== caller.employeeId && caller.role === 'employee') {
       throw new PerformanceError('that goal is not yours', 'forbidden');
     }
 
@@ -561,7 +560,7 @@ export async function submitManagerReview(
   rating: number,
   comments: string,
 ): Promise<Review> {
-  if (!reaches(caller, 'performance', 'read', 'team')) {
+  if (caller.role === 'employee') {
     throw new PerformanceError('only a manager or admin may review someone', 'forbidden');
   }
   if (empId === caller.employeeId) {
@@ -610,7 +609,7 @@ export async function calibrateReview(
   empId: string,
   outcome: { rating: number; hike?: number; promoted?: boolean; potential?: number; pip?: boolean },
 ): Promise<Review> {
-  if (!reaches(caller, 'performance', 'read', 'all')) {
+  if (caller.role !== 'admin') {
     throw new PerformanceError('only an admin may calibrate a review', 'forbidden');
   }
   if (!Number.isInteger(outcome.rating) || outcome.rating < 1 || outcome.rating > 5) {

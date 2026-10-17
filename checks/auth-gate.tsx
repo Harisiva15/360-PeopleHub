@@ -187,7 +187,7 @@ for (const route of ALL_ROUTES) {
   const html = renderToStaticMarkup(
     <MemoryRouter initialEntries={['/' + route]}>
       <AuthProvider>
-        <AppProvider initialRole="company_admin">
+        <AppProvider initialRole="admin">
           <LayerProvider>
             {/* Exactly App's own composition — testing anything else proves nothing. */}
             <AuthGate><Routed /></AuthGate>

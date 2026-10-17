@@ -22,7 +22,6 @@
  * **`landlord_pan` is deliberately refused — see `ITEM_CODES`.**
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import {
@@ -116,7 +115,7 @@ const TO_REGIME: Record<string, Declaration['regime']> = { new: 'New', old: 'Old
 const METRO_SITES = new Set(['CHN', 'BLR', 'HYD', 'MUM', 'DEL', 'KOL']);
 
 function assertOwnOrAdmin(caller: Caller, empId: string): void {
-  if (reaches(caller, 'tax', 'read', 'all')) return;
+  if (caller.role === 'admin') return;
   if (caller.employeeId !== empId) {
     throw new TaxError('a declaration is only visible to its owner and finance', 'forbidden');
   }
@@ -235,7 +234,7 @@ export async function declarationFor(caller: Caller, empId: string): Promise<Dec
 
 /** Everyone's, keyed by employee. Finance's tracker reads this. */
 export async function allDeclarations(caller: Caller): Promise<Record<string, Declaration>> {
-  if (!reaches(caller, 'tax', 'read', 'all')) {
+  if (caller.role !== 'admin') {
     throw new TaxError('only finance may see every declaration', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
@@ -303,7 +302,7 @@ export interface TaxRow {
 
 /** The tracker across the workforce. Finance only. */
 export async function taxRows(caller: Caller): Promise<TaxRow[]> {
-  if (!reaches(caller, 'tax', 'read', 'all')) {
+  if (caller.role !== 'admin') {
     throw new TaxError('only finance may see the declaration tracker', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
@@ -471,7 +470,7 @@ export async function verifyDeclaration(
   caller: Caller,
   empId: string,
 ): Promise<Declaration> {
-  if (!reaches(caller, 'tax', 'approve', 'all') || !caller.employeeId) {
+  if (caller.role !== 'admin' || !caller.employeeId) {
     throw new TaxError('only finance may verify a declaration', 'forbidden');
   }
 

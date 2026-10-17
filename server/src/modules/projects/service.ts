@@ -41,7 +41,6 @@
  * leaves old ones resolving to a name.
  */
 
-import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -132,7 +131,7 @@ export async function listProjects(caller: Caller): Promise<Project[]> {
 
 /** Only an administrator shapes the project list. */
 function mayShape(caller: Caller, what: string): void {
-  if (!reaches(caller, 'planner', 'write', 'all')) {
+  if (caller.role !== 'admin') {
     throw new ProjectError(`only an admin may ${what}`, 'forbidden');
   }
 }
