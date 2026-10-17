@@ -93,8 +93,33 @@ const toRequest = (r: Record<string, unknown>): DocRequest => ({
 });
 
 /** HR and managers chase documents; an employee sees only their own. */
+/**
+ * May this caller chase somebody else's documents.
+ *
+ * **The odd one out among the five gates, and deliberately so.** The other four
+ * narrow from "all, or anybody with a report" to the manager layer's `team`.
+ * This one narrows to nothing, because that is what the table says:
+ *
+ *     documents: rule(SELF, SELF, ALL_RWA, SELF, ALL_RWA)
+ *                      |      |                  |
+ *                   employee  manager        finance_admin   -> all `own`
+ *
+ * The manager layer gets `own`, not `team`. So chasing a document — asking
+ * somebody for their PAN card, marking it received — is hr_admin's and
+ * company_admin's, and a manager cannot do it even for a direct report.
+ * `all || caller.hasReports` had given it to every manager in the company, for
+ * anybody in the company.
+ *
+ * If managers should chase their own joiners' paperwork, that is a grant on
+ * this module in the table, not a special case here.
+ */
 function mayChase(caller: Caller): boolean {
-  return reaches(caller, 'documents', 'read', 'all') || caller.hasReports;
+  return reaches(caller, 'documents', 'write', 'all');
+}
+
+/** Whose requests this caller may read: anybody's, or only their own. */
+function maySeeAllRequests(caller: Caller): boolean {
+  return reaches(caller, 'documents', 'read', 'all');
 }
 
 export async function listRequests(
@@ -107,7 +132,8 @@ export async function listRequests(
   if (q.journeyId) { params.push(q.journeyId); where.push(`r.journey_id = $${params.length}`); }
   if (q.empId) { params.push(q.empId); where.push(`r.employee_id = $${params.length}`); }
 
-  if (!mayChase(caller)) {
+  /* Reading is its own question: own, unless the caller reaches all. */
+  if (!maySeeAllRequests(caller)) {
     params.push(caller.employeeId);
     where.push(`r.employee_id = $${params.length}`);
   }
@@ -158,7 +184,7 @@ export async function requestJoinerDocuments(
   dueOn?: string,
 ): Promise<DocRequest[]> {
   if (!mayChase(caller)) {
-    throw new DocumentError('only a manager or admin may request documents', 'forbidden');
+    throw new DocumentError('only HR may request documents', 'forbidden');
   }
 
   return withTenant(caller, async (db) => {
@@ -189,7 +215,7 @@ export async function requestDocument(
            mandatory?: boolean; due?: string },
 ): Promise<DocRequest[]> {
   if (!mayChase(caller)) {
-    throw new DocumentError('only a manager or admin may request documents', 'forbidden');
+    throw new DocumentError('only HR may request documents', 'forbidden');
   }
   if (!draft.label?.trim()) throw new DocumentError('say which document', 'invalid');
   if (!draft.kind?.trim()) throw new DocumentError('a document needs a kind', 'invalid');
@@ -230,7 +256,7 @@ export async function setRequestStatus(
   note?: string,
 ): Promise<DocRequest> {
   if (!mayChase(caller)) {
-    throw new DocumentError('only a manager or admin may mark a document', 'forbidden');
+    throw new DocumentError('only HR may mark a document', 'forbidden');
   }
   if (!STATUSES.includes(status)) throw new DocumentError(`unknown status: ${status}`, 'invalid');
   if (status === 'rejected' && !note?.trim()) {

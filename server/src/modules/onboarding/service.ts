@@ -18,6 +18,7 @@
  */
 
 import { reaches } from '../../auth/can.ts';
+import { personInScope } from '../../tenancy/scope.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { provisionEmployee } from '../people/provision.ts';
@@ -147,8 +148,44 @@ async function restatus(db: TenantClient, id: string): Promise<void> {
 }
 
 /** HR and managers run onboarding; nobody else sees a joiner's CTC. */
+/**
+ * May this caller open onboarding at all.
+ *
+ * `reaches(..., 'team')`, not `all || caller.hasReports`. The two admit the
+ * same people today, and that is the only thing that made the old form look
+ * harmless: it granted *all-scope entry* to anybody with a direct report, and
+ * where the query behind it was unscoped the gate's breadth became the query's
+ * breadth. That is how every joiner's offered salary became visible to any
+ * manager in the company.
+ *
+ * The table gives the manager layer `onboarding` at team, so team is what the
+ * gate asks for. Entry only: which journeys come back is `journeyScope`, and
+ * which may be changed is `mayHandleJourney`.
+ */
 function mayOnboard(caller: Caller): boolean {
-  return reaches(caller, 'onboarding', 'read', 'all') || caller.hasReports;
+  return reaches(caller, 'onboarding', 'read', 'team');
+}
+
+/**
+ * May this caller change this particular journey?
+ *
+ * A journey belongs to whoever will manage the joiner, because the joiner
+ * usually has no employee row yet. So the line is walked over `manager_id`.
+ *
+ * A journey with no manager named is nobody's line, and only an all-scope
+ * caller may touch it.
+ */
+async function mayHandleJourney(
+  db: TenantClient,
+  caller: Caller,
+  journeyId: string,
+): Promise<boolean> {
+  const { rows } = await db.query<{ manager_id: string | null }>(
+    'SELECT manager_id FROM onboarding_journey WHERE id = $1', [journeyId]);
+  if (!rows[0]) return false;
+  const mgr = rows[0].manager_id;
+  if (mgr === null) return reaches(caller, 'onboarding', 'write', 'all');
+  return personInScope(db, caller, mgr, 'onboarding', 'write');
 }
 
 /** Whether this caller may see what a joiner is being paid. */
@@ -242,6 +279,21 @@ export async function createJourney(
   if (!draft.doj) throw new OnboardingError('the joiner needs a joining date', 'invalid');
 
   return withTenant(caller, async (db) => {
+    /*
+     * A manager starts a joiner on their own line, not on somebody else's.
+     *
+     * The journey does not exist yet, so the subject is the manager the draft
+     * names — defaulting to the caller, which is what a manager adding their
+     * own joiner means. An all-scope caller passes either way.
+     */
+    const forManager = draft.managerId ?? caller.employeeId;
+    if (!forManager) {
+      throw new OnboardingError('say who the joiner will report to', 'invalid');
+    }
+    if (!(await personInScope(db, caller, forManager, 'onboarding', 'write'))) {
+      throw new OnboardingError('you can only start a joiner on your own team', 'forbidden');
+    }
+
     const dept = draft.dept
       ? (await db.query('SELECT id FROM department WHERE code = $1', [draft.dept])).rows[0]?.id
       : null;
@@ -294,6 +346,9 @@ export async function setTask(
   }
 
   return withTenant(caller, async (db) => {
+    if (!(await mayHandleJourney(db, caller, id))) {
+      throw new OnboardingError('that joiner is not on your team', 'forbidden');
+    }
     const j = await db.query(
       'SELECT status FROM onboarding_journey WHERE id = $1 FOR UPDATE', [id]);
     if (!j.rows[0]) throw new OnboardingError('no such onboarding journey', 'not_found');
@@ -341,6 +396,9 @@ export async function completeOnboarding(
   }
 
   return withTenant(caller, async (db) => {
+    if (!(await mayHandleJourney(db, caller, id))) {
+      throw new OnboardingError('that joiner is not on your team', 'forbidden');
+    }
     const { rows } = await db.query(
       `SELECT j.*, c.email AS candidate_email
          FROM onboarding_journey j

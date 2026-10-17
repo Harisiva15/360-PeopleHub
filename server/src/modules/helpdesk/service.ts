@@ -350,7 +350,19 @@ const toArticle = (r: Record<string, unknown>): KbArticle => ({
 });
 
 export async function knowledgeBase(caller: Caller): Promise<KbArticle[]> {
-  const editor = reaches(caller, 'helpdesk', 'read', 'all') || caller.hasReports;
+  /*
+   * Who sees unpublished drafts: whoever may edit the knowledge base.
+   *
+   * The second of the five gates where "team" is not the answer, because a
+   * draft article has no team — it is editorial state, not somebody's record.
+   * The table gives the manager layer `helpdesk` write `own`, which is their
+   * own tickets and not the knowledge base:
+   *
+   *     helpdesk: rule(SELF, LINE, ALL_RWA, NO, ALL_RWA)   LINE = team/own/team
+   *
+   * `all || caller.hasReports` had shown every unpublished draft to any manager.
+   */
+  const editor = reaches(caller, 'helpdesk', 'write', 'all');
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
       `${KB_PROJECTION}

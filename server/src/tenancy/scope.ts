@@ -21,7 +21,7 @@
 
 import { reaches, scopeOf } from '../auth/can.ts';
 import type { Verb } from '../auth/policy.ts';
-import type { Caller } from './context.ts';
+import type { Caller, TenantClient } from './context.ts';
 
 export interface Scope {
   /** A SQL boolean expression. `TRUE` for an administrator. */
@@ -81,18 +81,48 @@ export function employeeScope(
 }
 
 /**
- * True where this caller could see that person at all.
+ * May this caller act on this person, under this module and verb?
  *
- * Nothing calls it. Left in place with the module it needs, rather than
-  * deleted in the middle of a sweep, so whoever next reaches for it gets the
-  * version that asks the policy.
+ * The three scopes, answered properly:
+ *
+ *     all    anybody
+ *     team   this caller's reporting line, to any depth — read from the tree
+ *     own    themselves, and only if the module grants them `own`
+ *
+ * Asynchronous because the team case cannot be answered any other way:
+ * whether somebody is on your line is a fact about `employee.manager_id`, not
+ * something a scope comparison can decide. `reachesPerson` in `auth/can.ts`
+ * returns false for that case deliberately and points here.
+ *
+ * This replaces a synchronous stub of the same intent that nothing called,
+ * and which silently refused every team case — the shape of guard that let
+ * four modules fall back on `|| caller.hasReports` instead.
  */
-export function withinScope(
+export async function personInScope(
+  db: TenantClient,
   caller: Caller,
   employeeId: string,
   module: string,
   verb: Verb = 'read',
-): boolean {
+): Promise<boolean> {
   if (reaches(caller, module, verb, 'all')) return true;
-  return caller.employeeId === employeeId;
+  if (caller.employeeId !== null && caller.employeeId === employeeId) {
+    return reaches(caller, module, verb, 'own');
+  }
+  /*
+   * Somebody else. Only the team scope can reach them, and only if they are
+   * actually on this caller's line — which is a question for the tree, not for
+   * a scope comparison. `reachesPerson` in auth/can.ts returns false here on
+   * purpose and says to come to the database; this is that.
+   */
+  if (!reaches(caller, module, verb, 'team')) return false;
+  if (!caller.employeeId) return false;
+  const r = await db.query(
+    `WITH RECURSIVE t AS (
+       SELECT id FROM employee WHERE manager_id = $1
+       UNION ALL SELECT c.id FROM employee c JOIN t ON c.manager_id = t.id
+     ) SELECT 1 FROM t WHERE id = $2`,
+    [caller.employeeId, employeeId],
+  );
+  return (r.rowCount ?? 0) > 0;
 }

@@ -23,7 +23,8 @@
  */
 
 import { reaches } from '../../auth/can.ts';
-import { employeeScope } from '../../tenancy/scope.ts';
+import { employeeScope, personInScope } from '../../tenancy/scope.ts';
+import type { Verb } from '../../auth/policy.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -278,30 +279,116 @@ const toInterview = (r: Record<string, unknown>): Interview => ({
 });
 
 /** Recruiters, hiring managers and admins see the pipeline; nobody else does. */
+/**
+ * May this caller open hiring at all.
+ *
+ * Read, at team, rather than `all || caller.hasReports`. The old form granted
+ * all-scope entry to anybody with a direct report, and the three listings below
+ * were unscoped, so every manager saw every requisition, candidate and
+ * interview in the company.
+ *
+ *     hiring: rule(NO, ['team', 'team', 'team'], ALL_RWA, NO, ALL_RWA)
+ *
+ * The manager layer holds team on all three verbs; an ordinary employee holds
+ * nothing, and finance_admin holds nothing either.
+ */
 function mayRecruit(caller: Caller): boolean {
-  return reaches(caller, 'hiring', 'read', 'all') || caller.hasReports;
+  return reaches(caller, 'hiring', 'read', 'team');
+}
+
+/**
+ * Which requisitions this caller may act on, as a SQL fragment.
+ *
+ * A requisition's line is its `hiring_manager_id` — the manager hiring for
+ * their own team. `recruiter_id` is the HR person running the search, which is
+ * a different relationship and not a scope.
+ *
+ * Returns '' for an all-scope caller, so HR and company_admin see everything
+ * exactly as before.
+ */
+function reqScope(caller: Caller, column: string, params: unknown[], verb: Verb = 'read'): string {
+  if (reaches(caller, 'hiring', verb, 'all')) return '';
+  if (!caller.employeeId) return 'FALSE';
+  if (!reaches(caller, 'hiring', verb, 'team')) return 'FALSE';
+  params.push(caller.employeeId);
+  const pt = `$${params.length}`;
+  return `(${column} = ${pt} OR ${column} IN (
+       WITH RECURSIVE t AS (
+         SELECT id FROM employee WHERE manager_id = ${pt}
+         UNION ALL SELECT c.id FROM employee c JOIN t ON c.manager_id = t.id
+       ) SELECT id FROM t))`;
+}
+
+/** Whether this caller may act on one requisition, by id. */
+async function mayTouchRequisition(
+  db: TenantClient,
+  caller: Caller,
+  requisitionId: string,
+  verb: Verb = 'write',
+): Promise<boolean> {
+  if (reaches(caller, 'hiring', verb, 'all')) return true;
+  const { rows } = await db.query<{ hiring_manager_id: string | null }>(
+    'SELECT hiring_manager_id FROM requisition WHERE id = $1', [requisitionId]);
+  if (!rows[0]) return false;
+  const mgr = rows[0].hiring_manager_id;
+  if (mgr === null) return false;
+  return personInScope(db, caller, mgr, 'hiring', verb);
+}
+
+/** The same question for a candidate, which hangs off a requisition. */
+async function mayTouchCandidate(
+  db: TenantClient,
+  caller: Caller,
+  candidateId: string,
+  verb: Verb = 'write',
+): Promise<boolean> {
+  if (reaches(caller, 'hiring', verb, 'all')) return true;
+  const { rows } = await db.query<{ requisition_id: string | null }>(
+    'SELECT requisition_id FROM candidate WHERE id = $1', [candidateId]);
+  if (!rows[0]) return false;
+  const req = rows[0].requisition_id;
+  if (req === null) return false;
+  return mayTouchRequisition(db, caller, req, verb);
 }
 
 export async function listRequisitions(caller: Caller): Promise<Requisition[]> {
   if (!mayRecruit(caller)) return [];
+  const params: unknown[] = [];
+  const mine = reqScope(caller, 'r.hiring_manager_id', params);
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query(`${REQ_PROJECTION} ORDER BY r.opened_on DESC`);
+    const { rows } = await db.query(
+      `${REQ_PROJECTION} ${mine ? `WHERE ${mine}` : ''} ORDER BY r.opened_on DESC`, params);
     return rows.map(toReq);
   });
 }
 
 export async function listCandidates(caller: Caller): Promise<Candidate[]> {
   if (!mayRecruit(caller)) return [];
+  /*
+   * A candidate's line is the line of the requisition they applied to. The
+   * projection does not join it, so the scope reads it in place rather than
+   * the join being added for one clause.
+   */
+  const params: unknown[] = [];
+  const mine = reqScope(
+    caller,
+    '(SELECT hiring_manager_id FROM requisition WHERE id = c.requisition_id)',
+    params,
+  );
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query(`${CAND_PROJECTION} ORDER BY c.applied_on DESC`);
+    const { rows } = await db.query(
+      `${CAND_PROJECTION} ${mine ? `WHERE ${mine}` : ''} ORDER BY c.applied_on DESC`, params);
     return rows.map(toCand);
   });
 }
 
 export async function listInterviews(caller: Caller): Promise<Interview[]> {
   if (!mayRecruit(caller)) return [];
+  const params: unknown[] = [];
+  const mine = reqScope(caller, 'r.hiring_manager_id', params);
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query(`${IV_PROJECTION} ORDER BY i.scheduled_at DESC`);
+    const { rows } = await db.query(
+      `${IV_PROJECTION} ${mine ? `WHERE ${mine}` : ''} ORDER BY i.scheduled_at DESC`, params);
     return rows.map(toInterview);
   });
 }
@@ -374,6 +461,9 @@ export async function openRequisition(
     throw new HiringError('only a manager or admin may open a requisition', 'forbidden');
   }
   if (!draft.title?.trim()) throw new HiringError('a requisition needs a title', 'invalid');
+  if (!draft.hiringManagerId) {
+    throw new HiringError('a requisition needs a hiring manager', 'invalid');
+  }
   const openings = Number(draft.openings);
   if (!Number.isInteger(openings) || openings < 1) {
     throw new HiringError('a requisition needs at least one opening', 'invalid');
@@ -384,6 +474,14 @@ export async function openRequisition(
   }
 
   return withTenant(caller, async (db) => {
+    /*
+     * A manager opens a requisition for their own line, not somebody else's.
+     * The subject is the hiring manager the draft names; an all-scope caller
+     * passes whoever that is.
+     */
+    if (!(await personInScope(db, caller, draft.hiringManagerId, 'hiring', 'write'))) {
+      throw new HiringError('you can only open a requisition for your own team', 'forbidden');
+    }
     const dept = await db.query('SELECT id FROM department WHERE code = $1', [draft.dept]);
     if (!dept.rows[0]) throw new HiringError(`no such department: ${draft.dept}`, 'invalid');
 
@@ -455,6 +553,9 @@ export async function submitCandidate(
   if (!draft.email?.trim()) throw new HiringError('a submission needs an email address', 'invalid');
 
   return withTenant(caller, async (db) => {
+    if (!(await mayTouchRequisition(db, caller, draft.reqId, 'write'))) {
+      throw new HiringError('that requisition is not on your team', 'forbidden');
+    }
     const req = await db.query(
       'SELECT status, openings, filled FROM requisition WHERE id = $1', [draft.reqId]);
     if (!req.rows[0]) throw new HiringError('no such requisition', 'not_found');
@@ -510,7 +611,12 @@ export async function moveCandidate(
     throw new HiringError(`that is not a pipeline stage: ${stage}`, 'invalid');
   }
 
-  return withTenant(caller, (db) => moveCandidateIn(db, candId, stage));
+  return withTenant(caller, async (db) => {
+    if (!(await mayTouchCandidate(db, caller, candId, 'write'))) {
+      throw new HiringError('that candidate is not on your team', 'forbidden');
+    }
+    return moveCandidateIn(db, candId, stage);
+  });
 }
 
 /**
@@ -609,6 +715,9 @@ export async function scheduleInterview(
   if (!MODES.has(mode)) throw new HiringError(`unknown interview mode: ${mode}`, 'invalid');
 
   return withTenant(caller, async (db) => {
+    if (!(await mayTouchCandidate(db, caller, draft.candId, 'write'))) {
+      throw new HiringError('that candidate is not on your team', 'forbidden');
+    }
     const cand = await db.query(
       'SELECT requisition_id, stage FROM candidate WHERE id = $1', [draft.candId]);
     if (!cand.rows[0]) throw new HiringError('that candidate is not on file', 'not_found');
@@ -716,6 +825,9 @@ export async function makeOffer(caller: Caller, draft: NewOffer): Promise<Candid
   if (!draft.designation?.trim()) throw new HiringError('an offer needs a designation', 'invalid');
 
   return withTenant(caller, async (db) => {
+    if (!(await mayTouchCandidate(db, caller, draft.candId, 'write'))) {
+      throw new HiringError('that candidate is not on your team', 'forbidden');
+    }
     const cand = await db.query('SELECT stage FROM candidate WHERE id = $1', [draft.candId]);
     if (!cand.rows[0]) throw new HiringError('that candidate is not on file', 'not_found');
     if (cand.rows[0].stage === 'rejected') {
@@ -808,6 +920,9 @@ export async function offerLetter(caller: Caller, candId: string): Promise<strin
     throw new HiringError('only a manager or admin may read an offer letter', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
+    if (!(await mayTouchCandidate(db, caller, candId, 'read'))) {
+      throw new HiringError('that candidate is not on your team', 'forbidden');
+    }
     const { rows } = await db.query(
       `SELECT o.letter_body, o.designation, o.annual_ctc, o.currency, o.joining_on,
               c.full_name, t.display_name AS company
@@ -844,6 +959,9 @@ export async function releaseOffer(caller: Caller, candId: string): Promise<Cand
   }
 
   return withTenant(caller, async (db) => {
+    if (!(await mayTouchCandidate(db, caller, candId, 'write'))) {
+      throw new HiringError('that candidate is not on your team', 'forbidden');
+    }
     const { rows } = await db.query(
       `SELECT o.id, o.status, o.designation, o.annual_ctc, o.currency, o.joining_on,
               c.full_name, t.display_name AS company
@@ -904,6 +1022,9 @@ export async function respondToOffer(
   }
 
   return withTenant(caller, async (db) => {
+    if (!(await mayTouchCandidate(db, caller, candId, 'write'))) {
+      throw new HiringError('that candidate is not on your team', 'forbidden');
+    }
     const { rows } = await db.query(
       'SELECT id, status FROM offer WHERE candidate_id = $1 FOR UPDATE', [candId]);
     if (!rows[0]) throw new HiringError('that candidate has no offer', 'not_found');
@@ -943,6 +1064,8 @@ export async function requisitionTracker(caller: Caller): Promise<ReqActivity[]>
   if (!mayRecruit(caller)) {
     throw new HiringError('only a manager or admin may see the tracker', 'forbidden');
   }
+  const params: unknown[] = [];
+  const mine = reqScope(caller, 'r.hiring_manager_id', params);
 
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
@@ -994,7 +1117,8 @@ export async function requisitionTracker(caller: Caller): Promise<ReqActivity[]>
              JOIN candidate c2 ON c2.id = o2.candidate_id
             WHERE c2.requisition_id = r.id
          ) o ON true
-        ORDER BY (r.status = 'open') DESC, r.opened_on DESC`);
+        ${mine ? `WHERE ${mine}` : ''}
+        ORDER BY (r.status = 'open') DESC, r.opened_on DESC`, params);
 
     return rows.map((r) => ({
       reqId: r.id as string,

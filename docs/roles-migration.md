@@ -558,6 +558,96 @@ read from the reporting tree rather than declared when their account is made.
 All 36 suites now pass.
 
 ---
+## The five manager gates
+
+Each was written `reaches(caller, <module>, 'read', 'all') || caller.hasReports`.
+That grants **all-scope entry** to anybody with one direct report, and where
+the query behind the gate was unscoped the gate's breadth became the query's
+breadth. All five now match the table.
+
+### What the table actually says, which is not the same for all five
+
+| gate | module row | the manager layer gets |
+|---|---|---|
+| `onboarding/mayOnboard` | `rule(NO, ['team','team','none'], …)` | team read and write |
+| `exits/mayHandle` | `rule(SELF, ['team','none','none'], …)` | team read, **no write** |
+| `hiring/mayRecruit` | `rule(NO, ['team','team','team'], …)` | team on all three verbs |
+| `documents/mayChase` | `rule(SELF, SELF, …)` | **own** — not team |
+| `helpdesk` (knowledge base) | `rule(SELF, LINE, …)` | write **own** — their tickets, not the KB |
+
+So three confine a manager to their team, and two take the act away:
+
+- **documents** — chasing a document is HR's. A manager cannot request one
+  even from a direct report, because the table gives the layer `own`. If they
+  should be able to, that is a grant on the module, not a special case in the
+  gate.
+- **helpdesk** — an unpublished knowledge-base article is editorial state and
+  has no team to belong to, so drafts are visible to whoever reaches
+  `helpdesk` write all. The manager layer's `own` is their own tickets.
+
+### exits had an approved decision that had never reached the code
+
+The table gives the manager layer `exit` write `none` — the decision that a
+manager raises a *request* and HR actions it. Every write in the module was
+gated on `mayHandle`, the read gate, so a manager could raise an exit, sign
+off clearance and record an interview on **anybody in the company**. There is
+now a separate `mayRecordExit` asking for `exit` write all.
+
+The request flow that would give a manager the act back needs a pending state
+the exit record does not have, so it stays on the backlog.
+
+### The new helper
+
+`tenancy/scope.ts` gains `personInScope(db, caller, employeeId, module, verb)`,
+which answers all three scopes properly — the team case by walking
+`employee.manager_id`, which is the only way it can be answered.
+`reachesPerson` in `auth/can.ts` returns false for that case on purpose and
+says to come to the database; this is that. It replaces a synchronous stub of
+the same intent that nothing called and that silently refused every team case.
+
+Hiring needed two more, because a hiring record's line is not an employee's:
+a requisition belongs to its `hiring_manager_id` (not its `recruiter_id`, which
+is the HR person running the search), a candidate to its requisition, and an
+interview to its requisition. `reqScope` is the SQL fragment and
+`mayTouchRequisition` / `mayTouchCandidate` the per-record checks.
+
+### The checks, and what they do and do not catch
+
+`server/scripts/manager-gates.test.mjs` (`check:managergates`). A scratch
+tenant with a manager, a direct report and an outsider; every gate asks the
+same two questions.
+
+Reverting each change one at a time:
+
+| revert | caught |
+|---|---|
+| onboarding per-journey check removed | yes |
+| exit writes back on the read gate | yes |
+| hiring per-requisition check removed | yes |
+| `mayChase` back to `all || hasReports` | yes |
+| helpdesk editor back to `all || hasReports` | yes |
+| `mayOnboard` back to `all || hasReports` | **no** |
+| `mayHandle` back to `all || hasReports` | **no** |
+| `mayRecruit` back to `all || hasReports` | **no** |
+
+The three misses are correct, and the reason is worth keeping. Under the union
+model anybody with reports picks up the manager layer, and that layer grants
+`team` in exactly those three modules — so `reaches(…, 'team')` and
+`all || caller.hasReports` admit **the same callers** there. For those three
+the gate change is a clarity fix, not a security fix; the confinement is the
+scope behind it, and that is what the suite catches.
+
+Where the gate *was* load-bearing is documents and helpdesk, because the layer
+grants `own` there rather than `team` — and both of those are caught.
+
+### One fixture changed
+
+`kb.test.mjs` asserted "but whoever may edit it still does" using a *manager*
+as the editor. The assertion is unchanged; the fixture is now an `hr_admin`,
+who is actually an editor, plus a new assertion that a manager is not. The old
+fixture encoded the old model rather than testing the new one.
+
+---
 ## The local database suites
 
 All three asked for are green, and 25 of the 26 database-backed suites pass

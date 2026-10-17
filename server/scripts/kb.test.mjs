@@ -142,8 +142,20 @@ try {
   const asEmployee = await knowledgeBase(caller('employee'));
   ok('  and an employee no longer sees it', !asEmployee.some((x) => x.id === a.id),
     'an unpublished article is a draft; a draft is not company policy yet');
+  /*
+   * An editor, which is hr_admin — not a manager.
+   *
+   * The table gives the manager layer `helpdesk` write `own`, meaning their own
+   * tickets, not the knowledge base. A draft is editorial state and has no
+   * team, so "whoever may edit it" is whoever reaches helpdesk write all. The
+   * assertion is unchanged; the fixture is now somebody it is actually true of.
+   */
+  const asEditor = await knowledgeBase(caller('hr_admin'));
+  ok('  but whoever may edit it still does', asEditor.some((x) => x.id === a.id));
   const asManager = await knowledgeBase(caller('employee', true));
-  ok('  but whoever may edit it still does', asManager.some((x) => x.id === a.id));
+  ok('  and a manager does not, having no editorial grant',
+    !asManager.some((x) => x.id === a.id),
+    'helpdesk manager write is own — their tickets, not the knowledge base');
 
   await updateArticle(caller('company_admin'), a.id, { published: true });
   ok('  and publishing it again brings it back',
