@@ -9,6 +9,11 @@ and this needs fixing.
 
 ---
 
+> **What comes after this:** `docs/roadmap.md` holds phases 0–7 (storage,
+> user management, removing seed data, branding, photos, PDFs, document
+> requests, projects) and every decision taken on them. Phase 1 is gated on
+> steps B and C of this document.
+
 ## The model
 
 ```
