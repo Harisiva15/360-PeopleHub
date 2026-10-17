@@ -187,14 +187,33 @@ is never echoed.
 ### 1.2 — Three checks, in order
 
 1. **`pg_dump` exited 0.** A version mismatch says so explicitly.
-2. **The last line is `-- PostgreSQL database dump complete`.** If it is not,
-   the file is truncated — delete it and start again. A partial dump with a zero
-   exit is the thing worth ruling out, which is what this check is for.
+2. **The completion marker is present.** Check for it by name, not by position:
+
+   ```
+   grep -c "PostgreSQL database dump complete" "$OUT"   # expect 1
+   ```
+
+   It is **not** the last line with pg_dump 17.x, which appends a
+   `\unrestrict <nonce>` line after it — a per-dump random token that stops a
+   hostile dump smuggling psql meta-commands past you. Harmless, and not a
+   credential, but it means a "last line is the marker" check fails on a
+   perfectly good dump. The marker sits four non-empty lines from the end.
+
+   A partial dump with a zero exit is the thing worth ruling out, which is what
+   this check is for.
 3. **The size is plausible.** Three users, so expect roughly **100 KB – 5 MB**.
    Under ~20 KB means it dumped almost nothing: wrong database, or a role that
    cannot read the tables.
 
    size: ______________ bytes    file: ______________________________
+
+   **Run on 2026-10-17** — exit 0, 651,805 bytes, 16,952 lines, marker present.
+   162 COPY blocks of which 53 carry rows, 710 data rows in total, and
+   `schema_migration` holding 55 rows: 0001–0055 applied, 0056 not, which is
+   what a pre-0056 backup should look like. Three rows each in
+   `tenant_membership`, `employee` and `auth.users`, as expected. Written to
+   `~/pg-backups/backup-pre-0056-20261017-1115.sql` — outside the repo and
+   outside OneDrive, and `git status --untracked-files=all` stayed clean.
 
 Then confirm it is where it should be, and invisible to git:
 
