@@ -90,7 +90,7 @@ const PROJECTION = `
         FROM onboarding_task ot WHERE ot.journey_id = j.id
     ) t ON true`;
 
-const toJourney = (r: Record<string, unknown>): Onboarding => ({
+const toJourney = (r: Record<string, unknown>, showPay: boolean): Onboarding => ({
   id: r.id as string,
   candId: (r.candidate_id as string) ?? '',
   name: r.full_name as string,
@@ -101,7 +101,13 @@ const toJourney = (r: Record<string, unknown>): Onboarding => ({
   doj: r.joining_on as string,
   managerId: (r.manager_id as string) ?? '',
   buddyId: (r.buddy_id as string) ?? '',
-  ctc: r.annual_ctc === null ? 0 : Number(r.annual_ctc),
+  /*
+   * A joiner's offered CTC is compensation data, so it is compensation's to
+   * grant — not onboarding's. Running an onboarding checklist does not come
+   * with the salary attached, and the manager layer holds onboarding without
+   * holding any compensation at all.
+   */
+  ctc: showPay && r.annual_ctc !== null ? Number(r.annual_ctc) : 0,
   status: TO_STATUS[r.status as string] ?? 'Pre-boarding',
   bgv: (r.background_check as string) ?? 'not_started',
   tasks: (r.tasks as Record<string, unknown>[]).map((t) => ({
@@ -115,10 +121,10 @@ const toJourney = (r: Record<string, unknown>): Onboarding => ({
   })),
 });
 
-async function load(db: TenantClient, id: string): Promise<Onboarding> {
+async function load(db: TenantClient, id: string, showPay: boolean): Promise<Onboarding> {
   const { rows } = await db.query(`${PROJECTION} WHERE j.id = $1`, [id]);
   if (!rows[0]) throw new OnboardingError('no such onboarding journey', 'not_found');
-  return toJourney(rows[0]);
+  return toJourney(rows[0], showPay);
 }
 
 /**
@@ -145,11 +151,48 @@ function mayOnboard(caller: Caller): boolean {
   return reaches(caller, 'onboarding', 'read', 'all') || caller.hasReports;
 }
 
+/** Whether this caller may see what a joiner is being paid. */
+const maySeeJoinerPay = (caller: Caller): boolean =>
+  reaches(caller, 'compensation', 'read', 'all');
+
+/**
+ * Which journeys this caller may see.
+ *
+ * `null` means none. The listing had no scope clause at all: `mayOnboard`
+ * admits anybody with reports, and every journey in the tenant was then
+ * returned to them — CTC included. The policy gives the manager layer
+ * `onboarding` read *team*, so the clause below is what that scope was always
+ * meant to mean.
+ *
+ * A journey hangs off `manager_id` rather than off an employee row, because its
+ * subject is a joiner who usually has no employee record yet. So the subtree is
+ * walked over the journey's manager, not over the joiner.
+ */
+function journeyScope(caller: Caller): { sql: string; params: unknown[] } | null {
+  if (reaches(caller, 'onboarding', 'read', 'all')) return { sql: 'TRUE', params: [] };
+  if (!caller.employeeId || !reaches(caller, 'onboarding', 'read', 'team')) return null;
+  return {
+    sql: `(j.manager_id = $1 OR j.manager_id IN (
+            WITH RECURSIVE reports AS (
+              SELECT id FROM employee WHERE manager_id = $1
+              UNION ALL
+              SELECT c.id FROM employee c JOIN reports r ON c.manager_id = r.id
+            )
+            SELECT id FROM reports
+          ))`,
+    params: [caller.employeeId],
+  };
+}
+
 export async function listOnboarding(caller: Caller): Promise<Onboarding[]> {
   if (!mayOnboard(caller)) return [];
+  const scope = journeyScope(caller);
+  if (!scope) return [];
+  const pay = maySeeJoinerPay(caller);
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query(`${PROJECTION} ORDER BY j.joining_on DESC`);
-    return rows.map(toJourney);
+    const { rows } = await db.query(
+      `${PROJECTION} WHERE ${scope.sql} ORDER BY j.joining_on DESC`, scope.params);
+    return rows.map((r) => toJourney(r, pay));
   });
 }
 
@@ -235,7 +278,7 @@ export async function createJourney(
      */
     await openJoinerChecklist(db, id, draft.doj);
 
-    return load(db, id);
+    return load(db, id, maySeeJoinerPay(caller));
   });
 }
 
@@ -272,7 +315,7 @@ export async function setTask(
     }
 
     await restatus(db, id);
-    return load(db, id);
+    return load(db, id, maySeeJoinerPay(caller));
   });
 }
 
@@ -349,6 +392,6 @@ export async function completeOnboarding(
          FROM employee e WHERE e.id = $1`,
       [caller.employeeId, employeeId, id]);
 
-    return load(db, id);
+    return load(db, id, maySeeJoinerPay(caller));
   });
 }

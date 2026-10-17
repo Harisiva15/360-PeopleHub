@@ -354,7 +354,16 @@ export async function setClearance(
  * does not change when a leave balance is corrected next month.
  */
 export async function settleExit(caller: Caller, exitId: string): Promise<ExitRecord> {
-  if (!reaches(caller, 'exit', 'read', 'all')) {
+  /*
+   * `approve`, not `read`. Settling writes money — salary payable, tax
+   * deducted, net payable — and gating that on who may *read* every exit meant
+   * read-only visibility of the exit list carried the authority to pay one out.
+   * It grants the same three roles today, because the table happens to give
+   * approve-all to exactly the roles that have read-all here; the verb is the
+   * part that was wrong, and the policy already says settlement is finance's
+   * approval rather than its write.
+   */
+  if (!reaches(caller, 'exit', 'approve', 'all')) {
     throw new ExitError('only an admin may settle an exit', 'forbidden');
   }
 

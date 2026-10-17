@@ -281,6 +281,105 @@ read `MIGRATE_DATABASE_URL` from `.env` — `seed.mjs`, `retention.mjs`,
 value.
 
 ---
+## The pay-data census
+
+The sweep turned `caller.role === 'admin'` into a policy question, and where
+it had to choose a module it took the one from the file's own directory. For
+pay that is the wrong question: a salary read from `modules/employees` is
+compensation's to grant, not the directory's.
+
+Five instances, all on this branch, all in `modules/employees/service.ts`:
+
+| site | was | now |
+|---|---|---|
+| `maySeePay` | `employees` read all | `compensation` read all |
+| `listVisibleEmployees` | passed `employees` read all as the pay flag | `maySeePay(caller)` |
+| `listExitedEmployees` | pay flag hardcoded `true` | `maySeePay(caller)` |
+| `getTeam` | passed `employees` read all as the pay flag | `maySeePay(caller)` |
+| `setEmployeeRole` | `employees` **read** all | `users` **write** all |
+
+None of the first four was an exposure, and the reason is worth writing down:
+exactly the three administrative roles hold `employees` read all, and exactly
+the same three hold `compensation` read all. The two sets coincide, so no test
+that compared role names could have seen the difference. What was wrong was the
+*question*, and it stops being equivalent the moment anybody is given the
+directory without the payroll. `check:payvisibility` asserts the coincidence
+explicitly, so the day it stops holding, something fails.
+
+`setEmployeeRole` is the exception and was a real escalation path: gated on who
+may *read* the directory, hr_admin and finance_admin could change anybody's
+role, including promoting an account to company_admin. Now `users` write all —
+company_admin alone, which is the approved rule. `mayAssignRole` is the finer
+test and is still not wired in, because `Employee['role']` carries the old
+three values; that lands with the API vocabulary change.
+
+### Onboarding, which was a real exposure
+
+`listOnboarding` ran its projection with **no scope clause at all**, and
+`mayOnboard` admits anybody with a direct report. Every onboarding journey in
+the tenant came back, `annual_ctc` included. The projection carries the
+joiner's offered CTC and the manager layer holds no compensation grant
+whatsoever.
+
+This one is **not** branch-only. On main, `mayOnboard` is
+`caller.role === 'admin' || caller.role === 'manager'` and the listing is
+equally unscoped, so any holder of the `manager` role sees every joiner's CTC.
+It is not reachable in production today only because none of the three live
+users holds `manager`. On this branch the layer is derived from the reporting
+tree, so one direct report would have been enough.
+
+Fixed in two places: `journeyScope` applies the `team` scope the policy always
+meant, walking the subtree over `j.manager_id` because a joiner usually has no
+employee row yet; and `toJourney` takes a pay flag set from `compensation` read
+all.
+
+### What main was right about
+
+`maySeePay` on main is correct. Both copies read
+`caller.role === 'admin' || own`, which in the three-role model is exactly
+"an administrator, or the person themselves". The pay-gate defect is entirely
+a product of the sweep.
+
+### The tools
+
+`scripts/pay-census.mjs` (`check:paycensus`) finds every pay read, walks the
+call graph to the nearest gating ancestor along *every* path, and fails if any
+path resolves to a non-pay module. Reviewed exceptions live in a `REVIEWED` map
+with the argument for each, so a new one is a finding rather than a silence.
+It also asserts that a mapper handed a pay flag consults it on every pay field
+taken from the row — the invariant that the call-graph half structurally cannot
+see.
+
+Four bugs in the census itself, each found by reverting a real fix and checking
+it went red:
+
+- it stopped at the first gating ancestor it liked, so a read reachable from
+  both a correct and an incorrect gate looked clean — which hid the very bug it
+  was built to find;
+- `db.query(...)` matched the module-level `query` helper, making every service
+  that runs SQL a caller of the directory mapper;
+- an `interface` body ended at its first `;`, so `ctc: number` in a type
+  declaration counted as a read;
+- bare function names matched across the whole tree, attributing an onboarding
+  salary read to a gate in helpdesk.
+
+`scripts/pay-visibility.test.mjs` (`check:payvisibility`) is the behavioural
+half: given a row with every pay field populated, the mapper must emit nothing
+for a caller who may not see pay, and the policy must give no employee —
+with or without reports — any compensation read.
+
+Reverting each of the five fixes one at a time: four of five are caught by
+`check:paycensus`, and the mapper-flag revert too. Two things it does **not**
+catch, stated so nobody assumes otherwise:
+
+1. `setEmployeeRole` reaching a non-pay gate — correctly, since after the
+   call-graph fix it reaches no pay read. It is a privilege finding and belongs
+   in `role-gates.ts`.
+2. A listing *losing its scope clause*, which is how the onboarding exposure
+   happened in the first place. That is a row-scope invariant, not a pay-gate
+   one, and nothing asserts it yet. **It should go in `role-gates.ts`.**
+
+---
 ## Tools
 
 | | |
@@ -289,6 +388,9 @@ value.
 | `server/scripts/sql-role-sweep.mjs` | role mentions inside SQL strings; exits non-zero on a hard-coded old value |
 | `checks/pay-routes.ts` | 33 pay routes, their module and verb, and what each role gets |
 | `checks/roles.ts` | menu vs policy, the manager layer verb by verb, the employee baseline, fail-closed |
+| `server/scripts/pay-census.mjs` | every pay read, the gate on every path to it, and whether mappers use their pay flag |
+| `server/scripts/pay-visibility.test.mjs` | the behavioural half: no pay field for anyone else |
+| `server/scripts/local-only.mjs` | refuses a non-local database; `check:localonly` tests it |
 | `checks/role-gates.ts` | **not written yet** — see Left (4) |
 
 Delete the two sweep scripts once `role-gates.ts` is what keeps the comparisons
