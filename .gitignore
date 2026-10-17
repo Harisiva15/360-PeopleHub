@@ -38,3 +38,7 @@ scratch/
 # tree instead: a cluster's data directory must never be stageable.
 .data/
 pgtest/
+
+# Every dotenv variant, not just .env and .env.local.
+.env.*
+!.env.example

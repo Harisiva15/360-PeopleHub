@@ -234,6 +234,53 @@ Several differ from their directory — `config`→`settings`, `exits`→`exit`,
 
 ---
 
+## Keeping the tests off production
+
+Done before the rest of task 0, because the suites that prove the cutover are
+the same suites that could have performed it on the live tenant.
+
+Every database-backed suite in `server/scripts` reads `MIGRATE_DATABASE_URL`,
+and every one of them writes — employees, invitations, schedules, payroll runs.
+That variable sat in `server/.env`, which `loadEnv()` loads for anything that
+asks. Nothing stood between `npm run check:invite` and production except the
+person running it remembering to override the variable first.
+
+It never did fire, and the reason is not reassuring: both URLs in `.env` are
+truncated to `postgresql://user.ref:password`, with no `@host:port/database` at
+all, so the suites died on `Invalid URL` instead of connecting. Luck, not a
+safeguard — and the same truncation is why `MIGRATE_DATABASE_URL` could not
+have run a migration either.
+
+Two layers now:
+
+1. **`server/scripts/local-only.mjs`** — `assertLocalDatabase()` exits unless
+   every connection string it is given resolves to `localhost`, `127.0.0.1`,
+   `::1` or a Unix socket. It prints the variable name and the host, never the
+   URL, the user or the password. Inserted into **27 suites** by
+   `add-local-guard.mjs`; tested by `check:localonly`, which runs first in the
+   server `check` chain.
+
+   The host is parsed by hand on purpose. `new URL` throws on a malformed
+   string and puts the whole string — password included — into `error.input`,
+   which is how a password got printed in this project once already. Two
+   commands in `db/MIGRATION_RUNBOOK.md` used exactly that pattern to "confirm
+   the target without printing a credential"; both now call `hostOf`.
+
+2. **`server/.env.migrate`** — the production migration credential moved out of
+   `.env` into a file nothing loads automatically. `scripts/env.mjs` exports a
+   separate `loadMigrateEnv()`, and only `migrate.mjs --production` calls it.
+   Without the flag the runner refuses any non-local host; with it, it prints
+   the host and makes the operator type that host back. Git-ignored via
+   `.env.*` with `!.env.example`.
+
+Consequence worth knowing: six tools that are allowed to reach production and
+read `MIGRATE_DATABASE_URL` from `.env` — `seed.mjs`, `retention.mjs`,
+`inspect.mjs`, `verify-backfill.mjs`, `verify-isolation.mjs`, `ci-bootstrap.mjs`
+— no longer find it there. They need it exported in the shell, or the same
+`--production` treatment. CI is unaffected: the workflow sets its own localhost
+value.
+
+---
 ## Tools
 
 | | |
@@ -253,4 +300,6 @@ from coming back.
 
 Nothing is pushed. No migration runs against production without a dry-run
 approved first, and a fresh backup before any step. `.env` values are never
-printed.
+printed — and as of task 0 the tooling enforces that rather than relying on it:
+the suites refuse a non-local host, and the only script that can reach
+production needs a flag, prints the host and asks.

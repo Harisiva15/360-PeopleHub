@@ -35,6 +35,11 @@ import pg from 'pg';
 
 import { loadEnv } from './env.mjs';
 
+import { assertLocalDatabase } from './local-only.mjs';
+
+/* This suite writes. It refuses anything but a local database. */
+assertLocalDatabase();
+
 loadEnv();
 
 if (!process.env.MIGRATE_DATABASE_URL || !process.env.DATABASE_URL) {
