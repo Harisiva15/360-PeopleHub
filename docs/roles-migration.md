@@ -499,6 +499,40 @@ Writing `role !== 'employee'` in a service would itself have broken this rule,
 which is how `grantNeedsAuthority` came to live in `policy.ts`: the comparison
 is against the vocabulary, so it belongs where the vocabulary is.
 
+### Both halves, now tested
+
+`server/scripts/last-admin.test.mjs` (`check:lastadmin`). There was no
+coverage of this invariant at all before — no suite, and no database trigger
+behind it either, so the service guard was the whole safeguard and nothing
+checked it.
+
+It proves four things, each against a scratch tenant:
+
+1. with two administrators, one may be demoted; the last one may not;
+2. the last one may not be deactivated either;
+3. an administrator spelled `admin` **counts** — demoting the other one is
+   allowed because the count finds the legacy row, and the legacy row is then
+   protected in turn under the old name;
+4. nobody removes their own role, with another administrator in place, so the
+   self clause is what refuses rather than the count.
+
+Three reverts, each confirmed to make it fail: narrowing `ADMIN_ROLES` to
+`company_admin` alone, deleting the demotion count, and putting the demotion
+guard back to self-only.
+
+**One thing worth knowing about reaching the count at all.** The demotion
+count only fires when the caller is not the account being demoted — otherwise
+the self clause goes first — and the caller has to be an administrator to call
+`updateUser`. So the only caller who can reach it is an administrator whose
+own membership is not active. The scratch tenant's membership is `invited`,
+which makes it exactly that, and it is a real situation rather than a
+contrivance: an invited administrator, or one whose membership was
+deactivated while their token still says company_admin.
+
+The suite creates rows in `auth.users`, which the other suites avoid. They are
+plain rows in a local table, not Supabase accounts — only `id` is required —
+and they are deleted by hand, because the tenant cascade runs the other way.
+The census counts them so a leak shows.
 ### Still open: one expectation, awaiting approval
 
 `hierarchy.test.mjs:225` asserts `mgrAccount.role === 'manager'` after creating
