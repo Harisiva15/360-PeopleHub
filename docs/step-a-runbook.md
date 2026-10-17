@@ -15,46 +15,56 @@ rest for the backup and the checks either side.
 
 ## 0 — Before you start
 
-### 0.1 — The migration credential (BLOCKED as of 2026-10-17)
+### 0.1 — The migration credential (STILL BLOCKED as of 2026-10-17)
 
-`server/.env.migrate` now parses, and the host is reachable, but **it does not
-authenticate**:
+`server/.env.migrate` is structurally correct and the host is reachable, but it
+**does not authenticate**. The password has been changed once since the first
+attempt and the new one is rejected as well.
 
 | check | result |
 |---|---|
 | parses | yes |
-| port | 5432 |
+| shape | `postgresql://postgres:<42>@db.<ref>.supabase.co:5432/postgres` — one `@`, no quotes, no CR |
+| port | **5432** |
 | database | `postgres` |
-| host | `db.<ref>.supabase.co` — the **direct** host, not the session pooler |
-| DNS | IPv6 only, no A record. This machine has global IPv6 and working egress, so it resolves and connects |
+| host | the **direct** host, not the session pooler |
+| DNS | IPv6 only, no A record. This machine has global IPv6 and working egress, so it resolves |
 | TLS handshake | succeeds |
 | **authentication** | **fails — `28P01 password authentication failed for user "postgres"`** |
 
-The string itself is clean: the password is 16 characters, all alphanumeric, with
-no URL-reserved characters needing percent-encoding, no stray quotes and no
-surrounding whitespace. So this is not an encoding problem — the password is
-being rejected.
+What has been ruled out, so the search can go elsewhere:
 
-One hint worth following: the rejected password is **16** characters, while both
-`SUPABASE_DB_PASSWORD` and `MIGRATE_DB_PASSWORD` in `server/.env` are **32**.
-Those two are read by no code at all, but the length difference suggests the
-value pasted into `.env.migrate` is not the project's current database password.
+- **Not an encoding problem.** 42 characters, letters and digits only, no
+  URL-reserved characters, no percent-escapes, no stray quotes, no whitespace
+  inside it.
+- **Not a trailing-whitespace problem.** The line has one trailing space;
+  `process.loadEnvFile` strips it, and so does every check here.
+- **Not an API key pasted by mistake.** It matches none of the Supabase shapes —
+  `sb_secret_`, `sb_publishable_`, a legacy `eyJ…` JWT, or `sbp_`.
+- **Not a copy of anything in `server/.env`.** It matches no value in that file.
+- **The value did change.** Fingerprints: the first attempt was 16 characters
+  (`sha256:2b06ad28`), this one is 42 (`sha256:1826a219`).
+- **The username is right for this host.** `postgres`, which is what a direct
+  connection wants. The pooler would want `postgres.<ref>` instead.
 
-**To clear it:** Supabase → Project Settings → Database → reset the database
-password (or copy the current one), and replace the whole
-`MIGRATE_DATABASE_URL=` line. Paste the line entire rather than pasting a
-password into the existing one.
+So the string is fine and the password itself is being refused. Two things left
+to check, in order:
 
-Then re-check, which prints the host and nothing else:
+1. **Is this the database password?** Supabase → Project Settings → Database →
+   *Database password* → Reset. It is not any of the API keys and not the JWT
+   secret. Copy the whole connection string from *Connection string → Session
+   pooler* and replace the entire `MIGRATE_DATABASE_URL=` line with it.
+2. **Does this project still accept direct connections for `postgres`?** Some
+   projects route the `postgres` role through the pooler only. Switching to the
+   session pooler tests both at once, and is what `server/.env.example` already
+   recommends.
+
+**A note on retrying.** Each attempt is a failed authentication against
+production, which can trip rate limiting or an alert. Change the value, then
+test once:
 
 ```
 cd server
-node -e "import('./scripts/local-only.mjs').then(m=>console.log(m.hostOf(process.env.MIGRATE_DATABASE_URL)))"
-```
-
-And confirm it authenticates, which prints one row and no data:
-
-```
 node -e "
 const pg=require('pg');const fs=require('fs');
 const u=fs.readFileSync('.env.migrate','utf8').split('\n').find(l=>l.startsWith('MIGRATE_DATABASE_URL=')).slice(21).trim();
@@ -65,14 +75,17 @@ c.connect().then(()=>c.query('SELECT current_user, current_database()'))
 "
 ```
 
-Expect `{ current_user: 'postgres', current_database: 'postgres' }`.
+Expect `{ current_user: 'postgres', current_database: 'postgres' }`. And the host
+on its own, which prints nothing else:
 
-**Direct host or pooler?** Either works for a migration from this machine. The
-pooler (`aws-0-<region>.pooler.supabase.com:5432`, username `postgres.<ref>`) is
-IPv4 and therefore portable — it works from CI, another machine, or a network
-without IPv6. The direct host depends on IPv6 being available wherever you run
-it. `server/.env.example` recommends the pooler for that reason. Your choice;
-this runbook works with either.
+```
+node -e "import('./scripts/local-only.mjs').then(m=>console.log(m.hostOf(process.env.MIGRATE_DATABASE_URL)))"
+```
+
+**Direct host or pooler?** Either works from this machine. The pooler
+(`aws-0-<region>.pooler.supabase.com:5432`, username `postgres.<ref>`) is IPv4
+and therefore portable — it works from CI, another machine, or a network without
+IPv6. The direct host depends on IPv6 wherever you run it.
 
 Nothing loads `.env.migrate` automatically. Only `migrate.mjs --production`
 reads it, and it is git-ignored.
@@ -109,44 +122,108 @@ real.
 
 ## 1 — Back up production
 
-A `pg_dump` to a local file, and **record its size** — a dump that failed
-halfway looks like a dump.
+A `pg_dump` to a local file, **outside the repository**, with its size recorded.
+
+### 1.0 — Two things to get right first
+
+**`pg_dump` is not on PATH, and the wrong one will refuse.** A `pg_dump` older
+than the server will not dump it. Two are installed on this machine:
+
+| binary | version | use |
+|---|---|---|
+| `/c/Program Files/PostgreSQL/17/bin/pg_dump.exe` | **17.10** | **this one** |
+| `/c/Program Files/PostgreSQL/13/bin/pg_dump.exe` | 13.23 | too old — refuses a 15 or 17 server |
+
+Print both versions and compare before dumping:
 
 ```
 cd server
-STAMP=$(date +%Y%m%d-%H%M)
-pg_dump --no-owner --no-privileges \
-        --schema=public --schema=auth \
-        --file="../backup-pre-0056-$STAMP.sql" \
-        "$(grep '^MIGRATE_DATABASE_URL=' .env.migrate | cut -d= -f2-)"
-ls -l "../backup-pre-0056-$STAMP.sql" | awk '{print $5 " bytes"}'
-tail -1 "../backup-pre-0056-$STAMP.sql"
+PGDUMP="/c/Program Files/PostgreSQL/17/bin/pg_dump.exe"
+"$PGDUMP" --version
+node -e "
+const pg=require('pg');const fs=require('fs');
+const u=fs.readFileSync('.env.migrate','utf8').split('\n').find(l=>l.startsWith('MIGRATE_DATABASE_URL=')).slice(21).trim();
+const c=new pg.Client({connectionString:u,ssl:{rejectUnauthorized:false}});
+c.connect().then(()=>c.query('SHOW server_version'))
+ .then(r=>{console.log('server:', r.rows[0].server_version);return c.end()})
+ .catch(e=>{console.error(e.code, e.message);process.exit(1)});
+"
 ```
 
-Three things to check, in order:
+The rule is **client major >= server major**. 17.10 dumping a 15.x or 17.x
+server is fine; 13.23 is not. If the server is newer than 17, install a
+matching client rather than forcing it — `--no-sync` and friends do not help
+with a version refusal.
 
-1. **`pg_dump` exited 0.** If it printed a version mismatch, use the client that
-   matches the server major version, or add `--no-sync`. A partial file with a
-   zero exit is the thing to rule out, which is what (2) and (3) do.
-2. **The last line is `-- PostgreSQL database dump complete`.** If it is not,
-   the dump is truncated. Delete it and start again.
-3. **The size is plausible.** This tenant has three users, so expect roughly
-   **100 KB – 5 MB**. Under ~20 KB means it dumped almost nothing — most likely
-   the wrong database, or a role that cannot read the tables. Record it:
+**The file must go outside the repository.** The repo lives under OneDrive, so a
+dump written anywhere inside it is both committable *and* synced to the cloud —
+and a dump of this database is every employee's personal data. Note that `../`
+from `server/` is the **repo root**, which is inside both. Write it somewhere
+that is neither:
 
-   size: ______________ bytes    file: ______________________________
+```
+mkdir -p ~/pg-backups
+cd ~/pg-backups && pwd
+# expect /c/Users/haris/pg-backups — not under OneDrive, not in the repo
+```
+
+`.gitignore` also ignores `/backup-*.sql`, `/backup-*.sql.gz`, `/*.dump` and
+`/pg_dump-*.sql` at the repo root, so a dump written there by mistake cannot be
+committed. That is the second line of defence; the first is writing it somewhere
+else entirely.
+
+### 1.1 — Take the dump
+
+```
+cd /c/Users/haris/OneDrive/Documents/GitHub/360-PeopleHub-v2/server
+PGDUMP="/c/Program Files/PostgreSQL/17/bin/pg_dump.exe"
+OUT="$HOME/pg-backups/backup-pre-0056-$(date +%Y%m%d-%H%M).sql"
+URL=$(grep "^MIGRATE_DATABASE_URL=" .env.migrate | cut -d= -f2- | tr -d "[:space:]")
+
+"$PGDUMP" --no-owner --no-privileges \
+          --schema=public --schema=auth \
+          --file="$OUT" "$URL"
+echo "exit: $?"
+
+ls -l "$OUT" | awk '{print $5 " bytes"}'
+tail -1 "$OUT"
+unset URL
+```
 
 `--schema=auth` is included deliberately: `tenant_membership.user_id` is a
 foreign key into `auth.users`, so a public-only dump cannot be restored on its
-own.
+own. `unset URL` keeps the credential out of the rest of the shell session; it
+is never echoed.
+
+### 1.2 — Three checks, in order
+
+1. **`pg_dump` exited 0.** A version mismatch says so explicitly.
+2. **The last line is `-- PostgreSQL database dump complete`.** If it is not,
+   the file is truncated — delete it and start again. A partial dump with a zero
+   exit is the thing worth ruling out, which is what this check is for.
+3. **The size is plausible.** Three users, so expect roughly **100 KB – 5 MB**.
+   Under ~20 KB means it dumped almost nothing: wrong database, or a role that
+   cannot read the tables.
+
+   size: ______________ bytes    file: ______________________________
+
+Then confirm it is where it should be, and invisible to git:
+
+```
+cd /c/Users/haris/OneDrive/Documents/GitHub/360-PeopleHub-v2
+git status --short --untracked-files=all | grep -i backup || echo "git cannot see it — correct"
+```
 
 Also take the Supabase backup if your plan has them (Database → Backups →
-Create backup), and note the time: ______________. Belt and braces, and the
-dashboard restore is far quicker than a manual one.
+Create backup) and note the time: ______________. The dashboard restore is far
+quicker than a manual one.
 
 ### Rollback at this stage
 
-Nothing has changed. There is nothing to undo.
+Nothing has changed, so there is nothing to undo.
+
+Keep the dump until step B has been through and settled, then delete it. It is a
+standing copy of everyone's personal data and should not outlive its purpose.
 
 ---
 
