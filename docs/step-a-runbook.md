@@ -439,6 +439,29 @@ curl -s https://360peoplehub.com/ | grep -o 'assets/index-[A-Za-z0-9_-]*\.js'
 
 The hash should differ from before the push.
 
+### Run on 2026-10-17
+
+Pushed `abdd175..c298269` as a fast-forward. Both GitHub workflows green:
+"Deploy to GitHub Pages" success, "Server checks" success.
+
+| | |
+|---|---|
+| Pages bundle | `index-CQPoOT3r.js` → **`index-DLiZsNjP.js`** |
+| site | `https://360peoplehub.com/` HTTP 200 in 0.08s |
+| API | `/health` → `{"ok":true, expected 56, applied 56, pending 0, drifted 0}` |
+
+**The deploy window was real and visible.** Render went live about 15 seconds
+after the push, while Pages took several minutes — so for a couple of minutes
+the site served the *old* bundle against the *new* server. That is the
+old-frontend/new-server direction: a stale bundle gets `company_admin` from
+`/me/permissions` and has no entry for it. A reload after Pages lands clears
+it. Worth knowing the order it happens in: Render first, Pages second, so the
+window is always that way round and never the one that used to crash the
+attendance screen.
+
+The database was re-read after the deploy and is byte-identical to the
+post-migration snapshot: the live server has written nothing.
+
 ### Rollback at this stage
 
 Revert the code and **leave the database alone**. Widened constraints are
