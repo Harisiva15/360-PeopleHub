@@ -211,12 +211,23 @@ export async function listOpenRequests(caller: Caller): Promise<AssetRequest[]> 
 /** Kit a leaver still holds — the exit clearance checklist. */
 export async function pendingRecovery(caller: Caller): Promise<Asset[]> {
   if (!reaches(caller, 'assets', 'read', 'team')) return [];
+  /*
+   * Scoped, like every other listing in this file.
+   *
+   * It was gated at `team` and then queried company-wide, so a manager saw
+   * every leaver's outstanding kit and their name — the same shape as the
+   * onboarding listing that returned the whole company's joiners. `scope`
+   * returns '' for an all-scope reader, so HR and finance still see the lot.
+   */
+  const params: unknown[] = [];
+  const mine = scope(caller, 'a.employee_id', params);
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
       `${ASSET_PROJECTION}
         JOIN employee holder ON holder.id = a.employee_id
        WHERE a.status = 'assigned' AND holder.status IN ('exited', 'on_notice')
-       ORDER BY holder.full_name, a.tag`);
+         ${mine ? `AND ${mine}` : ''}
+       ORDER BY holder.full_name, a.tag`, params);
     return rows.map(toAsset);
   });
 }

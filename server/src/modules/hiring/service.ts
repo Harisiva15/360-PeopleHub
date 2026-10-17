@@ -23,6 +23,7 @@
  */
 
 import { reaches } from '../../auth/can.ts';
+import { employeeScope } from '../../tenancy/scope.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -1032,6 +1033,17 @@ export async function recruiterTracker(caller: Caller): Promise<RecruiterStat[]>
   if (!mayRecruit(caller)) {
     throw new HiringError('only a manager or admin may see the tracker', 'forbidden');
   }
+  /*
+   * The tracker names recruiters and counts their work, so it is a listing
+   * about people and gets the same treatment as the rest.
+   *
+   * `mayRecruit` is `hiring read all || caller.hasReports`, which let anybody
+   * with one direct report read every recruiter's numbers. The table gives the
+   * manager layer `hiring` at team, so the subtree is what that means. An
+   * all-scope reader gets 'TRUE' and the whole tracker, unchanged.
+   */
+  const params: unknown[] = [];
+  const mine = employeeScope(caller, 'e.id', params, 'hiring');
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
       `SELECT e.id AS recruiter_id, e.full_name,
@@ -1047,8 +1059,9 @@ export async function recruiterTracker(caller: Caller): Promise<RecruiterStat[]>
          JOIN requisition r ON r.recruiter_id = e.id
          LEFT JOIN candidate c ON c.requisition_id = r.id
          LEFT JOIN interview iv ON iv.candidate_id = c.id
+        WHERE ${mine}
         GROUP BY e.id, e.full_name
-        ORDER BY hires DESC, submissions DESC, e.full_name`);
+        ORDER BY hires DESC, submissions DESC, e.full_name`, params);
 
     return rows.map((r) => ({
       recruiterId: r.recruiter_id as string,

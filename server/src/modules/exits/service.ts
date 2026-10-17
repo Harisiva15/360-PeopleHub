@@ -19,6 +19,7 @@
  */
 
 import { reaches } from '../../auth/can.ts';
+import { employeeScope } from '../../tenancy/scope.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { PF_WAGE_CAP, dailyRateFor, structureFor, taxNewRegime } from '../payroll/rules.ts';
@@ -136,8 +137,21 @@ export async function listExits(caller: Caller): Promise<ExitRecord[]> {
       return rows.map(toExit);
     });
   }
+  /*
+   * `mayHandle` is `exit read all || caller.hasReports`, so this branch was
+   * reached by anybody with a direct report — and then listed every exit in
+   * the company. The table says the manager layer reads `exit` at *team*:
+   *
+   *   exit: rule(SELF, ['team', 'none', 'none'], ALL_RWA, ['all','none','all'], ALL_RWA)
+   *
+   * so the scope clause is what that row always meant. An all-scope reader
+   * gets 'TRUE' and the whole list, as before.
+   */
+  const params: unknown[] = [];
+  const mine = employeeScope(caller, 'x.employee_id', params, 'exit');
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query(`${PROJECTION} ORDER BY x.last_working_day DESC`);
+    const { rows } = await db.query(
+      `${PROJECTION} WHERE ${mine} ORDER BY x.last_working_day DESC`, params);
     return rows.map(toExit);
   });
 }

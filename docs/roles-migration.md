@@ -281,6 +281,52 @@ read `MIGRATE_DATABASE_URL` from `.env` — `seed.mjs`, `retention.mjs`,
 value.
 
 ---
+## Known issue on main, fixed by this branch
+
+**Any holder of the `manager` role sees every joiner's offered CTC.**
+
+Recorded here because it is live code, not a branch defect, and because the
+thing keeping it harmless is a fact about who holds which role rather than
+anything in the code.
+
+| | |
+|---|---|
+| Where | `server/src/modules/onboarding/service.ts` — `mayOnboard` and `listOnboarding` |
+| On main | `mayOnboard` is `caller.role === 'admin' || caller.role === 'manager'`, and `listOnboarding` runs `PROJECTION` with **no WHERE clause** |
+| What leaks | every `onboarding_journey` row in the tenant, including `annual_ctc` — the joiner's offered salary |
+| Who | anybody with the `manager` role. The manager layer holds no `compensation` grant at all |
+| Reachable today | **No.** None of the three production users holds `manager`: Hari and hr@ are admins, Lakshmi is an employee |
+| Severity if assigned | a manager would see the whole company's joiner salaries, not just their own team's |
+
+### Mitigation until this branch ships
+
+Do not assign the `manager` role in production. Agreed with the owner on
+2026-10-17; the fix ships with the roles work rather than as a separate
+hotfix, because on this branch the manager layer is derived from the reporting
+tree and a one-line patch to main would not carry forward.
+
+### The fix on this branch
+
+1. `journeyScope(caller)` applies the `team` scope the policy always specified
+   (`onboarding: rule(NO, ['team', 'team', 'none'], ...)`). The subtree is
+   walked over `j.manager_id`, not over the joiner, because a joiner usually
+   has no `employee` row yet.
+2. `toJourney` and `load` take a pay flag set from `compensation` read all, so
+   `ctc` is `0` for anyone who is not a compensation reader — including a
+   manager looking at their own team's journey.
+
+Note the two are independent: the scope fix alone would still have shown a
+manager their own joiner's salary, and the pay-flag fix alone would still have
+shown them every journey in the company. Both were needed.
+
+### Why no test caught it
+
+There was no assertion that a listing of person-level data carries a scope
+clause, and `check:paycensus` structurally cannot see one going missing — it
+reasons about gates, not about WHERE clauses. That rule is now in
+`role-gates.ts`, which is what closes the hole that let this happen.
+
+---
 ## The pay-data census
 
 The sweep turned `caller.role === 'admin'` into a policy question, and where
@@ -380,6 +426,93 @@ catch, stated so nobody assumes otherwise:
    one, and nothing asserts it yet. **It should go in `role-gates.ts`.**
 
 ---
+## role-gates.ts
+
+Two rules so far, both approved on 2026-10-17. The role-literal sweep joins
+them and subsumes `sql-role-sweep.mjs`.
+
+### Rule 1 — a listing of person-level data carries a scope clause
+
+The rule whose absence caused the onboarding exposure. A listing passes if it
+narrows its rows to the caller, restricts to one subject named in the call, or
+refuses anybody who does not already hold `all`.
+
+It found **three more listings of the same shape**, all gated at `team` or
+looser and then queried company-wide. All three are fixed here, each by
+applying the scope the policy table already specified:
+
+| listing | gate | what a manager saw | fix |
+|---|---|---|---|
+| `assets/pendingRecovery` | `assets` read **team** | every leaver's outstanding kit, company-wide, with names | `scope(caller, 'a.employee_id', params)` |
+| `exits/listExits` | `exit` read all **|| hasReports** | every exit record in the company | `employeeScope(..., 'exit')` |
+| `hiring/recruiterTracker` | `hiring` read all **|| hasReports** | every recruiter's numbers | `employeeScope(..., 'hiring')` |
+
+An all-scope reader gets `TRUE` from the scope helper, so HR, finance and
+company_admin see exactly what they saw before. What narrows is the manager
+layer, to the `team` the table always gave it.
+
+### The pattern underneath all four
+
+Five gates are written `reaches(caller, <module>, 'read', 'all') ||
+caller.hasReports`:
+
+| gate | module | manager's scope in the table |
+|---|---|---|
+| `documents/mayChase` | documents | `own` |
+| `exits/mayHandle` | exit | `team` |
+| `helpdesk` (line 353) | helpdesk | `team` |
+| `hiring/mayRecruit` | hiring | `team` |
+| `onboarding/mayOnboard` | onboarding | `team` |
+
+Each grants **all-scope entry** to anybody with one direct report, and the
+table grants them `team` or `own`. Where the query behind such a gate was
+unscoped, the gate's breadth became the query's breadth — which is the whole
+onboarding bug in one sentence. The three listings above are fixed; the gates
+themselves still read this way and are **left as they are for now**, because
+changing what a manager may *enter* is a different decision from what a query
+may *return*, and rule 1 now makes the dangerous combination fail.
+
+`mayChase` is worth a separate look: a manager may request documents from
+anybody in the company, which is a write-breadth question rather than a
+listing one.
+
+### Rule 2 — only company_admin changes a role
+
+Asserted twice: against the policy, for all eight caller shapes
+(`users` write all, and `mayAssignRole(..., 'company_admin')`), and against
+the source, because the policy assertions alone would still pass if the gate
+were changed back to a module that happens to grant the same three roles —
+which is exactly the mistake that was made, and exactly why it was invisible.
+
+### Four bugs in the rule itself
+
+Each found by reverting a real fix and checking the check went red. Worth
+recording because every one of them made the rule *pass* while the bug it
+exists for sat in front of it:
+
+- a per-file list of scope helpers missed `employeeScope`, the canonical one,
+  which is imported rather than defined locally;
+- the paren-depth scan ran over the enclosing JavaScript instead of the SQL,
+  so it never returned to depth zero. The count went from 26 listings to **0**
+  and the suite reported "every one is scoped" and went green. There is now a
+  floor assertion, because a detector whose silence looks like success
+  protects nothing;
+- `${PROJECTION}` constants were not expanded, so `listOnboarding` — the
+  listing the rule was written for — was not seen as person-level at all;
+- the all-gate escape accepted any all-scope check, including
+  `maySeeJoinerPay`, a *pay* flag that refuses nobody. That waved through an
+  onboarding listing with its WHERE clause deleted. An all-gate now counts
+  only in guard position, `if (!gate(...))`.
+
+One revert is not caught and does not need to be: removing the scope helper
+while leaving `WHERE ${scope.sql}` in the query fails `tsc` with "Cannot find
+name 'scope'" twice. The realistic shape — removing both — is caught.
+
+Known limit: the outermost `FROM` of a `WITH x AS (...) SELECT ... FROM x`
+query is the CTE, so a listing built that way is not seen as person-level.
+`listCelebrations` is one, and is public by policy anyway.
+
+---
 ## Tools
 
 | | |
@@ -391,7 +524,7 @@ catch, stated so nobody assumes otherwise:
 | `server/scripts/pay-census.mjs` | every pay read, the gate on every path to it, and whether mappers use their pay flag |
 | `server/scripts/pay-visibility.test.mjs` | the behavioural half: no pay field for anyone else |
 | `server/scripts/local-only.mjs` | refuses a non-local database; `check:localonly` tests it |
-| `checks/role-gates.ts` | **not written yet** — see Left (4) |
+| `checks/role-gates.ts` | listings carry a scope clause; roles are company_admin's alone. The role-literal sweep still to come |
 
 Delete the two sweep scripts once `role-gates.ts` is what keeps the comparisons
 from coming back.
