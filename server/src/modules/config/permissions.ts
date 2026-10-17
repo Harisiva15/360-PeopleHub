@@ -25,6 +25,15 @@ export class PermissionError extends Error {
   }
 }
 
+/**
+ * Every spelling of the administrator layer a `role_permission` row may use.
+ *
+ * Expand leaves both vocabularies valid in the column, so a guard that names
+ * one of them guards half the rows. Step C narrows this to `['company_admin']`,
+ * alongside the matching list in `users/service.ts`.
+ */
+const ADMIN_LAYERS = ['admin', 'company_admin'];
+
 const SCOPES: Scope[] = ['none', 'own', 'team', 'all'];
 const isScope = (v: unknown): v is Scope =>
   typeof v === 'string' && (SCOPES as string[]).includes(v);
@@ -107,7 +116,14 @@ export async function setPermissions(
      * undo it from inside the application, and the fix becomes a database
      * session somebody has to be talked through on the phone.
      */
-    if (p.module === 'settings' && p.role === 'company_admin' && p.read === 'none') {
+    /*
+     * Both spellings, for the same reason the last-administrator count uses
+     * both: a `role_permission` row is a database value, and until step B has
+     * mapped them the layer may still be keyed 'admin'. Asking only for
+     * 'company_admin' would have let a tenant close Settings against the
+     * layer that is actually in force. Step C drops the old name.
+     */
+    if (p.module === 'settings' && ADMIN_LAYERS.includes(p.role as string) && p.read === 'none') {
       throw new PermissionError(
         'Administrators cannot be removed from Settings — there would be no way '
         + 'back from inside the application', 'forbidden');

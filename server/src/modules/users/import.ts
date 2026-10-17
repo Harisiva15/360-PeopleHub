@@ -24,6 +24,8 @@
  */
 
 import { reaches } from '../../auth/can.ts';
+import { ROLES, grantNeedsAuthority, mayAssignRole } from '../../auth/policy.ts';
+import type { Role } from '../../auth/policy.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { UserError, createUser } from './service.ts';
@@ -154,14 +156,20 @@ function judge(
   if (site && !look.sites.has(site)) errors.push(`no location ${site}`);
 
   const role = v('role').toLowerCase();
-  if (role && !['admin', 'manager', 'employee'].includes(role)) {
-    errors.push(`${v('role')} is not a role`);
+  /* The new vocabulary only, as the single-user path does. A file naming
+     'admin' is rejected with the four names it could have used. */
+  if (role && !(ROLES as readonly string[]).includes(role)) {
+    errors.push(`${v('role')} is not a role: ${ROLES.join(', ')}`);
   }
   /*
    * The same rule the single-user path enforces. A bulk file is exactly where
    * somebody would try to grant themselves an administrator.
    */
-  if (role === 'admin' && !reaches(caller, 'users', 'write', 'all')) {
+  /* Only the elevated grant, as the single-user path does — creating ordinary
+     employees in bulk is not what this guard is about. */
+  if (role && (ROLES as readonly string[]).includes(role)
+    && grantNeedsAuthority(role as Role)
+    && !mayAssignRole(caller.role, caller.hasReports, role as Role)) {
     errors.push('only an administrator can grant the administrator role');
   }
 
@@ -293,7 +301,7 @@ export async function commitImport(
         managerId: row.values.manager
           ? (await resolveManager(caller, row.values.manager))
           : null,
-        role: (row.values.role!.toLowerCase() as 'admin' | 'manager' | 'employee'),
+        role: (row.values.role!.toLowerCase() as Role),
         empType: row.values.empType,
         joinedOn: row.values.joinedOn,
       });

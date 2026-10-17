@@ -20,6 +20,10 @@ import { verifyAccessToken, AuthError } from './verify.ts';
 import { REFUSED, assertSecondFactorSatisfied as checkFactor } from './rules.ts';
 import type { SupabaseClaims } from './verify.ts';
 import type { Role } from './policy.ts';
+import { normaliseRole } from './policy.ts';
+
+/* The one entry point for a token's role; the mapping lives in policy.ts. */
+export { normaliseRole };
 import { withoutTenantForAuth } from '../tenancy/context.ts';
 import type { Caller } from '../tenancy/context.ts';
 
@@ -42,41 +46,6 @@ interface MembershipRow {
   has_factor: boolean;
 }
 
-/**
- * The database value, as a role.
- *
- * Step A of the cutover leaves both vocabularies valid in the column, so this
- * is the one place that has to understand both:
- *
- *     admin     ->  company_admin
- *     manager   ->  employee, because answering for other people is not a
- *                   role. The layer comes from the reporting tree, which
- *                   `hasReports` below reads, so a manager keeps every
- *                   manager grant without the word surviving.
- *     employee  ->  employee
- *
- * Anything unrecognised becomes `employee`, the narrowest role there is,
- * rather than throwing: a login whose row holds a value nobody has heard of
- * should be able to see their own payslip and nothing else, not be unable to
- * sign in. The policy then fails closed on everything beyond that.
- *
- * Step C deletes this, once no row holds an old value.
- */
-const normaliseRole = (value: string): Role => {
-  switch (value) {
-    case 'company_admin':
-    case 'hr_admin':
-    case 'finance_admin':
-    case 'employee':
-      return value;
-    case 'admin':
-      return 'company_admin';
-    case 'manager':
-      return 'employee';
-    default:
-      return 'employee';
-  }
-};
 
 /**
  * Does anybody report to this person, at any depth?

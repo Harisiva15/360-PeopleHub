@@ -184,8 +184,9 @@ import {
 } from '../modules/users/loginHistory.ts';
 import {
   effectiveModulesForTenant, effectiveRuleFor, fromLegacyRole, legacyHasReports,
-  ROLE_SUMMARY,
+  ROLE_SUMMARY, ROLES,
 } from '../auth/policy.ts';
+import type { Role } from '../auth/policy.ts';
 import { overridesFor } from '../auth/overrides.ts';
 import { moduleForPath } from './route-modules.ts';
 import {
@@ -283,8 +284,21 @@ const routes: Route[] = [
   {
     method: 'PUT',
     pattern: '/employees/:id/role',
-    handler: (caller, _req, params, body) =>
-      setEmployeeRole(caller, params.id!, (body as { role: 'admin' | 'manager' | 'employee' }).role),
+    handler: (caller, _req, params, body) => {
+      /*
+       * The boundary rejects an old role value rather than passing it on.
+       *
+       * The cast was the whole of the validation: whatever arrived in `role`
+       * reached the service typed as a role it might not be. From step A the
+       * request body speaks the new vocabulary only, and `admin` gets a 400
+       * here instead of a fail-closed surprise three layers down.
+       */
+      const role = (body as { role?: unknown }).role;
+      if (typeof role !== 'string' || !(ROLES as readonly string[]).includes(role)) {
+        throw new BadRequest(`role must be one of: ${ROLES.join(', ')}`);
+      }
+      return setEmployeeRole(caller, params.id!, role as Role);
+    },
   },
   {
     method: 'GET',

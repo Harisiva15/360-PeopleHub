@@ -422,6 +422,51 @@ export const fromLegacyRole = (legacy: LegacyRole): Role =>
  */
 export const legacyHasReports = (legacy: LegacyRole): boolean => legacy === 'manager';
 
+/**
+ * The database value, as a role.
+ *
+ * Step A of the cutover leaves both vocabularies valid in the column, so this
+ * is the one place that has to understand both:
+ *
+ *     admin     ->  company_admin
+ *     manager   ->  employee, because answering for other people is not a
+ *                   role. The layer comes from the reporting tree, which
+ *                   `hasReports` below reads, so a manager keeps every
+ *                   manager grant without the word surviving.
+ *     employee  ->  employee
+ *
+ * Anything unrecognised becomes `employee`, the narrowest role there is,
+ * rather than throwing: a login whose row holds a value nobody has heard of
+ * should be able to see their own payslip and nothing else, not be unable to
+ * sign in. The policy then fails closed on everything beyond that.
+ *
+ * Step C deletes this, once no row holds an old value.
+ *
+ * It lives here rather than in `session.ts` for a dull but real reason:
+ * `employees/mapper.ts` reads `app_role` out of a row too, and importing it
+ * from `session.ts` pulled `config.ts` in behind it, so a pure mapper
+ * suddenly required DATABASE_URL and `check:payvisibility` could not even
+ * load. This module is the vocabulary's home and has no environment of its
+ * own. `session.ts` re-exports it, so it is still the one entry point for a
+ * token's role.
+ */
+export const normaliseRole = (value: string): Role => {
+  switch (value) {
+    case 'company_admin':
+    case 'hr_admin':
+    case 'finance_admin':
+    case 'employee':
+      return value;
+    case 'admin':
+      return 'company_admin';
+    case 'manager':
+      return 'employee';
+    default:
+      return 'employee';
+  }
+};
+
+
 /** Every layer a `role_permission` row may name: the roles, plus the derived one. */
 export const POLICY_LAYERS: (Role | Layer)[] = [
   'employee', 'manager', 'hr_admin', 'finance_admin', 'company_admin',
@@ -693,6 +738,18 @@ export const may = (role: Role, hasReports: boolean, action: UserAction): boolea
  * including company_admin, and a role is a value rather than a row here — the
  * service compares the target to the caller and refuses.
  */
+/**
+ * Whether handing out this role takes more than the right to make an account.
+ *
+ * The baseline role grants nothing beyond what everybody already has, so
+ * granting it needs no particular authority — a manager creating an ordinary
+ * employee is not an escalation. Expressed here because the comparison is
+ * against the vocabulary, and the vocabulary is this file's business: a
+ * service writing `role !== 'employee'` is the hard-coded comparison the
+ * sweep exists to remove.
+ */
+export const grantNeedsAuthority = (granted: Role): boolean => granted !== 'employee';
+
 export const mayAssignRole = (
   role: Role,
   hasReports: boolean,

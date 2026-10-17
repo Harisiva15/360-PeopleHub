@@ -501,6 +501,178 @@ ok('...and not on the directory',
 ok('it still refuses changing your own role',
   /id === caller\.employeeId/.test(body));
 
+
+/* ===========================================================================
+ * 3. No raw comparison against a role value
+ * ======================================================================== */
+
+/*
+ * The rule that keeps the sweep from coming undone, and the one that retires
+ * `sql-role-sweep.mjs`.
+ *
+ * 192 `caller.role` comparisons were converted into questions about a module
+ * and a verb. Nothing stopped the 193rd from being written, and the compiler
+ * would not have minded: comparing a string to a string is always legal. Two
+ * of them were still there this morning — `users/service.ts` had its own
+ * `type Role = 'admin' | 'manager' | 'employee'`, shadowing the real one, so
+ * every role question in that file asked the old question and typechecked
+ * perfectly while doing it.
+ *
+ * Covers TypeScript and SQL strings, because a role value hard-coded in a
+ * query is the same bug with a different syntax, and the embedded-SQL sweep
+ * found that the two had to be looked for together.
+ */
+
+/** Every role value, old and new, that must not be compared to by hand. */
+const ROLE_WORDS = [
+  'admin', 'manager', 'employee', 'company_admin', 'hr_admin', 'finance_admin',
+];
+
+/**
+ * Files that are allowed to name a role value.
+ *
+ * `policy.ts` defines the vocabulary and carries the legacy bridge.
+ * `session.ts` holds the normaliser — the one place that reads a database
+ * value and has to understand both vocabularies.
+ */
+const VOCABULARY_FILES = ['server/src/auth/policy.ts', 'server/src/auth/session.ts'];
+
+/**
+ * Specific lines that name a role value deliberately, with the reason.
+ *
+ * Both are lists of *database* values for the expand window, not comparisons
+ * against `Caller.role`. The column may hold either vocabulary until step B
+ * has run, and asking for one name would silently match nothing. Step C
+ * narrows both to `['company_admin']`.
+ */
+const ALLOWED_LINES = new Map<string, string>([
+  ['server/src/modules/users/service.ts#ADMIN_ROLES',
+    'the last-administrator invariant counts memberships by column value, for '
+    + 'both halves of the guard (deactivation and demotion).'],
+  ['server/src/modules/config/permissions.ts#ADMIN_LAYERS',
+    'the one cell a tenant may not close — administrators out of Settings. '
+    + 'A role_permission row names a layer by column value, so during expand '
+    + 'it may still be keyed admin.'],
+  ['server/src/modules/helpdesk/service.ts#app_role',
+    'picks a ticket owner by preferring an administrator, ordering on '
+    + '`e.app_role = ANY($2)`; the values are passed as a parameter.'],
+]);
+
+/** Lines that are only talking about role values, not comparing to them. */
+const isProse = (line: string): boolean => {
+  const t = line.trim();
+  return t.startsWith('*') || t.startsWith('//') || t.startsWith('/*');
+};
+
+type Offence = { file: string; line: number; text: string; kind: string };
+const offences: Offence[] = [];
+
+const roleAlt = ROLE_WORDS.join('|');
+/* `x.role === 'admin'`, `!== 'manager'`, `role: 'admin'` in a comparison. */
+const TS_COMPARE = new RegExp(
+  `(?:\\.role|\\brole\\b|\\bapp_role\\b)\\s*(?:===|!==|==|!=)\\s*['"](${roleAlt})['"]`,
+);
+/* ...and the same written the other way round. */
+const TS_COMPARE_REV = new RegExp(
+  `['"](${roleAlt})['"]\\s*(?:===|!==|==|!=)\\s*(?:\\w+\\.)?(?:role|app_role)\\b`,
+);
+/* A role value hard-coded inside a query: `role = 'admin'`, `IN ('admin')`. */
+const SQL_COMPARE = new RegExp(
+  `(?:role|app_role)\\s*(?:=|<>|!=|\\bIN\\b|\\bANY\\b)\\s*\\(?\\s*['"](${roleAlt})['"]`,
+  'i',
+);
+
+for (const file of files) {
+  const rel = relative('.', file).split('\\').join('/');
+  if (VOCABULARY_FILES.includes(rel)) continue;
+  const lines = readFileSync(file, 'utf8').split(NL);
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (isProse(line)) continue;
+
+    const allowed = [...ALLOWED_LINES.keys()].some((k) => {
+      const [f, needle] = k.split('#');
+      return f === rel && line.includes(needle);
+    });
+    if (allowed) continue;
+
+    if (TS_COMPARE.test(line) || TS_COMPARE_REV.test(line)) {
+      offences.push({ file: rel, line: i + 1, text: line.trim(), kind: 'TypeScript comparison' });
+    } else if (SQL_COMPARE.test(line)) {
+      offences.push({ file: rel, line: i + 1, text: line.trim(), kind: 'role value in SQL' });
+    }
+  }
+}
+
+/* The migrations too: a policy or function that compares a role value. */
+const MIGRATIONS = 'server/db/migrations';
+for (const name of readdirSync(MIGRATIONS).sort()) {
+  if (!name.endsWith('.sql')) continue;
+  /*
+   * Only migrations after the expand one.
+   *
+   * An applied migration is history and cannot be edited — the runner
+   * refuses a file whose checksum has changed — so flagging 0001, 0002,
+   * 0003 and 0012 for declaring the original CHECK constraints asks for
+   * something impossible. What those constraints say *now* is 0056's
+   * business, and step C's after that.
+   *
+   * Anything newer is fair game: a fresh migration hard-coding a role
+   * comparison in an RLS policy is exactly what this should catch, and the
+   * SQL sweep found that the database side can lock people out even when
+   * the application is right. The expand and contract migrations are named
+   * explicitly, since widening or narrowing a CHECK means naming values.
+   */
+  const seq = Number(name.slice(0, 4));
+  if (!Number.isFinite(seq) || seq <= 56) continue;
+  if (/_role_vocabulary_(expand|contract).sql$/.test(name)) continue;
+  const lines = readFileSync(join(MIGRATIONS, name), 'utf8').split(NL);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.trim().startsWith('--')) continue;
+    if (SQL_COMPARE.test(line)) {
+      offences.push({
+        file: `server/db/migrations/${name}`,
+        line: i + 1,
+        text: line.trim(),
+        kind: 'role value in a migration',
+      });
+    }
+  }
+}
+
+console.log(`${NL}nobody compares against a role value by hand${NL}`);
+
+ok(`no raw role comparison outside the vocabulary files (${offences.length} found)`,
+  offences.length === 0,
+  'each one has to become a question about a module and a verb');
+
+if (offences.length) {
+  console.log('');
+  for (const o of offences) {
+    console.log(`        ${o.file}:${o.line}  [${o.kind}]`);
+    console.log(`            ${o.text.slice(0, 92)}`);
+  }
+}
+
+/* A detector that matches nothing is broken, as rule 1 learned the hard way. */
+const selfTest = [
+  "if (caller.role === 'admin') return true;",
+  "WHERE role = 'company_admin' AND status = 'active'",
+];
+ok('the detector still recognises the shapes it is looking for',
+  TS_COMPARE.test(selfTest[0]) && SQL_COMPARE.test(selfTest[1]),
+  'it would pass everything');
+
+for (const [key, why] of ALLOWED_LINES) {
+  const [f, needle] = key.split('#');
+  const present = readFileSync(f, 'utf8').includes(needle);
+  ok(`deliberate exception still present: ${needle}`, present,
+    `nothing in ${f} mentions ${needle} any more — drop the entry (${why.slice(0, 40)}…)`);
+}
+
 console.log('');
 if (failed) { console.error(`${failed} FAILED${NL}`); process.exit(1); }
-console.log(`listings are scoped, and roles are company_admin's alone${NL}`);
+console.log(`listings are scoped, roles are company_admin's alone, and no role`
+  + ` value is compared to by hand${NL}`);

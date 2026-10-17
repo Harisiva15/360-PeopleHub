@@ -426,6 +426,87 @@ catch, stated so nobody assumes otherwise:
    one, and nothing asserts it yet. **It should go in `role-gates.ts`.**
 
 ---
+## The API vocabulary, and the last-administrator invariant
+
+### The root cause nobody could see
+
+`modules/users/service.ts` declared its own type:
+
+```
+type Role = 'admin' | 'manager' | 'employee';
+```
+
+shadowing the real one. Every role question in that file asked the old
+question and typechecked perfectly while doing it. Importing the policy's
+`Role` is what turned the rest of the file's mistakes into compile errors —
+and then into `import.ts`'s as well.
+
+### What was broken
+
+| site | was | now |
+|---|---|---|
+| `users/service.ts` `validate` | `['admin','manager','employee']` | `ROLES` — **`company_admin` was refused as "Not a role", so creating an administrator was impossible on this branch** |
+| `users/service.ts` `mayGrant` | `role === 'admin'` | `grantNeedsAuthority` + `mayAssignRole`; hr_admin and finance_admin were never guarded in either vocabulary |
+| `users/service.ts` demotion guard | self only, `'admin'` only | both halves: self, and a **count** so the last administrator cannot be demoted by anybody |
+| `users/import.ts` | same three, same `=== 'admin'` | same fixes, for the CSV path |
+| `http/app.ts` role route | a cast that validated nothing | **400** naming the four valid roles |
+| `employees/mapper.ts` | `role: 'admin'|'manager'|'employee'`, cast from the column | `Role`, via `normaliseRole` |
+| `config/permissions.ts` | `p.role === 'company_admin'` | `ADMIN_LAYERS`, both spellings — a `role_permission` row may still be keyed `admin` until step B |
+
+The demotion half deserves spelling out: it only ever asked "is this me", so
+two administrators could take each other's role away and lock the tenant out
+of its own settings — the same outcome the deactivation half exists to
+prevent, reached by a different door. There is no database trigger behind
+either; the guard is all there is.
+
+### Two mistakes of my own, caught by the suites
+
+**`mayGrant` moved the baseline.** Asking `mayAssignRole` unconditionally
+refused a manager creating an ordinary employee, because that function bundles
+"may you assign roles at all" with "may you assign an administrative one".
+`check:provisioning` caught it. Whether somebody may create an account is
+`mayAdminister`'s question; `mayGrant` is only about handing out more than the
+baseline.
+
+**The normaliser dragged `config.ts` into a pure mapper.** `employees/mapper.ts`
+reads `app_role` from a row too, and importing `normaliseRole` from
+`session.ts` pulled the environment in behind it — `check:payvisibility` could
+not load for want of `DATABASE_URL`. The function now lives in `policy.ts`,
+the vocabulary's home, which has no environment of its own; `session.ts`
+re-exports it so it is still the one entry point for a token's role. A
+deliberate departure from "the normaliser lives only in session.ts", for that
+reason.
+
+### Rule 3: nobody compares against a role value by hand
+
+Covers TypeScript and SQL strings, and retires `sql-role-sweep.mjs`. Both
+forms are proven to fail: `caller.role !== 'admin'` in a service, and
+`WHERE role = 'company_admin'` in a query.
+
+Allowed, each with its reason in the file: `policy.ts` and `session.ts` (the
+vocabulary and the normaliser), and three named lists of *database* values for
+the expand window — `ADMIN_ROLES` in `users/service.ts`, `ADMIN_LAYERS` in
+`config/permissions.ts`, and the owner-preference parameter in
+`helpdesk/service.ts`. Step C narrows all three.
+
+Migrations are scanned only from 0057 onward. An applied migration is history
+and cannot be edited — the runner refuses a file whose checksum changed — so
+flagging 0001, 0002, 0003 and 0012 for declaring the original CHECK
+constraints asks for something impossible. What those constraints say *now* is
+0056's business.
+
+Writing `role !== 'employee'` in a service would itself have broken this rule,
+which is how `grantNeedsAuthority` came to live in `policy.ts`: the comparison
+is against the vocabulary, so it belongs where the vocabulary is.
+
+### Still open: one expectation, awaiting approval
+
+`hierarchy.test.mjs:225` asserts `mgrAccount.role === 'manager'` after creating
+a manager. There is no manager role to assign any more, so the value is
+`employee` and the assertion has to change. **Not changed** — it is a decision,
+not a rename. It is the only failing assertion in 26 database suites.
+
+---
 ## The local database suites
 
 All three asked for are green, and 25 of the 26 database-backed suites pass
