@@ -186,7 +186,7 @@ function scopeFor(caller: Caller, params: unknown[]): string {
 }
 
 const mayAdminister = (caller: Caller) => {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'users', 'read', 'team')) {
     throw new UserError('Your role cannot manage accounts', 'forbidden');
   }
 };

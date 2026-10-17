@@ -207,7 +207,7 @@ export async function approveLeave(
   caller: Caller,
   requestId: string,
 ): Promise<LeaveRequest> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'leave', 'read', 'team')) {
     throw new LeaveError('only a manager or admin may approve leave', 'forbidden');
   }
 
@@ -389,7 +389,7 @@ export async function listLeave(
   const where: string[] = [];
   const params: unknown[] = [];
 
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'leave', 'read', 'team')) {
     params.push(caller.employeeId);
     where.push(`lr.employee_id = $${params.length}`);
   } else if (caller.hasReports) {
@@ -526,7 +526,7 @@ export async function rejectLeave(
   requestId: string,
   note?: string,
 ): Promise<LeaveRequest> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'leave', 'read', 'team')) {
     throw new LeaveError('only a manager or admin may reject leave', 'forbidden');
   }
 

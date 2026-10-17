@@ -606,7 +606,7 @@ async function mayTouch(
   if (!caller.employeeId) {
     throw new ScheduleError('this login has no employee record', 'forbidden');
   }
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'shifts', 'read', 'team')) {
     if (write) {
       throw new ScheduleError(
         'only a manager or admin may assign a work schedule', 'forbidden');

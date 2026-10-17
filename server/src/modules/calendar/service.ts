@@ -414,7 +414,7 @@ export async function workingDaysFor(
       }
       if (caller.employeeId !== employeeId) {
         /* A manager may read their own line, however deep. Employees, only themselves. */
-        if (caller.role === 'employee') {
+        if (!reaches(caller, 'attendance', 'read', 'team')) {
           throw new CalendarError('you can only read your own calendar', 'forbidden');
         }
         const { rows } = await db.query(

@@ -398,7 +398,7 @@ async function issueInto(
  * make the company say anything in.
  */
 export async function issueLetter(caller: Caller, id: string): Promise<LetterRequest> {
-  if (caller.role === 'employee' || !caller.employeeId) {
+  if (!reaches(caller, 'documents', 'read', 'team') || !caller.employeeId) {
     throw new LetterError('only HR may issue a letter', 'forbidden');
   }
 
@@ -430,7 +430,7 @@ export async function rejectLetter(
   id: string,
   reason: string,
 ): Promise<LetterRequest> {
-  if (caller.role === 'employee' || !caller.employeeId) {
+  if (!reaches(caller, 'documents', 'read', 'team') || !caller.employeeId) {
     throw new LetterError('only HR may act on a letter request', 'forbidden');
   }
   if (!reason?.trim()) {

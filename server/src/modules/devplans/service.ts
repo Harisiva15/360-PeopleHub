@@ -303,7 +303,7 @@ export async function devFocus(caller: Caller) {
 }
 
 export async function mentorLoad(caller: Caller) {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'devplans', 'read', 'team')) {
     throw new DevPlanError('Your role cannot see who is mentoring whom', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
@@ -330,7 +330,7 @@ export async function mentorLoad(caller: Caller) {
  * decorative, which is what an audit of unguarded functions turned up.
  */
 export async function mentorOptions(caller: Caller) {
-  const showLoad = caller.role !== 'employee';
+  const showLoad = reaches(caller, 'devplans', 'read', 'team');
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query<{
       id: string; name: string; designation: string; mentees: string;
@@ -488,7 +488,7 @@ export async function endorseDevPlan(caller: Caller, id: string): Promise<DevPla
     if (plan.employee_id === caller.employeeId) {
       throw new DevPlanError('You cannot endorse your own plan', 'forbidden');
     }
-    if (caller.role === 'employee') {
+    if (!reaches(caller, 'devplans', 'read', 'team')) {
       throw new DevPlanError('Only their manager can endorse this plan', 'forbidden');
     }
     if (caller.hasReports) {

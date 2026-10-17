@@ -188,7 +188,7 @@ export async function previewImport(
   fileName: string,
   text: string,
 ): Promise<ImportPreview> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'users', 'read', 'team')) {
     throw new UserError('Your role cannot import accounts', 'forbidden');
   }
   /*
@@ -340,7 +340,7 @@ async function resolveManager(caller: Caller, nameOrCode: string): Promise<strin
 
 /** What has been imported before, newest first. */
 export async function importHistory(caller: Caller) {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'users', 'read', 'team')) {
     throw new UserError('Your role cannot see the import history', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {

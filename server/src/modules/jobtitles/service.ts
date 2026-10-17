@@ -126,7 +126,7 @@ const toTitle = (r: Row): JobTitleRow => ({
 
 /** Anybody but an employee may browse; an employee gets `mine` instead. */
 function mayBrowse(caller: Caller) {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'jobtitles', 'read', 'team')) {
     throw new JobTitleError('Your role cannot browse the catalogue', 'forbidden');
   }
 }
@@ -175,7 +175,7 @@ export async function getJobTitle(caller: Caller, id: string): Promise<JobTitleR
    * answers — a filtered list would say the title does not exist, which is a
    * lie somebody would act on.
    */
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'jobtitles', 'read', 'team')) {
     const own = await mineJobTitle(caller);
     if (!own || own.title.id !== id) {
       throw new JobTitleError('That title is not yours to read', 'forbidden');

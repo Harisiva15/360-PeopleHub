@@ -38,7 +38,7 @@ export interface PendingItem {
  */
 function actionable(caller: Caller): { sql: string; params: unknown[] } | null {
   if (!caller.employeeId && !reaches(caller, 'approvals', 'read', 'all')) return null;
-  if (caller.role === 'employee') return null;
+  if (!reaches(caller, 'approvals', 'read', 'team')) return null;
 
   if (reaches(caller, 'approvals', 'read', 'all')) {
     /* Every active person except the caller — an admin with no employee row

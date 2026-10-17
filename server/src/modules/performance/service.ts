@@ -113,7 +113,7 @@ function scope(caller: Caller, column: string, params: unknown[]): string {
   if (reaches(caller, 'performance', 'read', 'all')) return '';
   params.push(caller.employeeId);
   const p = `$${params.length}`;
-  if (caller.role === 'employee') return `${column} = ${p}`;
+  if (!reaches(caller, 'performance', 'read', 'team')) return `${column} = ${p}`;
   return `(${column} = ${p} OR ${column} IN (
      WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = ${p}
@@ -233,7 +233,7 @@ export async function addGoal(caller: Caller, draft: NewGoal): Promise<Goal> {
   const empId = draft.empId || caller.employeeId;
 
   return withTenant(caller, async (db) => {
-    if (empId !== caller.employeeId && caller.role === 'employee') {
+    if (empId !== caller.employeeId && !reaches(caller, 'performance', 'read', 'team')) {
       throw new PerformanceError('you can only set your own goals', 'forbidden');
     }
     const cycle = await currentCycleIn(db);
@@ -296,7 +296,7 @@ export async function setGoalProgress(
     const { rows } = await db.query(
       'SELECT employee_id FROM goal WHERE id = $1 FOR UPDATE', [goalId]);
     if (!rows[0]) throw new PerformanceError('no such goal', 'not_found');
-    if (rows[0].employee_id !== caller.employeeId && caller.role === 'employee') {
+    if (rows[0].employee_id !== caller.employeeId && !reaches(caller, 'performance', 'read', 'team')) {
       throw new PerformanceError('that goal is not yours', 'forbidden');
     }
 
@@ -561,7 +561,7 @@ export async function submitManagerReview(
   rating: number,
   comments: string,
 ): Promise<Review> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'performance', 'read', 'team')) {
     throw new PerformanceError('only a manager or admin may review someone', 'forbidden');
   }
   if (empId === caller.employeeId) {

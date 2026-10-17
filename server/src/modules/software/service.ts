@@ -121,7 +121,7 @@ function toRow(r: Row): SoftwareRow {
 }
 
 const mayBrowse = (caller: Caller) => {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'software', 'read', 'team')) {
     throw new SoftwareError('Your role cannot browse the software estate', 'forbidden');
   }
 };
@@ -439,7 +439,7 @@ export async function revokeSeat(caller: Caller, seatId: string) {
      * housekeeping; making them raise a ticket is how dormant seats pile up.
      * Taking one from outside their line is not theirs to do.
      */
-    if (caller.role === 'employee') {
+    if (!reaches(caller, 'software', 'read', 'team')) {
       throw new SoftwareError('Your role cannot revoke a seat', 'forbidden');
     }
     if (caller.hasReports) {

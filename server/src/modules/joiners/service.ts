@@ -127,7 +127,7 @@ export async function requestJoiner(
   caller: Caller,
   input: NewJoiner,
 ): Promise<JoiningRequest> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'onboarding', 'read', 'team')) {
     throw new JoinerError('only a manager or an admin may add a joiner', 'forbidden');
   }
   if (!input.fullName?.trim()) throw new JoinerError('a name is required', 'invalid');
@@ -299,7 +299,7 @@ export async function listJoiners(
   caller: Caller,
   status?: JoiningRequest['status'],
 ): Promise<JoiningRequest[]> {
-  if (caller.role === 'employee') return [];
+  if (!reaches(caller, 'onboarding', 'read', 'team')) return [];
 
   const where: string[] = [];
   const params: unknown[] = [];

@@ -111,7 +111,7 @@ export async function postAnnouncement(
   caller: Caller,
   draft: NewAnnouncement,
 ): Promise<Announcement[]> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'announcements', 'read', 'team')) {
     throw new NoticeboardError('only a manager or admin may post', 'forbidden');
   }
   const title = (draft.title ?? '').trim();
@@ -151,7 +151,7 @@ export async function setPinned(
   id: string,
   pinned: boolean,
 ): Promise<Announcement[]> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'announcements', 'read', 'team')) {
     throw new NoticeboardError('only a manager or admin may pin a post', 'forbidden');
   }
   return withTenant(caller, async (db) => {
@@ -162,7 +162,7 @@ export async function setPinned(
 }
 
 export async function removeAnnouncement(caller: Caller, id: string): Promise<Announcement[]> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'announcements', 'read', 'team')) {
     throw new NoticeboardError('only a manager or admin may take a post down', 'forbidden');
   }
   return withTenant(caller, async (db) => {

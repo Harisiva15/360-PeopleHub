@@ -269,7 +269,7 @@ export async function resolveTicket(
     if (['resolved', 'closed'].includes(rows[0].status as string)) {
       throw new HelpdeskError('that ticket is already resolved', 'already_resolved');
     }
-    if (caller.role === 'employee'
+    if (!reaches(caller, 'helpdesk', 'read', 'team')
         && rows[0].assignee_id !== caller.employeeId
         && rows[0].employee_id !== caller.employeeId) {
       throw new HelpdeskError('that ticket is not yours to resolve', 'forbidden');

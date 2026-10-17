@@ -19,6 +19,7 @@
  * always has an answer.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -142,7 +143,7 @@ export async function listItems(caller: Caller, q: WorkItemQuery = {}): Promise<
 /** What is on one person's plate, soonest first. */
 export async function myItems(caller: Caller, empId?: string): Promise<WorkItem[]> {
   const who = empId || caller.employeeId;
-  if (who !== caller.employeeId && caller.role === 'employee') {
+  if (who !== caller.employeeId && !reaches(caller, 'planner', 'read', 'team')) {
     throw new PlannerError('you can only see your own items', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
@@ -396,7 +397,7 @@ export async function createIteration(
   caller: Caller,
   draft: { name: string; goal?: string; from: string; to: string },
 ): Promise<Iteration[]> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'planner', 'read', 'team')) {
     throw new PlannerError('only a manager or admin may plan an iteration', 'forbidden');
   }
   if (!draft.name?.trim()) throw new PlannerError('an iteration needs a name', 'invalid');

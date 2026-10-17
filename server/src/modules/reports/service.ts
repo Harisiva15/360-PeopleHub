@@ -91,7 +91,7 @@ const toDef = (r: Row): ReportDef => ({
 });
 
 const mayBuild = (caller: Caller) => {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'reports', 'read', 'team')) {
     throw new ReportError('Your role cannot build reports', 'forbidden');
   }
 };

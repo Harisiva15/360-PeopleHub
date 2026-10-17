@@ -459,7 +459,7 @@ export async function addLifecycleTask(
   empId: string,
   d: LifecycleTaskDraft,
 ): Promise<LifecycleTask> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'lifecycle', 'read', 'team')) {
     throw new LifecycleError('Your role cannot assign lifecycle tasks', 'forbidden');
   }
   if (!d.n?.trim()) throw new LifecycleError('Say what the task is', 'invalid');
@@ -499,7 +499,7 @@ export async function setLifecycleTaskDone(
      * Not "a task about them" — being the subject of a task is not the same as
      * owing it, and the person who owes it is the one who can say it is done.
      */
-    if (caller.role === 'employee' && task.assignee_id !== caller.employeeId) {
+    if (!reaches(caller, 'lifecycle', 'read', 'team') && task.assignee_id !== caller.employeeId) {
       throw new LifecycleError('You can only complete a task assigned to you', 'forbidden');
     }
     if (caller.hasReports) {
@@ -570,7 +570,7 @@ export async function confirmProbation(
   empId: string,
   opts: { on?: string | null; note?: string | null } = {},
 ): Promise<LifecycleDetail> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'lifecycle', 'read', 'team')) {
     throw new LifecycleError('Your role cannot confirm probation', 'forbidden');
   }
 
@@ -669,7 +669,7 @@ export async function promote(
   empId: string,
   draft: PromotionDraft,
 ): Promise<LifecycleDetail> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'lifecycle', 'read', 'team')) {
     throw new LifecycleError('Your role cannot promote somebody', 'forbidden');
   }
   const wantsGrade = Boolean(draft.gradeCode?.trim());

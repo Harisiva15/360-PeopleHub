@@ -492,7 +492,7 @@ export async function listAttendance(
 
   // Scope first and unconditionally: empIds narrows what the caller can
   // already see, it never widens it.
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'attendance', 'read', 'team')) {
     params.push(caller.employeeId);
     where.push(`a.employee_id = $${params.length}`);
   } else if (caller.hasReports) {
@@ -598,7 +598,7 @@ export async function actOnRegularisation(
   date: string,
   decision: 'Approved' | 'Rejected',
 ): Promise<AttRecord> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'attendance', 'read', 'team')) {
     throw new AttendanceError('only a manager or admin may decide this', 'forbidden');
   }
   if (empId === caller.employeeId) {

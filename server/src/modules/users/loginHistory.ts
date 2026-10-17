@@ -144,7 +144,7 @@ export async function listLoginHistory(
   if (!target) return [];
   const own = target === caller.employeeId;
 
-  if (!own && caller.role === 'employee') {
+  if (!own && !reaches(caller, 'users', 'read', 'team')) {
     throw new UserError('You can only see your own sign-in history', 'forbidden');
   }
 
@@ -180,7 +180,7 @@ export async function listTenantLoginHistory(
   caller: Caller,
   limit = 200,
 ): Promise<LoginEvent[]> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'users', 'read', 'team')) {
     throw new UserError('Only an administrator or a manager can read this', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {

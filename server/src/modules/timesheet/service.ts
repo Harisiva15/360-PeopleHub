@@ -143,7 +143,7 @@ function scope(caller: Caller, column: string, params: unknown[]): string {
   }
   params.push(caller.employeeId);
   const p = `$${params.length}`;
-  if (caller.role === 'employee') return `${column} = ${p}`;
+  if (!reaches(caller, 'timesheet', 'read', 'team')) return `${column} = ${p}`;
   return `(${column} = ${p} OR ${column} IN (
      WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = ${p}
@@ -212,7 +212,7 @@ export async function timesheetForWeek(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
     throw new TimesheetError('a week starts on a date', 'invalid');
   }
-  if (caller.role === 'employee' && empId !== caller.employeeId) {
+  if (!reaches(caller, 'timesheet', 'read', 'team') && empId !== caller.employeeId) {
     throw new TimesheetError('you can only open your own timesheet', 'forbidden');
   }
 
@@ -241,7 +241,7 @@ async function openForEdit(
   const row = rows[0];
   if (!row) throw new TimesheetError('no such timesheet', 'not_found');
 
-  if (caller.role === 'employee' && row.employee_id !== caller.employeeId) {
+  if (!reaches(caller, 'timesheet', 'read', 'team') && row.employee_id !== caller.employeeId) {
     throw new TimesheetError('you can only edit your own timesheet', 'forbidden');
   }
   if (row.status !== 'draft' && row.status !== 'returned') {
@@ -518,7 +518,7 @@ export async function recallTimesheet(caller: Caller, id: string): Promise<Times
       'SELECT employee_id, status FROM timesheet WHERE id = $1 FOR UPDATE', [id]);
     const row = rows[0];
     if (!row) throw new TimesheetError('no such timesheet', 'not_found');
-    if (caller.role === 'employee' && row.employee_id !== caller.employeeId) {
+    if (!reaches(caller, 'timesheet', 'read', 'team') && row.employee_id !== caller.employeeId) {
       throw new TimesheetError('you can only recall your own timesheet', 'forbidden');
     }
     if (row.status !== 'submitted') {
@@ -541,7 +541,7 @@ export async function actOnTimesheet(
   decision: 'approved' | 'returned' | 'rejected',
   note?: string,
 ): Promise<Timesheet> {
-  if (caller.role === 'employee' || !caller.employeeId) {
+  if (!reaches(caller, 'timesheet', 'read', 'team') || !caller.employeeId) {
     throw new TimesheetError('only a manager or admin may decide a timesheet', 'forbidden');
   }
   if (!['approved', 'returned', 'rejected'].includes(decision)) {

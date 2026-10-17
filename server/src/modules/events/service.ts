@@ -292,7 +292,7 @@ export async function eventStats(caller: Caller) {
 }
 
 const mayCreate = (caller: Caller) => {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'events', 'read', 'team')) {
     throw new EventError('Your role cannot create events', 'forbidden');
   }
 };

@@ -142,7 +142,7 @@ function scope(caller: Caller, column: string, params: unknown[]): string {
 
   params.push(caller.employeeId);
   const p = `$${params.length}`;
-  if (caller.role === 'employee') return `${column} = ${p}`;
+  if (!reaches(caller, 'shifts', 'read', 'team')) return `${column} = ${p}`;
   return `(${column} = ${p} OR ${column} IN (
      WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = ${p}
@@ -273,7 +273,7 @@ export async function actOnOvertime(
   id: string,
   decision: 'approved' | 'rejected',
 ): Promise<Overtime> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'shifts', 'read', 'team')) {
     throw new ShiftError('only a manager or admin may act on overtime', 'forbidden');
   }
   if (!caller.employeeId) {
@@ -549,7 +549,7 @@ export async function setEmployeeShift(
   empId: string,
   shiftCode: string,
 ): Promise<{ empId: string; shift: string }> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'shifts', 'read', 'team')) {
     throw new ShiftError('only a manager or admin may change a shift', 'forbidden');
   }
 

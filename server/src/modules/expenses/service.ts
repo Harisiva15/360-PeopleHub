@@ -120,7 +120,7 @@ function scope(caller: Caller, column: string, params: unknown[]): string {
   if (reaches(caller, 'expenses', 'read', 'all')) return '';
   params.push(caller.employeeId);
   const p = `$${params.length}`;
-  if (caller.role === 'employee') return `${column} = ${p}`;
+  if (!reaches(caller, 'expenses', 'read', 'team')) return `${column} = ${p}`;
   return `(${column} = ${p} OR ${column} IN (
      WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = ${p}
@@ -243,7 +243,7 @@ async function assertMayDecide(
   caller: Caller,
   claimantId: string,
 ): Promise<void> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'expenses', 'read', 'team')) {
     throw new ExpenseError('only a manager or admin may decide a claim', 'forbidden');
   }
   if (claimantId === caller.employeeId) {

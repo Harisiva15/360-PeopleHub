@@ -216,23 +216,21 @@ Several differ from their directory — `config`→`settings`, `exits`→`exit`,
 
 ### Left
 
-1. **62 `caller.role === 'employee'` sites** on the server. Each becomes a
-   `reaches()`/scope check; any that genuinely means "the person themselves"
-   becomes `caller.employeeId === target` and is listed separately.
-2. **A census of `row.role === '…'`** — DB-sourced role values compared in
-   TypeScript. Found via the last-admin guard; the `caller.role` sweep
-   structurally could not see them.
-3. **API input** — `http/app.ts:287` types a request body as the old three
+1. **API input** - `http/app.ts:287` types a request body as the old three
    values, so the API would accept them from a client;
-   `employees/mapper.ts:59` carries the same union. From step A, request bodies
-   accept only the new vocabulary and old values get a 400. The normaliser is
-   for database values only.
-4. **`checks/role-gates.ts`** — must fail on a raw comparison against **any**
-   role literal, `'employee'` included, outside the policy files, in TypeScript
-   **and** inside SQL strings. It has to subsume `sql-role-sweep.mjs` or the two
-   can disagree.
-5. Then: `check:all` and the server checks green, and the step A runbook
-   (backup, migration, deploy order, smoke test).
+   `employees/mapper.ts:59` carries the same union. Three more read role from
+   input: `users/service.ts:281`, `users/service.ts:497` (the demotion half of
+   the last-administrator invariant) and `users/import.ts:164` (CSV). From
+   step A, request bodies accept only the new vocabulary and old values get a
+   400. The normaliser is for database values only.
+2. **`checks/role-gates.ts`** - must fail on a raw comparison against **any**
+   role literal, `'employee'` included, outside the policy files, in
+   TypeScript **and** inside SQL strings. It has to subsume
+   `sql-role-sweep.mjs` or the two can disagree.
+3. The step A runbook: backup, migration, deploy order, smoke test.
+4. The four database-backed server suites (`check:claim`, `check:invite`,
+   `check:provisioning`, `check:profile`) need a local Postgres to run; they
+   fail on an empty connection string, not on anything in this change.
 
 ---
 
