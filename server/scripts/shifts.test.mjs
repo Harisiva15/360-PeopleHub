@@ -156,12 +156,12 @@ console.log('\nthe shift table is exactly the one 0002 and 0015 left\n');
 }
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const MGR = {
-    role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const EMP = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const find = async (code) => (await shifts.listShifts(A)).find((s) => s.code === code);
 
@@ -321,7 +321,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (other) => {
     const B = {
-      role: 'admin', tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
+      role: 'company_admin', hasReports: false, tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
     };
     const theirs = await shifts.listShifts(B);
     ok('31. another tenant does not see our probe profile',
@@ -657,7 +657,7 @@ console.log('\nan admin may register a profile\n');
       ctx.adminEmployeeId])).rows[0].id;
 
   const MGR2 = {
-    role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   ok('81. a manager may move somebody in their own line',
     (await shifts.setEmployeeShift(MGR2, reportId, 'ZZNEW')).shift === 'ZZNEW');
@@ -745,7 +745,7 @@ console.log('\nan admin may register a profile\n');
   /* Tenant isolation for the writes. */
   await withScratchTenant(db, async (other) => {
     const B = {
-      role: 'admin', tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
+      role: 'company_admin', hasReports: false, tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
     };
     ok('93. another tenant does not see our new profiles',
       (await shifts.listShifts(B)).every((x) => !x.code.startsWith('ZZ')

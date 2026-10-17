@@ -302,7 +302,7 @@ const other = (await admin.query(
   'SELECT id FROM tenant WHERE id <> $1 LIMIT 1', [ctx.tenant])).rows[0];
 if (other) {
   const theirs = await projects.listProjects(
-    { role: 'admin', tenantId: other.id, employeeId: null, userId: null });
+    { role: 'company_admin', hasReports: false, tenantId: other.id, employeeId: null, userId: null });
   const mine = new Set(list.map((p) => p.id));
   ok('another tenant\'s list holds none of ours',
     !theirs.some((p) => mine.has(p.id)),

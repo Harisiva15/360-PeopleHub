@@ -201,9 +201,9 @@ console.log('\nthis phase added no schema\n');
 }
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const EMP = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
 
   const verdict = async (date) => {
@@ -397,12 +397,12 @@ await withScratchTenant(db, async (ctx) => {
   /* The role rule, now that there is a real second person to ask about. */
   await refused('32. an employee cannot read a colleague\'s calendar',
     () => calendar.workingDaysFor(
-      { role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null },
+      { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null },
       reportId, MON, MON),
     /only read your own/);
   ok('33. but a manager may read their own line',
     (await calendar.workingDaysFor(
-      { role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null },
+      { role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null },
       reportId, MON, MON)).length === 1,
     'the report\'s manager is the scratch admin');
 
@@ -504,7 +504,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (other) => {
     const B = {
-      role: 'admin', tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
+      role: 'company_admin', hasReports: false, tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
     };
 
     console.log('\nanother tenant\'s holidays are not ours\n');

@@ -106,12 +106,12 @@ let fatal = null;
 try {
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const MGR = {
-    role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const EMP = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
 
   /* The patterns this tenant can put somebody on. */
@@ -146,7 +146,7 @@ await withScratchTenant(db, async (ctx) => {
       dept: ctx.dept,
       site: ctx.site,
       designation: 'Engineer',
-      role: 'employee',
+      role: 'employee', hasReports: false,
       joinedOn: '2026-09-01',
       sendInvitation: false,
       ...over,
@@ -431,7 +431,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (o) => {
     const B = {
-      role: 'admin', tenantId: o.tenant, employeeId: o.adminEmployeeId, userId: null,
+      role: 'company_admin', hasReports: false, tenantId: o.tenant, employeeId: o.adminEmployeeId, userId: null,
     };
 
     console.log('\nno tenant may name another tenant\'s pattern\n');
@@ -442,7 +442,7 @@ await withScratchTenant(db, async (ctx) => {
     await refused('35. our pattern is not theirs to assign on creation',
       () => users.createUser(B, {
         name: 'ZZ Cross Tenant', email: `zz-x-${Math.random().toString(36).slice(2, 9)}@360.technology`,
-        dept: o.dept, site: o.site, designation: 'Engineer', role: 'employee',
+        dept: o.dept, site: o.site, designation: 'Engineer', role: 'employee', hasReports: false,
         joinedOn: '2026-09-01', sendInvitation: false, workScheduleCode: 'ZZMSAT',
       }), /no such work schedule/);
     ok('    and no employee was created in their tenant',
@@ -456,7 +456,7 @@ await withScratchTenant(db, async (ctx) => {
      */
     const smuggled = await users.createUser(B, {
       name: 'ZZ Smuggler', email: `zz-sm-${Math.random().toString(36).slice(2, 9)}@360.technology`,
-      dept: o.dept, site: o.site, designation: 'Engineer', role: 'employee',
+      dept: o.dept, site: o.site, designation: 'Engineer', role: 'employee', hasReports: false,
       joinedOn: '2026-09-01', sendInvitation: false,
       tenantId: ctx.tenant, tenant_id: ctx.tenant,
     });
@@ -470,7 +470,7 @@ await withScratchTenant(db, async (ctx) => {
       await sched.createWorkSchedule(B, { code: 'ZZMSAT', name: 'ZZ Theirs Six' });
       const mine = await users.createUser(B, {
         name: 'ZZ Theirs', email: `zz-th-${Math.random().toString(36).slice(2, 9)}@360.technology`,
-        dept: o.dept, site: o.site, designation: 'Engineer', role: 'employee',
+        dept: o.dept, site: o.site, designation: 'Engineer', role: 'employee', hasReports: false,
         joinedOn: '2026-09-01', sendInvitation: false, workScheduleCode: 'ZZMSAT',
       });
       const theirEmp = (await db.query(

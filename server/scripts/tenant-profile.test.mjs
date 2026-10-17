@@ -192,12 +192,12 @@ console.log('\nthe grant is column-level, and the table-level one is absent\n');
 }
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const MGR = {
-    role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const EMP = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const row = async () => (await db.query(
     'SELECT * FROM tenant WHERE id = $1', [ctx.tenant])).rows[0];
@@ -395,7 +395,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (other) => {
     const B = {
-      role: 'admin', tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
+      role: 'company_admin', hasReports: false, tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
     };
 
     console.log('\nwith no RLS on this table, the predicate is the whole boundary\n');
@@ -428,7 +428,7 @@ await withScratchTenant(db, async (ctx) => {
      * a silent success the caller would believe.
      */
     const GHOST = {
-      role: 'admin', tenantId: '00000000-0000-0000-0000-0000000000ff',
+      role: 'company_admin', hasReports: false, tenantId: '00000000-0000-0000-0000-0000000000ff',
       employeeId: null, userId: null,
     };
     await refused('42. a caller naming a tenant that does not exist is refused',

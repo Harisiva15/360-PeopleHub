@@ -77,8 +77,13 @@ export interface EmployeeProfile {
 }
 
 /** The same test `assertOwnOrAdmin` makes, asked before the call rather than after. */
+/*
+ * Pay is compensation's to grant, not the directory's. The sweep took the
+ * module from the file it sits in, and this file is employees - which would
+ * have shown a salary to anybody who may read the directory at all.
+ */
 const maySeePay = (caller: Caller, empId: string) =>
-  reaches(caller, 'employees', 'read', 'all') || caller.employeeId === empId;
+  reaches(caller, 'compensation', 'read', 'all') || caller.employeeId === empId;
 
 /** A structure that renders as nothing, for a caller who may not see pay. */
 const noPay = (e: Employee): Structure => ({

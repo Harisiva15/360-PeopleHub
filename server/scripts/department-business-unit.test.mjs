@@ -153,9 +153,9 @@ console.log('\na department belongs to a business unit\n');
 }
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
-  const MGR = { role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
-  const EMP = { role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const MGR = { role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const EMP = { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
 
   /* The scratch tenant arrives with a department and no business units. */
   const seeded = await config.listDepartments(A);
@@ -321,7 +321,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (other) => {
     const B = {
-      role: 'admin', tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
+      role: 'company_admin', hasReports: false, tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
     };
     const theirs = await config.createBusinessUnit(B, { code: 'BU-OPS', name: 'Their Ops' });
     ok('16. the same unit code exists in both tenants', theirs.code === 'BU-OPS');

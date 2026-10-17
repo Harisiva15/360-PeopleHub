@@ -311,7 +311,7 @@ console.log('\ntenant isolation\n');
  */
 await withScratchTenant(admin, async (other) => {
   const OTHER_ADMIN = {
-    role: 'admin', tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
+    role: 'company_admin', hasReports: false, tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
   };
 
   const theirs = await config.createBusinessUnit(OTHER_ADMIN, {

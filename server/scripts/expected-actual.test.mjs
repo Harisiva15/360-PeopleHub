@@ -90,7 +90,7 @@ let fatal = null;
 try {
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
 
   const person = async (name, joinedOn = '2020-01-01', over = {}) => {
     const { rows } = await db.query(
@@ -347,9 +347,9 @@ await withScratchTenant(db, async (ctx) => {
 
   const outsider = await person('ZZ Outside The Line', '2020-01-01', { managerId: null });
   const MGR = {
-    role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
-  const asFive = { role: 'employee', tenantId: ctx.tenant, employeeId: five, userId: null };
+  const asFive = { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: five, userId: null };
 
   ok('26. a manager sees attendance for their own line',
     (await att.listAttendance(MGR, { empIds: [five], from: MON, to: SUN })).length === 3);
@@ -378,7 +378,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (o) => {
     const B = {
-      role: 'admin', tenantId: o.tenant, employeeId: o.adminEmployeeId, userId: null,
+      role: 'company_admin', hasReports: false, tenantId: o.tenant, employeeId: o.adminEmployeeId, userId: null,
     };
 
     console.log('\nand nothing reaches across a tenant\n');

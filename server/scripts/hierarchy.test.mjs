@@ -213,7 +213,7 @@ const employeeOf = async (account) => (await admin.query(
     name: `ZZ Probe Manager ${tag}`,
     email: `zz-hier-mgr-${tag}@360.technology`,
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Engineering Manager',
-    role: 'manager',
+    role: 'employee', hasReports: true,
   });
   const MGR_ID = await employeeOf(mgrAccount);
   ok('an admin creates a manager', Boolean(MGR_ID));
@@ -223,7 +223,7 @@ const employeeOf = async (account) => (await admin.query(
     name: `ZZ Probe Employee ${tag}`,
     email: `zz-hier-emp-${tag}@360.technology`,
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Software Engineer',
-    role: 'employee', managerId: MGR_ID,
+    role: 'employee', hasReports: false, managerId: MGR_ID,
   });
   const EMP_ID = await employeeOf(empAccount);
   ok('an admin creates an employee reporting to that manager', Boolean(EMP_ID));
@@ -273,7 +273,7 @@ const employeeOf = async (account) => (await admin.query(
   const byManager = await users.createUser(MGR, {
     name: `ZZ Probe Requested ${tag}`,
     email: `zz-hier-req-${tag}@360.technology`,
-    dept: ctx.dept, site: ctx.site, designation: 'ZZ Analyst', role: 'employee',
+    dept: ctx.dept, site: ctx.site, designation: 'ZZ Analyst', role: 'employee', hasReports: false,
     managerId: MGR_ID,
   });
   await employeeOf(byManager);
@@ -285,7 +285,7 @@ const employeeOf = async (account) => (await admin.query(
   await refused('a manager cannot grant the admin role',
     () => users.createUser(MGR, {
       name: `ZZ Probe Admin ${tag}`, email: `zz-hier-adm-${tag}@360.technology`,
-      dept: ctx.dept, site: ctx.site, designation: 'ZZ X', role: 'admin',
+      dept: ctx.dept, site: ctx.site, designation: 'ZZ X', role: 'company_admin', hasReports: false,
     }), /administrator/i);
 
   /* ================================================================ *
@@ -359,7 +359,7 @@ const employeeOf = async (account) => (await admin.query(
   await refused('an employee cannot create an account',
     () => users.createUser(EMP, {
       name: 'ZZ no', email: `zz-hier-no-${tag}@360.technology`,
-      dept: ctx.dept, site: ctx.site, designation: 'ZZ', role: 'employee',
+      dept: ctx.dept, site: ctx.site, designation: 'ZZ', role: 'employee', hasReports: false,
     }), /role|cannot manage/i);
   await refused('an employee cannot list users',
     () => users.listUsers(EMP), /role|cannot manage/i);
@@ -481,12 +481,12 @@ const employeeOf = async (account) => (await admin.query(
    */
   const otherMgr = await users.createUser(ADMIN, {
     name: `ZZ Probe Manager B ${tag}`, email: `zz-hier-mgb-${tag}@360.technology`,
-    dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Manager', role: 'manager',
+    dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Manager', role: 'employee', hasReports: true,
   });
   const OTHER_MGR_ID = await employeeOf(otherMgr);
   const otherEmp = await users.createUser(ADMIN, {
     name: `ZZ Probe Employee B ${tag}`, email: `zz-hier-emb-${tag}@360.technology`,
-    dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Engineer', role: 'employee',
+    dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Engineer', role: 'employee', hasReports: false,
     managerId: OTHER_MGR_ID,
   });
   const OTHER_EMP_ID = await employeeOf(otherEmp);

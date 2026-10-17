@@ -83,7 +83,7 @@ console.log('\nchecking in writes a row that carries the time\n');
 
 await withScratchTenant(db, async (ctx) => {
   const me = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   await acknowledgeLocationNotice(me);
 
@@ -125,7 +125,7 @@ for (const [sent, want] of [
 ]) {
   await withScratchTenant(db, async (ctx) => {
     const me = {
-      role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+      role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
     };
     const err = await refused(() => punchIn(me, ctx.adminEmployeeId, today, {
       site: ctx.site, lat: null, lng: null, src: sent, at: at8,
@@ -145,7 +145,7 @@ console.log('\nthe position is kept once they have been told, and not before\n')
 
 await withScratchTenant(db, async (ctx) => {
   const me = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   /* Deliberately no acknowledgement. */
   await punchIn(me, ctx.adminEmployeeId, today, {
@@ -161,7 +161,7 @@ await withScratchTenant(db, async (ctx) => {
 
 await withScratchTenant(db, async (ctx) => {
   const me = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   await acknowledgeLocationNotice(me);
   /* A fence this scratch site actually has, and a point inside it. */
@@ -185,7 +185,7 @@ await withScratchTenant(db, async (ctx) => {
 
 await withScratchTenant(db, async (ctx) => {
   const me = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   await acknowledgeLocationNotice(me);
   await db.query(
@@ -210,7 +210,7 @@ console.log('\nchecking out closes the day\n');
 
 await withScratchTenant(db, async (ctx) => {
   const me = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   await punchIn(me, ctx.adminEmployeeId, today, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at8,
@@ -239,7 +239,7 @@ console.log('\nand what it refuses\n');
 
 await withScratchTenant(db, async (ctx) => {
   const me = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   await punchIn(me, ctx.adminEmployeeId, today, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at8,
@@ -255,7 +255,7 @@ await withScratchTenant(db, async (ctx) => {
 
 await withScratchTenant(db, async (ctx) => {
   const me = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const early = await refused(() => punchOut(me, ctx.adminEmployeeId, today, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at18,
@@ -288,7 +288,7 @@ await withScratchTenant(db, async (ctx) => {
   )).rows[0].id;
 
   const employee = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const notMine = await refused(() => punchIn(employee, other, today, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at8,
@@ -298,7 +298,7 @@ await withScratchTenant(db, async (ctx) => {
     `${notMine?.code}: ${notMine?.message}`);
 
   const admin = {
-    role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const byAdmin = await refused(() => punchIn(admin, other, today, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at8,

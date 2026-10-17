@@ -101,9 +101,9 @@ const ctx = (await admin.query(`
     FROM tenant t JOIN employee e ON e.tenant_id = t.id
    WHERE t.slug = $1 AND e.code = $2`, [TENANT_SLUG, ADMIN_CODE])).rows[0];
 
-const ADMIN = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
-const MANAGER = { role: 'manager', tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
-const EMPLOYEE = { role: 'employee', tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
+const ADMIN = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
+const MANAGER = { role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
+const EMPLOYEE = { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null };
 
 /** A provider that records what it was asked and answers how it was told to. */
 const spy = (behaviour) => {
@@ -311,7 +311,7 @@ console.log('\nwhat is sent, and what is written down\n');
   const api = spy(() => Promise.resolve({ kind: 'invited' }));
   const was = setAuthAdmin(api);
   try {
-    await withMembership('invited', { role: 'manager' }, async ({ mem, email }) => {
+    await withMembership('invited', { role: 'employee', hasReports: true }, async ({ mem, email }) => {
       await inviteUser(ADMIN, mem);
       ok('8. the address invited is the employee\'s own', api.calls[0]?.email === email,
         `asked for ${api.calls[0]?.email}`);
