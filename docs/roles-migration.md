@@ -533,12 +533,25 @@ The suite creates rows in `auth.users`, which the other suites avoid. They are
 plain rows in a local table, not Supabase accounts — only `id` is required —
 and they are deleted by hand, because the tenant cascade runs the other way.
 The census counts them so a leak shows.
-### Still open: one expectation, awaiting approval
+### The one expectation that changed (approved 2026-10-17)
 
-`hierarchy.test.mjs:225` asserts `mgrAccount.role === 'manager'` after creating
-a manager. There is no manager role to assign any more, so the value is
-`employee` and the assertion has to change. **Not changed** — it is a decision,
-not a rename. It is the only failing assertion in 26 database suites.
+`hierarchy.test.mjs:225` asserted `mgrAccount.role === 'manager'` after
+creating a manager. There is no manager role to assign, so:
+
+| | |
+|---|---|
+| was | `ok('  with the manager role on the membership', mgrAccount.role === 'manager')` |
+| now | `ok('  with the employee role on the membership', mgrAccount.role === 'employee')` |
+| added | after the report is created: `which is what makes the first account a manager`, counting `employee WHERE manager_id = MGR_ID` |
+
+The added assertion is the point. The old one checked a label; the new pair
+checks the model — the membership carries `employee`, and the person is a
+manager because somebody reports to them. The `hasReports: true` that
+`sweep-fixtures.mjs` had put in the `createUser` body is gone too; that
+function does not accept it, and whether somebody answers for other people is
+read from the reporting tree rather than declared when their account is made.
+
+All 36 suites now pass.
 
 ---
 ## The local database suites

@@ -218,11 +218,26 @@ const employeeOf = async (account) => (await admin.query(
     name: `ZZ Probe Manager ${tag}`,
     email: `zz-hier-mgr-${tag}@360.technology`,
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Engineering Manager',
-    role: 'employee', hasReports: true,
+    /*
+     * `employee`, because there is no manager role to ask for.
+     *
+     * `hasReports` was here too, added by sweep-fixtures.mjs, which took this
+     * request body for a Caller. `createUser` does not accept it: whether
+     * somebody answers for other people is read from the reporting tree, not
+     * declared when their account is made.
+     */
+    role: 'employee',
   });
   const MGR_ID = await employeeOf(mgrAccount);
   ok('an admin creates a manager', Boolean(MGR_ID));
-  ok('  with the manager role on the membership', mgrAccount.role === 'manager', mgrAccount.role);
+  /*
+   * `employee` on the membership, and that is the model rather than a
+   * concession to it: a manager is an employee who has reports, so there is no
+   * manager role for the membership to carry. The assertion below, after the
+   * report exists, is what makes this person a manager.
+   */
+  ok('  with the employee role on the membership',
+    mgrAccount.role === 'employee', mgrAccount.role);
 
   const empAccount = await users.createUser(ADMIN, {
     name: `ZZ Probe Employee ${tag}`,
@@ -232,6 +247,17 @@ const employeeOf = async (account) => (await admin.query(
   });
   const EMP_ID = await employeeOf(empAccount);
   ok('an admin creates an employee reporting to that manager', Boolean(EMP_ID));
+
+  /*
+   * And *now* the first account is a manager — not because anybody said so,
+   * but because somebody reports to them. Read from the database, like the
+   * relationship below, rather than from the response.
+   */
+  ok('  which is what makes the first account a manager',
+    (await admin.query(
+      'SELECT count(*)::int n FROM employee WHERE manager_id = $1', [MGR_ID]
+    )).rows[0].n === 1,
+    'the manager layer is a fact about the reporting tree, not a role');
 
   const MGR = caller('employee', MGR_ID, true);
   const EMP = caller('employee', EMP_ID);
