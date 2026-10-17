@@ -462,6 +462,85 @@ attendance screen.
 The database was re-read after the deploy and is byte-identical to the
 post-migration snapshot: the live server has written nothing.
 
+### 5b — sign in, within two minutes, before anything else
+
+**`/health` is not an auth check and never was.** It answers before
+authentication and before the rate limiter, deliberately, so that Render can
+poll it. It was green throughout the step A outage, when `callerFromToken` threw
+on every authenticated request and nobody could use the application at all. A
+green `/health` means the process is serving. It says nothing about whether
+anybody can sign in.
+
+So the first thing after both deploys are green is a real sign-in, and the
+rollback stays ready until it passes.
+
+#### The 30-second version, from a terminal
+
+This needs no browser and no session. It proves the authenticated path works,
+which is the thing `/health` cannot:
+
+```
+API=https://three60-peoplehub-api.onrender.com
+
+# 1. Unauthenticated: must be 401, not 500. A 500 here is the outage shape —
+#    callerFromToken throwing before it ever gets to the question of identity.
+curl -s -o /dev/null -w '  no token      -> %{http_code}  (expect 401)\n' \
+  "$API/me/permissions"
+
+# 2. Garbage token: must also be 401, for the same reason.
+curl -s -o /dev/null -w '  bad token     -> %{http_code}  (expect 401)\n' \
+  -H 'Authorization: Bearer not-a-token' "$API/me/permissions"
+```
+
+A **500 on either** means stop and revert. `callerFromToken` is failing before
+it can reject a token, which is exactly what happened on 2026-10-17: every
+authenticated route was answering 500 while `/health` said `ok`.
+
+#### Then a real sign-in, in a browser
+
+Sign in as **Hari (`hari.siva`, VHM004)** — not hr@. Both of the "signed in
+fine" checks on the day of the outage were hr@, whose `must_change_password` is
+false, so they never touched the path that was broken.
+
+- [ ] Sign in at https://360peoplehub.com/
+- [ ] The menu renders with items in it — not an empty shell
+- [ ] If "Set a new password" appears: complete it. It should **succeed**, clear
+      the flag, and write a `user.password_changed` audit row. If it reports an
+      error, read the error — since the fix it tells you whether the password
+      was saved and only the record failed
+- [ ] Open your own payslip
+
+Then confirm from your own machine that the sign-in was recorded, which is the
+database's view of the same event:
+
+```
+cd server
+node -e "
+const pg=require('pg');const fs=require('fs');
+const u=fs.readFileSync('.env.migrate','utf8').split('\n').find(l=>l.startsWith('MIGRATE_DATABASE_URL=')).slice(21).trim();
+const c=new pg.Client({connectionString:u,ssl:{rejectUnauthorized:false}});
+c.connect().then(()=>c.query(\`
+  SELECT e.code, m.must_change_password, m.last_login_at
+    FROM tenant_membership m JOIN employee e ON e.id = m.employee_id
+   ORDER BY e.code\`))
+ .then(r=>{console.table(r.rows);return c.end()});
+"
+```
+
+`last_login_at` for VHM004 should be **today**. If it still reads 2026-09-23,
+the sign-in did not reach the application however the screen looked.
+
+#### Why two minutes
+
+The window between Render going live and a problem being noticed is the whole
+exposure. On 2026-10-17 Render was live 15 seconds after the push and Pages
+took several minutes, so the deploy was in a mixed state for longer than the
+server was broken. Sign in as soon as both are green, with the revert command
+already in a second terminal.
+
+**If the sign-in fails: revert first, diagnose second.** That is what made the
+outage 40 minutes instead of an afternoon.
+
 ### Rollback at this stage
 
 Revert the code and **leave the database alone**. Widened constraints are

@@ -201,14 +201,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      * Supabase owns the password, so the flag is cleared by telling this
      * application the change happened. See the note on passwordChanged in the
      * users service for why that is acceptable here and what would replace it.
+     *
+     * This throws if that call fails, and the two lines below do not run.
+     *
+     * It used to swallow the failure — "the password did change; the reminder
+     * simply stays" — and then clear `mustChange` locally anyway. The reasoning
+     * was that the password really had changed, so blocking the person would be
+     * unkind. What it actually produced was the worst outcome of the step A
+     * outage: the screen said the reset had worked, the stored flag was
+     * untouched, and the next call to `refreshPasswordStatus` put the person
+     * straight back on this screen. A reset that looks successful and changes
+     * nothing is harder to diagnose and more frightening than one that says it
+     * failed.
+     *
+     * So the password change stands — it is Supabase's and already done — but
+     * the obligation is only discharged if the server agrees it has been. The
+     * caller shows the message and keeps the person here, where they can try
+     * again.
      */
+    const { getServices } = await import('../services');
+    const { data } = await supabase.auth.getSession();
     try {
-      const { getServices } = await import('../services');
-      const { data } = await supabase.auth.getSession();
       await getServices().users.passwordChanged({
         role: 'employee', meId: data.session?.user?.id ?? '',
       });
-    } catch { /* The password did change; the reminder simply stays. */ }
+    } catch (e) {
+      throw new Error(
+        'Your new password was saved, but this application could not record '
+        + 'that you changed it, so it will ask again. '
+        + (e instanceof Error ? e.message : 'The server did not answer.'),
+      );
+    }
     setRecovering(false);
     setMustChange(false);
   }, []);
