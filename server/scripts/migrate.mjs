@@ -94,23 +94,49 @@ if (PRODUCTION) {
     console.log('  already in the environment takes precedence over .env.migrate.');
     console.log('');
   }
-  if (!process.stdin.isTTY) {
-    console.error('  Refusing to continue: there is nobody here to confirm it.');
-    console.error('  Run this in a terminal.');
-    console.error('');
-    process.exit(1);
+  /*
+   * The confirmation may be given as an argument instead of typed.
+   *
+   * `--confirm-host=<host>` exists for an attended run that has no terminal —
+   * an agent session, or a script somebody is watching. It is not a `--yes`:
+   * the operator still has to name the exact host, so the thing the prompt was
+   * really protecting (that somebody knows where this is pointed) still holds,
+   * and it is recorded in shell history rather than vanishing into a prompt.
+   *
+   * A wrong or absent value refuses exactly as a mistyped prompt does.
+   */
+  const claimed = process.argv
+    .find((a) => a.startsWith('--confirm-host='))?.slice('--confirm-host='.length);
+
+  if (claimed !== undefined) {
+    if (claimed !== host) {
+      console.error(`  --confirm-host says ${claimed}, but the target is ${host}.`);
+      console.error('  Nothing was applied.');
+      console.error('');
+      process.exit(1);
+    }
+    console.log('  confirmed by --confirm-host');
+    console.log('');
+  } else {
+    if (!process.stdin.isTTY) {
+      console.error('  Refusing to continue: there is nobody here to confirm it.');
+      console.error('  Run it in a terminal, or pass --confirm-host=<host> if you are');
+      console.error('  watching a session that has none.');
+      console.error('');
+      process.exit(1);
+    }
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const typed = await new Promise((resolve) => {
+      rl.question(`  Type the host to confirm (${host}): `, (a) => { rl.close(); resolve(a.trim()); });
+    });
+    if (typed !== host) {
+      console.error('');
+      console.error('  That does not match. Nothing was applied.');
+      console.error('');
+      process.exit(1);
+    }
+    console.log('');
   }
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const typed = await new Promise((resolve) => {
-    rl.question(`  Type the host to confirm (${host}): `, (a) => { rl.close(); resolve(a.trim()); });
-  });
-  if (typed !== host) {
-    console.error('');
-    console.error('  That does not match. Nothing was applied.');
-    console.error('');
-    process.exit(1);
-  }
-  console.log('');
 }
 
 const client = new pg.Client({ connectionString: url, ssl: sslConfig() });

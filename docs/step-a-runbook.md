@@ -290,6 +290,19 @@ It prints the target host and makes you type that host back. **Read it before
 you type.** If it is not the host you expect, something points elsewhere and the
 answer is to stop.
 
+In a session with no terminal — an agent session, or a watched script — pass the
+confirmation as an argument instead:
+
+```
+node scripts/migrate.mjs --production --confirm-host=db.<ref>.supabase.co
+```
+
+That is not a `--yes`. The exact host still has to be named, so the thing the
+prompt protected — that somebody knows where this is pointed — still holds, and
+it lands in shell history rather than vanishing into a prompt. A wrong or
+missing value refuses exactly as a mistyped prompt does, and `--production`
+without either still refuses outright.
+
 Applying `0056_role_vocabulary_expand.sql` — 7,276 bytes, sha256
 `4cd3d851ab02a6141f911b5375b40bd032d5e62b68984519bb2c55be8987ddfb`. One
 transaction. It widens four CHECK constraints to accept all six values:
@@ -349,6 +362,36 @@ c.connect().then(()=>c.query('SELECT role, count(*)::int n FROM tenant_membershi
 
 Still two `admin` and one `employee`. If any row reads `company_admin`,
 something other than 0056 has run — stop and find out what.
+
+### Run on 2026-10-17
+
+Applied with `--confirm-host`, exit 0, `1 migration(s) applied`.
+
+Before and after were captured with the same script and diffed. The diff is
+three blocks and nothing else: the header, the constraint value lists, and the
+`schema_migration` lines.
+
+| | before | after |
+|---|---|---|
+| the four CHECK constraints | 3 values each | **6 values each** |
+| `schema_migration` rows | 55 | **56** |
+| latest migration | `0055_public_role_exposure.sql` | `0056_role_vocabulary_expand.sql` |
+| 0056 checksum recorded | — | `4cd3d851ab02a6141f911b5375b40bd032d5e62b68984519bb2c55be8987ddfb` |
+| `tenant_membership.role` | admin 2, employee 1 | admin 2, employee 1 |
+| `employee.app_role` | admin 2, employee 1 | admin 2, employee 1 |
+| `role_permission` | 99 rows (33 each) | 99 rows (33 each) |
+| VHM004 / VHM005 / VHM006 | admin / admin / employee | unchanged |
+
+The recorded checksum matches the file on disk, so what ran is what is in the
+repository.
+
+The live API was unaffected: `GET /health` on the deployed server answered
+`{"ok":true,…}` in 0.29s, and `https://360peoplehub.com/` returned 200. Its
+`migrations` summary still reads `expected 55, applied 55, pending 0` — which
+is correct and worth understanding rather than worrying about. That summary is
+computed when the process starts, and the **currently deployed build does not
+contain 0056 at all**, so 55 is all it knows to expect. After the step 5 deploy
+it becomes 56/56. Nothing is behind.
 
 **Production is now in a valid resting state.** The constraints accept both
 vocabularies and the live code still writes the old one. Stop here and nothing
