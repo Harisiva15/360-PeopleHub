@@ -189,8 +189,11 @@ export async function raiseTicket(caller: Caller, draft: NewTicket): Promise<Tic
     const assignee = await db.query(
       `SELECT e.id FROM employee e
         WHERE e.department_id = $1 AND e.status <> 'exited'
-        ORDER BY (e.app_role = 'admin') DESC, e.joined_on LIMIT 1`,
-      [cat.rows[0].owning_department_id]);
+        -- Both vocabularies while the column may hold either; step C narrows
+        -- this to 'company_admin'. Ordering on a value that stopped existing
+        -- would quietly pick by joining date alone.
+        ORDER BY (e.app_role = ANY($2)) DESC, e.joined_on LIMIT 1`,
+      [cat.rows[0].owning_department_id, ['admin', 'company_admin']]);
 
     const { rows } = await db.query(
       `INSERT INTO ticket

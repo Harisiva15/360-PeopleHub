@@ -615,11 +615,20 @@ export async function setUserStatus(
     /*
      * The last administrator cannot be taken out of service. Counted rather
      * than assumed, because the count is the whole safeguard.
+     *
+     * Both vocabularies, on both sides of the question. These are database
+     * values, not Caller.role, so the normaliser in session.ts never sees
+     * them: during expand the column holds either name, and asking for
+     * 'admin' alone would have counted zero the moment step B ran - the
+     * guard passing silently and the final administrator removable. Step C
+     * narrows both to 'company_admin'.
      */
-    if (row.role === 'admin' && db_status !== 'active') {
+    const ADMIN_ROLES = ['admin', 'company_admin'];
+    if (ADMIN_ROLES.includes(row.role) && db_status !== 'active') {
       const { rows } = await db.query<{ n: string }>(
         `SELECT count(*)::text AS n FROM tenant_membership
-          WHERE role = 'admin' AND status = 'active' AND id <> $1`, [id]);
+          WHERE role = ANY($2) AND status = 'active' AND id <> $1`,
+        [id, ADMIN_ROLES]);
       if (Number(rows[0]?.n ?? 0) === 0) {
         throw new UserError('This is the last active administrator', 'forbidden');
       }
