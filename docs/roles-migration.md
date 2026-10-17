@@ -74,6 +74,10 @@ code writes names the constraint refuses.
 
 ### Step A — expand (written, dry-run, **not applied**)
 
+> **The runbook is `docs/step-a-runbook.md`** — backup, migration, deploy
+> order, the five-minute smoke test, and what to do when something is wrong.
+> Read that to run it; this section is what it does and why.
+
 `server/db/migrations/0056_role_vocabulary_expand.sql`. Widens four CHECK
 constraints to accept **both** vocabularies. Touches no row, no default, no
 function.

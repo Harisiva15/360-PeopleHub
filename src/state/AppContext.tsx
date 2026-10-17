@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  ACCOUNTS, can, covers, hasReportsFromRules, SCOPE, scopeOfDemo, visibleIds,
+  ACCOUNTS, can, covers, hasReportsFromRules, isAppRole, SCOPE, scopeOfDemo, visibleIds,
 } from './rbac';
 import type { RuleScopes, Scope } from './rbac';
 import { EMAP, teamOf } from '../data/employees';
@@ -266,7 +266,20 @@ function useResolvedIdentity(
         resolvedFor.current = plan.token;
         setIdentity(who.identity);
         setAccess({ modules: who.modules ?? [], rules: who.rules ?? {} });
-        setRole(who.role);
+        /*
+         * A role the server names but this bundle has never heard of becomes
+         * `employee` for display, the same mapping the server's own normaliser
+         * makes.
+         *
+         * During the cutover deploy the two halves move minutes apart, and a
+         * browser holding the new bundle can be answered by the old server,
+         * which says `admin`. `SCOPE[role].label` is read directly on the
+         * attendance and expenses screens, and `SCOPE['admin']` is undefined,
+         * so that window crashed them. Access is unaffected either way: in API
+         * mode every scope comes from `setAccess` above — the grant the server
+         * computed — and never from this value.
+         */
+        setRole(isAppRole(who.role) ? who.role : 'employee');
         setMeId(empId);
         setMe(row);
         setState((prev) => identityOnSettled(prev, { kind: 'resolved' }));
