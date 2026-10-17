@@ -238,6 +238,147 @@ Several differ from their directory — `config`→`settings`, `exits`→`exit`,
 
 ---
 
+## The step A outage, and the fix
+
+Step A shipped on 2026-10-17 and was reverted about 40 minutes later. Sign-in
+appeared to work and then sent everybody to "Set a new password", which did not
+complete. Production was restored by reverting the code; the database was left
+exactly as it was, which is the property the whole expand step was designed
+around and the one part of the day that went to plan.
+
+### What broke
+
+`hasReportsFor` queried `employee` directly, inside `withoutTenantForAuth`:
+
+```sql
+WITH RECURSIVE line AS (
+  SELECT id FROM employee WHERE manager_id = $1 AND tenant_id = $2
+   UNION
+  SELECT e.id FROM employee e JOIN line l ON e.manager_id = l.id WHERE e.tenant_id = $2
+) SELECT EXISTS (SELECT 1 FROM line)
+```
+
+The row-level policy on `employee` calls `current_tenant_id()`, and that
+function **raises** when nothing is set rather than returning null:
+
+```
+42501  no tenant in this session: set app.tenant_id, or sign in with a tenant claim
+```
+
+So every authenticated request threw inside `callerFromToken`. Reproduced
+locally as `app_rw`, each probe in its own transaction:
+
+```
+THREW  the hasReportsFor CTE on employee     -> 42501 no tenant in this session
+THREW  plain count on employee               -> 42501 no tenant in this session
+THREW  tenant_membership                     -> 42501 no tenant in this session
+ok     auth_membership()  (SECURITY DEFINER) -> {"n":0}
+```
+
+The old build made four no-tenant reads too — and every one went through
+`auth_membership()` or `auth_membership_status()`, which are `SECURITY DEFINER`
+and bypass RLS. The new build added a fifth that read a table directly.
+
+### Why the symptom looked like a password problem
+
+`AuthContext.refreshPasswordStatus` fails closed, deliberately:
+
+```js
+} catch {
+  setMustChange(true);
+  setMustEnrol(false);
+}
+```
+
+An unanswered password obligation costs one screen somebody can complete, so
+asking again is the safe default. Here the call was not merely unanswered but
+failing for an unrelated reason, and the safe default became a locked door.
+
+And `setPassword` swallows a failed `passwordChanged` — "the password did
+change; the reminder simply stays" — then clears `mustChange` in local state
+only. So a reset appeared to work and the next refresh re-blocked. That is the
+loop, and it is why the cause looked like it was in the password flow.
+
+Worth noting for its own sake: the fail-closed choice was right and the
+asymmetry with MFA was reasoned about in a comment. What made it painful is
+that the thing it failed closed *about* was not the thing that was broken. A
+gate that fails closed on an error it cannot interpret will always point at
+itself rather than at the cause.
+
+### Why nothing caught it
+
+Every database-backed suite builds `Caller` objects by hand, so not one of them
+had ever executed `callerFromToken`. 203 files of green checks, and the function
+that broke was never called.
+
+Migration 0011 had already written the lesson down, in 2024:
+
+> This was invisible until the first end-to-end test, because every earlier
+> check ran as the owner, and the owner bypasses row-level security. A test that
+> runs as a more privileged role than production does is a test that proves the
+> wrong thing.
+
+The 2026 version of the same mistake was narrower and worse: the suites *do*
+run the services as `app_rw`, so the role was right — the path was never taken.
+
+### The fix
+
+Migration `0057_auth_has_reports.sql` adds `auth_has_reports(p_user_id uuid)`,
+a `SECURITY DEFINER` function in the shape 0011 established. `session.ts` calls
+it instead of querying `employee`.
+
+Two details that are not incidental:
+
+- **It takes the user id, not the employee id.** A caller supplies a token and
+  the subject of a token is a user. The function resolves the employee and the
+  tenant from the membership itself, so there is nothing for a caller holding
+  `app_rw` to point at somebody else's line.
+- **It is not granted to `authenticated`.** 0011 granted that for a PostgREST
+  tenant picker; nothing needs this one that way. 0055's public-role exposure
+  check refused the grant when it was copied across, which was correct —
+  anything `authenticated` may execute is reachable by anybody holding the
+  publishable key.
+
+Proved as `app_rw` with no tenant, which is the condition that broke:
+
+```
+ok     auth_has_reports, a real user    -> {"any":false}
+ok     auth_has_reports, unknown user   -> {"any":false}
+THREW  the OLD direct employee query    -> 42501 no tenant in this session
+```
+
+### The check that would have caught it
+
+`check:authnotenant` (`server/scripts/auth-no-tenant.test.mjs`). It checks the
+rule rather than one path through it, because `callerFromToken` verifies a real
+JWT and these suites deliberately never contact Supabase:
+
+1. **Statically** — every query inside a `withoutTenantForAuth` block reads an
+   `auth_*` function and never a table. Reintroducing the direct query makes it
+   fail, which was confirmed by doing exactly that.
+2. **At runtime, as `app_rw`** — each of those functions answers with no tenant
+   set. It asserts the connection really is `app_rw` first, because the owner
+   bypasses RLS and a check using the suites' admin connection would have
+   passed with the bug present. That is 0011's lesson as an assertion.
+3. **A floor** — a direct `employee` read in the same condition still raises
+   42501. If that ever stops raising, the rule in (1) is no longer
+   load-bearing and this suite has gone blind rather than the code having got
+   safer.
+
+### One more defect, found by the same work
+
+`check:migrations` failed on 0057 with "no committed migration has been
+modified". False positive: it built its set from `git ls-files`, which counts
+the index, so a newly added migration was in it and `diff HEAD` listed it as
+changed by definition. Its own comment said "a file staged but not committed is
+fine" — the implementation could not deliver that. It now asks
+`git ls-tree HEAD`, so "committed" means present in HEAD.
+
+0057 was the first migration added since that check was written, so it was the
+first to trip it. A real edit to 0055 is still caught — verified.
+
+---
+
 ## Keeping the tests off production
 
 Done before the rest of task 0, because the suites that prove the cutover are

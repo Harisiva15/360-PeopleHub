@@ -58,20 +58,30 @@ interface MembershipRow {
  *
  * False when there is no employee row at all: an administrator who is not on
  * payroll manages nobody, and their role is where their reach comes from.
+ *
+ * Asked through `auth_has_reports`, a SECURITY DEFINER function, for the same
+ * reason `auth_membership` exists: this runs before any tenant is established,
+ * and the row-level policy on `employee` calls `current_tenant_id()`, which
+ * *raises* when nothing is set rather than returning null —
+ *
+ *     42501  no tenant in this session: set app.tenant_id, or sign in with a
+ *            tenant claim
+ *
+ * This read used to query `employee` directly. It therefore threw on every
+ * authenticated request, `callerFromToken` threw with it, and because the
+ * frontend's password gate fails closed the visible symptom was "Set a new
+ * password" on a loop. See migration 0057, and 0011 before it, which is the
+ * same bug in the same place for the same reason.
+ *
+ * The function takes the *user* id, not the employee id: a caller supplies a
+ * token and the subject of a token is a user. It resolves the employee and the
+ * tenant from the membership itself, so there is nothing here for a caller to
+ * point somewhere else.
  */
-async function hasReportsFor(tenantId: string, employeeId: string | null): Promise<boolean> {
-  if (!employeeId) return false;
+async function hasReportsFor(userId: string): Promise<boolean> {
   return withoutTenantForAuth(async (db) => {
     const { rows } = await db.query<{ any: boolean }>(
-      `WITH RECURSIVE line AS (
-         SELECT id FROM employee WHERE manager_id = $1 AND tenant_id = $2
-          UNION
-         SELECT e.id FROM employee e JOIN line l ON e.manager_id = l.id
-          WHERE e.tenant_id = $2
-       )
-       SELECT EXISTS (SELECT 1 FROM line) AS any`,
-      [employeeId, tenantId],
-    );
+      'SELECT auth_has_reports($1) AS any', [userId]);
     return rows[0]?.any ?? false;
   });
 }
@@ -129,7 +139,7 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
         userId: claims.sub,
         employeeId: claimed.employee_id,
         role: normaliseRole(claimed.role),
-        hasReports: await hasReportsFor(claimed.tenant_id, claimed.employee_id),
+        hasReports: await hasReportsFor(claims.sub),
       };
     }
   }
@@ -152,7 +162,7 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
     userId: claims.sub,
     employeeId: row.employee_id,
     role: normaliseRole(row.role),
-    hasReports: await hasReportsFor(row.tenant_id, row.employee_id),
+    hasReports: await hasReportsFor(claims.sub),
   };
 }
 

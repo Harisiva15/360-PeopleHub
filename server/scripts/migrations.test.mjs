@@ -137,15 +137,27 @@ if (tracked === null) {
     + 'git add it, or delete it.');
 
   /*
-   * Modified, not merely different: a file staged but not committed is fine,
-   * and `diff HEAD` covers both the index and the working tree, so it answers
-   * "does this differ from the last commit" rather than "is it staged".
+   * Modified, not merely different: a brand-new migration is fine.
+   *
+   * "Committed" has to mean *present in HEAD*, which is why this asks
+   * `ls-tree HEAD` rather than reusing `trackedSet`. That set comes from
+   * `ls-files`, which counts the index — so a newly added migration was in it,
+   * `diff HEAD` listed it as changed by definition, and this assertion failed
+   * on every new migration ever written. 0057 was the first one added since
+   * the check existed, so it was the first to trip it.
+   *
+   * `trackedSet` is still the right question for the assertion above, where
+   * the point is "will this be pushed".
    */
+  const committed = git('ls-tree', '-r', 'HEAD', '--name-only', '--', 'server/db/migrations');
+  const committedSet = new Set(
+    (committed ?? '').split('\n').filter(Boolean).map((p) => p.split('/').pop()));
+
   const changed = git('diff', '--name-only', 'HEAD', '--', 'server/db/migrations');
   if (changed !== null) {
     const modified = changed.split('\n').filter(Boolean)
       .map((p) => p.split('/').pop())
-      .filter((f) => trackedSet.has(f));
+      .filter((f) => committedSet.has(f));
     ok('no committed migration has been modified', modified.length === 0,
       `${modified.join(', ')} — migrate.mjs refuses a file whose checksum no longer `
       + 'matches what it recorded, so this cannot be deployed to any database that '
