@@ -19,6 +19,7 @@
 import { verifyAccessToken, AuthError } from './verify.ts';
 import { REFUSED, assertSecondFactorSatisfied as checkFactor } from './rules.ts';
 import type { SupabaseClaims } from './verify.ts';
+import type { Role } from './policy.ts';
 import { withoutTenantForAuth } from '../tenancy/context.ts';
 import type { Caller } from '../tenancy/context.ts';
 
@@ -27,11 +28,83 @@ export type { SupabaseClaims };
 
 interface MembershipRow {
   tenant_id: string;
-  role: Caller['role'];
+  /**
+   * Whatever the column holds.
+   *
+   * Not `Caller['role']`: during the rollout this is either vocabulary, and
+   * typing it as the new one would have asserted the migration had already
+   * happened. `normaliseRole` below is what makes the claim.
+   */
+  role: string;
   employee_id: string | null;
   membership_status: string;
   tenant_status: string;
   has_factor: boolean;
+}
+
+/**
+ * The database value, as a role.
+ *
+ * Step A of the cutover leaves both vocabularies valid in the column, so this
+ * is the one place that has to understand both:
+ *
+ *     admin     ->  company_admin
+ *     manager   ->  employee, because answering for other people is not a
+ *                   role. The layer comes from the reporting tree, which
+ *                   `hasReports` below reads, so a manager keeps every
+ *                   manager grant without the word surviving.
+ *     employee  ->  employee
+ *
+ * Anything unrecognised becomes `employee`, the narrowest role there is,
+ * rather than throwing: a login whose row holds a value nobody has heard of
+ * should be able to see their own payslip and nothing else, not be unable to
+ * sign in. The policy then fails closed on everything beyond that.
+ *
+ * Step C deletes this, once no row holds an old value.
+ */
+const normaliseRole = (value: string): Role => {
+  switch (value) {
+    case 'company_admin':
+    case 'hr_admin':
+    case 'finance_admin':
+    case 'employee':
+      return value;
+    case 'admin':
+      return 'company_admin';
+    case 'manager':
+      return 'employee';
+    default:
+      return 'employee';
+  }
+};
+
+/**
+ * Does anybody report to this person, at any depth?
+ *
+ * Read once per sign-in rather than per question, because it is half of every
+ * authorisation answer and a site that forgets it reads as though the
+ * reporting tree were empty. Recursive because a skip-level manager still
+ * answers for the people two levels down - the same rule `visibleIds` applies
+ * on the client.
+ *
+ * False when there is no employee row at all: an administrator who is not on
+ * payroll manages nobody, and their role is where their reach comes from.
+ */
+async function hasReportsFor(tenantId: string, employeeId: string | null): Promise<boolean> {
+  if (!employeeId) return false;
+  return withoutTenantForAuth(async (db) => {
+    const { rows } = await db.query<{ any: boolean }>(
+      `WITH RECURSIVE line AS (
+         SELECT id FROM employee WHERE manager_id = $1 AND tenant_id = $2
+          UNION
+         SELECT e.id FROM employee e JOIN line l ON e.manager_id = l.id
+          WHERE e.tenant_id = $2
+       )
+       SELECT EXISTS (SELECT 1 FROM line) AS any`,
+      [employeeId, tenantId],
+    );
+    return rows[0]?.any ?? false;
+  });
 }
 
 /**
@@ -86,7 +159,8 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
         tenantId: claimed.tenant_id,
         userId: claims.sub,
         employeeId: claimed.employee_id,
-        role: claimed.role,
+        role: normaliseRole(claimed.role),
+        hasReports: await hasReportsFor(claimed.tenant_id, claimed.employee_id),
       };
     }
   }
@@ -108,7 +182,8 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
     tenantId: row.tenant_id,
     userId: claims.sub,
     employeeId: row.employee_id,
-    role: row.role,
+    role: normaliseRole(row.role),
+    hasReports: await hasReportsFor(row.tenant_id, row.employee_id),
   };
 }
 
