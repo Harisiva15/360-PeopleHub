@@ -108,11 +108,11 @@ let fatal = null;
 try {
 await withScratchTenant(admin, async (ctx) => {
 
-const caller = (role, employeeId) =>
-  ({ role, tenantId: ctx.tenant, employeeId, userId: null });
+const caller = (role, employeeId, hasReports = false) =>
+  ({ role, hasReports, tenantId: ctx.tenant, employeeId, userId: null });
 
-const ADMIN = caller('admin', ctx.adminEmployeeId);
-const MANAGER = caller('manager', ctx.adminEmployeeId);
+const ADMIN = caller('company_admin', ctx.adminEmployeeId);
+const MANAGER = caller('employee', ctx.adminEmployeeId, true);
 const EMPLOYEE = caller('employee', ctx.adminEmployeeId);
 
 /*

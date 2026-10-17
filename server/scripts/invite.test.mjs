@@ -316,7 +316,20 @@ console.log('\nwhat is sent, and what is written down\n');
   const api = spy(() => Promise.resolve({ kind: 'invited' }));
   const was = setAuthAdmin(api);
   try {
-    await withMembership('invited', { role: 'employee', hasReports: true }, async ({ mem, email }) => {
+    /*
+     * `role` here is a `tenant_membership` column value, not a Caller.
+     *
+     * `sweep-fixtures.mjs` rewrote it as though it were one — 'manager' became
+     * `role: 'employee', hasReports: true` — which changed what the row holds
+     * and broke the assertion below that the audit detail carries the role.
+     * The sweep had no way to tell a database value from a caller fixture, and
+     * this is the one place in these suites where that mattered.
+     *
+     * 'manager' is a legitimate membership value during expand: 0056 widened
+     * the CHECK to accept both vocabularies. Step C tightens it to the new
+     * names only, and this fixture has to change then.
+     */
+    await withMembership('invited', { role: 'manager' }, async ({ mem, email }) => {
       await inviteUser(ADMIN, mem);
       ok('8. the address invited is the employee\'s own', api.calls[0]?.email === email,
         `asked for ${api.calls[0]?.email}`);

@@ -93,7 +93,7 @@ const ctx = (await admin.query(`
     FROM tenant t JOIN employee e ON e.tenant_id = t.id
    WHERE t.slug = $1 AND e.code = $2`, [TENANT_SLUG, ADMIN_CODE])).rows[0];
 
-const caller = (role) => ({ role, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null });
+const caller = (role, hasReports = false) => ({ role, hasReports, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null });
 const made = [];
 
 const cleanup = async () => {
@@ -109,7 +109,7 @@ try {
 
   console.log('\nan article can be written and read\n');
 
-  const a = await createArticle(caller('admin'), {
+  const a = await createArticle(caller('company_admin'), {
     cat: ctx.cat, q: 'ZZ What is the notice period?', a: 'ZZ Sixty days after confirmation.',
   });
   made.push(a.id);
@@ -121,7 +121,7 @@ try {
     `got ${JSON.stringify(a.cat)}, expected ${ctx.cat}`);
   ok('  and published by default', a.published === true);
 
-  const listed = await knowledgeBase(caller('admin'));
+  const listed = await knowledgeBase(caller('company_admin'));
   ok('and it comes back from the list', listed.some((x) => x.id === a.id),
     'this is the assertion `return []` could never pass');
 
@@ -131,21 +131,21 @@ try {
 
   console.log('\nediting\n');
 
-  const edited = await updateArticle(caller('admin'), a.id, { a: 'ZZ Thirty days on probation.' });
+  const edited = await updateArticle(caller('company_admin'), a.id, { a: 'ZZ Thirty days on probation.' });
   ok('the answer changes', edited.a === 'ZZ Thirty days on probation.');
   ok('  and the question is left alone', edited.q === a.q,
     'a patch must not blank the fields it does not mention');
 
-  const hidden = await updateArticle(caller('admin'), a.id, { published: false });
+  const hidden = await updateArticle(caller('company_admin'), a.id, { published: false });
   ok('an article can be unpublished', hidden.published === false);
 
   const asEmployee = await knowledgeBase(caller('employee'));
   ok('  and an employee no longer sees it', !asEmployee.some((x) => x.id === a.id),
     'an unpublished article is a draft; a draft is not company policy yet');
-  const asManager = await knowledgeBase(caller('manager'));
+  const asManager = await knowledgeBase(caller('employee', true));
   ok('  but whoever may edit it still does', asManager.some((x) => x.id === a.id));
 
-  await updateArticle(caller('admin'), a.id, { published: true });
+  await updateArticle(caller('company_admin'), a.id, { published: true });
   ok('  and publishing it again brings it back',
     (await knowledgeBase(caller('employee'))).some((x) => x.id === a.id));
 
@@ -169,7 +169,7 @@ try {
   ok('an employee cannot remove one',
     (await attempt(() => removeArticle(caller('employee'), a.id))) !== null);
 
-  const byManager = await createArticle(caller('manager'), {
+  const byManager = await createArticle(caller('employee', true), {
     q: 'ZZ Who approves leave?', a: 'ZZ Your reporting manager.',
   });
   made.push(byManager.id);
@@ -182,26 +182,26 @@ try {
   console.log('\nwhat is refused\n');
 
   ok('an empty question is refused',
-    (await attempt(() => createArticle(caller('admin'), { q: '   ', a: 'ZZ body' }))) !== null);
+    (await attempt(() => createArticle(caller('company_admin'), { q: '   ', a: 'ZZ body' }))) !== null);
   ok('an empty answer is refused',
-    (await attempt(() => createArticle(caller('admin'), { q: 'ZZ q', a: '  ' }))) !== null);
+    (await attempt(() => createArticle(caller('company_admin'), { q: 'ZZ q', a: '  ' }))) !== null);
   ok('blanking the question by patch is refused',
-    (await attempt(() => updateArticle(caller('admin'), a.id, { q: '' }))) !== null,
+    (await attempt(() => updateArticle(caller('company_admin'), a.id, { q: '' }))) !== null,
     'the patch path validates too, or an edit can empty what create would not accept');
 
-  const badCat = await attempt(() => createArticle(caller('admin'), {
+  const badCat = await attempt(() => createArticle(caller('company_admin'), {
     cat: 'ZZNOSUCH', q: 'ZZ q', a: 'ZZ a',
   }));
   ok('an unknown category is refused', badCat !== null);
   ok('  naming it', /ZZNOSUCH/.test(badCat?.message ?? ''), badCat?.message);
 
-  const longQ = await attempt(() => createArticle(caller('admin'), {
+  const longQ = await attempt(() => createArticle(caller('company_admin'), {
     cat: null, q: 'Z'.repeat(301), a: 'ZZ a',
   }));
   ok('an over-long question is refused', longQ !== null);
 
   ok('editing an article that does not exist is a not-found',
-    (await attempt(() => updateArticle(caller('admin'),
+    (await attempt(() => updateArticle(caller('company_admin'),
       '00000000-0000-0000-0000-000000000000', { q: 'ZZ x' }))) !== null);
 
   /* ---------------------------------------------------------------- *
@@ -210,13 +210,13 @@ try {
 
   console.log('\nremoval\n');
 
-  const gone = await removeArticle(caller('admin'), byManager.id);
+  const gone = await removeArticle(caller('company_admin'), byManager.id);
   made.splice(made.indexOf(byManager.id), 1);
   ok('removing returns what was removed', gone.id === byManager.id);
   ok('  and it is no longer listed',
-    !(await knowledgeBase(caller('admin'))).some((x) => x.id === byManager.id));
+    !(await knowledgeBase(caller('company_admin'))).some((x) => x.id === byManager.id));
   ok('  and removing it twice is a not-found',
-    (await attempt(() => removeArticle(caller('admin'), byManager.id))) !== null);
+    (await attempt(() => removeArticle(caller('company_admin'), byManager.id))) !== null);
 } finally {
   await cleanup();
 }

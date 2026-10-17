@@ -426,6 +426,78 @@ catch, stated so nobody assumes otherwise:
    one, and nothing asserts it yet. **It should go in `role-gates.ts`.**
 
 ---
+## The local database suites
+
+All three asked for are green, and 25 of the 26 database-backed suites pass
+against the local cluster with 0056 applied. Only `check:hierarchy` fails, and
+what it fails on is real — see below.
+
+### Two bugs in `sweep-fixtures.mjs`, found by running the suites
+
+The sweep rewrote `role: 'manager'` as `role: 'employee', hasReports: true`
+wherever it found it. That is right for a `Caller` and wrong for anything else,
+and it could not tell the difference:
+
+| site | what it actually is | effect |
+|---|---|---|
+| `invite.test.mjs:319` | a `tenant_membership` **row** | changed what the row holds, breaking the assertion that the audit detail carries the role |
+| `hierarchy.test.mjs:221` | a `createUser` **request body** | asked for an employee where the test means to create a manager |
+
+The invite one is reverted: `manager` is a legitimate membership value during
+expand, since 0056 accepts both vocabularies. It has to change at step C.
+
+### A third sweep gap: the `caller(role)` factories
+
+Six suites do not write `role: 'admin'` at all — they have a factory and pass
+the value at the call site as `caller('admin', id)`. `sweep-fixtures.mjs`
+matched the literal, so it never saw them, and 42 call sites still handed the
+policy an old role. The policy fails closed on a value it does not recognise,
+which is correct, and which is why the failures read as real refusals:
+`check:profile` reported that an administrator could not read their own record.
+
+Worth noting for its own sake: `caller('employee', ...)` still works, because
+`employee` is a valid value in both vocabularies. So these suites half-failed
+rather than falling over, and the passing half made the failures look like
+access bugs rather than stale fixtures.
+
+`sweep-caller-factories.mjs` converts them — factory gains a trailing
+`hasReports = false`, `admin` becomes `company_admin`, `manager` becomes
+`employee` with `true` appended at the call site — and exits non-zero if any
+old value is left. No expectation was touched.
+
+### What `check:hierarchy` is actually telling us
+
+**1. `users/service.ts:294` still validates against the old vocabulary.**
+
+```
+if (d.role !== undefined && !['admin', 'manager', 'employee'].includes(d.role)) {
+  throw new UserError('Not a role', 'invalid');
+}
+```
+
+So `role: 'company_admin'` is refused as "Not a role": **creating an
+administrator is impossible on this branch.** This is item 3's job — the API
+accepting only the new vocabulary — and it is a hard blocker for step A, since
+the deploy would ship a server that cannot make an admin.
+
+**2. `users/service.ts:281` compares an old literal.**
+
+```
+if (role === 'admin' && !reaches(caller, 'users', 'write', 'all')) {
+```
+
+`mayGrant` only guards the string `admin`. Once validate accepts the new
+names, granting `company_admin` walks straight past it — so fixing (1) without
+(2) opens a privilege escalation. **They must land together.**
+
+**3. One genuine expectation change, awaiting approval.**
+
+`hierarchy.test.mjs:225` asserts `mgrAccount.role === 'manager'` after
+creating a manager. Under the approved model there is no manager role to
+assign: a manager is an employee with reports. The expectation has to become
+`=== 'employee'`, and that is a decision, not a rename.
+
+---
 ## role-gates.ts
 
 Two rules so far, both approved on 2026-10-17. The role-literal sweep joins

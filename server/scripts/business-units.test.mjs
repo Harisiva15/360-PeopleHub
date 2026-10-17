@@ -99,10 +99,10 @@ let fatal = null;
 try {
 await withScratchTenant(admin, async (ctx) => {
 
-const caller = (role) =>
-  ({ role, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null });
-const ADMIN = caller('admin');
-const MANAGER = caller('manager');
+const caller = (role, hasReports = false) =>
+  ({ role, hasReports, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null });
+const ADMIN = caller('company_admin');
+const MANAGER = caller('employee', true);
 const EMPLOYEE = caller('employee');
 
 console.log('\na fresh tenant has none\n');

@@ -194,10 +194,10 @@ let fatal = null;
 try {
 await withScratchTenant(admin, async (ctx) => {
 
-const caller = (role, employeeId) =>
-  ({ role, tenantId: ctx.tenant, employeeId, userId: null });
+const caller = (role, employeeId, hasReports = false) =>
+  ({ role, hasReports, tenantId: ctx.tenant, employeeId, userId: null });
 
-const ADMIN = caller('admin', ctx.adminEmployeeId);
+const ADMIN = caller('company_admin', ctx.adminEmployeeId);
 const tag = Math.random().toString(36).slice(2, 7);
 
 /*
@@ -233,7 +233,7 @@ const employeeOf = async (account) => (await admin.query(
   const EMP_ID = await employeeOf(empAccount);
   ok('an admin creates an employee reporting to that manager', Boolean(EMP_ID));
 
-  const MGR = caller('manager', MGR_ID);
+  const MGR = caller('employee', MGR_ID, true);
   const EMP = caller('employee', EMP_ID);
 
   /* The relationship, read from the database rather than from the response. */
@@ -495,7 +495,7 @@ const employeeOf = async (account) => (await admin.query(
     managerId: OTHER_MGR_ID,
   });
   const OTHER_EMP_ID = await employeeOf(otherEmp);
-  const OTHER = caller('manager', OTHER_MGR_ID);
+  const OTHER = caller('employee', OTHER_MGR_ID, true);
 
   ok('manager A cannot see manager B’s report',
     !(await employees.listVisibleEmployees(MGR)).some((e) => e.id === OTHER_EMP_ID));
