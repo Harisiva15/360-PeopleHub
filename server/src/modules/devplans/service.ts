@@ -19,6 +19,7 @@
  * and carrying the signature across would make endorsement mean nothing.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
@@ -167,7 +168,7 @@ export async function listDevPlans(
   f: DevPlanFilter = {},
 ): Promise<DevPlanRow[]> {
   const params: unknown[] = [];
-  const where: string[] = [employeeScope(caller, 'p.employee_id', params)];
+  const where: string[] = [employeeScope(caller, 'p.employee_id', params, 'devplans')];
   const outer: string[] = [];
   const bind = (v: unknown) => { params.push(v); return `$${params.length}`; };
 
@@ -235,7 +236,7 @@ async function actionsFor(
 
 export async function getDevPlan(caller: Caller, id: string): Promise<DevPlanDetail | null> {
   const params: unknown[] = [id];
-  const scope = employeeScope(caller, 'p.employee_id', params);
+  const scope = employeeScope(caller, 'p.employee_id', params, 'devplans');
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query<PlanRow>(
       `${PLAN_PROJECTION} WHERE p.id = $1 AND (${scope})`, params);
@@ -353,7 +354,7 @@ export async function mentorOptions(caller: Caller) {
 
 /** The person whose plan it is, and an administrator. Not their manager. */
 const mayEdit = (caller: Caller, empId: string) =>
-  caller.role === 'admin' || caller.employeeId === empId;
+  reaches(caller, 'devplans', 'read', 'all') || caller.employeeId === empId;
 
 const validate = (d: Partial<DevPlanDraft>) => {
   if (d.aspiration !== undefined && !d.aspiration.trim()) {
@@ -377,7 +378,7 @@ export async function createDevPlan(caller: Caller, d: DevPlanDraft): Promise<De
    * on somebody's behalf sounds helpful and produces a document the person has
    * never read.
    */
-  if (empId !== caller.employeeId && caller.role !== 'admin') {
+  if (empId !== caller.employeeId && !reaches(caller, 'devplans', 'read', 'all')) {
     throw new DevPlanError('A development plan is written by the person it is about', 'forbidden');
   }
   validate(d);
@@ -490,7 +491,7 @@ export async function endorseDevPlan(caller: Caller, id: string): Promise<DevPla
     if (caller.role === 'employee') {
       throw new DevPlanError('Only their manager can endorse this plan', 'forbidden');
     }
-    if (caller.role === 'manager') {
+    if (caller.hasReports) {
       const { rows: ok } = await db.query(
         `WITH RECURSIVE line AS (
            SELECT id FROM employee WHERE manager_id = $1
@@ -552,7 +553,7 @@ export async function setDevPlanReview(
   if (!on) throw new DevPlanError('Give the review a date', 'invalid');
   return withTenant(caller, async (db) => {
     const params: unknown[] = [id];
-    const scope = employeeScope(caller, 'employee_id', params);
+    const scope = employeeScope(caller, 'employee_id', params, 'devplans');
     const { rowCount } = await db.query(
       `UPDATE development_plan SET review_on = $${params.push(on)}
         WHERE id = $1 AND (${scope})`, params);

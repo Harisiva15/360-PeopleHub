@@ -119,6 +119,9 @@ export type Layer = 'manager';
  */
 export type Scope = 'none' | 'own' | 'team' | 'all';
 
+/** The three questions a gate can ask about a module - ModuleRule's keys. */
+export type Verb = 'read' | 'write' | 'approve';
+
 export interface ModuleRule {
   read: Scope;
   write: Scope;

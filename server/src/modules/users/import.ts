@@ -23,6 +23,7 @@
  * that is a dependency decision, not a technical one — see `csv.ts`.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { UserError, createUser } from './service.ts';
@@ -160,7 +161,7 @@ function judge(
    * The same rule the single-user path enforces. A bulk file is exactly where
    * somebody would try to grant themselves an administrator.
    */
-  if (role === 'admin' && caller.role !== 'admin') {
+  if (role === 'admin' && !reaches(caller, 'users', 'write', 'all')) {
     errors.push('only an administrator can grant the administrator role');
   }
 

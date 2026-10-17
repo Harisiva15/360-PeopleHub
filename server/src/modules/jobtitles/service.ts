@@ -17,6 +17,7 @@
  * shape from a filtered list, so it is a different method.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 
@@ -131,7 +132,7 @@ function mayBrowse(caller: Caller) {
 }
 
 const mayWrite = (caller: Caller) => {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'jobtitles', 'write', 'all')) {
     throw new JobTitleError('Only an administrator can change the catalogue', 'forbidden');
   }
 };

@@ -27,6 +27,7 @@ export class EmployeeError extends Error {
   }
 }
 
+import { scopeOf, reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { EMPLOYEE_PROJECTION, scopeClause } from './queries.ts';
@@ -35,11 +36,11 @@ import type { Employee, EmployeeRow } from './mapper.ts';
 
 /** Only an admin sees anyone's pay; anyone may see their own. */
 const maySeePay = (caller: Caller, subjectId?: string | null): boolean =>
-  caller.role === 'admin' || (!!subjectId && subjectId === caller.employeeId);
+  reaches(caller, 'employees', 'read', 'all') || (!!subjectId && subjectId === caller.employeeId);
 
 /** A non-admin with no employee record has no scope at all. */
 const hasScope = (caller: Caller): boolean =>
-  caller.role === 'admin' || Boolean(caller.employeeId);
+  reaches(caller, 'employees', 'read', 'all') || Boolean(caller.employeeId);
 
 async function query(
   caller: Caller,
@@ -59,9 +60,9 @@ async function query(
 /** Everyone the caller may see. */
 export async function listVisibleEmployees(caller: Caller): Promise<Employee[]> {
   if (!hasScope(caller)) return [];
-  const scope = scopeClause(caller.role, caller.employeeId);
+  const scope = scopeClause(scopeOf(caller, 'employees', 'read'), caller.employeeId);
   return query(caller, `e.status <> 'exited' AND (${scope.sql})`, scope.params,
-    caller.role === 'admin');
+    reaches(caller, 'employees', 'read', 'all'));
 }
 
 /** Everyone still employed, within the caller's scope. */
@@ -71,13 +72,13 @@ export async function listActiveEmployees(caller: Caller): Promise<Employee[]> {
 
 /** Leavers — the directory can switch to them. Admin only; nobody else needs it. */
 export async function listExitedEmployees(caller: Caller): Promise<Employee[]> {
-  if (caller.role !== 'admin') return [];
+  if (!reaches(caller, 'employees', 'read', 'all')) return [];
   return query(caller, `e.status = 'exited'`, [], true);
 }
 
 export async function getEmployee(caller: Caller, id: string): Promise<Employee | null> {
   if (!hasScope(caller)) return null;
-  const scope = scopeClause(caller.role, caller.employeeId);
+  const scope = scopeClause(scopeOf(caller, 'employees', 'read'), caller.employeeId);
   const rows = await query(
     caller,
     `e.id = $${scope.params.length + 1} AND (${scope.sql})`,
@@ -96,7 +97,7 @@ export async function getEmployee(caller: Caller, id: string): Promise<Employee 
  */
 export async function getEmployeesByIds(caller: Caller, ids: string[]): Promise<Employee[]> {
   if (!hasScope(caller) || ids.length === 0) return [];
-  const scope = scopeClause(caller.role, caller.employeeId);
+  const scope = scopeClause(scopeOf(caller, 'employees', 'read'), caller.employeeId);
   return query(
     caller,
     `e.id = ANY($${scope.params.length + 1}::uuid[]) AND (${scope.sql})`,
@@ -112,7 +113,7 @@ export async function getTeam(
   deep = false,
 ): Promise<Employee[]> {
   if (!hasScope(caller)) return [];
-  const scope = scopeClause(caller.role, caller.employeeId);
+  const scope = scopeClause(scopeOf(caller, 'employees', 'read'), caller.employeeId);
   const subtree = deep
     ? `e.id IN (
          WITH RECURSIVE t AS (
@@ -127,7 +128,7 @@ export async function getTeam(
     caller,
     `e.status <> 'exited' AND ${subtree} AND (${scope.sql})`,
     [...scope.params, managerId],
-    caller.role === 'admin',
+    reaches(caller, 'employees', 'read', 'all'),
   );
 }
 
@@ -155,7 +156,7 @@ export async function setEmployeeRole(
   id: string,
   role: Employee['role'],
 ): Promise<Employee> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'employees', 'read', 'all')) {
     throw new EmployeeError('only an administrator may change roles', 'forbidden');
   }
   if (id === caller.employeeId) {

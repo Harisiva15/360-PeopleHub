@@ -10,6 +10,7 @@
  * if nothing acted on it, and somebody would eventually read it and believe it.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import {
@@ -51,7 +52,7 @@ const byRole = (
  * screen grey those out instead of accepting them and doing nothing.
  */
 export async function permissionGrid(caller: Caller): Promise<ModuleGrid[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'settings', 'write', 'all')) {
     throw new PermissionError('Only an administrator can read this', 'forbidden');
   }
   const overrides = await overridesFor(caller);
@@ -82,7 +83,7 @@ export async function setPermissions(
   caller: Caller,
   patches: GridPatch[],
 ): Promise<ModuleGrid[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'settings', 'write', 'all')) {
     throw new PermissionError('Only an administrator can change permissions', 'forbidden');
   }
   if (!Array.isArray(patches) || patches.length === 0) {
@@ -158,7 +159,7 @@ export async function setPermissions(
 
 /** Restore every cell for one module to what the code grants. */
 export async function resetModule(caller: Caller, module: string): Promise<ModuleGrid[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'settings', 'write', 'all')) {
     throw new PermissionError('Only an administrator can change permissions', 'forbidden');
   }
   if (!POLICY[module]) throw new PermissionError(`No such module: ${module}`);

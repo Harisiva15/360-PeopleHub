@@ -2061,8 +2061,9 @@ const routes: Route[] = [
     handler: async (c) => {
       const overrides = await overridesFor(c);
       /* Through the bridge: Caller.role is still the legacy union. */
-      const role = fromLegacyRole(c.role);
-      const hasReports = legacyHasReports(c.role);
+      /* The caller carries both now; the bridge was for when it did not. */
+      const role = c.role;
+      const hasReports = c.hasReports;
       const modules = effectiveModulesForTenant(role, hasReports, overrides);
       /*
        * Identity travels with the permissions.
@@ -2634,7 +2635,7 @@ export function createApp() {
           if (moduleKey) {
             const overrides = await overridesFor(caller);
             if (effectiveRuleFor(
-              fromLegacyRole(caller.role), legacyHasReports(caller.role),
+              caller.role, caller.hasReports,
               moduleKey, overrides,
             ).read === 'none') {
               send(res, 403, { error: 'this module is not available to your role' });

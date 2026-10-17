@@ -19,6 +19,7 @@
  * it is computed once here rather than in each screen that shows it.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -164,7 +165,7 @@ const toRequest = (r: Record<string, unknown>): AssetRequest => ({
  * is a list of what is worth stealing and who has it, so it is not a directory.
  */
 function scope(caller: Caller, column: string, params: unknown[]): string {
-  if (caller.role === 'admin') return '';
+  if (reaches(caller, 'assets', 'read', 'all')) return '';
   params.push(caller.employeeId);
   const p = `$${params.length}`;
   if (caller.role === 'employee') return `${column} = ${p}`;
@@ -265,9 +266,9 @@ export async function listMovements(
    */
   const n = Math.min(Math.max(1, Math.trunc(limit)), 200);
   const params: unknown[] = [n];
-  const mine = caller.role === 'admin' ? '' :
+  const mine = reaches(caller, 'assets', 'read', 'all') ? '' :
     ` WHERE m.from_employee_id = $2 OR m.to_employee_id = $2`;
-  if (caller.role !== 'admin') params.push(caller.employeeId);
+  if (!reaches(caller, 'assets', 'read', 'all')) params.push(caller.employeeId);
 
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(

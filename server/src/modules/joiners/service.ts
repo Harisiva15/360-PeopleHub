@@ -10,6 +10,7 @@
  * and making them click twice would teach them to distrust the queue.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import { provisionEmployee } from '../people/provision.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
@@ -179,7 +180,7 @@ export async function requestJoiner(
       [caller.employeeId, id, input.workEmail]);
 
     // An admin is the approver, so their own request is already decided.
-    if (caller.role === 'admin') {
+    if (reaches(caller, 'onboarding', 'read', 'all')) {
       /*
        * An admin raising a request approves it immediately, so the pattern they
        * chose on the request travels straight through.
@@ -265,7 +266,7 @@ export async function approveJoiner(
    */
   workScheduleCode?: string | null,
 ): Promise<JoiningRequest> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'onboarding', 'read', 'all')) {
     throw new JoinerError('only an admin may approve a joiner', 'forbidden');
   }
   return withTenant(caller, (db) =>
@@ -277,7 +278,7 @@ export async function rejectJoiner(
   id: string,
   note?: string,
 ): Promise<JoiningRequest> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'onboarding', 'read', 'all')) {
     throw new JoinerError('only an admin may reject a joiner', 'forbidden');
   }
   return withTenant(caller, async (db) => {
@@ -302,7 +303,7 @@ export async function listJoiners(
 
   const where: string[] = [];
   const params: unknown[] = [];
-  if (caller.role === 'manager') {
+  if (caller.hasReports) {
     params.push(caller.employeeId);
     where.push(`jr.requested_by = $${params.length}`);
   }

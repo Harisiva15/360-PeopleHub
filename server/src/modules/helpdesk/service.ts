@@ -20,6 +20,7 @@
  * same argument as the announcement audience filter.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -109,11 +110,11 @@ const toTicket = (r: Record<string, unknown>): Ticket => {
 
 /** A ticket can carry a salary complaint, so it is not public reading. */
 function scope(caller: Caller, params: unknown[]): string {
-  if (caller.role === 'admin') return '';
+  if (reaches(caller, 'helpdesk', 'read', 'all')) return '';
   params.push(caller.employeeId);
   const p = `$${params.length}`;
   // A manager sees their team's, and anything assigned to them.
-  if (caller.role === 'manager') {
+  if (caller.hasReports) {
     return `(t.employee_id = ${p} OR t.assignee_id = ${p} OR t.employee_id IN (
        WITH RECURSIVE r AS (
          SELECT id FROM employee WHERE manager_id = ${p}
@@ -162,7 +163,7 @@ export interface NewTicket {
  * client-chosen deadline is not a deadline.
  */
 export async function raiseTicket(caller: Caller, draft: NewTicket): Promise<Ticket> {
-  if (draft.empId && draft.empId !== caller.employeeId && caller.role !== 'admin') {
+  if (draft.empId && draft.empId !== caller.employeeId && !reaches(caller, 'helpdesk', 'read', 'all')) {
     throw new HelpdeskError('you can only raise a ticket for yourself', 'forbidden');
   }
   if (!draft.subject?.trim()) throw new HelpdeskError('a ticket needs a subject', 'invalid');
@@ -325,7 +326,7 @@ export interface KbDraft {
  * allowed; widening would not be.
  */
 function mayAuthor(caller: Caller) {
-  if (caller.role !== 'admin' && caller.role !== 'manager') {
+  if (!reaches(caller, 'helpdesk', 'read', 'all') && !caller.hasReports) {
     throw new HelpdeskError('only an administrator or a manager may edit the knowledge base', 'forbidden');
   }
 }
@@ -346,7 +347,7 @@ const toArticle = (r: Record<string, unknown>): KbArticle => ({
 });
 
 export async function knowledgeBase(caller: Caller): Promise<KbArticle[]> {
-  const editor = caller.role === 'admin' || caller.role === 'manager';
+  const editor = reaches(caller, 'helpdesk', 'read', 'all') || caller.hasReports;
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
       `${KB_PROJECTION}

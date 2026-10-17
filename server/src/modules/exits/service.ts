@@ -18,6 +18,7 @@
  * than a configurable number somebody can set to zero by accident.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { PF_WAGE_CAP, dailyRateFor, structureFor, taxNewRegime } from '../payroll/rules.ts';
@@ -123,7 +124,7 @@ const toExit = (r: Record<string, unknown>): ExitRecord => ({
 
 /** An exit carries a settlement figure, so it is not everybody's reading. */
 function mayHandle(caller: Caller): boolean {
-  return caller.role === 'admin' || caller.role === 'manager';
+  return reaches(caller, 'exit', 'read', 'all') || caller.hasReports;
 }
 
 export async function listExits(caller: Caller): Promise<ExitRecord[]> {
@@ -353,7 +354,7 @@ export async function setClearance(
  * does not change when a leave balance is corrected next month.
  */
 export async function settleExit(caller: Caller, exitId: string): Promise<ExitRecord> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'exit', 'read', 'all')) {
     throw new ExitError('only an admin may settle an exit', 'forbidden');
   }
 

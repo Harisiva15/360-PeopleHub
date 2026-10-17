@@ -27,6 +27,8 @@
  * which is worse than not offering it at all.
  */
 
+import type { Scope } from '../../auth/policy.ts';
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { listVisibleEmployees } from '../employees/service.ts';
@@ -62,7 +64,23 @@ export interface Dataset {
   n: string;
   desc: string;
   ic: string;
-  roles: Role[];
+  /**
+   * The module that owns the rows.
+   *
+   * It was a list of role names, which is a second copy of the access table
+   * and could not express the manager layer at all - 'manager' is not a role.
+   * Asking the policy about a module answers for every role at once.
+   */
+  k: string;
+  /**
+   * The least scope on `k` this dataset needs, where reaching the module is
+   * not enough.
+   *
+   * Most caller-scoped datasets need 'own': the query narrows to whoever
+   * asked. A few are the whole catalogue of something - the software estate,
+   * the job-title list - and need a wider reach than reading your own row.
+   */
+  needs?: Scope;
   scope: 'caller' | 'admin-only';
   personal: boolean;
   dated: boolean;
@@ -111,13 +129,28 @@ export interface ExportResult {
  * caller, so the mock has nothing to narrow by. Widening them is a contract
  * change, not a change here.
  */
+/**
+ * Whether this caller may take this dataset.
+ *
+ * Two questions, because a dataset is one of two things. Caller-scoped means
+ * the query narrows to whoever asked, so reaching the module is the test.
+ * Admin-only means the whole table, and the module says nothing useful about
+ * that - leave and assets are both readable by an employee, who may see their
+ * own leave and must not be able to take the company's.
+ */
+const mayExport = (caller: Caller, d: Dataset): boolean => (
+  d.scope === 'admin-only'
+    ? reaches(caller, 'exports', 'read', 'all')
+    : reaches(caller, d.k, 'read', d.needs ?? 'own')
+);
+
 const DATASETS: Dataset[] = [
   {
     id: 'employees',
     n: 'Employee directory',
     desc: 'Everybody you can see, with their department, role and manager.',
     ic: 'people',
-    roles: ['admin', 'manager'],
+    k: 'employees',
     scope: 'caller',
     personal: true,
     dated: false,
@@ -138,7 +171,7 @@ const DATASETS: Dataset[] = [
     n: 'Employment lifecycle',
     desc: 'Where each person stands, how long they have been there and what is next.',
     ic: 'swap',
-    roles: ['admin', 'manager'],
+    k: 'lifecycle',
     scope: 'caller',
     personal: true,
     dated: false,
@@ -159,7 +192,7 @@ const DATASETS: Dataset[] = [
     n: 'Development plans',
     desc: 'Aspirations, focus areas, progress and when each is next reviewed.',
     ic: 'rocket',
-    roles: ['admin', 'manager'],
+    k: 'devplans',
     scope: 'caller',
     personal: true,
     dated: false,
@@ -181,7 +214,7 @@ const DATASETS: Dataset[] = [
     n: 'Company events',
     desc: 'What was on, how many came and what the turnout was.',
     ic: 'calendar',
-    roles: ['admin', 'manager'],
+    k: 'events',
     scope: 'caller',
     personal: false,
     dated: true,
@@ -203,7 +236,8 @@ const DATASETS: Dataset[] = [
     n: 'Software estate',
     desc: 'Subscriptions, seats, renewals and what the idle seats cost.',
     ic: 'puzzle',
-    roles: ['admin', 'manager'],
+    k: 'software',
+    needs: 'team',
     scope: 'caller',
     personal: false,
     dated: false,
@@ -225,7 +259,8 @@ const DATASETS: Dataset[] = [
     n: 'Job title catalogue',
     desc: 'Every title, its level and family, and how many people hold it.',
     ic: 'briefcase',
-    roles: ['admin', 'manager'],
+    k: 'jobtitles',
+    needs: 'team',
     scope: 'caller',
     personal: false,
     dated: false,
@@ -245,7 +280,7 @@ const DATASETS: Dataset[] = [
     n: 'Leave requests',
     desc: 'Every request in the period, with its type, days and outcome.',
     ic: 'leave',
-    roles: ['admin'],
+    k: 'leave',
     scope: 'caller',
     personal: true,
     dated: true,
@@ -265,7 +300,7 @@ const DATASETS: Dataset[] = [
     n: 'Asset register',
     desc: 'Every item, where it is, who holds it and what it is worth.',
     ic: 'laptop',
-    roles: ['admin'],
+    k: 'assets',
     scope: 'caller',
     personal: true,
     dated: false,
@@ -380,7 +415,7 @@ const BUILDERS: Record<string, (c: Caller, req: ExportRequest) => Promise<Cell[]
 
 /** Only the datasets this caller could actually run. */
 export async function datasets(caller: Caller): Promise<Dataset[]> {
-  return DATASETS.filter((d) => d.roles.includes(caller.role));
+  return DATASETS.filter((d) => mayExport(caller, d));
 }
 
 const describe = (d: Dataset, req: ExportRequest) =>
@@ -468,7 +503,7 @@ export async function run(caller: Caller, req: ExportRequest): Promise<ExportRes
   const d = datasetOf(req.datasetId);
   if (!d) throw new ExportError('No such dataset', 'unknown_dataset');
 
-  if (!d.roles.includes(caller.role)) {
+  if (!mayExport(caller, d)) {
     await record(caller, d, 0, 'Refused', `${caller.role} cannot export ${d.n.toLowerCase()}`,
       describe(d, req));
     throw new ExportError(`Your role cannot export ${d.n.toLowerCase()}`, 'forbidden');
@@ -533,7 +568,7 @@ export async function history(
   const where: string[] = [];
   const params: unknown[] = [];
 
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'exports', 'read', 'all')) {
     params.push(caller.employeeId);
     where.push(`by_id = $${params.length}`);
   }
@@ -600,8 +635,8 @@ export interface ExportStats {
  * silently meant "of the last 500" would be the kind of wrong nobody notices.
  */
 export async function stats(caller: Caller): Promise<ExportStats> {
-  const where = caller.role === 'admin' ? '' : 'WHERE by_id = $1';
-  const params = caller.role === 'admin' ? [] : [caller.employeeId];
+  const where = reaches(caller, 'exports', 'read', 'all') ? '' : 'WHERE by_id = $1';
+  const params = reaches(caller, 'exports', 'read', 'all') ? [] : [caller.employeeId];
 
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query<Record<string, string>>(

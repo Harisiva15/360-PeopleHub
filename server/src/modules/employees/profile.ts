@@ -33,6 +33,7 @@
  * never reaches it for such a caller.
  */
 
+import { reaches } from '../../auth/can.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { getEmployee, getTeam } from './service.ts';
 import type { Employee } from './mapper.ts';
@@ -77,7 +78,7 @@ export interface EmployeeProfile {
 
 /** The same test `assertOwnOrAdmin` makes, asked before the call rather than after. */
 const maySeePay = (caller: Caller, empId: string) =>
-  caller.role === 'admin' || caller.employeeId === empId;
+  reaches(caller, 'employees', 'read', 'all') || caller.employeeId === empId;
 
 /** A structure that renders as nothing, for a caller who may not see pay. */
 const noPay = (e: Employee): Structure => ({

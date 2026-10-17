@@ -14,6 +14,7 @@
  * happens over rows the export already narrowed.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { datasets as exportDatasets, run as runExport } from '../exports/service.ts';
@@ -103,7 +104,7 @@ const mayBuild = (caller: Caller) => {
  * exist" stay distinguishable.
  */
 function visibility(caller: Caller, params: unknown[]): string {
-  if (caller.role === 'admin') return 'TRUE';
+  if (reaches(caller, 'reports', 'read', 'all')) return 'TRUE';
   params.push(caller.employeeId);
   return `(r.shared OR r.owner_id = $${params.length})`;
 }
@@ -329,7 +330,7 @@ export async function createReport(caller: Caller, d: ReportDraft): Promise<Repo
 }
 
 const mayEdit = (caller: Caller, ownerId: string) =>
-  caller.role === 'admin' || caller.employeeId === ownerId;
+  reaches(caller, 'reports', 'read', 'all') || caller.employeeId === ownerId;
 
 export async function updateReport(
   caller: Caller,

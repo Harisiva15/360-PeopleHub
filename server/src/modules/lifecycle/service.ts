@@ -18,6 +18,7 @@
  * place.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
@@ -301,7 +302,7 @@ export async function listLifecycle(
   f: LifecycleFilter = {},
 ): Promise<LifecycleRow[]> {
   const params: unknown[] = [];
-  const where: string[] = [employeeScope(caller, 'e.id', params)];
+  const where: string[] = [employeeScope(caller, 'e.id', params, 'lifecycle')];
   const bind = (v: unknown) => { params.push(v); return `$${params.length}`; };
 
   if (f.dept) where.push(`d.code = ${bind(f.dept)}`);
@@ -344,7 +345,7 @@ export async function getLifecycle(
   id: string,
 ): Promise<LifecycleDetail | null> {
   const params: unknown[] = [id];
-  const scope = employeeScope(caller, 'e.id', params);
+  const scope = employeeScope(caller, 'e.id', params, 'lifecycle');
 
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query<Row>(
@@ -501,9 +502,9 @@ export async function setLifecycleTaskDone(
     if (caller.role === 'employee' && task.assignee_id !== caller.employeeId) {
       throw new LifecycleError('You can only complete a task assigned to you', 'forbidden');
     }
-    if (caller.role === 'manager') {
+    if (caller.hasReports) {
       const params: unknown[] = [task.employee_id];
-      const scope = employeeScope(caller, '$1::uuid', params);
+      const scope = employeeScope(caller, '$1::uuid', params, 'lifecycle');
       const { rows: ok } = await db.query(`SELECT 1 WHERE ${scope}`, params);
       if (!ok.length) {
         throw new LifecycleError('That person is outside the people you can see', 'forbidden');
@@ -525,7 +526,7 @@ export async function removeLifecycleTask(
   caller: Caller,
   taskId: string,
 ): Promise<LifecycleTask> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'lifecycle', 'read', 'all')) {
     throw new LifecycleError('Only an administrator can remove a lifecycle task', 'forbidden');
   }
   return withTenant(caller, async (db) => {

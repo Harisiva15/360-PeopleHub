@@ -17,6 +17,7 @@
  * fake, until something real feeds it.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 
@@ -84,7 +85,7 @@ export async function audit(
   sev?: string,
   limit = 200,
 ): Promise<AuditEntry[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'security', 'write', 'all')) {
     throw new SecurityError('only an admin may read the audit trail', 'forbidden');
   }
 
@@ -133,7 +134,7 @@ export async function audit(
 
 /** The categories actually present, so the filter offers nothing empty. */
 export async function auditCategories(caller: Caller): Promise<string[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'security', 'write', 'all')) {
     throw new SecurityError('only an admin may read the audit trail', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
@@ -158,7 +159,7 @@ export interface Control {
  * as anything other than "not met" would be the wrong way round.
  */
 export async function controls(caller: Caller): Promise<Control[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'security', 'write', 'all')) {
     throw new SecurityError('only an admin may see the control framework', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
@@ -202,7 +203,7 @@ const DISPOSITION: Record<string, string> = {
  * rule was last applied rather than only what it says.
  */
 export async function retention(caller: Caller): Promise<RetentionRow[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'security', 'write', 'all')) {
     throw new SecurityError('only an admin may see the retention register', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {

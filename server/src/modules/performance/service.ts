@@ -21,6 +21,7 @@
  * thing a review conversation is about: who said what, and when.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -109,7 +110,7 @@ export interface Review {
 
 /** Everyone reads their own; a manager reads their tree; an admin reads all. */
 function scope(caller: Caller, column: string, params: unknown[]): string {
-  if (caller.role === 'admin') return '';
+  if (reaches(caller, 'performance', 'read', 'all')) return '';
   params.push(caller.employeeId);
   const p = `$${params.length}`;
   if (caller.role === 'employee') return `${column} = ${p}`;
@@ -609,7 +610,7 @@ export async function calibrateReview(
   empId: string,
   outcome: { rating: number; hike?: number; promoted?: boolean; potential?: number; pip?: boolean },
 ): Promise<Review> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'performance', 'read', 'all')) {
     throw new PerformanceError('only an admin may calibrate a review', 'forbidden');
   }
   if (!Number.isInteger(outcome.rating) || outcome.rating < 1 || outcome.rating > 5) {

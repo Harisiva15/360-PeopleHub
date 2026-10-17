@@ -21,6 +21,7 @@
  * organiser's business.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -168,11 +169,11 @@ function toRow(r: Row): EventRow {
  * their calendar.
  */
 function visibility(caller: Caller, params: unknown[]): string {
-  if (caller.role === 'admin') return 'TRUE';
+  if (reaches(caller, 'events', 'read', 'all')) return 'TRUE';
   params.push(caller.employeeId);
   const me = `$${params.length}`;
   const invited = `EXISTS (SELECT 1 FROM employee me WHERE me.id = ${me} AND ${INVITED('me')})`;
-  if (caller.role === 'manager') {
+  if (caller.hasReports) {
     return `(ev.organiser_id = ${me} OR ev.status <> 'Draft')`;
   }
   return `(ev.organiser_id = ${me} OR (ev.status <> 'Draft' AND ${invited}))`;
@@ -232,8 +233,8 @@ export async function getEvent(caller: Caller, id: string): Promise<EventDetail 
       return null;
     }
     const row = toRow(rows[0]);
-    const canManage = caller.role === 'admin' || row.event.organiserId === caller.employeeId;
-    const canSeeNames = canManage || caller.role === 'manager';
+    const canManage = reaches(caller, 'events', 'read', 'all') || row.event.organiserId === caller.employeeId;
+    const canSeeNames = canManage || caller.hasReports;
 
     const attendees = canSeeNames
       ? (await db.query<{
@@ -305,7 +306,7 @@ async function loadManageable(db: TenantClient, caller: Caller, id: string) {
        FROM company_event WHERE id = $1`, [id]);
   const ev = rows[0];
   if (!ev) throw new EventError('No such event', 'not_found');
-  if (caller.role !== 'admin' && ev.organiser_id !== caller.employeeId) {
+  if (!reaches(caller, 'events', 'read', 'all') && ev.organiser_id !== caller.employeeId) {
     throw new EventError('Only the organiser can change this event', 'forbidden');
   }
   return ev;
@@ -343,7 +344,7 @@ export async function createEvent(caller: Caller, d: EventDraft): Promise<Compan
     const forSites = await codesToIds(db, 'site', d.forSites ?? []);
     const forDepts = await codesToIds(db, 'department', d.forDepts ?? []);
 
-    const organiser = d.organiserId && caller.role === 'admin' ? d.organiserId : caller.employeeId;
+    const organiser = d.organiserId && reaches(caller, 'events', 'read', 'all') ? d.organiserId : caller.employeeId;
     if (!organiser) throw new EventError('An event needs an organiser', 'invalid');
 
     const { rows } = await db.query<{ id: string }>(

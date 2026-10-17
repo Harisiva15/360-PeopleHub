@@ -24,6 +24,7 @@
  * employment record is not identity and must outlive the login.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 /* One creation path for leave entitlement, shared with joiners and onboarding. */
 import { openLeaveBalances } from '../people/provision.ts';
@@ -179,9 +180,9 @@ const toAccount = (r: Row): UserAccount => ({
  * SQL, so a crafted id cannot walk past it.
  */
 function scopeFor(caller: Caller, params: unknown[]): string {
-  if (caller.role === 'admin') return 'TRUE';
-  if (caller.role !== 'manager' || !caller.employeeId) return 'FALSE';
-  return employeeScope(caller, 'm.employee_id', params);
+  if (reaches(caller, 'users', 'write', 'all')) return 'TRUE';
+  if (!caller.hasReports || !caller.employeeId) return 'FALSE';
+  return employeeScope(caller, 'm.employee_id', params, 'users');
 }
 
 const mayAdminister = (caller: Caller) => {
@@ -277,7 +278,7 @@ export async function nextEmployeeCode(caller: Caller): Promise<string> {
  * manager who could would be one.
  */
 function mayGrant(caller: Caller, role: Role) {
-  if (role === 'admin' && caller.role !== 'admin') {
+  if (role === 'admin' && !reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can grant the administrator role', 'forbidden');
   }
 }
@@ -450,7 +451,7 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
      * which is what invite_sent_at records — "create the account, I will tell
      * them myself" is a choice about the message, not about the account.
      */
-    const status = caller.role === 'admin'
+    const status = reaches(caller, 'users', 'write', 'all')
       ? 'invited'
       : 'pending_approval';
 
@@ -590,7 +591,7 @@ export async function setUserStatus(
    * Suspension is a sanction, a lock answers a security event, and deletion is
    * final. All three are an administrator's, even on a manager's own line.
    */
-  if (ADMIN_ONLY.includes(db_status) && caller.role !== 'admin') {
+  if (ADMIN_ONLY.includes(db_status) && !reaches(caller, 'users', 'write', 'all')) {
     throw new UserError(`Only an administrator can set an account to ${status}`, 'forbidden');
   }
 
@@ -603,7 +604,7 @@ export async function setUserStatus(
      * Same for a lock: the account was locked because something happened, and
      * the person who could not lock it cannot decide it is over.
      */
-    if (ADMIN_ONLY.includes(row.status) && caller.role !== 'admin') {
+    if (ADMIN_ONLY.includes(row.status) && !reaches(caller, 'users', 'write', 'all')) {
       throw new UserError(
         `Only an administrator can change an account that is ${FROM_DB[row.status] ?? row.status}`,
         'forbidden');
@@ -658,7 +659,7 @@ export async function removeUser(
   id: string,
   typed: string,
 ): Promise<UserAccount> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can delete an account', 'forbidden');
   }
   const account = await getUser(caller, id);
@@ -679,7 +680,7 @@ export async function decideUser(
    * The approval is the administrator's, always. A manager approving the
    * account they raised is the same as a manager creating one.
    */
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can decide an account request', 'forbidden');
   }
   return withTenant(caller, async (db) => {
@@ -738,7 +739,7 @@ export async function inviteUser(caller: Caller, id: string): Promise<UserAccoun
    * another. A manager raising a joiner still gets an account created — it
    * lands as pending_approval and an administrator decides.
    */
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can send an invitation', 'forbidden');
   }
 
@@ -815,7 +816,7 @@ export async function resetPassword(
   id: string,
   forceChange = true,
 ): Promise<UserAccount> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can reset a password', 'forbidden');
   }
   return withTenant(caller, async (db) => {
@@ -978,7 +979,7 @@ export async function setMfaRequired(
   id: string,
   required: boolean,
 ): Promise<UserAccount> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can require a second factor', 'forbidden');
   }
   return withTenant(caller, async (db) => {

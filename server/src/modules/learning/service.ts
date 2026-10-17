@@ -12,6 +12,7 @@
  * satisfy this year's deadline.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 
@@ -88,7 +89,7 @@ export async function enrolments(caller: Caller, empIds?: string[]): Promise<Enr
     if (!caller.employeeId) throw new LearningError('this login has no employee record', 'forbidden');
     params.push(caller.employeeId);
     where.push(`e.employee_id = $${params.length}`);
-  } else if (caller.role === 'manager') {
+  } else if (caller.hasReports) {
     params.push(caller.employeeId);
     where.push(`(e.employee_id = $${params.length} OR e.employee_id IN (
        WITH RECURSIVE t AS (

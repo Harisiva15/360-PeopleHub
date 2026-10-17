@@ -17,6 +17,7 @@
  * every document audit is trying to find.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
@@ -93,7 +94,7 @@ const toRequest = (r: Record<string, unknown>): DocRequest => ({
 
 /** HR and managers chase documents; an employee sees only their own. */
 function mayChase(caller: Caller): boolean {
-  return caller.role === 'admin' || caller.role === 'manager';
+  return reaches(caller, 'documents', 'read', 'all') || caller.hasReports;
 }
 
 export async function listRequests(
@@ -325,7 +326,7 @@ export async function listDocuments(
    * their line. Somebody else's identity documents are not a manager's
    * business by default and certainly not an employee's.
    */
-  where.push(employeeScope(caller, 'd.employee_id', params));
+  where.push(employeeScope(caller, 'd.employee_id', params, 'documents'));
   if (empIds?.length) {
     params.push(empIds);
     where.push(`d.employee_id = ANY($${params.length})`);

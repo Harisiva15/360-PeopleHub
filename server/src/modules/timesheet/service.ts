@@ -23,6 +23,7 @@
  * same way.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -136,7 +137,7 @@ const toSheet = (r: Record<string, unknown>): Timesheet => {
 
 /** What this caller may see: their own, their line, or everyone's. */
 function scope(caller: Caller, column: string, params: unknown[]): string {
-  if (caller.role === 'admin') return '';
+  if (reaches(caller, 'timesheet', 'read', 'all')) return '';
   if (!caller.employeeId) {
     throw new TimesheetError('this login has no employee record', 'forbidden');
   }
@@ -564,7 +565,7 @@ export async function actOnTimesheet(
     if (row.employee_id === caller.employeeId) {
       throw new TimesheetError('you cannot decide your own timesheet', 'self_approval');
     }
-    if (caller.role === 'manager') {
+    if (caller.hasReports) {
       const mine = await db.query(
         `WITH RECURSIVE t AS (
            SELECT id FROM employee WHERE manager_id = $1

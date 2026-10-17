@@ -17,6 +17,7 @@
  * the checklist is the thing people actually look at.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { provisionEmployee } from '../people/provision.ts';
@@ -141,7 +142,7 @@ async function restatus(db: TenantClient, id: string): Promise<void> {
 
 /** HR and managers run onboarding; nobody else sees a joiner's CTC. */
 function mayOnboard(caller: Caller): boolean {
-  return caller.role === 'admin' || caller.role === 'manager';
+  return reaches(caller, 'onboarding', 'read', 'all') || caller.hasReports;
 }
 
 export async function listOnboarding(caller: Caller): Promise<Onboarding[]> {

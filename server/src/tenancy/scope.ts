@@ -19,6 +19,8 @@
  * accountable for it.
  */
 
+import { reaches, scopeOf } from '../auth/can.ts';
+import type { Verb } from '../auth/policy.ts';
 import type { Caller } from './context.ts';
 
 export interface Scope {
@@ -38,12 +40,23 @@ export interface Scope {
  *     const s = employeeScope(caller, 'p.employee_id', params);
  *     db.query(`... WHERE x = $1 AND (${s})`, params);
  */
+/*
+ * The three branches below were admin, employee and manager. They are the
+ * three scopes: 'all' is every row, 'own' is the caller's, 'team' is their
+ * line. The module decides which one applies, so the module is what this
+ * now takes - and a module nobody has classified answers none, which is
+ * FALSE here rather than TRUE.
+ */
 export function employeeScope(
   caller: Caller,
   column: string,
   params: unknown[],
+  module: string,
+  verb: Verb = 'read',
 ): string {
-  if (caller.role === 'admin') return 'TRUE';
+  const scope = scopeOf(caller, module, verb);
+  if (scope === 'none') return 'FALSE';
+  if (scope === 'all') return 'TRUE';
 
   /*
    * A non-admin with no employee record has no line and no self, so they see
@@ -55,7 +68,7 @@ export function employeeScope(
   params.push(caller.employeeId);
   const p = `$${params.length}`;
 
-  if (caller.role === 'employee') return `${column} = ${p}`;
+  if (scope === 'own') return `${column} = ${p}`;
 
   return `(${column} = ${p} OR ${column} IN (
     WITH RECURSIVE line AS (
@@ -67,7 +80,19 @@ export function employeeScope(
   ))`;
 }
 
-/** True where this caller could see that person at all. */
-export function withinScope(caller: Caller, employeeId: string): boolean {
-  return caller.role === 'admin' || caller.employeeId === employeeId;
+/**
+ * True where this caller could see that person at all.
+ *
+ * Nothing calls it. Left in place with the module it needs, rather than
+  * deleted in the middle of a sweep, so whoever next reaches for it gets the
+  * version that asks the policy.
+ */
+export function withinScope(
+  caller: Caller,
+  employeeId: string,
+  module: string,
+  verb: Verb = 'read',
+): boolean {
+  if (reaches(caller, module, verb, 'all')) return true;
+  return caller.employeeId === employeeId;
 }

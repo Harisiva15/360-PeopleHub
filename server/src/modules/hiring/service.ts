@@ -22,6 +22,7 @@
  * pipeline itself is for recruiters, hiring managers and admins.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -277,7 +278,7 @@ const toInterview = (r: Record<string, unknown>): Interview => ({
 
 /** Recruiters, hiring managers and admins see the pipeline; nobody else does. */
 function mayRecruit(caller: Caller): boolean {
-  return caller.role === 'admin' || caller.role === 'manager';
+  return reaches(caller, 'hiring', 'read', 'all') || caller.hasReports;
 }
 
 export async function listRequisitions(caller: Caller): Promise<Requisition[]> {
@@ -665,7 +666,7 @@ export async function submitFeedback(
 
     // The panel member writes their own feedback; an admin can record it for
     // them, because somebody has to when a contractor leaves mid-loop.
-    if (rows[0].panel_member_id !== caller.employeeId && caller.role !== 'admin') {
+    if (rows[0].panel_member_id !== caller.employeeId && !reaches(caller, 'hiring', 'read', 'all')) {
       throw new HiringError('only the panel member may submit this feedback', 'forbidden');
     }
     if (rows[0].status === 'completed') {
