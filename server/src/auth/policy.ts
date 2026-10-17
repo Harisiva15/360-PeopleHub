@@ -260,7 +260,8 @@ export const POLICY: Record<string, ModulePolicy> = {
 
   /* Anyone can be assigned work and move their own card. Not in the access
      table; kept as it was, with both administrative roles reading the board. */
-  planner: rule(['all', 'own', 'none'], ['all', 'all', 'none'], ALL_RW, ['all', 'own', 'none'], ALL_RW),
+  /* The layer writes its own line. 'all' let a manager edit anybody's plan. */
+  planner: rule(['all', 'own', 'none'], ['all', 'team', 'none'], ALL_RW, ['all', 'own', 'none'], ALL_RW),
 
   /*
    * The directory narrows rather than opens: an employee sees themselves, a
@@ -273,14 +274,24 @@ export const POLICY: Record<string, ModulePolicy> = {
 
   /* ---- people, which is HR's ---- */
 
-  lifecycle: rule(SELF, ['team', 'team', 'none'], ALL_RWA, ALL_R, ALL_RWA),
+  /*
+   * The layer reads its line and writes nothing. Changing somebody's
+   * lifecycle record is HR's act, not their manager's.
+   *
+   * This leaves a manager with no way to ask for one either. The request
+   * flow that would replace it needs a pending state neither this record
+   * nor the exit record has, so it is a schema change and not part of
+   * this. Until it exists, assigning a lifecycle task is hr_admin's.
+   */
+  lifecycle: rule(SELF, ['team', 'none', 'none'], ALL_RWA, ALL_R, ALL_RWA),
   onboarding: rule(NO, ['team', 'team', 'none'], ALL_RWA, NO, ALL_RWA),
   hiring: rule(NO, ['team', 'team', 'team'], ALL_RWA, NO, ALL_RWA),
   recruitment: rule(NO, ['team', 'team', 'team'], ALL_RWA, NO, ALL_RWA),
 
   /* An exit is raised by HR or the manager and settled by finance, which is
      why finance approves here and writes nothing. */
-  exit: rule(SELF, ['team', 'team', 'none'], ALL_RWA, ['all', 'none', 'all'], ALL_RWA),
+  /* Reads their line, writes nothing - see lifecycle above. */
+  exit: rule(SELF, ['team', 'none', 'none'], ALL_RWA, ['all', 'none', 'all'], ALL_RWA),
 
   /* ---- the tenant ---- */
 
@@ -310,7 +321,12 @@ export const POLICY: Record<string, ModulePolicy> = {
   /* A contract is procurement and a seat is an access grant, so they part
      ways: a manager reads the estate and revokes on their own line. HR adds
      nothing — an employee still sees the licences they hold. */
-  software: rule(OWN_R, ['all', 'team', 'none'], NO, ALL_R, ALL_RWA),
+  /*
+   * Read narrowed to the line, because the estate is not a catalogue: every
+   * seat carries employee_id, full_name and dept_code, so reading it at
+   * 'all' told a manager who in the company holds which licence.
+   */
+  software: rule(OWN_R, ['team', 'team', 'none'], NO, ALL_R, ALL_RWA),
 
   /*
    * User administration, and the one module where the table narrows what a

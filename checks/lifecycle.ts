@@ -178,8 +178,19 @@ const NOW = ymd(TODAY);
     () => s.lifecycle.addTask(EMPLOYEE, DEMO_EMP.id, draft));
   await refused('a manager cannot assign outside their line',
     () => s.lifecycle.addTask(MANAGER, HRHEAD.id, draft));
-  await allowed('a manager can assign on their line',
+  /*
+   * Nor on their own line. Changing somebody's lifecycle record is HR's act.
+   *
+   * This asserted the opposite, and the policy now grants the manager layer
+   * read on their line and write nowhere. The request flow meant to replace
+   * it - a manager asks, hr_admin actions it - needs a pending state this
+   * record does not have, so until that lands a manager cannot assign a
+   * lifecycle task at all. That is a capability removed, not relocated.
+   */
+  await refused('a manager cannot assign even on their line',
     () => s.lifecycle.addTask(MANAGER, subject.id, draft));
+  await allowed('but an administrator can',
+    () => s.lifecycle.addTask(ADMIN, subject.id, draft));
 
   await refused('a task with no name is refused',
     () => s.lifecycle.addTask(ADMIN, subject.id, { n: '  ', due: NOW }));
