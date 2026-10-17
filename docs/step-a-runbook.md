@@ -512,13 +512,60 @@ In order. Stop at the first failure and go to §7.
 - [ ] Her own record and what the company shares. **No Settings. No payroll for
       anyone else**
 - [ ] Her own payslip opens, with her figures
-- [ ] **Somebody else's payslip is refused.** Take her employee id from the URL
-      of her own payslip, substitute Hari's, reload. Expect a refusal — not a
-      page with somebody else's numbers
 - [ ] **People**: her own record, and no salary for anyone else
 
-Those last two are the point. Everything above them confirms nobody was locked
-out; those two confirm nobody was let in.
+#### Reading somebody else's payslip — how to actually test it
+
+**There is no URL to edit.** An earlier draft of this runbook said to take her
+employee id out of the URL of her own payslip and substitute Hari's. That does
+not work, because no frontend route carries an employee id: `/payroll?v=me`
+shows your own, and a colleague's profile opens in a *drawer* from JavaScript
+state. (`src/modules/dashboard/shared.tsx` links to `/employees?emp=<id>`, but
+`/employees` never reads that parameter, so even that link does nothing.)
+
+The refusal lives at the API, so test it there. Signed in **as Lakshmi**, open
+the browser console on https://360peoplehub.com/ and paste this. It reuses her
+live session, and prints status codes only — no token, no payslip content:
+
+```js
+(async () => {
+  const k = Object.keys(localStorage).find(x => /^sb-.*-auth-token/.test(x));
+  const raw = localStorage.getItem(k);
+  const tok = JSON.parse(raw.startsWith('base64-')
+    ? atob(raw.slice(7)) : raw).access_token;
+  const API = 'https://three60-peoplehub-api.onrender.com';
+  const HERS = '9c754d2a-a305-46ae-a71b-f254ff6ea9bf';  // VHM006 Lakshmi
+  const HARI = 'b68c8dc4-73d3-42aa-b782-c4d6276c6f74';  // VHM004 Hari
+  for (const [who, id] of [['her own', HERS], ["Hari's", HARI]]) {
+    const r = await fetch(`${API}/payroll/payslips/${id}`,
+      { headers: { authorization: `Bearer ${tok}` } });
+    console.log(who.padEnd(8), r.status, r.status === 200 ? 'OK' : 'refused');
+  }
+})();
+```
+
+Expected, and the whole point of step A:
+
+```
+her own  200 OK
+Hari's   403 refused
+```
+
+**A 200 on the second line is a live data exposure.** Revert the deploy
+immediately (see below) and say so.
+
+The route is `GET /payroll/payslips/:empId` — the id is a uuid, not the `VHM…`
+code, which is why the codes are given alongside above. `…/payslips/:empId/:mk`
+fetches one month and is guarded by the same `assertOwnOrAdmin`.
+
+For the same test from a terminal instead, take the token from the same
+localStorage key and:
+
+```
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $TOKEN" \
+  https://three60-peoplehub-api.onrender.com/payroll/payslips/b68c8dc4-73d3-42aa-b782-c4d6276c6f74
+```
 
 ### Then, from your own machine
 
