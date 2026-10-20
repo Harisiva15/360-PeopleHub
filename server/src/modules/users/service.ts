@@ -508,22 +508,61 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
       ? 'invited'
       : 'pending_approval';
 
+    /*
+     * Whether an invitation is actually going out.
+     *
+     * Both halves matter. `status === 'invited'` means an administrator made
+     * this account rather than a manager raising a joiner — a joiner waits for
+     * approval and must not be emailed a sign-in. `sendInvitation !== false`
+     * is the form's "I'll tell them myself" unticked.
+     */
+    const sending = status === 'invited' && d.sendInvitation !== false;
+
+    /*
+     * Called inside the transaction, exactly as `inviteUser` does it, and for
+     * the same reason: if the provider refuses, the throw takes the employee
+     * row, the membership and the audit entry with it, so a refused send
+     * cannot leave behind an account that claims one happened.
+     *
+     * This used to be missing entirely. `invite_sent_at` was stamped whenever
+     * the status was `invited` and `invited_count` was hard-coded to 1, while
+     * nothing ever asked Supabase for anything — so every account created from
+     * the Users screen recorded an invitation that was never sent, and the
+     * drawer displayed the date of it. `sendInvitation` reached only
+     * `must_change_password`, which is why ticking the box changed nothing an
+     * email could come out of.
+     */
+    if (sending) {
+      await authAdmin().inviteToSetPassword(d.email.trim(), inviteRedirect());
+    }
+
     const { rows } = await db.query<{ id: string }>(
       `INSERT INTO tenant_membership
          (user_id, role, employee_id, status, invited_at, invite_sent_at,
           invited_count, must_change_password, requested_by,
           approved_by, approved_at)
        VALUES (NULL, $1, $2, $3, now(),
-               CASE WHEN $3 = 'invited' THEN now() ELSE NULL END,
-               1, $4, $5,
+               CASE WHEN $7 THEN now() ELSE NULL END,
+               CASE WHEN $7 THEN 1 ELSE 0 END,
+               $4, $5,
                CASE WHEN $3 <> 'pending_approval' THEN $6::uuid ELSE NULL END,
                CASE WHEN $3 <> 'pending_approval' THEN now() ELSE NULL END)
        RETURNING id`,
       [d.role, emp[0]!.id, status, d.sendInvitation === false, caller.employeeId,
-        caller.employeeId]);
+        caller.employeeId, sending]);
 
     await audit(db, caller, 'user.created', rows[0]!.id,
       `${d.name.trim()} · ${d.role} · ${FROM_DB[status]}`);
+
+    /*
+     * A second row when one went out, in the same shape `inviteUser` writes,
+     * so "was this person ever sent an invitation?" has one answer to look for
+     * rather than two depending on which screen created them.
+     */
+    if (sending) {
+      await audit(db, caller, 'user.invited', rows[0]!.id,
+        `${d.role} · attempt 1 · sent with the account`);
+    }
     const made = await getUser(caller, rows[0]!.id);
     if (!made) throw new UserError('The account was not created', 'invalid');
     return made;
@@ -1035,12 +1074,35 @@ export async function accountObligations(
  * Recorded either way, so an administrator can see the reset was answered.
  */
 export async function passwordChanged(caller: Caller): Promise<{ ok: true }> {
-  if (!caller.employeeId) return { ok: true };
+  /*
+   * No employee record on the membership, so there is no row to clear.
+   *
+   * This used to `return { ok: true }`, which is the worst available answer:
+   * the flag stays set, the caller is told the change was recorded, and the
+   * next sign-in asks for a new password again — forever, with nothing
+   * anywhere saying why. A person in that state cannot get past the screen by
+   * trying harder, and nobody looking at the logs would see a failure.
+   *
+   * It should not be reachable: `callerFromToken` builds a Caller from a
+   * membership, and a membership with no `employee_id` cannot sign in. That is
+   * exactly why it must say so loudly rather than shrug — if it ever does
+   * happen, the row is broken in a way that needs a person, and the cost of
+   * guessing wrong is somebody locked out of the product with no diagnosis.
+   */
+  if (!caller.employeeId) {
+    throw new UserError(
+      'This account is not linked to an employee record, so the password '
+      + 'change could not be recorded. Your new password was saved. Ask an '
+      + 'administrator to check the account before signing in again.',
+      'invalid');
+  }
+
   return withTenant(caller, async (db) => {
     await db.query(
       'UPDATE tenant_membership SET must_change_password = false WHERE employee_id = $1',
       [caller.employeeId]);
-    await audit(db, caller, 'user.password_changed', caller.employeeId ?? '',
+    /* No `?? ''` — the guard above means this is a real id by now. */
+    await audit(db, caller, 'user.password_changed', caller.employeeId,
       'set a new password at sign-in');
     return { ok: true } as const;
   });

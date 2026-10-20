@@ -67,7 +67,8 @@ const ADMIN_CODE = process.env.TEST_ADMIN_CODE ?? 'VHM004';
 
 const { default: pg } = await import('pg');
 const { sslConfig } = await import('./ssl.mjs');
-const { inviteUser, resendInvitation } = await import('../src/modules/users/service.ts');
+const { inviteUser, resendInvitation, passwordChanged, createUser } = await import('../src/modules/users/service.ts');
+const { withScratchTenant } = await import('./lib/scratch-tenant.mjs');
 const { setAuthAdmin } = await import('../src/auth/adminApi.ts');
 
 let failed = 0;
@@ -392,6 +393,149 @@ console.log('\nan address that already has a sign-in\n');
       ok('    and still one membership', mems.rows[0].n === 1);
     });
   } finally { setAuthAdmin(was); }
+}
+
+/*
+ * Creating an account with an invitation sends one, or records none.
+ *
+ * `createUser` stamped `invite_sent_at` and `invited_count = 1` whenever the
+ * caller was an administrator, while never asking the provider for anything —
+ * so every account made from the Users screen recorded an invitation nobody
+ * sent, and the drawer displayed its date. The `sendInvitation` flag reached
+ * only `must_change_password`, which is why ticking the box changed nothing an
+ * email could come out of.
+ *
+ * A scratch tenant, because `createUser` needs reference data to look up by
+ * code — a department, a site, a shift, a legal entity — and because deleting
+ * the tenant at the end takes everything this block made with it, which is
+ * what keeps the census below honest.
+ */
+console.log('\nan account created with an invitation actually sends one\n');
+
+await withScratchTenant(admin, async (sctx) => {
+  const A = {
+    role: 'company_admin', hasReports: false,
+    tenantId: sctx.tenant, employeeId: sctx.adminEmployeeId, userId: null,
+  };
+
+  let seq = 0;
+  const draft = (over = {}) => {
+    seq += 1;
+    return {
+      name: `ZZ Invitee ${seq}`,
+      email: `zz-invitee-${seq}-${Math.random().toString(36).slice(2, 8)}@360.technology`,
+      dept: sctx.dept,
+      site: sctx.site,
+      designation: 'Engineer',
+      role: 'employee',
+      joinedOn: '2026-09-01',
+      ...over,
+    };
+  };
+
+  const memFor = async (email) => (await admin.query(
+    `SELECT m.invite_sent_at, m.invited_count, m.must_change_password
+       FROM tenant_membership m JOIN employee e ON e.id = m.employee_id
+      WHERE lower(e.work_email) = lower($1)`, [email])).rows[0];
+
+  const actionsFor = async (email) => (await admin.query(
+    `SELECT a.action FROM audit_log a
+       JOIN tenant_membership m ON m.id = a.subject_id
+       JOIN employee e ON e.id = m.employee_id
+      WHERE lower(e.work_email) = lower($1)
+      ORDER BY a.occurred_at`, [email])).rows.map((r) => r.action);
+
+  /* --- the box is ticked: something must actually go out --- */
+  {
+    const api = spy(() => Promise.resolve({ kind: 'invited' }));
+    const was = setAuthAdmin(api);
+    try {
+      const d = draft({ sendInvitation: true });
+      await createUser(A, d);
+      ok('14. the provider was actually asked', api.calls.length === 1,
+        `${api.calls.length} call(s) — this is the regression`);
+      ok('    with the address of the new hire',
+        api.calls[0]?.email === d.email.trim(), api.calls[0]?.email);
+      const m = await memFor(d.email);
+      ok('    invite_sent_at is stamped', Boolean(m?.invite_sent_at));
+      ok('    invited_count is 1', m?.invited_count === 1, String(m?.invited_count));
+      ok('    and a user.invited row was written',
+        (await actionsFor(d.email)).includes('user.invited'),
+        (await actionsFor(d.email)).join(', '));
+    } finally { setAuthAdmin(was); }
+  }
+
+  /* --- the box is unticked: nothing sent, and nothing claimed --- */
+  {
+    const api = spy(() => Promise.resolve({ kind: 'invited' }));
+    const was = setAuthAdmin(api);
+    try {
+      const d = draft({ sendInvitation: false });
+      await createUser(A, d);
+      ok('15. "I will tell them myself" sends nothing', api.calls.length === 0,
+        `${api.calls.length} call(s)`);
+      const m = await memFor(d.email);
+      ok('    invite_sent_at stays null', m?.invite_sent_at === null,
+        'an unsent invitation must not be recorded as sent');
+      ok('    invited_count stays 0', m?.invited_count === 0, String(m?.invited_count));
+      ok('    and they must set a password at first sign-in',
+        m?.must_change_password === true);
+      ok('    no user.invited row', !(await actionsFor(d.email)).includes('user.invited'));
+    } finally { setAuthAdmin(was); }
+  }
+
+  /* --- the provider refuses: the whole account goes with it --- */
+  {
+    const api = spy(() => Promise.reject(new Error('the mail provider said no')));
+    const was = setAuthAdmin(api);
+    try {
+      const d = draft({ sendInvitation: true });
+      const err = await attempt(() => createUser(A, d));
+      ok('16. a refused send fails the creation', err !== null,
+        'the account was created although the invitation was refused');
+      const emp = await admin.query(
+        'SELECT 1 FROM employee WHERE lower(work_email) = lower($1)', [d.email]);
+      ok('    and leaves no employee row', emp.rowCount === 0,
+        `${emp.rowCount} row(s) survived the rollback`);
+      ok('    nor a membership', (await memFor(d.email)) === undefined);
+      ok('    nor an audit trail', (await actionsFor(d.email)).length === 0);
+    } finally { setAuthAdmin(was); }
+  }
+});
+
+/*
+ * A membership with no employee record is told so, not told "fine".
+ *
+ * `passwordChanged` used to `return { ok: true }` for a caller with no
+ * employeeId. That is the worst answer available: the flag stays set, the
+ * browser is told the change was recorded, and the next sign-in asks again —
+ * permanently, with no failure recorded anywhere. The client suite cannot
+ * catch a regression here because it fakes the server, so the guard is
+ * asserted against the real function.
+ *
+ * It throws before opening a transaction, so no fixture is needed.
+ */
+console.log('\na password change it cannot record is not reported as recorded\n');
+{
+  const orphan = { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: null, userId: null };
+  let threw = null;
+  try {
+    const answer = await passwordChanged(orphan);
+    ok('17. no employeeId is refused, not accepted', false,
+      `returned ${JSON.stringify(answer)} instead of throwing — this is the regression`);
+  } catch (e) {
+    threw = e;
+    ok('17. no employeeId is refused, not accepted', true);
+  }
+  ok('    and the message names the cause',
+    /not linked to an employee record/i.test(threw?.message ?? ''),
+    threw?.message ?? '(no message)');
+  ok('    and says the password itself was saved',
+    /password was saved/i.test(threw?.message ?? ''),
+    'the person must know not to re-type it');
+  ok('    and tells them who can fix it',
+    /administrator/i.test(threw?.message ?? ''),
+    threw?.message ?? '(no message)');
 }
 
 console.log('\nnothing survived\n');

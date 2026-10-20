@@ -665,6 +665,132 @@ ok('the detector still recognises the shapes it is looking for',
   TS_COMPARE.test(selfTest[0]) && SQL_COMPARE.test(selfTest[1]),
   'it would pass everything');
 
+/* ------------------------------------------------------------------ *
+ * A role list is annotated, never asserted
+ * ------------------------------------------------------------------ */
+
+/*
+ * The hole the rules above do not cover.
+ *
+ * The users drawer carried this through the entire four-role migration:
+ *
+ *     const roles = (['employee', 'manager', 'admin'] as AppRole[])
+ *
+ * `AppRole` has not contained `manager` or `admin` since the migration, so two
+ * of those three values were not roles at all. Nothing caught it. The
+ * typechecker did not, because `as` is an assertion and silencing the error is
+ * what an assertion is for. The sweep did not, because it looked for the type
+ * error that the assertion had removed. And the comparison rules above did
+ * not, because nothing was being compared — the values sat in an array.
+ *
+ * The effect was that `hr_admin`, `finance_admin` and `company_admin` could not
+ * be assigned from that screen at all: `mayAssignRole` failed closed on the two
+ * dead names, leaving `employee` as the only option on offer.
+ *
+ * So the rule is about the *mechanism*, not about which words are currently
+ * dead: an array literal may not be asserted into a role type. Annotate it
+ * (`const x: AppRole[] = [...]`) and a wrong value is a compile error again.
+ * Stated this way the rule still works after step C, when `admin` and
+ * `manager` are gone and a check that hunted for those two words would have
+ * nothing left to say.
+ *
+ * Deliberately narrow. `Object.keys(SCOPE) as AppRole[]` in `users/shared.tsx`
+ * is the ordinary idiom for recovering the key type that `Object.keys` throws
+ * away, and it launders no literals — so this looks for a bracketed literal
+ * being cast, not for every cast. The broader rule, "no role literal in any
+ * array", matches 38 lines of which almost all are other domains that happen
+ * to use the word manager: hiring stages, recruiter parts, onboarding task
+ * owners, exit-survey categories. A rule that cries wolf 36 times teaches
+ * people to route around it.
+ */
+const ROLE_TYPES = ['AppRole', 'Role', 'GridRole'];
+const typeAlt = ROLE_TYPES.join('|');
+
+/* `['a', 'b'] as AppRole[]` — a literal asserted into a role array. */
+const ARRAY_ASSERTED = new RegExp(`\\[[^\\]]*\\]\\s*as\\s+(?:${typeAlt})\\s*\\[\\]`);
+/* `'admin' as AppRole` — a single literal asserted into a role. */
+const LITERAL_ASSERTED = new RegExp(`['"][a-z_]+['"]\\s*as\\s+(?:${typeAlt})\\b`);
+
+/*
+ * Its own file list, and this is the point rather than a detail.
+ *
+ * `files` above walks `server/src` and takes only `.ts`, because rule 1 is
+ * about SQL listings and they all live on the server. The laundering this rule
+ * exists to catch was in `src/modules/users/Drawers.tsx` — the browser, and a
+ * `.tsx` file — so scanning `files` would have left the rule looking
+ * confidently at the wrong tree and reporting zero. It did, on the first
+ * attempt: restoring the original bug changed nothing, which is the only
+ * reason this comment exists.
+ *
+ * Both trees, both extensions. A role type is shared between them and so is
+ * the mistake.
+ */
+const bothTrees: string[] = [];
+for (const root of ['src', 'server/src']) {
+  (function walk(dir: string) {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (name.endsWith('.ts') || name.endsWith('.tsx')) bothTrees.push(p);
+    }
+  }(root));
+}
+bothTrees.sort();
+
+const launderings: Offence[] = [];
+for (const file of bothTrees) {
+  const rel = relative('.', file).split('\\').join('/');
+  if (VOCABULARY_FILES.includes(rel)) continue;
+  const lines = readFileSync(file, 'utf8').split(NL);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (isProse(line)) continue;
+    if (ARRAY_ASSERTED.test(line)) {
+      launderings.push({
+        file: rel, line: i + 1, text: line.trim(),
+        kind: 'array literal asserted into a role type',
+      });
+    } else if (LITERAL_ASSERTED.test(line)) {
+      launderings.push({
+        file: rel, line: i + 1, text: line.trim(),
+        kind: 'string literal asserted into a role type',
+      });
+    }
+  }
+}
+
+console.log(`${NL}a role list is annotated, never asserted${NL}`);
+
+ok(`no role literal is cast past the typechecker (${launderings.length} found)`,
+  launderings.length === 0,
+  'annotate the list instead, so a value outside the union is a compile error');
+
+if (launderings.length) {
+  console.log('');
+  for (const o of launderings) {
+    console.log(`        ${o.file}:${o.line}  [${o.kind}]`);
+    console.log(`            ${o.text.slice(0, 92)}`);
+  }
+}
+
+/*
+ * The detector is tested against the real historical line, not a paraphrase —
+ * and against the two shapes it must *not* flag, because a rule this narrow is
+ * only worth having if it stays narrow.
+ */
+ok('the laundering detector catches the line it was written for',
+  ARRAY_ASSERTED.test("  const roles = (['employee', 'manager', 'admin'] as AppRole[])"),
+  'the regression that prompted this rule would pass');
+ok('  and a single laundered literal',
+  LITERAL_ASSERTED.test("  const r = 'admin' as AppRole;"));
+ok('  while leaving Object.keys alone',
+  !ARRAY_ASSERTED.test('  (Object.keys(SCOPE) as AppRole[]).map((r) => [r, SCOPE[r].desc]),'),
+  'the ordinary Object.keys idiom must not be flagged');
+ok('  and an annotated list alone',
+  !ARRAY_ASSERTED.test("  const ROWS: GridRole[] = ['employee', 'manager', 'hr_admin'];")
+  && !LITERAL_ASSERTED.test("  const ROWS: GridRole[] = ['employee', 'manager', 'hr_admin'];"),
+  'annotation is the fix, so it cannot also be the offence');
+
 for (const [key, why] of ALLOWED_LINES) {
   const [f, needle] = key.split('#');
   const present = readFileSync(f, 'utf8').includes(needle);

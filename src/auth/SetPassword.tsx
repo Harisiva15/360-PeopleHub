@@ -48,6 +48,29 @@ export const RULES: Rule[] = [
 
 export const passwordOk = (v: string): boolean => RULES.every((r) => r.ok(v));
 
+/**
+ * Why the submit button is dead, in the one case the checklist does not cover.
+ *
+ * The rules list turns green as somebody types, so an unmet rule explains
+ * itself. What explained nothing was the gap between the last rule going green
+ * and the confirmation being typed: every rule ticked, and a button that still
+ * does nothing when pressed. A disabled control with no stated reason reads as
+ * a broken page, and the guess people make is that their password was
+ * rejected — so they shorten it, which is the opposite of what the rules are
+ * for.
+ *
+ * `null` once the form is ready, and `null` before anything is typed: an empty
+ * form does not need telling off. Exported so it can be asserted directly,
+ * like `RULES` and `passwordOk`.
+ */
+export function whyNotReady(pw: string, again: string): string | null {
+  if (pw.length === 0) return null;
+  if (!passwordOk(pw)) return 'Your password does not meet all three rules yet.';
+  if (again.length === 0) return 'Type the password again to confirm it.';
+  if (pw !== again) return 'The two do not match yet.';
+  return null;
+}
+
 export function SetPassword() {
   const { setPassword, signOut, email } = useAuth();
   const [pw, setPw] = useState('');
@@ -57,6 +80,8 @@ export function SetPassword() {
 
   const matches = pw.length > 0 && pw === again;
   const ready = passwordOk(pw) && matches;
+
+  const reason = whyNotReady(pw, again);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,13 +151,21 @@ export function SetPassword() {
           autoComplete="new-password"
           disabled={busy}
         />
-        {again.length > 0 && !matches && (
-          <div className="pw-mismatch">The two do not match yet.</div>
-        )}
-
         {error && <div className="mfa-error" role="alert">{error}</div>}
 
-        <button type="submit" className="btn primary mfa-submit" disabled={busy || !ready}>
+        {/* Announced politely: it changes as they type and must not interrupt. */}
+        {reason && (
+          <div className="pw-reason" id="pw-why" role="status" aria-live="polite">
+            {reason}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          className="btn primary mfa-submit"
+          disabled={busy || !ready}
+          aria-describedby={reason ? 'pw-why' : undefined}
+        >
           {busy ? 'Saving…' : 'Set password and continue'}
         </button>
 

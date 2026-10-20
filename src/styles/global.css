@@ -2206,7 +2206,10 @@ button.chip:hover{border-color:var(--line-2)}
   display:flex;gap:8px;align-items:center;font-size:12px;color:var(--ink-3);
 }
 .pw-rules li[data-met="true"]{color:var(--good-text)}
-.pw-mismatch{font-size:12px;color:var(--warn-text)}
+/* Replaces `.pw-mismatch`, which said only that two fields differed. This
+   states whichever requirement is actually outstanding, so it is the single
+   explanation for a disabled submit. */
+.pw-reason{font-size:12px;color:var(--warn-text)}
 
 /* The enrolled authenticators. A list rather than cards: two rows that differ
    only by a name do not need a border each. */

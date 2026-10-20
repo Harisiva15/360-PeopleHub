@@ -19,7 +19,7 @@ import { Badge, Banner, EmptyState, KV, Tabs } from '../../components/ui';
 import { Avatar } from '../../components/ui';
 import { Icon } from '../../components/icons';
 import { useApp } from '../../state/AppContext';
-import { mayAssignRole } from '../../state/rbac';
+import { mayAssignRole, APP_ROLES } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
 import { SignInTable } from './SignIns';
 import type { UserAccount, UserDraft } from '../../services';
@@ -76,8 +76,17 @@ export function UserForm({
    */
   const patterns = (schedules.data ?? []).filter((w) => w.active);
 
-  /* The roles this caller may hand out. An admin is the only one who makes one. */
-  const roles = (['employee', 'manager', 'admin'] as AppRole[])
+  /*
+   * The roles this caller may hand out. An admin is the only one who makes one.
+   *
+   * From `APP_ROLES` rather than a literal list: this read
+   * `['employee', 'manager', 'admin'] as AppRole[]` right through the four-role
+   * migration. Two of those are not roles any more, and the assertion is why
+   * nothing complained — so `hr_admin`, `finance_admin` and `company_admin`
+   * could not be assigned from this screen at all, while `mayAssignRole` failed
+   * closed on the two dead names and left only `employee` on offer.
+   */
+  const roles = APP_ROLES
     .filter((r) => r === existing?.role || mayAssignRole(app.role, app.hasReports, r));
 
   const fillCode = async () => {

@@ -52,7 +52,7 @@ date, not an edit to the line.
 ### Phase 1 — user management
 
 6. **No one-time set-password link.** Email gets fixed instead: Supabase Auth
-   custom SMTP via Resend. Setup steps are owed when phase 1 starts, not now.
+   custom SMTP via Resend. **Done, 2026-10-20** — see *Email* below.
 7. Access screen covers **the four roles only**. The derived `manager` layer
    comes later.
 
@@ -191,8 +191,143 @@ foundation, so it gets its own.
 | **Permissions** | `users: rule(NO, ['team','none','none'], ALL_R, NO, ALL_RWA)` — create, edit and deactivate are **company_admin only**; hr_admin reads; a manager sees their line; finance_admin nothing. `settings: rule(NO,NO,NO,NO,ALL_RWA)` — the Access screen is company_admin only. |
 | **Checks** | The role-assignment matrix, extending `check:rolegates` rule 2. `role_permission` can only ever narrow, never widen. The Settings-lockout guard (`ADMIN_LAYERS` in `config/permissions.ts`) gets a check of its own. Both last-administrator halves are already covered by `check:lastadmin`. |
 
-**Owed at the start of this phase:** Resend + Supabase Auth custom SMTP setup
-steps (decision 6).
+**Owed at the start of this phase:** nothing on email — it is live. See *Email*
+below. What is still owed is the invite path itself, which has never worked (see
+*The invitation that was never sent*).
+
+---
+
+## Email
+
+**Settled 2026-10-20. Supabase Auth custom SMTP, through Resend.**
+
+| | |
+|---|---|
+| Host | `smtp.resend.com:465` |
+| Username | `resend` |
+| Sender | `peoplehub@360technologyllc.com` |
+| Covers | password recovery, invitations, magic links, email change — every Auth email |
+| Code changes | **none.** Supabase sends the mail; this application never touches SMTP |
+
+Password-recovery emails arrive, confirmed by test.
+
+### Routes considered and retired
+
+**Office 365 SMTP AUTH — retired.** Microsoft blocks SMTP AUTH on these
+tenants, so there was nothing to configure.
+
+**Microsoft Graph `sendMail` — planned, never built.** The fallback for the
+above was to register a Send Email Hook on Supabase Auth, verify its Standard
+Webhooks signature at a new unauthenticated endpoint, render the four templates
+ourselves and post them to Graph `/users/{sender}/sendMail` with
+client-credentials OAuth. It was fully planned, including the Exchange Online
+RBAC-for-Applications commands to confine the app to the one mailbox. Resend
+removed the need for all of it.
+
+Keep the plan in mind only if app-level notifications later want a sender this
+application controls. Auth email does not need one, and the Graph route costs
+four secrets, an unauthenticated endpoint and a signature implementation that
+Resend costs nothing to avoid.
+
+### What this does *not* fix
+
+Auth email working is not the invite flow working. Supabase only sends an
+invitation if something asks it to, and nothing does — see below.
+
+---
+
+## The invitation that was never sent
+
+Read-only audit, 2026-10-20. Nothing here is fixed yet; it is written down so
+phase 1 starts from the real state rather than the assumed one.
+
+### 1. `createUser` claims an invitation it never sends
+
+`authAdmin()` is called in exactly one place in the users service — inside
+`inviteUser`. `createUser` never calls it. But its `tenant_membership` INSERT
+sets, unconditionally for an administrator:
+
+```sql
+invite_sent_at = CASE WHEN $3 = 'invited' THEN now() ELSE NULL END,
+invited_count  = 1,
+```
+
+and the form's `sendInvitation` flag feeds **only** `must_change_password`:
+
+```ts
+[d.role, emp[0]!.id, status, d.sendInvitation === false, …]
+```
+
+So ticking *Send invitation* on the create-user form does nothing an email
+could come out of, while the row records that an invitation was sent and the
+drawer displays *Invitations sent: 1* and *Invitation sent: &lt;date&gt;*.
+
+This is the same defect the comment on `resendInvitation` already describes as
+fixed — *"This used to increment a counter and stamp a time while sending
+nothing, which is how every account came to look invited without anybody having
+been told"* — fixed on the resend path and left in place on the create path.
+
+**Latent rather than already damaging.** Production has one `user.created`
+audit row, no `user.invited` or `user.invite_resent` row at all, and
+`invite_sent_at` is NULL on all three memberships: those accounts came through
+the joiner and onboarding flows, not this path. It will fire the first time an
+administrator creates a user from the Users screen, which is phase 1's opening
+action.
+
+### 2. The service-role key may be the wrong shape for the header it is sent in
+
+`SUPABASE_SERVICE_ROLE_KEY` in Render is an `sb_secret_…` key. `adminApi.post`
+sends it in two headers at once:
+
+```ts
+apikey: config.supabaseServiceKey,
+authorization: `Bearer ${config.supabaseServiceKey}`,
+```
+
+The legacy `service_role` key was a JWT, and the GoTrue admin endpoints
+authorise by decoding it and reading the `role` claim. The new keys are opaque
+tokens, not JWTs, and Supabase's guidance is to send them on `apikey` and
+**not** on `Authorization: Bearer`, because anything that tries to verify one as
+a JWT fails.
+
+Consistent with the evidence above: no invitation has ever succeeded in
+production. Not proof — the path has also never been exercised — so it needs
+one live call to settle, and the fix is a one-line change to which header
+carries the key.
+
+### 3. Every way the invite path can fail quietly
+
+Ranked. The server side is better than expected: `inviteUser` calls the
+provider *inside* the transaction, so a refused send rolls back the counter and
+the timestamp, and `AdminApiError` is mapped to 503/502 with its real message.
+
+| | where | behaviour |
+|---|---|---|
+| **A** | `createUser` | records an invitation, sends nothing, reports success — item 1 above |
+| **B** | `adminApi.post` | `fetch` is not wrapped, so DNS/TLS/timeout throws a bare `TypeError: fetch failed`, which no branch of `statusFor` matches and which therefore surfaces as a generic 500 rather than "could not reach Supabase" |
+| **C** | Supabase → Resend | GoTrue can answer 2xx and the message still not arrive. `inviteToSetPassword` resolves, the counter commits, the audit says invited. Nothing server-side can know; the mitigations are the Resend dashboard and the fact that `status` stays `invited` until accepted |
+| **D** | the key | item 2 — fails *loudly* if rejected (`'Supabase rejected this server's credentials'`), so this one is a correctness bug, not a silent one |
+
+### 4. The role picker still offers the old vocabulary
+
+`src/modules/users/Drawers.tsx` builds the assignable-role list as:
+
+```ts
+const roles = (['employee', 'manager', 'admin'] as AppRole[])
+```
+
+`AppRole` is `'employee' | 'hr_admin' | 'finance_admin' | 'company_admin'`, so
+two of those three values are not members of it. The `as AppRole[]` assertion
+is what let it through: the sweep found no type error because the cast silences
+one, and `check:rolegates` rule 3 looks for *comparisons* against role values,
+not literals in an array.
+
+The practical effect is a gap, not an exposure — `mayAssignRole` fails closed on
+the two unrecognised values, so the picker offers `employee` and nothing else,
+and `hr_admin`, `finance_admin` and `company_admin` cannot be assigned from this
+screen at all. Phase 1 replaces the screen; the check should grow a rule for
+role literals in array position regardless, because the next cast will hide the
+next one.
 
 ---
 
