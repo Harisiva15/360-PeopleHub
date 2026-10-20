@@ -106,7 +106,7 @@ write.
 
 Step A ships only when the whole sweep is done and everything is green.
 
-### Step B — migrate (approved, not written)
+### Step B — migrate (written as `0058_role_vocabulary_migrate.sql`)
 
 Data only.
 
@@ -115,17 +115,82 @@ Data only.
 | `tenant_membership.role` | `admin` | `company_admin` |
 | `employee.app_role` | `admin` | `company_admin` |
 | `role_permission.role` | `admin` | `company_admin` |
+| `joining_request.requested_role` | `admin` | `company_admin` |
 
 `employee` rows unchanged. `manager` rows in `role_permission` unchanged.
 **No rows created for `hr_admin` or `finance_admin`** — `role_permission` only
 ever narrows, so absent means "no narrowing" and they get the policy ceiling.
 
-Production today: 3 memberships (`hari.siva@` admin, `hr@` admin,
+Production before: 3 memberships (`hari.siva@` admin, `hr@` admin,
 `lakshmi.priya@` employee), `employee.app_role` admin 2 / employee 1,
 `role_permission` 99 rows = 33 modules × {admin, manager, employee},
 `joining_request` empty.
 
 Expected after: Hari and hr@ → `company_admin`, Lakshmi → `employee`.
+
+Two things the approved three-table mapping did not anticipate.
+
+#### `joining_request` is included although it is empty
+
+It held no rows when the mapping was written and holds none now, so the UPDATE
+is a no-op. It is in the migration anyway, because the live code can create a
+joining request with `requested_role = 'admin'` at any point before this
+applies, and such a row would then be rejected by step C's narrowed constraint —
+a failure mid-contract with no obvious cause.
+
+#### Step A's deploy silently stopped applying 18 narrowings
+
+`auth/overrides.ts` skips any `role_permission` row whose role is not one of the
+four current names:
+
+```ts
+if (!(ROLE_NAMES as string[]).includes(r.role)) continue;
+```
+
+`'admin'` is not among them. So from the moment step A's code went live, all 33
+`admin` rows stopped being applied, and **18 of them narrow something** — 11
+withhold `approve`, 7 withhold `write`, across `billing`, `reports`, `security`,
+`approvals`, `employees` and others.
+
+Because this table only ever narrows, losing rows **widens** access rather than
+restricting it: `company_admin` was getting the policy ceiling on those modules
+instead of the configured limit. Nothing was exposed to a lower role — the two
+affected accounts both hold `company_admin`, and the lost rows were a top role's
+self-imposed limits — but it was a live, unintended widening introduced by the
+step A deploy, and 0058 is what ends it. Once the rows say `company_admin`,
+`overridesFor` reads them again. The dry-run confirmed 18 ignored → 18 applied.
+
+This is the cost of expand → migrate → contract that the plan did not name:
+between A and B the *data* is in the old vocabulary while the *code* reads only
+the new one, so any table keyed by role value is inert in that window.
+`role_permission` was the only such table, and because it only narrows, the
+window failed open rather than shut.
+
+#### The collision, and why `company_admin` wins
+
+`role_permission` carries `UNIQUE (tenant_id, role, module)`, so a plain rename
+fails wherever a `company_admin` row already exists for the same module.
+Production had none at the time of writing, but the Access screen is live and
+now writes the new vocabulary, so one save creates the conflict.
+
+Where both exist, 0058 keeps the `company_admin` row and deletes the `admin`
+one. The `admin` row is already being ignored by the running code per the filter
+above, so nothing in effect is lost, and a `company_admin` row can only have
+been written after step A shipped — it is the more recent intent.
+
+#### Verification before production
+
+Both shapes were run against a local cluster at migration 57, each inside a
+rolled-back transaction: with 46 colliding rows (46 dropped, 0 moved) and in
+production's shape with none (46 moved, 0 dropped, 22 narrowed rows preserved).
+The production dry-run then applied and rolled back cleanly: 2 memberships, 2
+employees and 33 `role_permission` rows moved, 0 dropped, totals unchanged,
+`schema_migration` left at 57.
+
+Guards are relative, not absolute — every row found is either moved or dropped
+as a duplicate, nothing anywhere still holds `'admin'`, and the `manager` row
+count is asserted unchanged — so they are as strict against a fresh local
+cluster as against production.
 
 ### Step C — contract (not written)
 
