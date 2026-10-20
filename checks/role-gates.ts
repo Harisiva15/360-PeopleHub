@@ -626,7 +626,29 @@ for (const name of readdirSync(MIGRATIONS).sort()) {
    */
   const seq = Number(name.slice(0, 4));
   if (!Number.isFinite(seq) || seq <= 56) continue;
-  if (/_role_vocabulary_(expand|contract).sql$/.test(name)) continue;
+  if (/_role_vocabulary_(expand|migrate|contract)\.sql$/.test(name)) {
+    /*
+     * Step B belongs here for the same reason as A and C: renaming a stored
+     * value means naming both the old one and the new one, so every line of
+     * it reads as an offence to the rule above. It was left out only because
+     * it did not exist when that list was written.
+     *
+     * But an exception for *naming values* is not an exception for defining
+     * runtime behaviour under cover of one. The rule earns its keep on
+     * policies and functions — SQL that outlives the migration and then
+     * drifts from the policy — so an excepted file may not contain any.
+     * Comment lines are dropped first, so prose describing a function is
+     * not mistaken for one.
+     */
+    const body = readFileSync(join(MIGRATIONS, name), 'utf8')
+      .split(NL)
+      .filter((l) => !l.trim().startsWith('--'))
+      .join(NL);
+    ok(`${name} names role values but declares no runtime SQL`,
+      !/CREATE\s+(OR\s+REPLACE\s+)?(POLICY|FUNCTION|VIEW)|^\s*GRANT\b/im.test(body),
+      'the vocabulary exception covers renaming values, not policies or functions');
+    continue;
+  }
   const lines = readFileSync(join(MIGRATIONS, name), 'utf8').split(NL);
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
