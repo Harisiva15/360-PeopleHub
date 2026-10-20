@@ -1,3 +1,4 @@
+import { visibleIds } from '../../state/rbac';
 import { monthKey, TODAY } from '../../lib/dates';
 import { ACTIVE, EMAP, EMP, empName, teamOf } from '../../data/employees';
 import { ATT_IDX } from '../../data/attendance';
@@ -13,7 +14,7 @@ import { GOALS, PRAISE } from '../../data/performance';
 import { comp, compAllow, salaryStructure } from '../../data/salary';
 import { exitOf } from '../../data/exit';
 import type { AppRole, Employee } from '../../types/employee';
-import type { Caller, EmployeeProfile, EmployeeService, LeaveBalanceRow } from '../contracts';
+import type { EmployeeProfile, EmployeeService, LeaveBalanceRow } from '../contracts';
 import { ok } from './util';
 
 /**
@@ -22,15 +23,10 @@ import { ok } from './util';
  * derive exactly this from the caller's token, which is why `Caller` is passed
  * in rather than read from React context.
  */
-function visibleIds(c: Caller): string[] {
-  if (c.role === 'admin') return ACTIVE().map((e) => e.id);
-  if (c.role === 'manager') return [c.meId, ...teamOf(c.meId, true)];
-  return [c.meId];
-}
 
 export const employeeService: EmployeeService = {
   visible(c) {
-    const allowed = new Set(visibleIds(c));
+    const allowed = new Set(visibleIds(c.role, c.meId));
     return ok(ACTIVE().filter((e) => allowed.has(e.id)));
   },
 

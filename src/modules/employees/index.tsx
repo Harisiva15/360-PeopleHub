@@ -24,7 +24,7 @@ function Employees() {
   const layer = useLayer();
 
   /* Adding people is a manager-and-above action; employees never see it. */
-  const canAddPeople = app.role === 'admin' || app.role === 'manager';
+  const canAddPeople = app.reaches('employees', 'write', 'team');
   const { data: joiners = [], refetch: refetchJoiners } = useJoiners('pending');
   const approveJoiner = useApproveJoiner();
   const rejectJoiner = useRejectJoiner();
@@ -43,7 +43,9 @@ function Employees() {
   const addJoiner = () =>
     layer.modal({
       title: 'Add a new joiner',
-      sub: app.role === 'admin' ? 'Creates the employee record' : 'Sent to an admin for approval',
+      sub: app.reaches('employees', 'write', 'all')
+        ? 'Creates the employee record'
+        : 'Sent to an admin for approval',
       size: 'wide',
       body: (close) => <AddJoinerForm close={close} onDone={refetchJoiners} />,
       footer: null,
@@ -113,7 +115,7 @@ function Employees() {
           <option value="">All grades</option>
           {(Object.keys(GRADES) as Grade[]).map((g) => <option key={g} value={g}>{GRADES[g].label}</option>)}
         </select>
-        {app.role === 'admin' && (
+        {app.reaches('employees', 'write', 'all') && (
           <select className="input" style={{ width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value as 'Active' | 'Exited')}>
             <option value="Active">Active</option>
             <option value="Exited">Exited</option>

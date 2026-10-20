@@ -19,6 +19,7 @@
  * trust the hop in front of us" rather than two that can disagree.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
@@ -143,7 +144,7 @@ export async function listLoginHistory(
   if (!target) return [];
   const own = target === caller.employeeId;
 
-  if (!own && caller.role === 'employee') {
+  if (!own && !reaches(caller, 'users', 'read', 'team')) {
     throw new UserError('You can only see your own sign-in history', 'forbidden');
   }
 
@@ -152,9 +153,9 @@ export async function listLoginHistory(
     // Your own row needs no predicate. Somebody else's is filtered in SQL, so
     // an id outside the caller's line is answered with no rows rather than a
     // thrown message that confirms the id exists.
-    const scope = own || caller.role === 'admin'
+    const scope = own || reaches(caller, 'users', 'write', 'all')
       ? 'TRUE'
-      : employeeScope(caller, 'h.employee_id', params);
+      : employeeScope(caller, 'h.employee_id', params, 'users');
     params.push(Math.min(Math.max(1, Math.trunc(limit)), 200));
 
     const { rows } = await db.query<EventRow>(
@@ -179,14 +180,14 @@ export async function listTenantLoginHistory(
   caller: Caller,
   limit = 200,
 ): Promise<LoginEvent[]> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'users', 'read', 'team')) {
     throw new UserError('Only an administrator or a manager can read this', 'forbidden');
   }
   return withTenantReadOnly(caller, async (db) => {
     const params: unknown[] = [];
-    const scope = caller.role === 'admin'
+    const scope = reaches(caller, 'users', 'write', 'all')
       ? 'TRUE'
-      : employeeScope(caller, 'h.employee_id', params);
+      : employeeScope(caller, 'h.employee_id', params, 'users');
     params.push(Math.min(Math.max(1, Math.trunc(limit)), 500));
 
     const { rows } = await db.query<EventRow>(

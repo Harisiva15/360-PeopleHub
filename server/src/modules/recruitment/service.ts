@@ -22,6 +22,7 @@
  * line or a future serialisation bug.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -190,7 +191,7 @@ const projection = (caller: Caller) => `
          r.source, r.vms, r.status, r.duration,
          r.opened_on::text, r.target_submit_on::text, r.target_interview_on::text,
          r.target_fill_on::text, r.sla_days,
-         ${caller.role === 'admin' ? 'r.bill_rate, r.pay_rate' : 'NULL::numeric AS bill_rate, NULL::numeric AS pay_rate'},
+         ${reaches(caller, 'recruitment', 'read', 'all') ? 'r.bill_rate, r.pay_rate' : 'NULL::numeric AS bill_rate, NULL::numeric AS pay_rate'},
          c.sourced, c.screened, c.submissions, c.interviews, c.offers, c.hires
     FROM staffing_requirement r
     ${COUNTS}`;
@@ -248,7 +249,7 @@ function toRow(r: Record<string, unknown>): JobOrderRow {
  * enforces it.
  */
 const deskOnly = (caller: Caller) => {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'recruitment', 'read', 'all')) {
     throw new RecruitmentError('Your role cannot reach the recruitment desk', 'forbidden');
   }
 };

@@ -24,6 +24,7 @@
  * employment record is not identity and must outlive the login.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 /* One creation path for leave entitlement, shared with joiners and onboarding. */
 import { openLeaveBalances } from '../people/provision.ts';
@@ -32,6 +33,8 @@ import { recordEmployment, reasonForChange, termsOf } from '../people/employment
 import { assignInitialSchedule } from '../schedules/service.ts';
 import { authAdmin, inviteRedirect } from '../../auth/adminApi.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
+import { ROLES, grantNeedsAuthority, mayAssignRole } from '../../auth/policy.ts';
+import type { Role } from '../../auth/policy.ts';
 import { employeeScope } from '../../tenancy/scope.ts';
 
 export class UserError extends Error {
@@ -44,7 +47,29 @@ export class UserError extends Error {
   }
 }
 
-type Role = 'admin' | 'manager' | 'employee';
+/**
+ * Every spelling of "administrator" the database may hold.
+ *
+ * These are column values, not `Caller.role`, so the normaliser in
+ * `session.ts` never sees them: during expand the column holds either name.
+ * Asking for 'admin' alone would count zero the moment step B ran — the guard
+ * passing silently with the last administrator removable. Step C narrows this
+ * to `['company_admin']`.
+ *
+ * Shared by both halves of the last-administrator invariant: deactivation and
+ * demotion. They were written apart, and only one of them had been expanded.
+ */
+const ADMIN_ROLES = ['admin', 'company_admin'];
+
+/*
+ * The vocabulary this module speaks is the policy's, not its own.
+ *
+ * It declared `type Role = 'admin' | 'manager' | 'employee'` here, shadowing
+ * the real one, which is why every role question below was still asking the old
+ * question and why `tsc` had nothing to say about it. Importing the type is
+ * what turns the rest of this file's mistakes into compile errors.
+ */
+export type { Role };
 
 export interface UserAccount {
   id: string; empId: string | null; name: string; email: string; phone: string;
@@ -179,13 +204,13 @@ const toAccount = (r: Row): UserAccount => ({
  * SQL, so a crafted id cannot walk past it.
  */
 function scopeFor(caller: Caller, params: unknown[]): string {
-  if (caller.role === 'admin') return 'TRUE';
-  if (caller.role !== 'manager' || !caller.employeeId) return 'FALSE';
-  return employeeScope(caller, 'm.employee_id', params);
+  if (reaches(caller, 'users', 'write', 'all')) return 'TRUE';
+  if (!caller.hasReports || !caller.employeeId) return 'FALSE';
+  return employeeScope(caller, 'm.employee_id', params, 'users');
 }
 
 const mayAdminister = (caller: Caller) => {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'users', 'read', 'team')) {
     throw new UserError('Your role cannot manage accounts', 'forbidden');
   }
 };
@@ -276,8 +301,27 @@ export async function nextEmployeeCode(caller: Caller): Promise<string> {
  * The rule that matters: only an administrator makes an administrator. A
  * manager who could would be one.
  */
+/**
+ * Whether this caller may hand out this role.
+ *
+ * Asks the policy rather than comparing to a string. `role === 'admin'` guarded
+ * exactly one spelling, so under the new vocabulary `company_admin` walked
+ * straight past it — and `hr_admin` and `finance_admin` were never guarded at
+ * all, in either vocabulary. `mayAssignRole` carries the approved rule: only a
+ * company_admin grants anything other than `employee`.
+ */
 function mayGrant(caller: Caller, role: Role) {
-  if (role === 'admin' && caller.role !== 'admin') {
+  /*
+   * Only the elevated grant, as before.
+   *
+   * `mayAssignRole` bundles two questions — may you assign roles at all, and
+   * may you assign an administrative one — and asking it unconditionally moved
+   * the baseline: a manager creating an ordinary employee was refused, which
+   * `check:provisioning` caught. Whether somebody may create an account is
+   * `mayAdminister`'s question, a few lines up. This one is only about handing
+   * out something more than `employee`.
+   */
+  if (grantNeedsAuthority(role) && !mayAssignRole(caller.role, caller.hasReports, role)) {
     throw new UserError('Only an administrator can grant the administrator role', 'forbidden');
   }
 }
@@ -290,8 +334,18 @@ const validate = (d: Partial<UserDraft>) => {
       throw new UserError('That is not an email address', 'invalid');
     }
   }
-  if (d.role !== undefined && !['admin', 'manager', 'employee'].includes(d.role)) {
-    throw new UserError('Not a role', 'invalid');
+  /*
+   * Request bodies accept the new vocabulary only, from step A onward.
+   *
+   * This listed the old three, so `company_admin` was refused as "Not a role"
+   * and an administrator could not be created at all. The old names are *not*
+   * accepted here even during expand: the normaliser in `session.ts` exists for
+   * values read out of the database, and widening the input as well would mean
+   * new rows still being written in the old vocabulary, which is what step B
+   * has to migrate away from.
+   */
+  if (d.role !== undefined && !(ROLES as readonly string[]).includes(d.role)) {
+    throw new UserError(`Not a role: ${ROLES.join(', ')}`, 'invalid');
   }
 };
 
@@ -450,7 +504,7 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
      * which is what invite_sent_at records — "create the account, I will tell
      * them myself" is a choice about the message, not about the account.
      */
-    const status = caller.role === 'admin'
+    const status = reaches(caller, 'users', 'write', 'all')
       ? 'invited'
       : 'pending_approval';
 
@@ -493,9 +547,34 @@ export async function updateUser(
      * account that can demote every administrator including itself can lock
      * the tenant out of its own settings, and there is no way back in.
      */
-    if (patch.role && patch.role !== 'admin' && row.role === 'admin'
-      && row.employee_id === caller.employeeId) {
+    const losingAdmin = Boolean(patch.role)
+      && ADMIN_ROLES.includes(row.role)
+      && !ADMIN_ROLES.includes(patch.role!);
+
+    if (losingAdmin && row.employee_id === caller.employeeId) {
       throw new UserError('You cannot remove your own administrator role', 'forbidden');
+    }
+
+    /*
+     * And the last administrator cannot be demoted by anybody, including by
+     * another administrator.
+     *
+     * The deactivation half of this invariant counted; this half only ever
+     * checked "is it me", so two administrators could take each other's role
+     * away and lock the tenant out of its own settings — the same outcome the
+     * other half exists to prevent, by a different door. There is no database
+     * trigger behind either; the guard is all there is.
+     */
+    if (losingAdmin) {
+      const { rows } = await db.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM tenant_membership
+          WHERE role = ANY($2) AND status = 'active' AND id <> $1`,
+        [id, ADMIN_ROLES]);
+      if (Number(rows[0]?.n ?? 0) === 0) {
+        throw new UserError(
+          'That is the last administrator — give somebody else the role first',
+          'forbidden');
+      }
     }
 
     if (patch.role) {
@@ -590,7 +669,7 @@ export async function setUserStatus(
    * Suspension is a sanction, a lock answers a security event, and deletion is
    * final. All three are an administrator's, even on a manager's own line.
    */
-  if (ADMIN_ONLY.includes(db_status) && caller.role !== 'admin') {
+  if (ADMIN_ONLY.includes(db_status) && !reaches(caller, 'users', 'write', 'all')) {
     throw new UserError(`Only an administrator can set an account to ${status}`, 'forbidden');
   }
 
@@ -603,7 +682,7 @@ export async function setUserStatus(
      * Same for a lock: the account was locked because something happened, and
      * the person who could not lock it cannot decide it is over.
      */
-    if (ADMIN_ONLY.includes(row.status) && caller.role !== 'admin') {
+    if (ADMIN_ONLY.includes(row.status) && !reaches(caller, 'users', 'write', 'all')) {
       throw new UserError(
         `Only an administrator can change an account that is ${FROM_DB[row.status] ?? row.status}`,
         'forbidden');
@@ -614,11 +693,19 @@ export async function setUserStatus(
     /*
      * The last administrator cannot be taken out of service. Counted rather
      * than assumed, because the count is the whole safeguard.
+     *
+     * Both vocabularies, on both sides of the question. These are database
+     * values, not Caller.role, so the normaliser in session.ts never sees
+     * them: during expand the column holds either name, and asking for
+     * 'admin' alone would have counted zero the moment step B ran - the
+     * guard passing silently and the final administrator removable. Step C
+     * narrows both to 'company_admin'.
      */
-    if (row.role === 'admin' && db_status !== 'active') {
+    if (ADMIN_ROLES.includes(row.role) && db_status !== 'active') {
       const { rows } = await db.query<{ n: string }>(
         `SELECT count(*)::text AS n FROM tenant_membership
-          WHERE role = 'admin' AND status = 'active' AND id <> $1`, [id]);
+          WHERE role = ANY($2) AND status = 'active' AND id <> $1`,
+        [id, ADMIN_ROLES]);
       if (Number(rows[0]?.n ?? 0) === 0) {
         throw new UserError('This is the last active administrator', 'forbidden');
       }
@@ -658,7 +745,7 @@ export async function removeUser(
   id: string,
   typed: string,
 ): Promise<UserAccount> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can delete an account', 'forbidden');
   }
   const account = await getUser(caller, id);
@@ -679,7 +766,7 @@ export async function decideUser(
    * The approval is the administrator's, always. A manager approving the
    * account they raised is the same as a manager creating one.
    */
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can decide an account request', 'forbidden');
   }
   return withTenant(caller, async (db) => {
@@ -738,7 +825,7 @@ export async function inviteUser(caller: Caller, id: string): Promise<UserAccoun
    * another. A manager raising a joiner still gets an account created — it
    * lands as pending_approval and an administrator decides.
    */
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can send an invitation', 'forbidden');
   }
 
@@ -815,7 +902,7 @@ export async function resetPassword(
   id: string,
   forceChange = true,
 ): Promise<UserAccount> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can reset a password', 'forbidden');
   }
   return withTenant(caller, async (db) => {
@@ -978,7 +1065,7 @@ export async function setMfaRequired(
   id: string,
   required: boolean,
 ): Promise<UserAccount> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new UserError('Only an administrator can require a second factor', 'forbidden');
   }
   return withTenant(caller, async (db) => {

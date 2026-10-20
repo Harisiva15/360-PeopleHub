@@ -101,7 +101,8 @@ function useShowClaim(dir: Directory, claims: Claim[]) {
   return (id: string) => {
     const c = claims.find((x) => x.id === id);
     if (!c) return;
-    const canAct = c.status === 'Submitted' && (app.role === 'admin' || isMyReport(app.meId, c.empId));
+    const canAct = c.status === 'Submitted'
+      && (app.reaches('expenses', 'approve', 'all') || isMyReport(app.meId, c.empId));
 
     layer.drawer({
       title: c.title,
@@ -382,7 +383,7 @@ function ExAll() {
       </div>
 
       <Card title="All claims" sub={`${list.length} records · ${SCOPE[app.role].label}`} flush>
-        <ClaimTable list={shown} showEmp dir={dir} actions={app.role === 'admin'} onOpen={(c) => show(c.id)}
+        <ClaimTable list={shown} showEmp dir={dir} actions={app.reaches('expenses', 'approve', 'all')} onOpen={(c) => show(c.id)}
           onApprove={approve} onReject={reject} onPay={pay} />
       </Card>
     </div>

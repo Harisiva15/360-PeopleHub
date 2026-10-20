@@ -20,6 +20,7 @@
  * same argument as the announcement audience filter.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -109,11 +110,11 @@ const toTicket = (r: Record<string, unknown>): Ticket => {
 
 /** A ticket can carry a salary complaint, so it is not public reading. */
 function scope(caller: Caller, params: unknown[]): string {
-  if (caller.role === 'admin') return '';
+  if (reaches(caller, 'helpdesk', 'read', 'all')) return '';
   params.push(caller.employeeId);
   const p = `$${params.length}`;
   // A manager sees their team's, and anything assigned to them.
-  if (caller.role === 'manager') {
+  if (caller.hasReports) {
     return `(t.employee_id = ${p} OR t.assignee_id = ${p} OR t.employee_id IN (
        WITH RECURSIVE r AS (
          SELECT id FROM employee WHERE manager_id = ${p}
@@ -162,7 +163,7 @@ export interface NewTicket {
  * client-chosen deadline is not a deadline.
  */
 export async function raiseTicket(caller: Caller, draft: NewTicket): Promise<Ticket> {
-  if (draft.empId && draft.empId !== caller.employeeId && caller.role !== 'admin') {
+  if (draft.empId && draft.empId !== caller.employeeId && !reaches(caller, 'helpdesk', 'read', 'all')) {
     throw new HelpdeskError('you can only raise a ticket for yourself', 'forbidden');
   }
   if (!draft.subject?.trim()) throw new HelpdeskError('a ticket needs a subject', 'invalid');
@@ -188,8 +189,11 @@ export async function raiseTicket(caller: Caller, draft: NewTicket): Promise<Tic
     const assignee = await db.query(
       `SELECT e.id FROM employee e
         WHERE e.department_id = $1 AND e.status <> 'exited'
-        ORDER BY (e.app_role = 'admin') DESC, e.joined_on LIMIT 1`,
-      [cat.rows[0].owning_department_id]);
+        -- Both vocabularies while the column may hold either; step C narrows
+        -- this to 'company_admin'. Ordering on a value that stopped existing
+        -- would quietly pick by joining date alone.
+        ORDER BY (e.app_role = ANY($2)) DESC, e.joined_on LIMIT 1`,
+      [cat.rows[0].owning_department_id, ['admin', 'company_admin']]);
 
     const { rows } = await db.query(
       `INSERT INTO ticket
@@ -265,7 +269,7 @@ export async function resolveTicket(
     if (['resolved', 'closed'].includes(rows[0].status as string)) {
       throw new HelpdeskError('that ticket is already resolved', 'already_resolved');
     }
-    if (caller.role === 'employee'
+    if (!reaches(caller, 'helpdesk', 'read', 'team')
         && rows[0].assignee_id !== caller.employeeId
         && rows[0].employee_id !== caller.employeeId) {
       throw new HelpdeskError('that ticket is not yours to resolve', 'forbidden');
@@ -325,7 +329,7 @@ export interface KbDraft {
  * allowed; widening would not be.
  */
 function mayAuthor(caller: Caller) {
-  if (caller.role !== 'admin' && caller.role !== 'manager') {
+  if (!reaches(caller, 'helpdesk', 'read', 'all') && !caller.hasReports) {
     throw new HelpdeskError('only an administrator or a manager may edit the knowledge base', 'forbidden');
   }
 }
@@ -346,7 +350,19 @@ const toArticle = (r: Record<string, unknown>): KbArticle => ({
 });
 
 export async function knowledgeBase(caller: Caller): Promise<KbArticle[]> {
-  const editor = caller.role === 'admin' || caller.role === 'manager';
+  /*
+   * Who sees unpublished drafts: whoever may edit the knowledge base.
+   *
+   * The second of the five gates where "team" is not the answer, because a
+   * draft article has no team — it is editorial state, not somebody's record.
+   * The table gives the manager layer `helpdesk` write `own`, which is their
+   * own tickets and not the knowledge base:
+   *
+   *     helpdesk: rule(SELF, LINE, ALL_RWA, NO, ALL_RWA)   LINE = team/own/team
+   *
+   * `all || caller.hasReports` had shown every unpublished draft to any manager.
+   */
+  const editor = reaches(caller, 'helpdesk', 'write', 'all');
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
       `${KB_PROJECTION}

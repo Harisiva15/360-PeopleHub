@@ -21,7 +21,7 @@ import {
 } from '../../data/devplans';
 import type { DevAction, DevPlan } from '../../data/devplans';
 import { recordAudit } from '../../data/audit';
-import { visibleIds } from '../../state/rbac';
+import { callerCovers, visibleIds } from '../../state/rbac';
 import type {
   Caller, DevActionRow, DevPlanDetail, DevPlanDraft,
   DevPlanFilter, DevPlanRow, DevPlanService,
@@ -57,12 +57,8 @@ const rowOf = (p: DevPlan): DevPlanRow => ({
 
 /** Whose plans this caller may see. Everybody sees their own. */
 function inScope(c: Caller): DevPlan[] {
-  if (c.role === 'admin') return DEV_PLANS;
-  if (c.role === 'manager') {
-    const line = new Set(visibleIds('manager', c.meId));
-    return DEV_PLANS.filter((p) => line.has(p.empId) || p.empId === c.meId);
-  }
-  return DEV_PLANS.filter((p) => p.empId === c.meId);
+  const line = new Set(visibleIds(c.role, c.meId));
+  return DEV_PLANS.filter((p) => line.has(p.empId) || p.empId === c.meId);
 }
 
 /**
@@ -73,12 +69,12 @@ function inScope(c: Caller): DevPlan[] {
  * document has in every company that has ever run one, and the endorsement
  * step below is the manager's actual say.
  */
-const mayEdit = (c: Caller, p: DevPlan) => c.role === 'admin' || p.empId === c.meId;
+const mayEdit = (c: Caller, p: DevPlan) => callerCovers(c, 'devplans', 'all', 'write')
+  || p.empId === c.meId;
 
 /** Who may endorse it — the manager of record, or an administrator. */
 const mayEndorse = (c: Caller, p: DevPlan) =>
-  c.role === 'admin'
-  || (c.role === 'manager' && visibleIds('manager', c.meId).includes(p.empId));
+  visibleIds(c.role, c.meId).includes(p.empId);
 
 function matches(r: DevPlanRow, f: DevPlanFilter): boolean {
   if (f.status && r.plan.status !== f.status) return false;
@@ -152,7 +148,7 @@ export const devPlanService: DevPlanService = {
   },
 
   mentors(c) {
-    if (c.role === 'employee') return refuse('Your role cannot see who is mentoring whom');
+    if (!callerCovers(c, 'devplans', 'team')) return refuse('Your role cannot see who is mentoring whom');
     return ok(mentorLoad());
   },
 
@@ -163,7 +159,7 @@ export const devPlanService: DevPlanService = {
      * person has never read.
      */
     const empId = draft.empId ?? c.meId;
-    if (empId !== c.meId && c.role !== 'admin') {
+    if (empId !== c.meId && !callerCovers(c, 'devplans', 'all', 'write')) {
       return refuse('A development plan is written by the person it is about');
     }
     if (!EMAP[empId]) return refuse('No such employee');

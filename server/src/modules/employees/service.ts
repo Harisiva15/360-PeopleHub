@@ -27,19 +27,33 @@ export class EmployeeError extends Error {
   }
 }
 
+import { scopeOf, reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 import { EMPLOYEE_PROJECTION, scopeClause } from './queries.ts';
 import { toEmployee } from './mapper.ts';
 import type { Employee, EmployeeRow } from './mapper.ts';
 
-/** Only an admin sees anyone's pay; anyone may see their own. */
+/**
+ * Who sees a salary: compensation's readers, and the person it belongs to.
+ *
+ * Gated on `compensation`, not on `employees`. The sweep took the module from
+ * the file it sits in, and this file is the directory — which asks "may you
+ * read the staff list", a different and much more widely held thing than "may
+ * you read what people are paid". `profile.ts` had the same defect and was
+ * fixed; this copy was missed.
+ *
+ * It happens to grant the same set today, because exactly the three
+ * administrative roles hold `employees` read all and `compensation` read all.
+ * That is a coincidence of the current table, not the rule, and it stops being
+ * true the moment anybody is given the directory without the payroll.
+ */
 const maySeePay = (caller: Caller, subjectId?: string | null): boolean =>
-  caller.role === 'admin' || (!!subjectId && subjectId === caller.employeeId);
+  reaches(caller, 'compensation', 'read', 'all') || (!!subjectId && subjectId === caller.employeeId);
 
 /** A non-admin with no employee record has no scope at all. */
 const hasScope = (caller: Caller): boolean =>
-  caller.role === 'admin' || Boolean(caller.employeeId);
+  reaches(caller, 'employees', 'read', 'all') || Boolean(caller.employeeId);
 
 async function query(
   caller: Caller,
@@ -59,9 +73,20 @@ async function query(
 /** Everyone the caller may see. */
 export async function listVisibleEmployees(caller: Caller): Promise<Employee[]> {
   if (!hasScope(caller)) return [];
-  const scope = scopeClause(caller.role, caller.employeeId);
+  const scope = scopeClause(scopeOf(caller, 'employees', 'read'), caller.employeeId);
+  /*
+   * Which rows is the directory's question; whether they carry a salary is
+   * compensation's. This passed the directory scope in as the pay flag, which
+   * is the same defect `maySeePay` had a few lines up.
+   *
+   * No self case here, deliberately: the list shows no pay to a caller who is
+   * not a compensation reader, including their own row. Opening your own record
+   * goes through `getEmployee`, which does take the self case — and that is
+   * what the three-role code did too, so nothing changes about what anybody
+   * sees today.
+   */
   return query(caller, `e.status <> 'exited' AND (${scope.sql})`, scope.params,
-    caller.role === 'admin');
+    maySeePay(caller));
 }
 
 /** Everyone still employed, within the caller's scope. */
@@ -71,13 +96,15 @@ export async function listActiveEmployees(caller: Caller): Promise<Employee[]> {
 
 /** Leavers — the directory can switch to them. Admin only; nobody else needs it. */
 export async function listExitedEmployees(caller: Caller): Promise<Employee[]> {
-  if (caller.role !== 'admin') return [];
-  return query(caller, `e.status = 'exited'`, [], true);
+  if (!reaches(caller, 'employees', 'read', 'all')) return [];
+  /* Pay was hardcoded `true` here, so reading the leaver list was enough to
+     read what the leavers were paid. Same question as everywhere else. */
+  return query(caller, `e.status = 'exited'`, [], maySeePay(caller));
 }
 
 export async function getEmployee(caller: Caller, id: string): Promise<Employee | null> {
   if (!hasScope(caller)) return null;
-  const scope = scopeClause(caller.role, caller.employeeId);
+  const scope = scopeClause(scopeOf(caller, 'employees', 'read'), caller.employeeId);
   const rows = await query(
     caller,
     `e.id = $${scope.params.length + 1} AND (${scope.sql})`,
@@ -96,7 +123,7 @@ export async function getEmployee(caller: Caller, id: string): Promise<Employee 
  */
 export async function getEmployeesByIds(caller: Caller, ids: string[]): Promise<Employee[]> {
   if (!hasScope(caller) || ids.length === 0) return [];
-  const scope = scopeClause(caller.role, caller.employeeId);
+  const scope = scopeClause(scopeOf(caller, 'employees', 'read'), caller.employeeId);
   return query(
     caller,
     `e.id = ANY($${scope.params.length + 1}::uuid[]) AND (${scope.sql})`,
@@ -112,7 +139,7 @@ export async function getTeam(
   deep = false,
 ): Promise<Employee[]> {
   if (!hasScope(caller)) return [];
-  const scope = scopeClause(caller.role, caller.employeeId);
+  const scope = scopeClause(scopeOf(caller, 'employees', 'read'), caller.employeeId);
   const subtree = deep
     ? `e.id IN (
          WITH RECURSIVE t AS (
@@ -127,7 +154,8 @@ export async function getTeam(
     caller,
     `e.status <> 'exited' AND ${subtree} AND (${scope.sql})`,
     [...scope.params, managerId],
-    caller.role === 'admin',
+    /* Compensation's question, not the directory's — see `maySeePay`. */
+    maySeePay(caller),
   );
 }
 
@@ -155,7 +183,22 @@ export async function setEmployeeRole(
   id: string,
   role: Employee['role'],
 ): Promise<Employee> {
-  if (caller.role !== 'admin') {
+  /*
+   * `users` write, not `employees` read.
+   *
+   * Assigning a role is user administration, which the access table gives to
+   * company_admin alone. Gated on who may *read* the directory, this let
+   * hr_admin and finance_admin change anybody's role — including promoting
+   * somebody to company_admin, and so promoting themselves by way of a second
+   * account. A read gate on a privilege write is the worst version of the
+   * module mix-up the sweep introduced.
+   *
+   * `mayAssignRole` is the finer-grained test — it refuses granting
+   * company_admin to anyone who is not one — and is not called here yet
+   * because `Employee['role']` still carries the old three values. That lands
+   * with the API vocabulary change, where the 400 for an old value goes.
+   */
+  if (!reaches(caller, 'users', 'write', 'all')) {
     throw new EmployeeError('only an administrator may change roles', 'forbidden');
   }
   if (id === caller.employeeId) {

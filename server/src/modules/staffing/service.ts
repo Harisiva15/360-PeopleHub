@@ -18,6 +18,7 @@
  * refusing is better than half-guessing.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import {
@@ -46,7 +47,7 @@ const MIN_MARGIN = 22;
 const WORKING_DAYS = 21;
 
 function assertStaffing(caller: Caller): void {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'bench', 'write', 'all')) {
     throw new StaffingError(
       'staffing carries client rates and margins — admin only', 'forbidden');
   }

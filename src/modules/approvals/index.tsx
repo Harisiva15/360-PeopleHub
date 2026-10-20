@@ -26,7 +26,7 @@ function Approvals() {
   const [bulk, setBulk] = useState(false);
   const dir = useVisiblePeople();
   const ids = dir.ids.filter((i) => i !== app.meId);
-  const isAdmin = app.role === 'admin';
+  const seesAll = app.reaches('approvals', 'approve', 'all');
 
   const { data: pendingTotal = 0 } = usePendingCount();
   const { data: lv = [] } = usePendingLeave(ids);
@@ -34,8 +34,8 @@ function Approvals() {
   const { data: allRegs = [] } = usePendingRegularisations(ids);
   const { data: cl = [] } = usePendingClaims(ids);
   const { data: ot = [] } = usePendingOvertime(ids);
-  const { data: ln = [] } = usePendingLoans(isAdmin);
-  const { data: lt = [] } = usePendingLetters(isAdmin);
+  const { data: ln = [] } = usePendingLoans(seesAll);
+  const { data: lt = [] } = usePendingLetters(seesAll);
   const rg = allRegs.filter((a) => a.reg && a.reg.status === 'Pending');
   const { data: iv = [] } = useMyInterviews(app.meId);
 

@@ -466,7 +466,7 @@ function LifecycleDetailView({ id }: { id: string }) {
                     </div>
                   </div>
                   {!t.done && t.due < NOW && <Badge kind="crit">Overdue</Badge>}
-                  {app.role === 'admin' && (
+                  {app.reaches('lifecycle', 'write', 'all') && (
                     <button className="btn ghost icon sm" aria-label={`Remove ${t.n}`}
                       onClick={() => act(() => removeTask.mutate(t.id), 'Task removed')}>
                       <Icon n="remove" size="sm" />

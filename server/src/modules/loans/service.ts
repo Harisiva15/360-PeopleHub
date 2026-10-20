@@ -13,6 +13,7 @@
  * correct after the run is not much use to the run.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 
@@ -72,7 +73,7 @@ const toLoan = (r: Record<string, unknown>): Loan => ({
  * the way overtime is. Your own, or everything if you are finance.
  */
 function scope(caller: Caller, params: unknown[]): string {
-  if (caller.role === 'admin') return '';
+  if (reaches(caller, 'benefits', 'read', 'all')) return '';
   if (!caller.employeeId) throw new LoanError('this login has no employee record', 'forbidden');
   params.push(caller.employeeId);
   return `l.employee_id = $${params.length}`;
@@ -108,7 +109,7 @@ export async function listLoans(caller: Caller, status?: string): Promise<Loan[]
  * backdated start would have payroll owing instalments nobody deducted.
  */
 export async function approveLoan(caller: Caller, id: string): Promise<Loan> {
-  if (caller.role !== 'admin' || !caller.employeeId) {
+  if (!reaches(caller, 'benefits', 'read', 'all') || !caller.employeeId) {
     throw new LoanError('only finance may sanction a loan', 'forbidden');
   }
 

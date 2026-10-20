@@ -357,7 +357,7 @@ function ShDef() {
   const update = useUpdateShift();
   const setActive = useSetShiftActive();
   /* The service refuses a non-admin outright; this only decides what is offered. */
-  const admin = app.role === 'admin';
+  const admin = app.reaches('shifts', 'write', 'all');
 
   const editShift = (existing?: ShiftProfile) => {
     let draft: ShiftDraft = existing

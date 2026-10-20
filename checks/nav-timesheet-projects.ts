@@ -31,7 +31,7 @@
 
 import { ALL_VIEWS, NAV } from '../src/nav';
 import type { NavItem } from '../src/nav';
-import { can, PERMS } from '../src/state/rbac';
+import { scopeOfDemo, covers, can, PERMS } from '../src/state/rbac';
 import { POLICY } from '../server/src/auth/policy';
 import type { AppRole } from '../src/types/employee';
 
@@ -105,15 +105,43 @@ const PR_LEAD: [string, string][] = [
  * What each role should see. Add hr_admin and finance_admin here when the
  * roles land; everything below reads this rather than naming roles.
  */
-const ROLE_EXPECTATIONS: Record<string, { ts: [string, string][]; pr: [string, string][] }> = {
-  employee: { ts: TS_ALL, pr: PR_ALL },
-  manager: { ts: [...TS_ALL, ...TS_LEAD], pr: [...PR_ALL, ...PR_LEAD] },
-  admin: { ts: [...TS_ALL, ...TS_LEAD], pr: [...PR_ALL, ...PR_LEAD] },
-};
+interface Audience {
+  label: string;
+  role: AppRole;
+  /** Whether the reporting tree gives them the manager layer. */
+  hasReports: boolean;
+  ts: [string, string][];
+  pr: [string, string][];
+}
+
+const ROLE_EXPECTATIONS: Audience[] = [
+  { label: 'an employee', role: 'employee', hasReports: false, ts: TS_ALL, pr: PR_ALL },
+  {
+    label: 'an employee with reports',
+    role: 'employee',
+    hasReports: true,
+    ts: [...TS_ALL, ...TS_LEAD],
+    pr: [...PR_ALL, ...PR_LEAD],
+  },
+  {
+    label: 'a company administrator',
+    role: 'company_admin',
+    hasReports: false,
+    ts: [...TS_ALL, ...TS_LEAD],
+    pr: [...PR_ALL, ...PR_LEAD],
+  },
+];
 
 /** The items a role actually sees, the way Shell filters them. */
-const visible = (role: AppRole, items: readonly NavItem[]): NavItem[] =>
-  items.filter((i) => can(role, i.k) && (!i.roles || i.roles.includes(role)));
+const visible = (
+  role: AppRole,
+  hasReports: boolean,
+  items: readonly NavItem[],
+): NavItem[] =>
+  items.filter(
+    (i) => can(role, i.k, hasReports)
+      && (!i.needs || covers(scopeOfDemo(role, hasReports, i.k), i.needs)),
+  );
 
 /**
  * Whether the server would grant this role a read in this module.
@@ -145,15 +173,16 @@ const policyReads = (role: string, module: string): boolean => {
   return layers.some((l) => byLayer[l]!.read !== 'none');
 };
 
-for (const [role, want] of Object.entries(ROLE_EXPECTATIONS)) {
-  console.log(`\nas ${role}\n`);
-  const r = role as AppRole;
+for (const want of ROLE_EXPECTATIONS) {
+  console.log(`\nas ${want.label}\n`);
+  const r = want.role;
+  const hr = want.hasReports;
 
   for (const [group, items, expected] of [
     ['Timesheets', tsGroup.items, want.ts],
     ['Projects', prGroup.items, want.pr],
   ] as const) {
-    const got = visible(r, items);
+    const got = visible(r, hr, items);
     ok(`${group}: ${expected.length} items, in order`,
       got.length === expected.length
       && got.every((g, n) => g.n === expected[n]![0]),
@@ -168,7 +197,7 @@ for (const [role, want] of Object.entries(ROLE_EXPECTATIONS)) {
    * An item offering a screen the policy grants no read on is a 403 with a
    * menu entry in front of it.
    */
-  const refused = [...visible(r, tsGroup.items), ...visible(r, prGroup.items)]
+  const refused = [...visible(r, hr, tsGroup.items), ...visible(r, hr, prGroup.items)]
     .filter((i) => !policyReads(r, i.k));
   ok('    nothing offered that the policy refuses',
     refused.length === 0, refused.map((i) => `${i.n} (${i.k})`).join(', '));

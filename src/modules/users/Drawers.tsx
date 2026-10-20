@@ -78,7 +78,7 @@ export function UserForm({
 
   /* The roles this caller may hand out. An admin is the only one who makes one. */
   const roles = (['employee', 'manager', 'admin'] as AppRole[])
-    .filter((r) => r === existing?.role || mayAssignRole(app.role, r));
+    .filter((r) => r === existing?.role || mayAssignRole(app.role, app.hasReports, r));
 
   const fillCode = async () => {
     try { setCode(await nextCode.mutate()); setAutoCode(false); }
@@ -107,7 +107,7 @@ export function UserForm({
       } else {
         await create.mutate(draft);
         app.toast(
-          app.role === 'manager'
+          !app.reaches('users', 'write', 'all') && app.hasReports
             ? 'Request submitted for approval'
             : 'User created successfully.',
           'ok',
@@ -284,7 +284,7 @@ export function UserForm({
             <div className="hint">{ROLE_BLURB[role]}</div>
           </div>
 
-          {app.role === 'manager' && (
+          {!app.reaches('users', 'write', 'all') && app.hasReports && (
             <Banner kind="info" icon={<Icon n="info" size="lg" />} title="This will need approval">
               Accounts you raise arrive as Pending Approval. An administrator decides
               them, and the account becomes active once they do.
@@ -317,7 +317,8 @@ export function UserForm({
       <div className="row" style={{ justifyContent: 'flex-end', gap: 9, marginTop: 6 }}>
         <button className="btn" onClick={close}>Cancel</button>
         <button className="btn primary" disabled={busy} onClick={save}>
-          {existing ? 'Save changes' : app.role === 'manager' ? 'Submit request' : 'Create user'}
+          {existing ? 'Save changes'
+          : app.reaches('users', 'write', 'all') ? 'Create user' : 'Submit request'}
         </button>
       </div>
     </div>

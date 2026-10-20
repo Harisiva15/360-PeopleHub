@@ -16,7 +16,7 @@ import { REVIEWS } from '../../data/performance';
 import { OVERTIME } from '../../data/shifts';
 import { TS } from '../../data/timesheet';
 import { TICKETS } from '../../data/helpdesk';
-import { visibleIds } from '../../state/rbac';
+import { callerCovers, visibleIds } from '../../state/rbac';
 import type { ApprovalsService, PendingItem } from '../contracts';
 import { ok } from './util';
 
@@ -28,11 +28,11 @@ export const approvalsService: ApprovalsService = {
       { ic: 'timer', k: 'Timesheets', n: TS.filter((t) => t.status === 'Submitted' && ids.includes(t.empId)).length, r: 'timesheet' },
       { ic: 'location', k: 'Attendance regularisations', n: ATT.filter((a) => a.reg && a.reg.status === 'Pending' && ids.includes(a.empId)).length, r: 'attendance' },
       { ic: 'target', k: 'Interview feedback pending', n: INTERVIEWS.filter((i) => i.panelId === meId && i.status === 'Completed' && !i.feedback).length, r: 'hiring' },
-      { ic: 'document', k: 'Offers awaiting approval', n: role === 'admin' ? CANDS.filter((c) => c.offer && c.offer.status === 'Sent').length : 0, r: 'hiring' },
+      { ic: 'document', k: 'Offers awaiting approval', n: callerCovers({ role, meId }, 'approvals', 'all', 'approve') ? CANDS.filter((c) => c.offer && c.offer.status === 'Sent').length : 0, r: 'hiring' },
       { ic: 'invoice', k: 'Expense claims', n: CLAIMS.filter((c) => c.status === 'Submitted' && ids.includes(c.empId)).length, r: 'expenses' },
       { ic: 'timer', k: 'Overtime requests', n: OVERTIME.filter((o) => o.status === 'Pending' && ids.includes(o.empId)).length, r: 'shifts' },
-      { ic: 'bank', k: 'Loan applications', n: role === 'admin' ? LOANS.filter((l) => l.status === 'Pending Approval').length : 0, r: 'benefits' },
-      { ic: 'mail', k: 'Letter requests', n: role === 'admin' ? LETTER_REQS.filter((l) => l.status === 'Pending').length : 0, r: 'documents' },
+      { ic: 'bank', k: 'Loan applications', n: callerCovers({ role, meId }, 'approvals', 'all', 'approve') ? LOANS.filter((l) => l.status === 'Pending Approval').length : 0, r: 'benefits' },
+      { ic: 'mail', k: 'Letter requests', n: callerCovers({ role, meId }, 'approvals', 'all', 'approve') ? LETTER_REQS.filter((l) => l.status === 'Pending').length : 0, r: 'documents' },
       { ic: 'note', k: 'Performance reviews to write', n: role === 'employee' ? 0 : REVIEWS.filter((r) => ids.includes(r.empId) && r.self.rating && !r.manager.rating).length, r: 'performance' },
     ];
     return ok(rows.filter((i) => i.n > 0));
@@ -48,7 +48,7 @@ export const approvalsService: ApprovalsService = {
       n += CLAIMS.filter((c) => c.status === 'Submitted' && ids.includes(c.empId) && c.empId !== meId).length;
       n += OVERTIME.filter((o) => o.status === 'Pending' && ids.includes(o.empId) && o.empId !== meId).length;
     }
-    if (role === 'admin') {
+    if (callerCovers({ role, meId }, 'approvals', 'all', 'approve')) {
       n += LOANS.filter((l) => l.status === 'Pending Approval').length;
       n += LETTER_REQS.filter((l) => l.status === 'Pending').length;
     }

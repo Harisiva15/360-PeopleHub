@@ -87,7 +87,7 @@ export function SchedulesView() {
   const [showWithdrawn, setShowWithdrawn] = useState(true);
 
   /* The service refuses a non-admin outright; this only decides what is offered. */
-  const admin = app.role === 'admin';
+  const admin = app.reaches('shifts', 'write', 'all');
 
   const rows = useMemo(() => schedules
     .filter((s) => showWithdrawn || s.active)

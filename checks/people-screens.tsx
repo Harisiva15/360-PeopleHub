@@ -102,7 +102,7 @@ check('the fixture has somebody at the top', Boolean(ceo), true);
 
 if (ceo) {
   const html = renderToStaticMarkup(
-    <MemoryRouter><AuthProvider><AppProvider initialRole="admin">
+    <MemoryRouter><AuthProvider><AppProvider initialRole="company_admin">
       <LayerProvider>
         <OrgTreeView root={ceo} everyone={everyone} onOpen={() => {}} q="" />
       </LayerProvider>
@@ -159,7 +159,7 @@ check('exactly the named count needs no tail',
 
 if (ceo) {
   const structure = renderToStaticMarkup(
-    <MemoryRouter><AuthProvider><AppProvider initialRole="admin">
+    <MemoryRouter><AuthProvider><AppProvider initialRole="company_admin">
       <LayerProvider>
         <OrgStructure everyone={everyone} requisitions={[]} onOpen={() => {}} q="" deptFilter="" />
       </LayerProvider>
@@ -184,7 +184,7 @@ if (ceo) {
     totals.reduce((a, b) => a + b, 0), everyone.length);
 
   const filtered = renderToStaticMarkup(
-    <MemoryRouter><AuthProvider><AppProvider initialRole="admin">
+    <MemoryRouter><AuthProvider><AppProvider initialRole="company_admin">
       <LayerProvider>
         <OrgStructure everyone={everyone} requisitions={[]} onOpen={() => {}}
           q="" deptFilter={shown[0]!.id} />
@@ -256,7 +256,7 @@ check('everything in a month comes back in date order',
 
 const cel = await s.noticeboard.celebrations(365);
 const celebHtml = renderToStaticMarkup(
-  <MemoryRouter><AuthProvider><AppProvider initialRole="admin">
+  <MemoryRouter><AuthProvider><AppProvider initialRole="company_admin">
     <LayerProvider>
       <CelebrationsView cel={cel} everyone={everyone} onOpen={() => {}}
         onWish={() => {}} onAdd={() => {}} canPost />

@@ -38,6 +38,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertLocalDatabase } from './local-only.mjs';
+
+/* This suite writes. It refuses anything but a local database. */
+assertLocalDatabase();
+
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -103,11 +108,11 @@ let fatal = null;
 try {
 await withScratchTenant(admin, async (ctx) => {
 
-const caller = (role, employeeId) =>
-  ({ role, tenantId: ctx.tenant, employeeId, userId: null });
+const caller = (role, employeeId, hasReports = false) =>
+  ({ role, hasReports, tenantId: ctx.tenant, employeeId, userId: null });
 
-const ADMIN = caller('admin', ctx.adminEmployeeId);
-const MANAGER = caller('manager', ctx.adminEmployeeId);
+const ADMIN = caller('company_admin', ctx.adminEmployeeId);
+const MANAGER = caller('employee', ctx.adminEmployeeId, true);
 const EMPLOYEE = caller('employee', ctx.adminEmployeeId);
 
 /*
@@ -302,7 +307,7 @@ const other = (await admin.query(
   'SELECT id FROM tenant WHERE id <> $1 LIMIT 1', [ctx.tenant])).rows[0];
 if (other) {
   const theirs = await projects.listProjects(
-    { role: 'admin', tenantId: other.id, employeeId: null, userId: null });
+    { role: 'company_admin', hasReports: false, tenantId: other.id, employeeId: null, userId: null });
   const mine = new Set(list.map((p) => p.id));
   ok('another tenant\'s list holds none of ours',
     !theirs.some((p) => mine.has(p.id)),

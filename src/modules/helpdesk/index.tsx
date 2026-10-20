@@ -148,7 +148,7 @@ function TicketBody({ t, close }: { t: Ticket; close: () => void }) {
             app.toast(e instanceof Error ? e.message : 'Could not post the reply', 'err');
           }
         }}>Post reply</button>
-        {(app.role === 'admin' || t.assigneeId === app.meId) && t.status !== 'Closed' && (
+        {(app.reaches('helpdesk', 'write', 'all') || t.assigneeId === app.meId) && t.status !== 'Closed' && (
           <button className="btn primary" onClick={async () => {
             try {
               await resolveTicket.mutate(t.id);
@@ -300,7 +300,7 @@ function HdQueue() {
   const show = useShowTicket();
   const [f, setF] = useState('');
 
-  const all = app.role === 'admin'
+  const all = app.reaches('helpdesk', 'read', 'all')
     ? TICKETS
     : TICKETS.filter((t) => t.assigneeId === app.meId || dir.ids.includes(t.empId));
   const list = f ? all.filter((t) => t.status === f) : all;
@@ -498,7 +498,7 @@ function HdKb() {
   const [q, setQ] = useState('');
   const list = q ? KB.filter((k) => (k.q + k.a).toLowerCase().includes(q.toLowerCase())) : KB;
 
-  const mayEdit = app.role === 'admin' || app.role === 'manager';
+  const mayEdit = app.reaches('helpdesk', 'write', 'team');
 
   const edit = (existing?: KbArticle) => {
     let draft: KbDraft = {

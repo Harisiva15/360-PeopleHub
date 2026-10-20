@@ -18,6 +18,8 @@
  * than a configurable number somebody can set to zero by accident.
  */
 
+import { reaches } from '../../auth/can.ts';
+import { employeeScope, personInScope } from '../../tenancy/scope.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { PF_WAGE_CAP, dailyRateFor, structureFor, taxNewRegime } from '../payroll/rules.ts';
@@ -122,8 +124,38 @@ const toExit = (r: Record<string, unknown>): ExitRecord => ({
 });
 
 /** An exit carries a settlement figure, so it is not everybody's reading. */
+/**
+ * May this caller open the exit list at all.
+ *
+ * Read, at team. `all || caller.hasReports` granted all-scope entry to anybody
+ * with a direct report, and `listExits` then returned every exit in the
+ * company — the same shape as the onboarding listing.
+ *
+ * Writing is a separate and narrower question; see `mayRecordExit`.
+ */
 function mayHandle(caller: Caller): boolean {
-  return caller.role === 'admin' || caller.role === 'manager';
+  return reaches(caller, 'exit', 'read', 'team');
+}
+
+/**
+ * May this caller write an exit record.
+ *
+ * The table gives the manager layer `exit` write `none`:
+ *
+ *     exit: rule(SELF, ['team', 'none', 'none'], ALL_RWA, ['all','none','all'], ALL_RWA)
+ *
+ * which was the decision that a manager raises a *request* and HR actions it.
+ * The code had never implemented it — every write here was gated on
+ * `mayHandle`, so a manager could raise an exit, sign off clearance and record
+ * an interview on anybody in the company. Finance writes nothing either; it
+ * approves, which is `settleExit`.
+ *
+ * The request flow that would give a manager the act back needs a pending state
+ * the exit record does not have, so it is a schema change and is on the backlog.
+ * Until then this is hr_admin's and company_admin's.
+ */
+function mayRecordExit(caller: Caller): boolean {
+  return reaches(caller, 'exit', 'write', 'all');
 }
 
 export async function listExits(caller: Caller): Promise<ExitRecord[]> {
@@ -135,8 +167,21 @@ export async function listExits(caller: Caller): Promise<ExitRecord[]> {
       return rows.map(toExit);
     });
   }
+  /*
+   * `mayHandle` is `exit read all || caller.hasReports`, so this branch was
+   * reached by anybody with a direct report — and then listed every exit in
+   * the company. The table says the manager layer reads `exit` at *team*:
+   *
+   *   exit: rule(SELF, ['team', 'none', 'none'], ALL_RWA, ['all','none','all'], ALL_RWA)
+   *
+   * so the scope clause is what that row always meant. An all-scope reader
+   * gets 'TRUE' and the whole list, as before.
+   */
+  const params: unknown[] = [];
+  const mine = employeeScope(caller, 'x.employee_id', params, 'exit');
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query(`${PROJECTION} ORDER BY x.last_working_day DESC`);
+    const { rows } = await db.query(
+      `${PROJECTION} WHERE ${mine} ORDER BY x.last_working_day DESC`, params);
     return rows.map(toExit);
   });
 }
@@ -160,8 +205,8 @@ export interface NewExit {
  * pays money out.
  */
 export async function raiseExit(caller: Caller, draft: NewExit): Promise<ExitRecord> {
-  if (!mayHandle(caller)) {
-    throw new ExitError('only a manager or admin may record an exit', 'forbidden');
+  if (!mayRecordExit(caller)) {
+    throw new ExitError('only HR may record an exit', 'forbidden');
   }
   if (!draft.lwd) throw new ExitError('an exit needs a last working day', 'invalid');
 
@@ -292,7 +337,12 @@ export async function exitDetail(caller: Caller, exitId: string): Promise<ExitDe
     const { rows } = await db.query(`${PROJECTION} WHERE x.id = $1`, [exitId]);
     if (!rows[0]) return null;
     const exit = toExit(rows[0]);
-    if (!mayHandle(caller) && exit.empId !== caller.employeeId) return null;
+    /*
+     * Their own exit, or one on this caller's line. `mayHandle` alone answered
+     * "may you open exits at all", which let a manager read any exit record in
+     * the company through the detail route even once the list was scoped.
+     */
+    if (!(await personInScope(db, caller, exit.empId, 'exit', 'read'))) return null;
 
     const settlement = await computeSettlement(db, exit);
     return {
@@ -311,8 +361,8 @@ export async function setClearance(
   department: string,
   done: boolean,
 ): Promise<ExitRecord> {
-  if (!mayHandle(caller)) {
-    throw new ExitError('only a manager or admin may sign off clearance', 'forbidden');
+  if (!mayRecordExit(caller)) {
+    throw new ExitError('only HR may sign off clearance', 'forbidden');
   }
 
   return withTenant(caller, async (db) => {
@@ -353,7 +403,16 @@ export async function setClearance(
  * does not change when a leave balance is corrected next month.
  */
 export async function settleExit(caller: Caller, exitId: string): Promise<ExitRecord> {
-  if (caller.role !== 'admin') {
+  /*
+   * `approve`, not `read`. Settling writes money — salary payable, tax
+   * deducted, net payable — and gating that on who may *read* every exit meant
+   * read-only visibility of the exit list carried the authority to pay one out.
+   * It grants the same three roles today, because the table happens to give
+   * approve-all to exactly the roles that have read-all here; the verb is the
+   * part that was wrong, and the policy already says settlement is finance's
+   * approval rather than its write.
+   */
+  if (!reaches(caller, 'exit', 'approve', 'all')) {
     throw new ExitError('only an admin may settle an exit', 'forbidden');
   }
 
@@ -423,8 +482,8 @@ export async function recordExitInterview(
   exitId: string,
   answers: { wouldRejoin?: boolean; rating?: number; comments?: string },
 ): Promise<ExitRecord> {
-  if (!mayHandle(caller)) {
-    throw new ExitError('only a manager or admin may record an exit interview', 'forbidden');
+  if (!mayRecordExit(caller)) {
+    throw new ExitError('only HR may record an exit interview', 'forbidden');
   }
   if (answers.rating !== undefined
       && (!Number.isInteger(answers.rating) || answers.rating < 1 || answers.rating > 5)) {

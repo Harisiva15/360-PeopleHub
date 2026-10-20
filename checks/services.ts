@@ -14,8 +14,8 @@ const check = (label: string, got: unknown, want: unknown) => {
 
 (async () => {
   /* scoping: each role sees a different slice, enforced in the service */
-  const asAdmin = await s.employees.visible({ role: 'admin', meId: HRHEAD.id });
-  const asMgr = await s.employees.visible({ role: 'manager', meId: DEMO_MGR.id });
+  const asAdmin = await s.employees.visible({ role: 'company_admin', meId: HRHEAD.id });
+  const asMgr = await s.employees.visible({ role: 'employee', meId: DEMO_MGR.id });
   const asEmp = await s.employees.visible({ role: 'employee', meId: DEMO_EMP.id });
   console.log(`scope: admin ${asAdmin.length} · manager ${asMgr.length} · employee ${asEmp.length}`);
   check('employee sees only themselves', asEmp.map((e) => e.id), [DEMO_EMP.id]);
@@ -26,7 +26,7 @@ const check = (label: string, got: unknown, want: unknown) => {
   const before = await s.leave.balance(DEMO_EMP.id, 'CL');
   const req = await s.leave.apply({
     empId: DEMO_EMP.id, type: 'CL', from: '2026-10-05', to: '2026-10-06',
-    days: 2, reason: 'Service seam check', half: null,
+    reason: 'Service seam check', half: null,
   });
   check('new request starts Pending', req.status, 'Pending');
   check('approver is the reporting manager', req.approverId, DEMO_EMP.managerId);
@@ -47,7 +47,7 @@ const check = (label: string, got: unknown, want: unknown) => {
   /* double-approval is refused rather than double-debiting */
   const req2 = await s.leave.apply({
     empId: DEMO_EMP.id, type: 'CL', from: '2026-11-02', to: '2026-11-02',
-    days: 1, reason: 'Double approve check', half: null,
+    reason: 'Double approve check', half: null,
   });
   await s.leave.approve(req2.id, DEMO_MGR.id);
   const once = await s.leave.balance(DEMO_EMP.id, 'CL');
@@ -63,7 +63,7 @@ const check = (label: string, got: unknown, want: unknown) => {
 
   /* ---- attendance ---- */
   const day = '2026-10-07';
-  const at = { site: 'CHN', src: 'Web', at: '09:20' };
+  const at = { site: 'CHN', src: 'Web', lat: null, lng: null, at: '09:20' };
   const inRec = await s.attendance.punchIn(DEMO_EMP.id, day, at);
   check('punch in stamps the time', inRec.inT, '09:20');
   check('punch in marks present', inRec.status, 'P');

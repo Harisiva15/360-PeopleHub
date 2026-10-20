@@ -14,6 +14,7 @@
  * quietly answered a different question.
  */
 
+import { callerCovers } from '../../state/rbac';
 import { sortBy } from '../../lib/collections';
 import { uid } from '../../lib/rng';
 import { TODAY, ymd } from '../../lib/dates';
@@ -137,13 +138,35 @@ const runRow = (r: ExportRun): ExportRunRow => ({
  * else's export history is surveillance with no purpose the product has.
  */
 function visibleRuns(c: Caller): ExportRun[] {
-  return c.role === 'admin' ? exportHistory() : exportHistory().filter((r) => r.byId === c.meId);
+  return callerCovers(c, 'exports', 'all')
+      ? exportHistory()
+      : exportHistory().filter((r) => r.byId === c.meId);
 }
 
 const describe = (d: Dataset, f: ExportFilter) =>
   (d.dated && (f.from || f.to))
     ? `${f.from || 'the beginning'} to ${f.to || 'today'}`
     : 'Everything visible';
+
+/**
+ * Whether this caller may take this dataset.
+ *
+ * Two questions, because a dataset is one of two things.
+ *
+ * Caller-scoped: built from a service that takes the caller, so the rows are
+ * already narrowed to them and reaching the module is the whole test.
+ *
+ * Admin-only: built from a service with no caller, so it is the entire table.
+ * The module says nothing useful about that - `leave` and `assets` are both
+ * readable by an employee, who may see their own leave and must not be able
+ * to take the company's. Gating these on `k` offered an employee eight
+ * datasets the run path would then refuse.
+ */
+const mayExport = (c: Caller, d: Dataset): boolean => (
+  d.scope === 'admin-only'
+    ? callerCovers(c, 'exports', 'all')
+    : callerCovers(c, d.k, d.needs ?? 'own')
+);
 
 export const makeExportService = (getSvc: () => Services): ExportService => ({
   datasets(c) {
@@ -152,7 +175,7 @@ export const makeExportService = (getSvc: () => Services): ExportService => ({
      * person cannot run, greyed out, tells them what exists and that they
      * cannot have it — which is a worse answer than not raising it.
      */
-    return ok(DATASETS.filter((d) => d.roles.includes(c.role)));
+    return ok(DATASETS.filter((d) => mayExport(c, d)));
   },
 
   history(c, f = {}) {
@@ -203,11 +226,11 @@ export const makeExportService = (getSvc: () => Services): ExportService => ({
      * is looking for the attempts as much as the successes, and an exception
      * that leaves no trace is the one thing this register cannot afford.
      */
-    if (!d.roles.includes(c.role)) {
+    if (!mayExport(c, d)) {
       record(0, 'Refused', `${c.role} cannot export ${d.n.toLowerCase()}`);
       return refuse(`Your role cannot export ${d.n.toLowerCase()}`);
     }
-    if (d.scope === 'admin-only' && c.role !== 'admin') {
+    if (d.scope === 'admin-only' && !callerCovers(c, 'exports', 'all')) {
       /* Belt and braces: the roles list already says admin, and this says why. */
       record(0, 'Refused', 'This dataset is not narrowed to the caller');
       return refuse('That dataset can only be exported in full, so only an administrator may take it');

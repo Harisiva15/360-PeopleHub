@@ -48,6 +48,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertLocalDatabase } from './local-only.mjs';
+
+/* This suite writes. It refuses anything but a local database. */
+assertLocalDatabase();
+
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -152,12 +157,12 @@ console.log('\nthe parent column is nullable and tenant-safe, and always was\n')
 }
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const MGR = {
-    role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const EMP = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const find = async (code) => (await config.listDepartments(A)).find((d) => d.code === code);
 
@@ -324,7 +329,7 @@ await withScratchTenant(db, async (ctx) => {
 
   await withScratchTenant(db, async (other) => {
     const B = {
-      role: 'admin', tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
+      role: 'company_admin', hasReports: false, tenantId: other.tenant, employeeId: other.adminEmployeeId, userId: null,
     };
 
     console.log('\na parent cannot be borrowed from another tenant\n');

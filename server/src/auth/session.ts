@@ -19,6 +19,11 @@
 import { verifyAccessToken, AuthError } from './verify.ts';
 import { REFUSED, assertSecondFactorSatisfied as checkFactor } from './rules.ts';
 import type { SupabaseClaims } from './verify.ts';
+import type { Role } from './policy.ts';
+import { normaliseRole } from './policy.ts';
+
+/* The one entry point for a token's role; the mapping lives in policy.ts. */
+export { normaliseRole };
 import { withoutTenantForAuth } from '../tenancy/context.ts';
 import type { Caller } from '../tenancy/context.ts';
 
@@ -27,11 +32,48 @@ export type { SupabaseClaims };
 
 interface MembershipRow {
   tenant_id: string;
-  role: Caller['role'];
+  /**
+   * Whatever the column holds.
+   *
+   * Not `Caller['role']`: during the rollout this is either vocabulary, and
+   * typing it as the new one would have asserted the migration had already
+   * happened. `normaliseRole` below is what makes the claim.
+   */
+  role: string;
   employee_id: string | null;
   membership_status: string;
   tenant_status: string;
   has_factor: boolean;
+}
+
+
+/**
+ * Does anybody report to this person, at any depth?
+ *
+ * Read once per sign-in rather than per question, because it is half of every
+ * authorisation answer and a site that forgets it reads as though the
+ * reporting tree were empty. Recursive because a skip-level manager still
+ * answers for the people two levels down - the same rule `visibleIds` applies
+ * on the client.
+ *
+ * False when there is no employee row at all: an administrator who is not on
+ * payroll manages nobody, and their role is where their reach comes from.
+ */
+async function hasReportsFor(tenantId: string, employeeId: string | null): Promise<boolean> {
+  if (!employeeId) return false;
+  return withoutTenantForAuth(async (db) => {
+    const { rows } = await db.query<{ any: boolean }>(
+      `WITH RECURSIVE line AS (
+         SELECT id FROM employee WHERE manager_id = $1 AND tenant_id = $2
+          UNION
+         SELECT e.id FROM employee e JOIN line l ON e.manager_id = l.id
+          WHERE e.tenant_id = $2
+       )
+       SELECT EXISTS (SELECT 1 FROM line) AS any`,
+      [employeeId, tenantId],
+    );
+    return rows[0]?.any ?? false;
+  });
 }
 
 /**
@@ -86,7 +128,8 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
         tenantId: claimed.tenant_id,
         userId: claims.sub,
         employeeId: claimed.employee_id,
-        role: claimed.role,
+        role: normaliseRole(claimed.role),
+        hasReports: await hasReportsFor(claimed.tenant_id, claimed.employee_id),
       };
     }
   }
@@ -108,7 +151,8 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
     tenantId: row.tenant_id,
     userId: claims.sub,
     employeeId: row.employee_id,
-    role: row.role,
+    role: normaliseRole(row.role),
+    hasReports: await hasReportsFor(row.tenant_id, row.employee_id),
   };
 }
 

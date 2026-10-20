@@ -20,6 +20,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertLocalDatabase } from './local-only.mjs';
+
+/* This suite writes. It refuses anything but a local database. */
+assertLocalDatabase();
+
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -94,7 +99,7 @@ const ctx = (await admin.query(`
     FROM tenant t JOIN employee e ON e.tenant_id = t.id
    WHERE t.slug = $1 AND e.code = $2`, [TENANT_SLUG, ADMIN_CODE])).rows[0];
 
-const caller = (role) => ({ role, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null });
+const caller = (role, hasReports = false) => ({ role, hasReports, tenantId: ctx.tenant, employeeId: ctx.emp, userId: null });
 const madeDepts = [];
 const madeEmps = [];
 
@@ -106,7 +111,7 @@ try {
   console.log('\nthe list comes from the database\n');
 
   const rows = (await admin.query('SELECT code, name FROM department ORDER BY code')).rows;
-  const listed = await listDepartments(caller('admin'));
+  const listed = await listDepartments(caller('company_admin'));
   ok(`the service returns ${listed.length} departments`, listed.length === rows.length,
     `database has ${rows.length}`);
   ok('  with the database’s own codes',
@@ -123,23 +128,23 @@ try {
 
   console.log('\ncreating and editing\n');
 
-  const d = await createDepartment(caller('admin'), { code: 'zzprobe', name: 'ZZ Probe Dept' });
+  const d = await createDepartment(caller('company_admin'), { code: 'zzprobe', name: 'ZZ Probe Dept' });
   madeDepts.push(d.code);
   ok('a department can be created', Boolean(d.id));
   ok('  and its code is upper-cased', d.code === 'ZZPROBE', d.code);
   ok('  starting active with nobody in it', d.active === true && d.headcount === 0);
 
   ok('a duplicate code is refused',
-    (await attempt(() => createDepartment(caller('admin'), { code: 'ZZPROBE', name: 'ZZ again' }))) !== null);
+    (await attempt(() => createDepartment(caller('company_admin'), { code: 'ZZPROBE', name: 'ZZ again' }))) !== null);
 
-  const renamed = await updateDepartment(caller('admin'), 'ZZPROBE', { name: 'ZZ Renamed' });
+  const renamed = await updateDepartment(caller('company_admin'), 'ZZPROBE', { name: 'ZZ Renamed' });
   ok('it can be renamed', renamed.name === 'ZZ Renamed');
   ok('  and the code does not move', renamed.code === 'ZZPROBE',
     'the code is what every employee and job title joins on');
 
-  const off = await updateDepartment(caller('admin'), 'ZZPROBE', { active: false });
+  const off = await updateDepartment(caller('company_admin'), 'ZZPROBE', { active: false });
   ok('it can be deactivated', off.active === false);
-  await updateDepartment(caller('admin'), 'ZZPROBE', { active: true });
+  await updateDepartment(caller('company_admin'), 'ZZPROBE', { active: true });
 
   /* ---------------------------------------------------------------- *
    * Validation and permission
@@ -148,20 +153,20 @@ try {
   console.log('\nwhat is refused\n');
 
   ok('a blank code is refused',
-    (await attempt(() => createDepartment(caller('admin'), { code: ' ', name: 'ZZ x' }))) !== null);
+    (await attempt(() => createDepartment(caller('company_admin'), { code: ' ', name: 'ZZ x' }))) !== null);
   ok('a blank name is refused',
-    (await attempt(() => createDepartment(caller('admin'), { code: 'ZZOK', name: '  ' }))) !== null);
+    (await attempt(() => createDepartment(caller('company_admin'), { code: 'ZZOK', name: '  ' }))) !== null);
   ok('a code with spaces is refused',
-    (await attempt(() => createDepartment(caller('admin'), { code: 'ZZ BAD', name: 'ZZ x' }))) !== null);
+    (await attempt(() => createDepartment(caller('company_admin'), { code: 'ZZ BAD', name: 'ZZ x' }))) !== null);
   ok('renaming to blank is refused',
-    (await attempt(() => updateDepartment(caller('admin'), 'ZZPROBE', { name: '' }))) !== null);
+    (await attempt(() => updateDepartment(caller('company_admin'), 'ZZPROBE', { name: '' }))) !== null);
 
   ok('a department cannot report to itself',
-    (await attempt(() => updateDepartment(caller('admin'), 'ZZPROBE', { parentId: d.id }))) !== null,
+    (await attempt(() => updateDepartment(caller('company_admin'), 'ZZPROBE', { parentId: d.id }))) !== null,
     'a cycle detaches a branch and the org chart recurses over it');
 
   ok('a manager cannot create one',
-    (await attempt(() => createDepartment(caller('manager'), { code: 'ZZNO', name: 'ZZ no' }))) !== null);
+    (await attempt(() => createDepartment(caller('employee', true), { code: 'ZZNO', name: 'ZZ no' }))) !== null);
   ok('an employee cannot remove one',
     (await attempt(() => removeDepartment(caller('employee'), 'ZZPROBE'))) !== null);
 
@@ -182,7 +187,7 @@ try {
       ctx.site, ctx.entity, ctx.shift])).rows[0].id;
   madeEmps.push(emp);
 
-  const blocked = await attempt(() => removeDepartment(caller('admin'), 'ZZPROBE'));
+  const blocked = await attempt(() => removeDepartment(caller('company_admin'), 'ZZPROBE'));
   ok('a department with somebody in it cannot be removed', blocked !== null,
     'the foreign keys do not cascade, so this would either explode or silently orphan');
   ok('  and the refusal counts them', /1 employees/.test(blocked?.message ?? ''), blocked?.message);
@@ -193,7 +198,7 @@ try {
     "SELECT 1 FROM department WHERE code = 'ZZPROBE'")).rowCount;
   ok('  and the department is still there', still === 1);
 
-  const withDept = await listDepartments(caller('admin'));
+  const withDept = await listDepartments(caller('company_admin'));
   ok('  and its headcount shows why', withDept.find((x) => x.code === 'ZZPROBE')?.headcount === 1);
 
   console.log('\nand allowed once nothing does\n');
@@ -201,13 +206,13 @@ try {
   await admin.query('DELETE FROM employee WHERE id = $1', [emp]);
   madeEmps.length = 0;
 
-  const gone = await removeDepartment(caller('admin'), 'ZZPROBE');
+  const gone = await removeDepartment(caller('company_admin'), 'ZZPROBE');
   madeDepts.length = 0;
   ok('an empty department can be removed', gone.code === 'ZZPROBE');
   ok('  and is gone from the list',
-    !(await listDepartments(caller('admin'))).some((x) => x.code === 'ZZPROBE'));
+    !(await listDepartments(caller('company_admin'))).some((x) => x.code === 'ZZPROBE'));
   ok('  and removing it twice is a not-found',
-    (await attempt(() => removeDepartment(caller('admin'), 'ZZPROBE'))) !== null);
+    (await attempt(() => removeDepartment(caller('company_admin'), 'ZZPROBE'))) !== null);
 
   const trail = (await admin.query(
     `SELECT action FROM audit_log WHERE subject_table = 'department'

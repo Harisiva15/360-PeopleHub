@@ -136,7 +136,7 @@ export const CEO = mkEmp({
   site: 'CHN',
   doj: '2014-06-02',
   ctc: 8800000,
-  role: 'admin',
+  role: 'company_admin',
 });
 CEO.designation = 'Founder & Chief Executive Officer';
 
@@ -160,7 +160,7 @@ headSeed.forEach((h) => {
     site: h.site,
     doj: h.doj,
     managerId: CEO.id,
-    role: h.dept === 'HR' ? 'admin' : 'manager',
+    role: h.dept === 'HR' ? 'hr_admin' : 'employee',
   });
   HEADS[h.dept] = e;
   deptOf(h.dept).head = e.id;
@@ -179,7 +179,7 @@ Object.keys(MGR_PLAN).forEach((d) => {
         site: pick(d === 'ENG' ? ['CHN', 'CHN', 'BLR', 'HYD'] : ['CHN', 'BLR', 'HYD']),
         doj: randDoj(900, 2600),
         managerId: HEADS[d].id,
-        role: 'manager',
+        role: 'employee',
       }),
     );
   }

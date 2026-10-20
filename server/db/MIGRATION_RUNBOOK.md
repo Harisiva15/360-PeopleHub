@@ -26,10 +26,17 @@ credential:
 
 ```
 cd server
-node -e "const u=new URL(process.env.MIGRATE_DATABASE_URL);console.log(u.hostname+u.pathname)"
+node -e "import('./scripts/local-only.mjs').then(m=>console.log(m.hostOf(process.env.MIGRATE_DATABASE_URL)))"
 ```
 
-That prints the host and database name and nothing else.
+That prints the host and nothing else, and prints `null` rather than guessing
+when the string is malformed.
+
+Do **not** use `new URL` for this. It throws on a malformed connection string
+and puts the whole string, password included, in `error.input` — so the one
+command meant to avoid printing a credential becomes the one that prints it.
+Both URLs in this project's `.env` were in fact truncated to `user:password`
+with no host at all, which is exactly the case that throws.
 
 ---
 
@@ -130,8 +137,7 @@ Only after steps 0–4 have all succeeded on staging.
 
 ```
 cd server
-node -e "const u=new URL(process.env.MIGRATE_DATABASE_URL);console.log('target: '+u.hostname+u.pathname)"
-npm run migrate
+node scripts/migrate.mjs --production
 ```
 
 Then, against production:

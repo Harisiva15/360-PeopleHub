@@ -15,7 +15,7 @@ import type { FlyoutState } from './NavFlyout';
 import { useFavourites } from './favourites';
 import { Menu } from '../components/Menu';
 import { useAuth } from '../auth/AuthContext';
-import { ROLE_LABEL } from '../modules/settings/access';
+import { ROLE_LABEL } from '../state/rbac';
 import type { ReactNode } from 'react';
 
 const isMobile = () => window.matchMedia('(max-width: 860px)').matches;
@@ -92,10 +92,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
   /** The sections this role may open, with the views it may reach inside them. */
   const sections = NAV
-    .filter((g) => (!g.roles || g.roles.includes(app.role)) && app.can(g.k))
+    .filter((g) => app.can(g.k) && (!g.needs || app.reaches(g.k, 'read', g.needs)))
     .map((g) => ({
       g,
-      items: g.items.filter((i) => app.can(i.k) && (!i.roles || i.roles.includes(app.role))),
+      items: g.items.filter(
+        (i) => app.can(i.k) && (!i.needs || app.reaches(i.k, 'read', i.needs)),
+      ),
     }));
 
   /*
@@ -106,9 +108,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const hits = needle
     ? ALL_VIEWS.filter(({ groupKey, item }) => {
       if (!app.can(groupKey) || !app.can(item.k)) return false;
-      if (item.roles && !item.roles.includes(app.role)) return false;
+      if (item.needs && !app.reaches(item.k, 'read', item.needs)) return false;
       const g = NAV.find((x) => x.k === groupKey);
-      if (g?.roles && !g.roles.includes(app.role)) return false;
+      if (g?.needs && !app.reaches(g.k, 'read', g.needs)) return false;
       return `${item.n} ${item.d ?? ''} ${g?.group ?? ''}`.toLowerCase().includes(needle);
     }).slice(0, 12)
     : [];

@@ -44,6 +44,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertLocalDatabase } from './local-only.mjs';
+
+/* This suite writes. It refuses anything but a local database. */
+assertLocalDatabase();
+
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -168,12 +173,12 @@ console.log('\nthe table is exactly the one 0002 created\n');
 }
 
 await withScratchTenant(db, async (ctx) => {
-  const A = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const A = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const MGR = {
-    role: 'manager', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   const EMP = {
-    role: 'employee', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+    role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   /** Exactly one default, checked from the database rather than from a return value. */
   const defaults = async () => (await db.query(
@@ -428,7 +433,7 @@ await withScratchTenant(db, async (ctx) => {
      RETURNING id`,
     [`zz-scratch-bare-${Date.now().toString(36)}`])).rows[0].id;
 
-  const BARE = { role: 'admin', tenantId: bare, employeeId: null, userId: null };
+  const BARE = { role: 'company_admin', hasReports: false, tenantId: bare, employeeId: null, userId: null };
   ok('38. the bare tenant has no entity at all',
     (await config.listLegalEntities(BARE)).length === 0);
 

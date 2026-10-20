@@ -156,7 +156,12 @@ console.log('\nand the menu agrees with the tabs\n');
   ] as [string, boolean][]) {
     const line = nav.split('\n').find((l) => l.includes(`/timesheet?${view}'`)) ?? '';
     ok(`${view.padEnd(10)} ${gated ? 'is manager/admin only' : 'is offered to everyone'}`,
-      line !== '' && /roles: \['manager', 'admin'\]/.test(line) === gated,
+      /*
+       * Gating is a least scope now, not a list of role names: an item that
+       * needs 'team' is for whoever reaches past themselves, which includes
+       * a manager without naming one.
+       */
+      line !== '' && /needs: '(team|all)'/.test(line) === gated,
       line || 'no menu item points at this view');
   }
 }

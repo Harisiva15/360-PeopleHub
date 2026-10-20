@@ -33,6 +33,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertLocalDatabase } from './local-only.mjs';
+
+/* This suite writes. It refuses anything but a local database. */
+assertLocalDatabase();
+
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -130,7 +135,7 @@ await sweepScratchTenants(db);
 let fatal = null;
 try {
 await withScratchTenant(db, async (ctx) => {
-  const ADMIN = { role: 'admin', tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
+  const ADMIN = { role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null };
   const mk = '2026-09';
 
   /*
@@ -154,7 +159,7 @@ await withScratchTenant(db, async (ctx) => {
   const make = async (name) => {
     const acct = await users.createUser(ADMIN, {
       name, email: `zz-prereq-${Math.random().toString(36).slice(2, 9)}@360.technology`,
-      dept: ctx.dept, site: ctx.site, designation: 'ZZ Engineer', role: 'employee',
+      dept: ctx.dept, site: ctx.site, designation: 'ZZ Engineer', role: 'employee', hasReports: false,
       joinedOn: `${mk}-01`,
     });
     return (await db.query(
@@ -227,11 +232,11 @@ await withScratchTenant(db, async (ctx) => {
   console.log('\nwho may process at all\n');
 
   const asManager = await attempt(() => payroll.processRun(
-    { role: 'manager', tenantId: ctx.tenant, employeeId: bare, userId: null }, mk));
+    { role: 'employee', hasReports: true, tenantId: ctx.tenant, employeeId: bare, userId: null }, mk));
   ok('a manager cannot process payroll', asManager !== null);
   ok('  refused as forbidden', asManager?.code === 'forbidden', asManager?.code);
   const asEmployee = await attempt(() => payroll.processRun(
-    { role: 'employee', tenantId: ctx.tenant, employeeId: bare, userId: null }, mk));
+    { role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: bare, userId: null }, mk));
   ok('an employee cannot process payroll', asEmployee !== null);
   ok('  refused as forbidden', asEmployee?.code === 'forbidden', asEmployee?.code);
 

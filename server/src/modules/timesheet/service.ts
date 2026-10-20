@@ -23,6 +23,7 @@
  * same way.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -136,13 +137,13 @@ const toSheet = (r: Record<string, unknown>): Timesheet => {
 
 /** What this caller may see: their own, their line, or everyone's. */
 function scope(caller: Caller, column: string, params: unknown[]): string {
-  if (caller.role === 'admin') return '';
+  if (reaches(caller, 'timesheet', 'read', 'all')) return '';
   if (!caller.employeeId) {
     throw new TimesheetError('this login has no employee record', 'forbidden');
   }
   params.push(caller.employeeId);
   const p = `$${params.length}`;
-  if (caller.role === 'employee') return `${column} = ${p}`;
+  if (!reaches(caller, 'timesheet', 'read', 'team')) return `${column} = ${p}`;
   return `(${column} = ${p} OR ${column} IN (
      WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = ${p}
@@ -211,7 +212,7 @@ export async function timesheetForWeek(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
     throw new TimesheetError('a week starts on a date', 'invalid');
   }
-  if (caller.role === 'employee' && empId !== caller.employeeId) {
+  if (!reaches(caller, 'timesheet', 'read', 'team') && empId !== caller.employeeId) {
     throw new TimesheetError('you can only open your own timesheet', 'forbidden');
   }
 
@@ -240,7 +241,7 @@ async function openForEdit(
   const row = rows[0];
   if (!row) throw new TimesheetError('no such timesheet', 'not_found');
 
-  if (caller.role === 'employee' && row.employee_id !== caller.employeeId) {
+  if (!reaches(caller, 'timesheet', 'read', 'team') && row.employee_id !== caller.employeeId) {
     throw new TimesheetError('you can only edit your own timesheet', 'forbidden');
   }
   if (row.status !== 'draft' && row.status !== 'returned') {
@@ -517,7 +518,7 @@ export async function recallTimesheet(caller: Caller, id: string): Promise<Times
       'SELECT employee_id, status FROM timesheet WHERE id = $1 FOR UPDATE', [id]);
     const row = rows[0];
     if (!row) throw new TimesheetError('no such timesheet', 'not_found');
-    if (caller.role === 'employee' && row.employee_id !== caller.employeeId) {
+    if (!reaches(caller, 'timesheet', 'read', 'team') && row.employee_id !== caller.employeeId) {
       throw new TimesheetError('you can only recall your own timesheet', 'forbidden');
     }
     if (row.status !== 'submitted') {
@@ -540,7 +541,7 @@ export async function actOnTimesheet(
   decision: 'approved' | 'returned' | 'rejected',
   note?: string,
 ): Promise<Timesheet> {
-  if (caller.role === 'employee' || !caller.employeeId) {
+  if (!reaches(caller, 'timesheet', 'read', 'team') || !caller.employeeId) {
     throw new TimesheetError('only a manager or admin may decide a timesheet', 'forbidden');
   }
   if (!['approved', 'returned', 'rejected'].includes(decision)) {
@@ -564,7 +565,7 @@ export async function actOnTimesheet(
     if (row.employee_id === caller.employeeId) {
       throw new TimesheetError('you cannot decide your own timesheet', 'self_approval');
     }
-    if (caller.role === 'manager') {
+    if (caller.hasReports) {
       const mine = await db.query(
         `WITH RECURSIVE t AS (
            SELECT id FROM employee WHERE manager_id = $1

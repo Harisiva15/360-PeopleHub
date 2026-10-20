@@ -183,8 +183,10 @@ import {
   agentFrom, recordLoginEvent, listLoginHistory, listTenantLoginHistory,
 } from '../modules/users/loginHistory.ts';
 import {
-  effectiveModulesFor, effectiveRule, ROLE_SUMMARY,
+  effectiveModulesForTenant, effectiveRuleFor, fromLegacyRole, legacyHasReports,
+  ROLE_SUMMARY, ROLES,
 } from '../auth/policy.ts';
+import type { Role } from '../auth/policy.ts';
 import { overridesFor } from '../auth/overrides.ts';
 import { moduleForPath } from './route-modules.ts';
 import {
@@ -282,8 +284,21 @@ const routes: Route[] = [
   {
     method: 'PUT',
     pattern: '/employees/:id/role',
-    handler: (caller, _req, params, body) =>
-      setEmployeeRole(caller, params.id!, (body as { role: 'admin' | 'manager' | 'employee' }).role),
+    handler: (caller, _req, params, body) => {
+      /*
+       * The boundary rejects an old role value rather than passing it on.
+       *
+       * The cast was the whole of the validation: whatever arrived in `role`
+       * reached the service typed as a role it might not be. From step A the
+       * request body speaks the new vocabulary only, and `admin` gets a 400
+       * here instead of a fail-closed surprise three layers down.
+       */
+      const role = (body as { role?: unknown }).role;
+      if (typeof role !== 'string' || !(ROLES as readonly string[]).includes(role)) {
+        throw new BadRequest(`role must be one of: ${ROLES.join(', ')}`);
+      }
+      return setEmployeeRole(caller, params.id!, role as Role);
+    },
   },
   {
     method: 'GET',
@@ -2059,7 +2074,11 @@ const routes: Route[] = [
      */
     handler: async (c) => {
       const overrides = await overridesFor(c);
-      const modules = effectiveModulesFor(c.role, overrides);
+      /* Through the bridge: Caller.role is still the legacy union. */
+      /* The caller carries both now; the bridge was for when it did not. */
+      const role = c.role;
+      const hasReports = c.hasReports;
+      const modules = effectiveModulesForTenant(role, hasReports, overrides);
       /*
        * Identity travels with the permissions.
        *
@@ -2071,11 +2090,11 @@ const routes: Route[] = [
        */
       const identity = await whoAmI(c);
       return {
-        role: c.role,
-        summary: ROLE_SUMMARY[c.role],
+        role,
+        summary: ROLE_SUMMARY[role],
         modules,
         rules: Object.fromEntries(
-          modules.map((m) => [m, effectiveRule(c.role, m, overrides)]),
+          modules.map((m) => [m, effectiveRuleFor(role, hasReports, m, overrides)]),
         ),
         identity,
       };
@@ -2629,7 +2648,10 @@ export function createApp() {
           const moduleKey = moduleForPath(req.method ?? 'GET', url.pathname);
           if (moduleKey) {
             const overrides = await overridesFor(caller);
-            if (effectiveRule(caller.role, moduleKey, overrides).read === 'none') {
+            if (effectiveRuleFor(
+              caller.role, caller.hasReports,
+              moduleKey, overrides,
+            ).read === 'none') {
               send(res, 403, { error: 'this module is not available to your role' });
               return;
             }

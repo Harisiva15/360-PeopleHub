@@ -12,6 +12,7 @@
  * satisfy this year's deadline.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller } from '../../tenancy/context.ts';
 
@@ -84,11 +85,11 @@ export async function enrolments(caller: Caller, empIds?: string[]): Promise<Enr
   const params: unknown[] = [];
   const where: string[] = [];
 
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'learning', 'read', 'team')) {
     if (!caller.employeeId) throw new LearningError('this login has no employee record', 'forbidden');
     params.push(caller.employeeId);
     where.push(`e.employee_id = $${params.length}`);
-  } else if (caller.role === 'manager') {
+  } else if (caller.hasReports) {
     params.push(caller.employeeId);
     where.push(`(e.employee_id = $${params.length} OR e.employee_id IN (
        WITH RECURSIVE t AS (
@@ -119,7 +120,7 @@ export async function enrol(
   empId: string,
   courseId: string,
 ): Promise<Enrollment> {
-  if (empId !== caller.employeeId && caller.role === 'employee') {
+  if (empId !== caller.employeeId && !reaches(caller, 'learning', 'read', 'team')) {
     throw new LearningError('you can only enrol yourself', 'forbidden');
   }
 
@@ -160,7 +161,7 @@ export async function setProgress(
   courseId: string,
   progress: number,
 ): Promise<Enrollment> {
-  if (empId !== caller.employeeId && caller.role === 'employee') {
+  if (empId !== caller.employeeId && !reaches(caller, 'learning', 'read', 'team')) {
     throw new LearningError('you can only record your own progress', 'forbidden');
   }
   if (!Number.isFinite(progress) || progress < 0 || progress > 100) {

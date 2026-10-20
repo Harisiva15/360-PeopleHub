@@ -18,6 +18,7 @@
  * active employees.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -91,7 +92,7 @@ const toAnnouncement = (r: Record<string, unknown>): Announcement => ({
 });
 
 async function board(db: TenantClient, caller: Caller): Promise<Announcement[]> {
-  const { rows } = await db.query(PROJECTION, [caller.employeeId, caller.role === 'admin']);
+  const { rows } = await db.query(PROJECTION, [caller.employeeId, reaches(caller, 'announcements', 'read', 'all')]);
   return rows.map(toAnnouncement);
 }
 
@@ -110,7 +111,7 @@ export async function postAnnouncement(
   caller: Caller,
   draft: NewAnnouncement,
 ): Promise<Announcement[]> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'announcements', 'read', 'team')) {
     throw new NoticeboardError('only a manager or admin may post', 'forbidden');
   }
   const title = (draft.title ?? '').trim();
@@ -140,7 +141,7 @@ async function ownPost(db: TenantClient, caller: Caller, id: string): Promise<vo
   const { rows } = await db.query(
     'SELECT author_id FROM announcement WHERE id = $1 FOR UPDATE', [id]);
   if (!rows[0]) throw new NoticeboardError('no such announcement', 'not_found');
-  if (caller.role !== 'admin' && rows[0].author_id !== caller.employeeId) {
+  if (!reaches(caller, 'announcements', 'read', 'all') && rows[0].author_id !== caller.employeeId) {
     throw new NoticeboardError('you can only change your own posts', 'forbidden');
   }
 }
@@ -150,7 +151,7 @@ export async function setPinned(
   id: string,
   pinned: boolean,
 ): Promise<Announcement[]> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'announcements', 'read', 'team')) {
     throw new NoticeboardError('only a manager or admin may pin a post', 'forbidden');
   }
   return withTenant(caller, async (db) => {
@@ -161,7 +162,7 @@ export async function setPinned(
 }
 
 export async function removeAnnouncement(caller: Caller, id: string): Promise<Announcement[]> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'announcements', 'read', 'team')) {
     throw new NoticeboardError('only a manager or admin may take a post down', 'forbidden');
   }
   return withTenant(caller, async (db) => {

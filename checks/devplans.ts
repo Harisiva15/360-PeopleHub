@@ -14,7 +14,7 @@ import {
   DEV_ACTIONS, DEV_PLANS, actionProgress, actionsFor, isActionDone, planProgress,
 } from '../src/data/devplans';
 import { ENROLL } from '../src/data/learning';
-import { ACTIVE, DEMO_EMP, DEMO_MGR, EMAP, HRHEAD } from '../src/data/employees';
+import { teamOf, ACTIVE, DEMO_EMP, DEMO_MGR, EMAP, HRHEAD } from '../src/data/employees';
 import { recordAudit } from '../src/data/audit';
 import { visibleIds } from '../src/state/rbac';
 import { TODAY, ymd } from '../src/lib/dates';
@@ -36,8 +36,8 @@ const allowed = async (label: string, run: () => Promise<unknown>) => {
   catch (e) { check(label, `refused: ${(e as Error).message}`, 'allowed'); }
 };
 
-const ADMIN: Caller = { role: 'admin', meId: HRHEAD.id };
-const MANAGER: Caller = { role: 'manager', meId: DEMO_MGR.id };
+const ADMIN: Caller = { role: 'company_admin', meId: HRHEAD.id };
+const MANAGER: Caller = { role: 'employee', meId: DEMO_MGR.id };
 const NOW = ymd(TODAY);
 
 /*
@@ -45,7 +45,17 @@ const NOW = ymd(TODAY);
  * ownership rules. The demo employee may or may not have drawn one, so the
  * check picks somebody who has — and says who, rather than passing vacuously.
  */
-const withPlan = DEV_PLANS.find((p) => p.status === 'Active' && EMAP[p.empId]);
+/*
+ * An active plan whose owner manages nobody.
+ *
+ * The owner has to have no reports, or "an employee sees only their own" is
+ * really testing a manager - the first plan in the dataset belongs to
+ * somebody with 129 of them - and with the reporting tree now applied they
+ * correctly see their whole line.
+ */
+const withPlan = DEV_PLANS.find(
+  (p) => p.status === 'Active' && EMAP[p.empId] && teamOf(p.empId, true).length === 0,
+);
 const OWNER: Caller = { role: 'employee', meId: withPlan?.empId ?? DEMO_EMP.id };
 
 (async () => {
@@ -130,7 +140,7 @@ const OWNER: Caller = { role: 'employee', meId: withPlan?.empId ?? DEMO_EMP.id }
   check('an administrator sees every plan', all.length, DEV_PLANS.length);
 
   const mgrRows = await s.devPlans.list(MANAGER);
-  const line = new Set([...visibleIds('manager', DEMO_MGR.id), DEMO_MGR.id]);
+  const line = new Set([...visibleIds('employee', DEMO_MGR.id), DEMO_MGR.id]);
   check('a manager sees only their line',
     mgrRows.filter((r) => !line.has(r.plan.empId)).length, 0);
 

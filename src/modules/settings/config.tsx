@@ -1169,7 +1169,7 @@ export function OrgTab() {
         <Card
           title="Departments"
           sub={depts.length ? `${depts.length} configured` : 'None configured'}
-          actions={app.role === 'admin' && (
+          actions={app.reaches('settings', 'write', 'all') && (
             <button className="btn sm" onClick={() => editDept()}>
               <Icon n="add" size="lg" /> Add
             </button>
@@ -1183,7 +1183,7 @@ export function OrgTab() {
                   <th>Department</th><th>Reports to</th><th>Business unit</th>
                   <th>Head</th><th className="num">Headcount</th>
                   <th className="num">Annual cost</th><th className="num">Open roles</th>
-                  {app.role === 'admin' && <th className="right">&nbsp;</th>}
+                  {app.reaches('settings', 'write', 'all') && <th className="right">&nbsp;</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1208,7 +1208,7 @@ export function OrgTab() {
                     <td className="num">{d.headcount}</td>
                     <td className="num">{lakh(sum(everyone.filter((e) => e.dept === d.code), (e) => e.ctc))}</td>
                     <td className="num">{sum(reqs.filter((r) => r.dept === d.code && r.status === 'Open'), (r) => r.openings - r.filled)}</td>
-                    {app.role === 'admin' && (
+                    {app.reaches('settings', 'write', 'all') && (
                       <td className="right nowrap">
                         <button className="btn sm ghost" onClick={() => editDept(d)}>Edit</button>{' '}
                         <button className="btn sm ghost" onClick={() => delDept(d)}>Remove</button>
@@ -1217,7 +1217,7 @@ export function OrgTab() {
                   </tr>
                 ))}
                 {!depts.length && (
-                  <tr><td colSpan={app.role === 'admin' ? 8 : 7}>
+                  <tr><td colSpan={app.reaches('settings', 'write', 'all') ? 8 : 7}>
                     <EmptyState
                       msg={deptsLoading ? 'Loading departments…' : 'No departments configured yet'}
                       icon={<Icon n="building" size="lg" />}
@@ -1319,7 +1319,7 @@ function TenantProfileCard() {
   const app = useApp();
   const { data: tenant, loading, error, refetch } = useTenantProfile();
   const rename = useUpdateTenantDisplayName();
-  const admin = app.role === 'admin';
+  const admin = app.reaches('settings', 'write', 'all');
 
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1477,7 +1477,7 @@ function LegalEntityCard() {
   const { data: entities = [], loading, error, refetch } = useLegalEntities();
   const update = useUpdateLegalEntity();
   const setDefault = useSetDefaultLegalEntity();
-  const admin = app.role === 'admin';
+  const admin = app.reaches('settings', 'write', 'all');
 
   /* The default is the one this screen is about — `legalEntities()` returns it first. */
   const entity = entities.find((e) => e.isDefault) ?? entities[0] ?? null;

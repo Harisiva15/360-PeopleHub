@@ -10,10 +10,13 @@
  * if nothing acted on it, and somebody would eventually read it and believe it.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
-import { POLICY, ROLES, effectiveRule, narrower, ruleFor } from '../../auth/policy.ts';
-import type { ModuleRule, Role, Scope } from '../../auth/policy.ts';
+import {
+  POLICY, POLICY_LAYERS, ROLES, effectiveRule, narrower, ruleFor,
+} from '../../auth/policy.ts';
+import type { Layer, ModuleRule, Role, Scope } from '../../auth/policy.ts';
 import { forgetOverrides, overridesFor } from '../../auth/overrides.ts';
 
 export class PermissionError extends Error {
@@ -21,6 +24,15 @@ export class PermissionError extends Error {
     super(message);
   }
 }
+
+/**
+ * Every spelling of the administrator layer a `role_permission` row may use.
+ *
+ * Expand leaves both vocabularies valid in the column, so a guard that names
+ * one of them guards half the rows. Step C narrows this to `['company_admin']`,
+ * alongside the matching list in `users/service.ts`.
+ */
+const ADMIN_LAYERS = ['admin', 'company_admin'];
 
 const SCOPES: Scope[] = ['none', 'own', 'team', 'all'];
 const isScope = (v: unknown): v is Scope =>
@@ -34,8 +46,11 @@ export interface ModuleGrid {
   effective: Record<Role, ModuleRule>;
 }
 
-const byRole = (fn: (r: Role) => ModuleRule): Record<Role, ModuleRule> =>
-  ({ employee: fn('employee'), manager: fn('manager'), admin: fn('admin') });
+const byRole = (
+  fn: (r: Role | Layer) => ModuleRule,
+): Record<Role | Layer, ModuleRule> => Object.fromEntries(
+  POLICY_LAYERS.map((l) => [l, fn(l)]),
+) as Record<Role | Layer, ModuleRule>;
 
 /**
  * The whole grid, ceiling and effective side by side.
@@ -46,7 +61,7 @@ const byRole = (fn: (r: Role) => ModuleRule): Record<Role, ModuleRule> =>
  * screen grey those out instead of accepting them and doing nothing.
  */
 export async function permissionGrid(caller: Caller): Promise<ModuleGrid[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'settings', 'write', 'all')) {
     throw new PermissionError('Only an administrator can read this', 'forbidden');
   }
   const overrides = await overridesFor(caller);
@@ -77,7 +92,7 @@ export async function setPermissions(
   caller: Caller,
   patches: GridPatch[],
 ): Promise<ModuleGrid[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'settings', 'write', 'all')) {
     throw new PermissionError('Only an administrator can change permissions', 'forbidden');
   }
   if (!Array.isArray(patches) || patches.length === 0) {
@@ -101,7 +116,14 @@ export async function setPermissions(
      * undo it from inside the application, and the fix becomes a database
      * session somebody has to be talked through on the phone.
      */
-    if (p.module === 'settings' && p.role === 'admin' && p.read === 'none') {
+    /*
+     * Both spellings, for the same reason the last-administrator count uses
+     * both: a `role_permission` row is a database value, and until step B has
+     * mapped them the layer may still be keyed 'admin'. Asking only for
+     * 'company_admin' would have let a tenant close Settings against the
+     * layer that is actually in force. Step C drops the old name.
+     */
+    if (p.module === 'settings' && ADMIN_LAYERS.includes(p.role as string) && p.read === 'none') {
       throw new PermissionError(
         'Administrators cannot be removed from Settings — there would be no way '
         + 'back from inside the application', 'forbidden');
@@ -153,7 +175,7 @@ export async function setPermissions(
 
 /** Restore every cell for one module to what the code grants. */
 export async function resetModule(caller: Caller, module: string): Promise<ModuleGrid[]> {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'settings', 'write', 'all')) {
     throw new PermissionError('Only an administrator can change permissions', 'forbidden');
   }
   if (!POLICY[module]) throw new PermissionError(`No such module: ${module}`);

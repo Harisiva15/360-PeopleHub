@@ -14,7 +14,7 @@ import { Chip, Divide, Dot, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, PAL } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { isMyReport } from '../../state/rbac';
+import { covers, isMyReport, scopeOfDemo } from '../../state/rbac';
 import {
   useAllEmployees as usePanel, useCandidates, useInterviews, useMoveCandidate,
   useRequisitions, useVisiblePeople,
@@ -34,12 +34,12 @@ import { Icon } from '../../components/icons';
 
 /** Managers see only requisitions they own or that sit under them. */
 export function reqScope(role: AppRole, meId: string, list: Requisition[]): Requisition[] {
-  if (role === 'admin') return list;
+  if (covers(scopeOfDemo(role, true, 'hiring'), 'all')) return list;
   return list.filter((r) => r.hiringManagerId === meId || isMyReport(meId, r.hiringManagerId));
 }
 
 export function hiringScope(role: AppRole, meId: string, list: Candidate[]): Candidate[] {
-  if (role === 'admin') return list;
+  if (covers(scopeOfDemo(role, true, 'hiring'), 'all')) return list;
   return list.filter((c) => {
     const r = reqOf(c.reqId);
     return !!r && (r.hiringManagerId === meId || isMyReport(meId, r.hiringManagerId));
@@ -363,7 +363,7 @@ function HrReqs() {
   const app = useApp();
   const layer = useLayer();
   /* The server refuses anyone else; the button is hidden for the same reason. */
-  const canOpen = app.role === 'admin' || app.role === 'manager';
+  const canOpen = app.reaches('hiring', 'write', 'team');
   const list = reqScope(app.role, app.meId, REQS);
   const open = list.filter((r) => r.status === 'Open');
 
@@ -612,7 +612,7 @@ function HrIvs() {
   const layer = useLayer();
   const show = useShowCandidate();
   const candOf = (id: string) => CANDS.find((x) => x.id === id);
-  const mine = INTERVIEWS.filter((i) => app.role === 'admin' || i.panelId === app.meId || isMyReport(app.meId, i.panelId));
+  const mine = INTERVIEWS.filter((i) => app.reaches('hiring', 'read', 'all') || i.panelId === app.meId || isMyReport(app.meId, i.panelId));
   const upcoming = sortBy(mine.filter((i) => i.status === 'Scheduled'), (i) => i.date);
   const done = sortBy(mine.filter((i) => i.status !== 'Scheduled'), (i) => i.date, 'desc');
   const withVerdict = done.filter((i) => i.verdict);

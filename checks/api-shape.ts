@@ -70,7 +70,7 @@ await compare('/employees/active', referenceEmployee, 'GET /employees/active');
  * offers fewer datasets than the mock — fewer is expected, differently shaped
  * is not.
  */
-const ADMIN = { role: 'admin' as const, meId: referenceEmployee.id };
+const ADMIN = { role: 'company_admin' as const, meId: referenceEmployee.id };
 
 const [referenceDataset] = await mockServices.exports.datasets(ADMIN);
 if (referenceDataset) {

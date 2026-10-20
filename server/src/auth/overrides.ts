@@ -17,7 +17,8 @@
 
 import { withTenantReadOnly } from '../tenancy/context.ts';
 import type { Caller } from '../tenancy/context.ts';
-import type { Overrides, Role, Scope } from './policy.ts';
+import { POLICY_LAYERS } from './policy.ts';
+import type { Layer, Overrides, Role, Scope } from './policy.ts';
 
 const TTL_MS = 60_000;
 
@@ -25,7 +26,13 @@ interface Entry { at: number; value: Overrides }
 const cache = new Map<string, Entry>();
 
 const SCOPES: Scope[] = ['none', 'own', 'team', 'all'];
-const ROLE_NAMES: Role[] = ['employee', 'manager', 'admin'];
+/*
+ * Every layer a row may name, which is the four roles plus the derived
+ * manager one. `manager` is not assignable and is still narrowable: a tenant
+ * that wants to take something away from everyone with reports has nowhere
+ * else to say so.
+ */
+const ROLE_NAMES: (Role | Layer)[] = POLICY_LAYERS;
 
 /** A value from the database is only a scope if it is one. */
 const asScope = (v: unknown): Scope | undefined =>

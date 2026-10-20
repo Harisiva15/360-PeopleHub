@@ -18,6 +18,7 @@
  * is a breach with a date on it.
  */
 
+import { callerCovers } from '../../state/rbac';
 import { sortBy } from '../../lib/collections';
 import { TODAY, addDays, ymd } from '../../lib/dates';
 import { uid } from '../../lib/rng';
@@ -38,7 +39,7 @@ import { ok } from './util';
 const refuse = (why: string) => Promise.reject(new Error(why));
 
 const adminOnly = (c: Caller) => {
-  if (c.role !== 'admin') {
+  if (!callerCovers(c, 'integrations', 'all', 'write')) {
     throw new Error('Only an administrator can change how this tenant connects to anything');
   }
 };
@@ -178,7 +179,9 @@ export const integrationService: IntegrationService = {
   },
 
   webhooks(c) {
-    if (c.role !== 'admin') return refuse('Only an administrator can see the endpoints');
+    if (!callerCovers(c, 'integrations', 'all', 'write')) {
+      return refuse('Only an administrator can see the endpoints');
+    }
     return ok(sortBy(WEBHOOKS, (w) => w.n).map(webhookRow));
   },
 
@@ -228,7 +231,9 @@ export const integrationService: IntegrationService = {
   },
 
   apiKeys(c) {
-    if (c.role !== 'admin') return refuse('Only an administrator can see the keys');
+    if (!callerCovers(c, 'integrations', 'all', 'write')) {
+      return refuse('Only an administrator can see the keys');
+    }
     return ok(sortBy(API_KEYS, (k) => k.n).map(keyRow));
   },
 

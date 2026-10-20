@@ -19,6 +19,11 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+import { assertLocalDatabase } from './local-only.mjs';
+
+/* This suite writes. It refuses anything but a local database. */
+assertLocalDatabase();
+
 let failed = 0;
 const ok = (label, cond, detail = '') => {
   if (!cond) failed += 1;

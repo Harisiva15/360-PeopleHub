@@ -19,6 +19,7 @@
  * nothing; it is picked up by the next payroll run.
  */
 
+import { reaches } from '../../auth/can.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import { classifyMany } from '../calendar/service.ts';
 import type { DayReason } from '../calendar/service.ts';
@@ -136,12 +137,12 @@ const toOt = (r: Record<string, unknown>): Overtime => ({
  * is why the null check sits inside the non-admin branch.
  */
 function scope(caller: Caller, column: string, params: unknown[]): string {
-  if (caller.role === 'admin') return '';
+  if (reaches(caller, 'shifts', 'read', 'all')) return '';
   if (!caller.employeeId) throw new ShiftError('this login has no employee record', 'forbidden');
 
   params.push(caller.employeeId);
   const p = `$${params.length}`;
-  if (caller.role === 'employee') return `${column} = ${p}`;
+  if (!reaches(caller, 'shifts', 'read', 'team')) return `${column} = ${p}`;
   return `(${column} = ${p} OR ${column} IN (
      WITH RECURSIVE t AS (
        SELECT id FROM employee WHERE manager_id = ${p}
@@ -272,7 +273,7 @@ export async function actOnOvertime(
   id: string,
   decision: 'approved' | 'rejected',
 ): Promise<Overtime> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'shifts', 'read', 'team')) {
     throw new ShiftError('only a manager or admin may act on overtime', 'forbidden');
   }
   if (!caller.employeeId) {
@@ -298,7 +299,7 @@ export async function actOnOvertime(
       throw new ShiftError('you cannot approve your own overtime', 'self_approval');
     }
     /* A manager may only act on their own line; an admin on anyone's. */
-    if (caller.role === 'manager') {
+    if (caller.hasReports) {
       const mine = await db.query(LINE_SQL, [caller.employeeId, row.employee_id]);
       if (!mine.rowCount) throw new ShiftError('that person is not in your team', 'forbidden');
     }
@@ -548,7 +549,7 @@ export async function setEmployeeShift(
   empId: string,
   shiftCode: string,
 ): Promise<{ empId: string; shift: string }> {
-  if (caller.role === 'employee') {
+  if (!reaches(caller, 'shifts', 'read', 'team')) {
     throw new ShiftError('only a manager or admin may change a shift', 'forbidden');
   }
 
@@ -568,7 +569,7 @@ export async function setEmployeeShift(
         `${wanted} is not in use and cannot be assigned — activate it first`, 'invalid');
     }
 
-    if (caller.role === 'manager') {
+    if (caller.hasReports) {
       const mine = await db.query(LINE_SQL, [caller.employeeId, empId]);
       if (!mine.rowCount) throw new ShiftError('that person is not in your team', 'forbidden');
     }
@@ -650,7 +651,7 @@ const MAX_GRACE = 240;
 
 /** Configuring working hours is an administrator's, as the rest of setup is. */
 function mayShapeShift(caller: Caller, verb: string): void {
-  if (caller.role !== 'admin') {
+  if (!reaches(caller, 'shifts', 'read', 'all')) {
     throw new ShiftError(`only an admin may ${verb} a shift`, 'forbidden');
   }
 }

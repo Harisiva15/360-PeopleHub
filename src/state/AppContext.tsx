@@ -1,7 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ACCOUNTS, can, SCOPE, visibleIds } from './rbac';
-import { EMAP } from '../data/employees';
+import {
+  ACCOUNTS, can, covers, hasReportsFromRules, isAppRole, SCOPE, scopeOfDemo, visibleIds,
+} from './rbac';
+import type { RuleScopes, Scope } from './rbac';
+import { EMAP, teamOf } from '../data/employees';
 import { onQueryFailure, subscribe } from '../services/react';
 import { apiConfigured } from '../services/http';
 import { authConfigured } from '../auth/supabase';
@@ -18,6 +21,12 @@ export interface Toast {
   id: number;
   msg: string;
   kind?: 'ok' | 'err';
+}
+
+/** The module list and per-module scopes as `/me/permissions` reported them. */
+export interface ServerAccess {
+  modules: string[];
+  rules: Record<string, RuleScopes>;
 }
 
 interface AppState {
@@ -59,6 +68,25 @@ interface AppState {
 
   can: (route: string) => boolean;
   scope: (typeof SCOPE)[AppRole];
+  /**
+   * Whether this person answers for anybody, read back out of the scopes the
+   * server sent. Not a role: see hasReportsFromRules.
+   */
+  hasReports: boolean;
+  /**
+   * How wide this person is on one module and one verb, as the server said.
+   * Unknown modules answer 'none', so a module nobody has classified is not
+   * readable by accident.
+   */
+scopeOf: (module: string, verb: 'read' | 'write' | 'approve') => Scope;
+  /**
+   * Does this person reach `needed` on this module and verb?
+   *
+   * The question nearly every screen actually wants. `role === 'admin'` was
+   * standing in for it, which is why hr_admin and finance_admin would have
+   * been locked out of their own modules by a mechanical rename.
+   */
+  reaches: (module: string, verb: 'read' | 'write' | 'approve', needed: Scope) => boolean;
 
   isMyReport: (id: string) => boolean;
 
@@ -139,6 +167,8 @@ function useResolvedIdentity(
 ): {
   identity: MeIdentity | null;
   me: Employee | null;
+  /** The module list and scopes the server granted, or null before it answers. */
+  access: ServerAccess | null;
   /** True when there is no usable session, so the gate shows sign-in. */
   sessionLost: boolean;
   ready: boolean;
@@ -146,6 +176,16 @@ function useResolvedIdentity(
   retry: () => void;
 } {
   const [identity, setIdentity] = useState<MeIdentity | null>(null);
+  /*
+   * What the server granted, kept rather than discarded.
+   *
+   * `/me/permissions` answers with the module list and the per-module scopes
+   * it computed from the policy, the reporting tree and the tenant's
+   * narrowing. All three were being thrown away and the UI was re-deciding
+   * from the role alone - which cannot see the reporting tree at all, so a
+   * manager got an employee's menu.
+   */
+  const [access, setAccess] = useState<ServerAccess | null>(null);
   const [me, setMe] = useState<Employee | null>(null);
   /*
    * One piece of state, moved by the two transitions in ./identity.
@@ -188,6 +228,7 @@ function useResolvedIdentity(
       resolvedFor.current = null;
       setIdentity(null);
       setMe(null);
+      setAccess(null);
       return undefined;
     }
 
@@ -224,7 +265,21 @@ function useResolvedIdentity(
 
         resolvedFor.current = plan.token;
         setIdentity(who.identity);
-        setRole(who.role);
+        setAccess({ modules: who.modules ?? [], rules: who.rules ?? {} });
+        /*
+         * A role the server names but this bundle has never heard of becomes
+         * `employee` for display, the same mapping the server's own normaliser
+         * makes.
+         *
+         * During the cutover deploy the two halves move minutes apart, and a
+         * browser holding the new bundle can be answered by the old server,
+         * which says `admin`. `SCOPE[role].label` is read directly on the
+         * attendance and expenses screens, and `SCOPE['admin']` is undefined,
+         * so that window crashed them. Access is unaffected either way: in API
+         * mode every scope comes from `setAccess` above — the grant the server
+         * computed — and never from this value.
+         */
+        setRole(isAppRole(who.role) ? who.role : 'employee');
         setMeId(empId);
         setMe(row);
         setState((prev) => identityOnSettled(prev, { kind: 'resolved' }));
@@ -260,6 +315,7 @@ function useResolvedIdentity(
   return {
     identity,
     me,
+    access,
     sessionLost: state.sessionLost,
     ready: state.ready,
     error: state.error,
@@ -267,8 +323,23 @@ function useResolvedIdentity(
   };
 }
 
-export function AppProvider({ children, initialRole = 'admin' }: { children: ReactNode; initialRole?: AppRole }) {
-  const start = ACCOUNTS().find((a) => a.role === initialRole)!;
+export function AppProvider({ children, initialRole = 'company_admin' }: { children: ReactNode; initialRole?: AppRole }) {
+  /*
+   * The demo account to start as.
+   *
+   * This was `...find(...)!`, and the `!` was load-bearing in the worst way:
+   * a role with no demo account gave `undefined`, and the next line read
+   * `.role` off it. A stale initialRole produced "Cannot read properties of
+   * undefined" from a component three levels down, forty times over, with
+   * nothing naming the role that caused it.
+   */
+  const start = ACCOUNTS().find((acc) => acc.role === initialRole);
+  if (!start) {
+    throw new Error(
+      `No demo account for role "${initialRole}". `
+      + `ACCOUNTS() offers: ${ACCOUNTS().map((acc) => acc.role).join(', ')}.`,
+    );
+  }
   /*
    * In API mode neither of these is seeded from the demo dataset — not even
    * for the one render before the server answers, because that render is
@@ -367,6 +438,19 @@ export function AppProvider({ children, initialRole = 'admin' }: { children: Rea
    */
   const me = apiMode ? resolved.me : EMAP[meId];
 
+  /*
+   * Manager-ness, from whichever authority this build has.
+   *
+   * In API mode it is the server's scopes: it already applied the reporting
+   * tree, so asking it again locally could only disagree. In the demo build
+   * there is no server, and the dataset's own tree is the fact.
+   */
+  const hasReports = apiMode
+    ? hasReportsFromRules(resolved.access?.rules)
+    : teamOf(meId, true).length > 0;
+
+  const serverModules = apiMode ? resolved.access?.modules ?? null : null;
+
   const value = useMemo<AppState>(
     () => ({
       role,
@@ -382,14 +466,36 @@ export function AppProvider({ children, initialRole = 'admin' }: { children: Rea
       signInAs,
       toggleTheme,
       bump,
-      can: (route: string) => can(role, route),
+      can: (route: string) => can(role, route, hasReports, serverModules),
       scope: SCOPE[role],
-      isMyReport: (id: string) => role !== 'employee' && visibleIds(role, meId).includes(id) && id !== meId,
+      hasReports,
+      scopeOf: (module: string, verb: 'read' | 'write' | 'approve') => {
+        const r = resolved.access?.rules?.[module];
+        /* Fail closed: a module the server did not mention grants nothing. */
+        if (!r) return apiMode ? 'none' : scopeOfDemo(role, hasReports, module);
+        return (r[verb] ?? 'none') as Scope;
+      },
+      reaches: (module: string, verb: 'read' | 'write' | 'approve', needed: Scope) => {
+        const r = resolved.access?.rules?.[module];
+        const granted = r
+          ? ((r[verb] ?? 'none') as Scope)
+          : (apiMode ? 'none' : scopeOfDemo(role, hasReports, module));
+        return covers(granted, needed);
+      },
+      /*
+       * Having reports is the question, not holding a role. `role !== 'employee'`
+       * answered false for every manager - the only people the helper exists
+       * for - because a manager is an employee the reporting tree widened.
+       */
+      isMyReport: (id: string) => hasReports
+        && visibleIds(role, meId).includes(id)
+        && id !== meId,
       toasts,
       toast,
       dismissToast,
     }),
-    [role, meId, me, identity, resolved.ready, resolved.error, resolved.sessionLost,
+    [role, meId, me, identity, hasReports, serverModules, resolved.access,
+      resolved.ready, resolved.error, resolved.sessionLost,
       resolved.retry,
       theme, revision, signInAs, toggleTheme, bump, toasts, toast, dismissToast],
   );

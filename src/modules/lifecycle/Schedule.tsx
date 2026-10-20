@@ -181,7 +181,7 @@ export function EmployeeScheduleCard({ empId }: { empId: string }) {
    * their own line, an employee nobody including themselves. This only decides
    * what is offered; the call is refused either way.
    */
-  const mayAssign = app.role === 'admin' || app.role === 'manager';
+  const mayAssign = app.reaches('lifecycle', 'write', 'team');
   const own = app.meId === empId;
 
   if (error) {

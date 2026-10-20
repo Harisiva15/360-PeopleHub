@@ -13,10 +13,11 @@
  * lets a department run its own things without a ticket to HR.
  */
 
+import { callerCovers } from '../../state/rbac';
 import { sortBy } from '../../lib/collections';
 import { uid } from '../../lib/rng';
 import { TODAY, ymd } from '../../lib/dates';
-import { EMAP } from '../../data/employees';
+import { EMAP, teamOf } from '../../data/employees';
 import { DEPTS, SITES } from '../../data/org';
 import {
   EVENTS, EVENT_TYPES, RSVPS, RSVP_CHOICES, attendanceRate, audienceOf, eventKPI,
@@ -59,7 +60,7 @@ const rsvpRow = (r: Rsvp): RsvpRow => ({
 
 /** An event this caller runs, or is allowed to run. */
 const mayManage = (c: Caller, e: CompanyEvent) =>
-  c.role === 'admin' || e.organiserId === c.meId;
+  callerCovers(c, 'events', 'all', 'write') || e.organiserId === c.meId;
 
 /**
  * What this caller can see at all.
@@ -70,10 +71,10 @@ const mayManage = (c: Caller, e: CompanyEvent) =>
  * visible to the people it is for, and to anybody who can manage events.
  */
 function visible(c: Caller): CompanyEvent[] {
-  if (c.role === 'admin') return EVENTS;
+  if (callerCovers(c, 'events', 'all')) return EVENTS;
   return EVENTS.filter((e) =>
     e.organiserId === c.meId
-    || (e.status !== 'Draft' && (isInvited(e, c.meId) || c.role === 'manager')));
+    || (e.status !== 'Draft' && (isInvited(e, c.meId) || teamOf(c.meId, true).length > 0)));
 }
 
 function matches(r: EventRow, f: EventFilter): boolean {
@@ -157,7 +158,7 @@ export const eventService: EventService = {
      * else gets the counts — a headcount is useful, a named list of who is at
      * the wellness camp is somebody's business and not yours.
      */
-    const canSeeNames = mayManage(c, e) || c.role === 'manager';
+    const canSeeNames = mayManage(c, e) || teamOf(c.meId, true).length > 0;
     const detail: EventDetail = {
       ...rowOf(e, c.meId),
       attendees: canSeeNames
@@ -190,7 +191,7 @@ export const eventService: EventService = {
      * a team lunch is how a module like this ends up unused — and the organiser
      * is recorded, so it is never unclear who to ask about it.
      */
-    if (c.role === 'employee') return refuse('Your role cannot create events');
+    if (!callerCovers(c, 'events', 'team', 'write')) return refuse('Your role cannot create events');
     const bad = validate(draft);
     if (bad) return refuse(bad);
 
@@ -208,7 +209,9 @@ export const eventService: EventService = {
       venue: draft.venue?.trim() ?? (draft.online ? 'Online' : ''),
       online: draft.online ?? false,
       capacity: draft.capacity ?? null,
-      organiserId: draft.organiserId && c.role === 'admin' ? draft.organiserId : c.meId,
+      organiserId: draft.organiserId && callerCovers(c, 'events', 'all', 'write')
+        ? draft.organiserId
+        : c.meId,
       forSites: draft.forSites ?? [],
       forDepts: draft.forDepts ?? [],
       /* Everything starts as a draft, so nothing lands in a calendar by accident. */

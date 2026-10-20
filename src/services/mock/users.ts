@@ -15,14 +15,13 @@
 import { uid } from '../../lib/rng';
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
-import { EMAP } from '../../data/employees';
+import { EMAP, teamOf } from '../../data/employees';
 import { ORG } from '../../data/org';
 import { LOGIN_HISTORY, USERS, loginHistoryFor, userOf } from '../../data/users';
 import type { LoginEvent, LoginMethod, UserAccount, UserStatus } from '../../data/users';
 import { ASSIGNMENTS, SCHEDULES } from './schedules';
-import { actionScope, may, mayAssignRole, PERMS } from '../../state/rbac';
+import { PERMS, callerCovers, effectiveActionScope, may, mayAssignRole, visibleIds } from '../../state/rbac';
 import type { UserAction } from '../../state/rbac';
-import { visibleIds } from '../../state/rbac';
 import type { AppRole } from '../../types/employee';
 import type {
   Caller, UserDraft, UserFilter, UserService, UserStats,
@@ -42,7 +41,12 @@ const refuse = (why: string) => Promise.reject(new Refused(why));
 
 /** The accounts this caller may see at all. */
 function inScope(c: Caller): UserAccount[] {
-  const scope = actionScope(c.role, 'user.view');
+  /*
+   * The union, like guard(). Asking the role alone returned nothing at all
+   * for a manager - the layer is where their user.view comes from - so a
+   * manager saw none of the people they manage.
+   */
+  const scope = effectiveActionScope(c.role, teamOf(c.meId, true).length > 0, 'user.view');
   if (scope === 'none') return [];
   if (scope === 'all') return USERS.slice();
   /*
@@ -62,7 +66,12 @@ function inScope(c: Caller): UserAccount[] {
  * classic hole — a manager who may deactivate, deactivating the CEO.
  */
 function guard(c: Caller, action: UserAction, target?: UserAccount): string | null {
-  const scope = actionScope(c.role, action);
+  /*
+   * The union, not the role alone. actionScope answers for one layer, so a
+   * manager - an employee the tree widened - was refused every act the
+   * manager layer grants, including simply viewing the accounts they manage.
+   */
+  const scope = effectiveActionScope(c.role, teamOf(c.meId, true).length > 0, action);
   if (scope === 'none') return `Your role cannot ${action.replace(/^\w+\./, '').replace(/_/g, ' ')}`;
   if (!target || scope === 'all') return null;
 
@@ -126,11 +135,19 @@ function validate(d: Partial<UserDraft>, c: Caller, existing?: UserAccount): str
   if (!role) return 'Choose a role';
   /*
    * The rule the whole module rests on: only an administrator makes another
-   * administrator. Checked on the value, not the act — a manager assigns roles
-   * every time they raise a joiner, and this is the one they may not assign.
+   * administrator. Checked on the value, not the act.
+   *
+   * A request is exempt, because it cannot carry a role to assign: create()
+   * forces 'employee' and refuses anything else, and whoever approves it
+   * assigns the role then. The comment here used to say that a manager
+   * assigns a role every time they raise a joiner, which is exactly what
+   * user.request stopped being true.
    */
-  if (role !== existing?.role && !mayAssignRole(c.role, role)) {
-    return role === 'admin'
+  const requestOnly = Boolean(guard(c, 'user.create')) && !guard(c, 'user.request');
+  if (!requestOnly
+    && role !== existing?.role
+    && !mayAssignRole(c.role, teamOf(c.meId, true).length > 0, role)) {
+    return callerCovers(c, 'users', 'all')
       ? 'Only an administrator can create or assign the Administrator role'
       : 'Your role cannot assign that role';
   }
@@ -147,7 +164,9 @@ function nextCode(): string {
 
 export const userService: UserService = {
   nextEmployeeCode(c) {
-    if (!may(c.role, 'user.create')) return refuse('Your role cannot create users');
+    if (!may(c.role, teamOf(c.meId, true).length > 0, 'user.create')) {
+      return refuse('Your role cannot create users');
+    }
     return ok(nextCode());
   },
 
@@ -187,8 +206,21 @@ export const userService: UserService = {
   },
 
   create(c, draft) {
-    const stop = guard(c, 'user.create');
-    if (stop) return refuse(stop);
+    /*
+     * Two permissions, one entry point.
+     *
+     * An administrator opens an account. A manager may only ask for one, and
+     * `user.request` is a separate permission rather than a wider
+     * `user.create` so that the difference is enforced here instead of being
+     * implied by a status the caller could have chosen. Before this the flow
+     * existed, the Pending Approval state existed, the button existed - and
+     * `user.create` refused the manager, so Submit request submitted into a
+     * refusal.
+     */
+    const createStop = guard(c, 'user.create');
+    const requestStop = guard(c, 'user.request');
+    if (createStop && requestStop) return refuse(createStop);
+    const mayOpenAccount = !createStop;
     const bad = validate(draft, c);
     if (bad) return refuse(bad);
 
@@ -214,7 +246,21 @@ export const userService: UserService = {
      * here rather than passed in — a client that chooses its own status is a
      * client that can skip the approval it was supposed to wait for.
      */
-    const byManager = c.role === 'manager';
+    /* Whoever may only request is making a request, whatever they sent. */
+    const byManager = !mayOpenAccount;
+
+    /*
+     * A request carries no role above employee.
+     *
+     * The role is the whole prize: an account requested as company_admin and
+     * approved by somebody skim-reading a queue is the escalation this flow
+     * would otherwise open. Whoever approves it assigns the role.
+     */
+    if (byManager && draft.role && draft.role !== 'employee') {
+      return refuse(
+        'A requested account starts as an employee. The role is assigned when it is approved.',
+      );
+    }
     const status: UserStatus = byManager
       ? 'Pending Approval'
       : draft.sendInvitation === false ? 'Active' : 'Invitation Pending';
@@ -232,7 +278,7 @@ export const userService: UserService = {
       managerId: draft.managerId ?? null,
       empType: draft.empType ?? 'Full-time',
       joinedOn: draft.joinedOn ?? ymd(TODAY),
-      role: draft.role,
+      role: byManager ? 'employee' : draft.role,
       lockedAt: null,
       lockReason: '',
       mfaRequired: false,
@@ -244,7 +290,8 @@ export const userService: UserService = {
       lastLoginAt: null,
       invitedCount: status === 'Invitation Pending' ? 1 : 0,
       inviteSentAt: status === 'Invitation Pending' ? ymd(TODAY) : null,
-      mustChangePassword: draft.sendInvitation === false,
+      /* No sign-in until it is approved, so nothing to change yet. */
+      mustChangePassword: byManager ? false : draft.sendInvitation === false,
       deactivatedAt: null,
       deactivatedById: null,
       deactivationReason: '',
@@ -414,7 +461,8 @@ export const userService: UserService = {
   bulkUpdate(c, ids, patch) {
     const stop = guard(c, 'user.bulk_update');
     if (stop) return refuse(stop);
-    if (patch.role && !mayAssignRole(c.role, patch.role as AppRole)) {
+    if (patch.role
+      && !mayAssignRole(c.role, teamOf(c.meId, true).length > 0, patch.role as AppRole)) {
       return refuse('Only an administrator can assign the Administrator role');
     }
 
@@ -543,7 +591,7 @@ export const userService: UserService = {
   },
 
   setMfaRequired(c, id, required) {
-    if (!may(c.role, 'user.suspend')) {
+    if (!may(c.role, teamOf(c.meId, true).length > 0, 'user.suspend')) {
       return refuse('Only an administrator can require a second factor');
     }
     const u = userOf(id);
@@ -559,10 +607,10 @@ export const userService: UserService = {
   },
 
   tenantLoginHistory(c) {
-    if (c.role === 'employee') {
+    if (!callerCovers(c, 'users', 'team')) {
       return refuse('Only an administrator or a manager can read this');
     }
-    if (c.role === 'admin') return ok(LOGIN_HISTORY.slice(0, 500));
+    if (callerCovers(c, 'users', 'all')) return ok(LOGIN_HISTORY.slice(0, 500));
     const mine = visibleIds(c.role, c.meId);
     return ok(LOGIN_HISTORY
       .filter((e) => e.employeeId && mine.includes(e.employeeId))

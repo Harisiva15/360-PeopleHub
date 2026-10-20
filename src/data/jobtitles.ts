@@ -90,7 +90,7 @@ export const JOB_TITLES: JobTitle[] = [];
  * like a bug and is worse than no module.
  */
 (function genJobTitles() {
-  const admins = ACTIVE().filter((e) => e.role === 'admin');
+  const admins = ACTIVE().filter((e) => e.role === 'company_admin');
   const actor = () => (admins.length ? pick(admins).id : null);
 
   /* The grade each title is written for, from the TITLES table it came from. */

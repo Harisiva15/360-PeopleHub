@@ -54,6 +54,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { assertLocalDatabase } from './local-only.mjs';
+
+/* This suite writes. It refuses anything but a local database. */
+assertLocalDatabase();
+
 const here = dirname(fileURLToPath(import.meta.url));
 const envPath = join(here, '..', '.env');
 if (existsSync(envPath)) {
@@ -189,10 +194,10 @@ let fatal = null;
 try {
 await withScratchTenant(admin, async (ctx) => {
 
-const caller = (role, employeeId) =>
-  ({ role, tenantId: ctx.tenant, employeeId, userId: null });
+const caller = (role, employeeId, hasReports = false) =>
+  ({ role, hasReports, tenantId: ctx.tenant, employeeId, userId: null });
 
-const ADMIN = caller('admin', ctx.adminEmployeeId);
+const ADMIN = caller('company_admin', ctx.adminEmployeeId);
 const tag = Math.random().toString(36).slice(2, 7);
 
 /*
@@ -213,22 +218,48 @@ const employeeOf = async (account) => (await admin.query(
     name: `ZZ Probe Manager ${tag}`,
     email: `zz-hier-mgr-${tag}@360.technology`,
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Engineering Manager',
-    role: 'manager',
+    /*
+     * `employee`, because there is no manager role to ask for.
+     *
+     * `hasReports` was here too, added by sweep-fixtures.mjs, which took this
+     * request body for a Caller. `createUser` does not accept it: whether
+     * somebody answers for other people is read from the reporting tree, not
+     * declared when their account is made.
+     */
+    role: 'employee',
   });
   const MGR_ID = await employeeOf(mgrAccount);
   ok('an admin creates a manager', Boolean(MGR_ID));
-  ok('  with the manager role on the membership', mgrAccount.role === 'manager', mgrAccount.role);
+  /*
+   * `employee` on the membership, and that is the model rather than a
+   * concession to it: a manager is an employee who has reports, so there is no
+   * manager role for the membership to carry. The assertion below, after the
+   * report exists, is what makes this person a manager.
+   */
+  ok('  with the employee role on the membership',
+    mgrAccount.role === 'employee', mgrAccount.role);
 
   const empAccount = await users.createUser(ADMIN, {
     name: `ZZ Probe Employee ${tag}`,
     email: `zz-hier-emp-${tag}@360.technology`,
     dept: ctx.dept, site: ctx.site, designation: 'ZZ Software Engineer',
-    role: 'employee', managerId: MGR_ID,
+    role: 'employee', hasReports: false, managerId: MGR_ID,
   });
   const EMP_ID = await employeeOf(empAccount);
   ok('an admin creates an employee reporting to that manager', Boolean(EMP_ID));
 
-  const MGR = caller('manager', MGR_ID);
+  /*
+   * And *now* the first account is a manager — not because anybody said so,
+   * but because somebody reports to them. Read from the database, like the
+   * relationship below, rather than from the response.
+   */
+  ok('  which is what makes the first account a manager',
+    (await admin.query(
+      'SELECT count(*)::int n FROM employee WHERE manager_id = $1', [MGR_ID]
+    )).rows[0].n === 1,
+    'the manager layer is a fact about the reporting tree, not a role');
+
+  const MGR = caller('employee', MGR_ID, true);
   const EMP = caller('employee', EMP_ID);
 
   /* The relationship, read from the database rather than from the response. */
@@ -273,7 +304,7 @@ const employeeOf = async (account) => (await admin.query(
   const byManager = await users.createUser(MGR, {
     name: `ZZ Probe Requested ${tag}`,
     email: `zz-hier-req-${tag}@360.technology`,
-    dept: ctx.dept, site: ctx.site, designation: 'ZZ Analyst', role: 'employee',
+    dept: ctx.dept, site: ctx.site, designation: 'ZZ Analyst', role: 'employee', hasReports: false,
     managerId: MGR_ID,
   });
   await employeeOf(byManager);
@@ -285,7 +316,7 @@ const employeeOf = async (account) => (await admin.query(
   await refused('a manager cannot grant the admin role',
     () => users.createUser(MGR, {
       name: `ZZ Probe Admin ${tag}`, email: `zz-hier-adm-${tag}@360.technology`,
-      dept: ctx.dept, site: ctx.site, designation: 'ZZ X', role: 'admin',
+      dept: ctx.dept, site: ctx.site, designation: 'ZZ X', role: 'company_admin', hasReports: false,
     }), /administrator/i);
 
   /* ================================================================ *
@@ -359,7 +390,7 @@ const employeeOf = async (account) => (await admin.query(
   await refused('an employee cannot create an account',
     () => users.createUser(EMP, {
       name: 'ZZ no', email: `zz-hier-no-${tag}@360.technology`,
-      dept: ctx.dept, site: ctx.site, designation: 'ZZ', role: 'employee',
+      dept: ctx.dept, site: ctx.site, designation: 'ZZ', role: 'employee', hasReports: false,
     }), /role|cannot manage/i);
   await refused('an employee cannot list users',
     () => users.listUsers(EMP), /role|cannot manage/i);
@@ -481,16 +512,16 @@ const employeeOf = async (account) => (await admin.query(
    */
   const otherMgr = await users.createUser(ADMIN, {
     name: `ZZ Probe Manager B ${tag}`, email: `zz-hier-mgb-${tag}@360.technology`,
-    dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Manager', role: 'manager',
+    dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Manager', role: 'employee', hasReports: true,
   });
   const OTHER_MGR_ID = await employeeOf(otherMgr);
   const otherEmp = await users.createUser(ADMIN, {
     name: `ZZ Probe Employee B ${tag}`, email: `zz-hier-emb-${tag}@360.technology`,
-    dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Engineer', role: 'employee',
+    dept: ctx.dept, site: ctx.site, designation: 'ZZ Other Engineer', role: 'employee', hasReports: false,
     managerId: OTHER_MGR_ID,
   });
   const OTHER_EMP_ID = await employeeOf(otherEmp);
-  const OTHER = caller('manager', OTHER_MGR_ID);
+  const OTHER = caller('employee', OTHER_MGR_ID, true);
 
   ok('manager A cannot see manager B’s report',
     !(await employees.listVisibleEmployees(MGR)).some((e) => e.id === OTHER_EMP_ID));

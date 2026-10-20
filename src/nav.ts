@@ -63,7 +63,7 @@
  * `placements`, `billing`, `vendors` or `requirements` — none of which it holds
  * — and `Shell` filters each item on `can(i.k)` as well, so a manager sees the
  * six internal views and nothing else. Each client item also carries
- * `roles: ['admin']`, saying the same thing a second way so the intent is
+ * `needs: 'all'`, saying the same thing a second way so the intent is
  * readable here rather than inferred from a list in another file.
  *
  * Neither of those is the boundary. `server/src/auth/policy.ts` is, and it still
@@ -102,7 +102,16 @@ export interface NavItem {
   /** Name in `src/components/icons.tsx`. */
   ic?: IconName;
   /** Who this view is for, when the route permission is broader than the view. */
-  roles?: readonly Role[];
+  /**
+   * The least scope this view is worth showing at, on its own module `k`.
+   *
+   * It replaced a list of role names, which could not express the interesting
+   * case: 'manager' is not a role, so "managers and administrators" had no
+   * spelling. A scope says it once and lets the policy decide who satisfies
+   * it, so an HR or finance administrator reaches the views their modules
+   * grant without this file having to name them.
+   */
+  needs?: 'own' | 'team' | 'all';
   /**
    * Extra words the sidebar search should match, beyond the label.
    *
@@ -124,7 +133,16 @@ export interface NavGroup {
   k: string;
   /** The line under the title in the flyout's header. */
   desc?: string;
-  roles?: readonly Role[];
+  /**
+   * The least scope this view is worth showing at, on its own module `k`.
+   *
+   * It replaced a list of role names, which could not express the interesting
+   * case: 'manager' is not a role, so "managers and administrators" had no
+   * spelling. A scope says it once and lets the policy decide who satisfies
+   * it, so an HR or finance administrator reaches the views their modules
+   * grant without this file having to name them.
+   */
+  needs?: 'own' | 'team' | 'all';
   items: NavItem[];
 }
 
@@ -149,7 +167,7 @@ export const NAV: NavGroup[] = [
     ic: 'building',
     k: 'settings',
     desc: 'How this tenant is configured — entity, structure, locations and policy.',
-    roles: ['admin'],
+    needs: 'all',
     items: [
       { k: 'settings', n: 'Company profile', to: '/settings?v=company', ic: 'building', d: 'Legal entity, addresses and identifiers.' },
       { k: 'settings', n: 'Organisation structure', to: '/settings?v=org', ic: 'building', d: 'Departments, heads and headcount.' },
@@ -186,9 +204,9 @@ export const NAV: NavGroup[] = [
       { k: 'events', n: 'My events', to: '/events?v=mine', ic: 'schedule', d: 'Everything you have said yes to.' },
       { k: 'celebrations', n: 'Celebrations', ic: 'party', d: 'Birthdays, anniversaries and joiners.' },
       { k: 'announcements', n: 'Announcements', ic: 'announcements', d: 'What the company is telling everyone.' },
-      { k: 'onboarding', n: 'Onboarding', ic: 'joiner', d: 'Bring new joiners through their first weeks.', roles: ['manager', 'admin'] },
-      { k: 'exit', n: 'Exit & final settlement', ic: 'undo', d: 'Offboard leavers and settle their dues.', roles: ['manager', 'admin'] },
-      { k: 'helpdesk', n: 'Request queue', to: '/helpdesk?v=queue', ic: 'inbox', d: 'Everything waiting on your team.', roles: ['manager', 'admin'] },
+      { k: 'onboarding', n: 'Onboarding', ic: 'joiner', d: 'Bring new joiners through their first weeks.', needs: 'team' },
+      { k: 'exit', n: 'Exit & final settlement', ic: 'undo', d: 'Offboard leavers and settle their dues.', needs: 'team' },
+      { k: 'helpdesk', n: 'Request queue', to: '/helpdesk?v=queue', ic: 'inbox', d: 'Everything waiting on your team.', needs: 'team' },
     ],
   },
 
@@ -205,9 +223,9 @@ export const NAV: NavGroup[] = [
     desc: 'Hours worked, who is in today, and corrections.',
     items: [
       { k: 'attendance', n: 'My attendance', ic: 'clock', d: 'Punch in and out, and see your month.' },
-      { k: 'attendance', n: 'Attendance board', to: '/attendance?v=live', ic: 'people', d: 'Who is in, out or remote right now.', roles: ['manager', 'admin'] },
+      { k: 'attendance', n: 'Attendance board', to: '/attendance?v=live', ic: 'people', d: 'Who is in, out or remote right now.', needs: 'team' },
       { k: 'attendance', n: 'Attendance corrections', to: '/attendance?v=reg', ic: 'undo', d: 'Correct a missed punch or a wrong day.' },
-      { k: 'shifts', n: 'Shifts & work schedules', ic: 'schedule', d: 'Plan shifts and working patterns.', roles: ['manager', 'admin'] },
+      { k: 'shifts', n: 'Shifts & work schedules', ic: 'schedule', d: 'Plan shifts and working patterns.', needs: 'team' },
     ],
   },
 
@@ -249,8 +267,8 @@ export const NAV: NavGroup[] = [
        * service scopes every read again — this only stops offering a screen
        * that would come back empty.
        */
-      { k: 'timesheet', n: 'Team timesheets', to: '/timesheet?v=team', ic: 'team', d: 'Your line’s weeks, with hours and status.', roles: ['manager', 'admin'] },
-      { k: 'timesheet', n: 'Pending approvals', to: '/timesheet?v=appr', ic: 'done', d: 'Decide your team’s weeks.', roles: ['manager', 'admin'] },
+      { k: 'timesheet', n: 'Team timesheets', to: '/timesheet?v=team', ic: 'team', d: 'Your line’s weeks, with hours and status.', needs: 'team' },
+      { k: 'timesheet', n: 'Pending approvals', to: '/timesheet?v=appr', ic: 'done', d: 'Decide your team’s weeks.', needs: 'team' },
     ],
   },
 
@@ -272,11 +290,11 @@ export const NAV: NavGroup[] = [
        * decides who may open it — and `alt` keeps them findable by the module
        * name they no longer sit under.
        */
-      { k: 'timesheet', n: 'Projects', to: '/timesheet?v=proj', ic: 'projects', d: 'What time can be booked against.', roles: ['manager', 'admin'], alt: ['Timesheet'] },
+      { k: 'timesheet', n: 'Projects', to: '/timesheet?v=proj', ic: 'projects', d: 'What time can be booked against.', needs: 'team', alt: ['Timesheet'] },
       /* Not "Timesheet reports": that name belongs to the cross-module report in
          Reports & Analytics, and two rows with one label is the defect the
          Recruitment relabel fixed. This one is the in-module view. */
-      { k: 'timesheet', n: 'Utilisation & effort', to: '/timesheet?v=rep', ic: 'chart', d: 'Utilisation and effort by project.', roles: ['manager', 'admin'], alt: ['Timesheet'] },
+      { k: 'timesheet', n: 'Utilisation & effort', to: '/timesheet?v=rep', ic: 'chart', d: 'Utilisation and effort by project.', needs: 'team', alt: ['Timesheet'] },
     ],
   },
 
@@ -293,8 +311,8 @@ export const NAV: NavGroup[] = [
     items: [
       { k: 'leave', n: 'My leave', ic: 'holiday', d: 'Apply for leave and check your balance.' },
       { k: 'leave', n: 'Holiday calendar', to: '/leave?v=cal', ic: 'calendar', d: 'Public holidays by location.' },
-      { k: 'leave', n: 'Team leave', to: '/leave?v=team', ic: 'team', d: 'Your line’s leave, in one calendar.', roles: ['manager', 'admin'] },
-      { k: 'leave', n: 'Leave approvals', to: '/leave?v=appr', ic: 'done', d: 'Decide the requests waiting on you.', roles: ['manager', 'admin'] },
+      { k: 'leave', n: 'Team leave', to: '/leave?v=team', ic: 'team', d: 'Your line’s leave, in one calendar.', needs: 'team' },
+      { k: 'leave', n: 'Leave approvals', to: '/leave?v=appr', ic: 'done', d: 'Decide the requests waiting on you.', needs: 'team' },
     ],
   },
 
@@ -305,22 +323,22 @@ export const NAV: NavGroup[] = [
     desc: 'Pay, compensation, tax, benefits and what you are owed.',
     items: [
       { k: 'payroll', n: 'My payslips', to: '/payroll?v=me', ic: 'payslip', d: 'Download any month’s payslip.' },
-      { k: 'payroll', n: 'Salary details', to: '/payroll?v=struct', ic: 'money', d: 'How your package is made up.', roles: ['employee', 'manager'] },
+      { k: 'payroll', n: 'Salary details', to: '/payroll?v=struct', ic: 'money', d: 'How your package is made up.', needs: 'own' },
       /*
        * The same tab, named for what an admin does there. For everyone else it
        * shows their own package; for an admin it is the compensation master,
        * where a salary is set and its history read. One route, two audiences,
        * so the label says which one is reading.
        */
-      { k: 'payroll', n: 'Employee compensation', to: '/payroll?v=struct', ic: 'money', d: 'Set salaries and read what they were before.', roles: ['admin'] },
+      { k: 'payroll', n: 'Employee compensation', to: '/payroll?v=struct', ic: 'money', d: 'Set salaries and read what they were before.', needs: 'all' },
       { k: 'tax', n: 'Tax declarations', ic: 'tax', d: 'Declare investments and claim exemptions.' },
       { k: 'benefits', n: 'Benefits & flexi', ic: 'gift', d: 'Allocate your flexible benefit pot.' },
       { k: 'expenses', n: 'Reimbursements', ic: 'invoice', d: 'Claim expenses and travel.' },
-      { k: 'payroll', n: 'Payroll processing', to: '/payroll?v=runs', ic: 'refresh', d: 'Open, process and close a cycle.', roles: ['admin'] },
-      { k: 'payroll', n: 'Salary register', to: '/payroll?v=reg', ic: 'document', d: 'Every payslip in the cycle.', roles: ['admin'] },
-      { k: 'payroll', n: 'Payroll inputs', to: '/payroll?v=inputs', ic: 'note', d: 'Overtime, deductions and one-offs.', roles: ['admin'] },
-      { k: 'payroll', n: 'Bank & disbursal', to: '/payroll?v=bank', ic: 'bank', d: 'Build and release the payment file.', roles: ['admin'] },
-      { k: 'payroll', n: 'Statutory remittances', to: '/payroll?v=stat', ic: 'policy', d: 'PF, ESI and tax remittances.', roles: ['admin'] },
+      { k: 'payroll', n: 'Payroll processing', to: '/payroll?v=runs', ic: 'refresh', d: 'Open, process and close a cycle.', needs: 'all' },
+      { k: 'payroll', n: 'Salary register', to: '/payroll?v=reg', ic: 'document', d: 'Every payslip in the cycle.', needs: 'all' },
+      { k: 'payroll', n: 'Payroll inputs', to: '/payroll?v=inputs', ic: 'note', d: 'Overtime, deductions and one-offs.', needs: 'all' },
+      { k: 'payroll', n: 'Bank & disbursal', to: '/payroll?v=bank', ic: 'bank', d: 'Build and release the payment file.', needs: 'all' },
+      { k: 'payroll', n: 'Statutory remittances', to: '/payroll?v=stat', ic: 'policy', d: 'PF, ESI and tax remittances.', needs: 'all' },
     ],
   },
 
@@ -343,8 +361,8 @@ export const NAV: NavGroup[] = [
       { k: 'engagement', n: 'Recognition wall', to: '/engagement?v=recog', ic: 'applause', d: 'Who has been thanked lately.' },
       { k: 'engagement', n: 'Surveys & polls', to: '/engagement?v=open', ic: 'vote', d: 'Open questions waiting on you.' },
       { k: 'engagement', n: 'Engagement overview', to: '/engagement?v=results', ic: 'chart', d: 'How the last survey landed.' },
-      { k: 'performance', n: 'Team goals', to: '/performance?v=team', ic: 'team', d: 'Where your line stands.', roles: ['manager', 'admin'] },
-      { k: 'performance', n: 'Calibration', to: '/performance?v=calib', ic: 'chart', d: 'Compare ratings across the team.', roles: ['manager', 'admin'] },
+      { k: 'performance', n: 'Team goals', to: '/performance?v=team', ic: 'team', d: 'Where your line stands.', needs: 'team' },
+      { k: 'performance', n: 'Calibration', to: '/performance?v=calib', ic: 'chart', d: 'Compare ratings across the team.', needs: 'team' },
     ],
   },
 
@@ -362,7 +380,7 @@ export const NAV: NavGroup[] = [
     items: [
       { k: 'learning', n: 'My learning', ic: 'learning', d: 'Courses, enrolments and progress.' },
       { k: 'devplans', n: 'Development plans', ic: 'rocket', d: 'Where people are heading, and how.' },
-      { k: 'devplans', n: 'Mentors', to: '/devplans?v=mentors', ic: 'people', d: 'Who is mentoring whom, and the load.', roles: ['manager', 'admin'] },
+      { k: 'devplans', n: 'Mentors', to: '/devplans?v=mentors', ic: 'people', d: 'Who is mentoring whom, and the load.', needs: 'team' },
     ],
   },
 
@@ -378,7 +396,7 @@ export const NAV: NavGroup[] = [
    * `recruitment`, `clients`, `bench`, `placements`, `billing`, `vendors` or
    * `requirements`, none of which it holds. `Shell` filters each item on
    * `can(i.k)` as well, so a manager opens this section and sees the six
-   * internal-hiring views and nothing else. The `roles: ['admin']` on each
+   * internal-hiring views and nothing else. The `needs: 'all'` on each
    * client item says the same thing a second way, so the intent is readable
    * here and does not rest on a list in another file.
    *
@@ -391,7 +409,7 @@ export const NAV: NavGroup[] = [
     ic: 'recruitment',
     k: 'hiring',
     desc: 'Our own vacancies, and the client desk’s orders and candidates.',
-    roles: ['manager', 'admin'],
+    needs: 'team',
     items: [
       { k: 'hiring', n: 'Internal requisitions', to: '/hiring?v=reqs', ic: 'goal', d: 'Roles we are hiring for ourselves.' },
       { k: 'hiring', n: 'Applicants', to: '/hiring?v=cands', ic: 'people', d: 'Applicants and where they are.' },
@@ -399,22 +417,22 @@ export const NAV: NavGroup[] = [
       { k: 'hiring', n: 'Interview panels', to: '/hiring?v=ivs', ic: 'schedule', d: 'Panels, slots and feedback.' },
       { k: 'hiring', n: 'Internal offers', to: '/hiring?v=offers', ic: 'mail', d: 'Offers out and their outcomes.' },
       { k: 'hiring', n: 'Hiring tracker', to: '/hiring?v=track', ic: 'reports', d: 'Time to hire and source quality.' },
-      { k: 'recruitment', n: 'Recruitment dashboard', to: '/recruitment?v=dash', ic: 'chart', d: 'Open demand, the funnel and what is late.', roles: ['admin'] },
-      { k: 'recruitment', n: 'Client job orders', to: '/recruitment?v=reqs', ic: 'goal', d: 'Every order, its SLA and its desk.', roles: ['admin'] },
-      { k: 'recruitment', n: 'My assigned jobs', to: '/recruitment?v=mine', ic: 'person', d: 'The orders on your desk.', roles: ['admin'] },
-      { k: 'recruitment', n: 'Client candidates', to: '/recruitment?v=cands', ic: 'people', d: 'People you can put forward.', roles: ['admin'] },
-      { k: 'recruitment', n: 'Candidate submissions', to: '/recruitment?v=subs', ic: 'submission', d: 'Profiles with the client.', roles: ['admin'] },
-      { k: 'recruitment', n: 'Client interviews', to: '/recruitment?v=ivs', ic: 'schedule', d: 'Booked, done and awaiting feedback.', roles: ['admin'] },
-      { k: 'recruitment', n: 'Client offers', to: '/recruitment?v=offers', ic: 'mail', d: 'Released, accepted and declined.', roles: ['admin'] },
-      { k: 'recruitment', n: 'Talent pool', to: '/recruitment?v=pool', ic: 'star', d: 'People worth going back to.', roles: ['admin'] },
-      { k: 'recruitment', n: 'Recruiter activity', to: '/recruitment?v=activity', ic: 'timer', d: 'What each desk has produced.', roles: ['admin'] },
-      { k: 'recruitment', n: 'Recruitment reports', to: '/recruitment?v=reports', ic: 'reports', d: 'Conversion, ageing and fill rate.', roles: ['admin'] },
-      { k: 'placements', n: 'Placements', ic: 'done', d: 'Consultants on assignment.', roles: ['admin'] },
-      { k: 'bench', n: 'Bench & consultants', ic: 'briefcase', d: 'Who is available, and for how long.', roles: ['admin'] },
-      { k: 'clients', n: 'Clients & accounts', ic: 'client', d: 'Accounts, contacts and their SOWs.', roles: ['admin'] },
-      { k: 'vendors', n: 'Vendors', ic: 'building', d: 'Supplier panel and their performance.', roles: ['admin'] },
-      { k: 'billing', n: 'Billing & AR', ic: 'invoice', d: 'Invoices raised and money owed.', roles: ['admin'] },
-      { k: 'requirements', n: 'Requirements (legacy)', ic: 'document', d: 'Superseded by Client job orders — kept so older requirements stay readable.', roles: ['admin'] },
+      { k: 'recruitment', n: 'Recruitment dashboard', to: '/recruitment?v=dash', ic: 'chart', d: 'Open demand, the funnel and what is late.', needs: 'all' },
+      { k: 'recruitment', n: 'Client job orders', to: '/recruitment?v=reqs', ic: 'goal', d: 'Every order, its SLA and its desk.', needs: 'all' },
+      { k: 'recruitment', n: 'My assigned jobs', to: '/recruitment?v=mine', ic: 'person', d: 'The orders on your desk.', needs: 'all' },
+      { k: 'recruitment', n: 'Client candidates', to: '/recruitment?v=cands', ic: 'people', d: 'People you can put forward.', needs: 'all' },
+      { k: 'recruitment', n: 'Candidate submissions', to: '/recruitment?v=subs', ic: 'submission', d: 'Profiles with the client.', needs: 'all' },
+      { k: 'recruitment', n: 'Client interviews', to: '/recruitment?v=ivs', ic: 'schedule', d: 'Booked, done and awaiting feedback.', needs: 'all' },
+      { k: 'recruitment', n: 'Client offers', to: '/recruitment?v=offers', ic: 'mail', d: 'Released, accepted and declined.', needs: 'all' },
+      { k: 'recruitment', n: 'Talent pool', to: '/recruitment?v=pool', ic: 'star', d: 'People worth going back to.', needs: 'all' },
+      { k: 'recruitment', n: 'Recruiter activity', to: '/recruitment?v=activity', ic: 'timer', d: 'What each desk has produced.', needs: 'all' },
+      { k: 'recruitment', n: 'Recruitment reports', to: '/recruitment?v=reports', ic: 'reports', d: 'Conversion, ageing and fill rate.', needs: 'all' },
+      { k: 'placements', n: 'Placements', ic: 'done', d: 'Consultants on assignment.', needs: 'all' },
+      { k: 'bench', n: 'Bench & consultants', ic: 'briefcase', d: 'Who is available, and for how long.', needs: 'all' },
+      { k: 'clients', n: 'Clients & accounts', ic: 'client', d: 'Accounts, contacts and their SOWs.', needs: 'all' },
+      { k: 'vendors', n: 'Vendors', ic: 'building', d: 'Supplier panel and their performance.', needs: 'all' },
+      { k: 'billing', n: 'Billing & AR', ic: 'invoice', d: 'Invoices raised and money owed.', needs: 'all' },
+      { k: 'requirements', n: 'Requirements (legacy)', ic: 'document', d: 'Superseded by Client job orders — kept so older requirements stay readable.', needs: 'all' },
     ],
   },
 
@@ -427,8 +445,8 @@ export const NAV: NavGroup[] = [
       { k: 'assets', n: 'Asset register', to: '/assets?v=reg', ic: 'laptop', d: 'Every asset, where it is and who holds it.' },
       { k: 'assets', n: 'Issue & return', to: '/assets?v=alloc', ic: 'swap', d: 'Hand kit out, and take it back.' },
       { k: 'software', n: 'Software assets', ic: 'puzzle', d: 'Licences, seats and what renews next.' },
-      { k: 'software', n: 'Licence renewals', to: '/software?v=renewals', ic: 'clock', d: 'What the company re-signs, and when.', roles: ['manager', 'admin'] },
-      { k: 'software', n: 'Idle seats', to: '/software?v=dormant', ic: 'warn', d: 'Seats nobody opens, and their cost.', roles: ['manager', 'admin'] },
+      { k: 'software', n: 'Licence renewals', to: '/software?v=renewals', ic: 'clock', d: 'What the company re-signs, and when.', needs: 'team' },
+      { k: 'software', n: 'Idle seats', to: '/software?v=dormant', ic: 'warn', d: 'Seats nobody opens, and their cost.', needs: 'team' },
     ],
   },
 
@@ -456,7 +474,7 @@ export const NAV: NavGroup[] = [
     ic: 'reports',
     k: 'reports',
     desc: 'The numbers, across every module.',
-    roles: ['manager', 'admin'],
+    needs: 'team',
     items: [
       { k: 'reports', n: 'All reports', ic: 'reports', d: 'Every report, by area.' },
       { k: 'reports', n: 'Employee reports', to: '/reports?v=headcount', ic: 'people', d: 'Headcount and distribution.' },
@@ -467,15 +485,15 @@ export const NAV: NavGroup[] = [
       { k: 'reports', n: 'Performance & talent', to: '/reports?v=talent', ic: 'performance', d: 'Ratings, goals and recognition.' },
       /* A helpdesk tab, but it is analytics, and its own roles already match
          this group's gate exactly — so shelving it here moves nothing. */
-      { k: 'helpdesk', n: 'Helpdesk SLA & analytics', to: '/helpdesk?v=sla', ic: 'timer', d: 'Response times against target.', roles: ['manager', 'admin'] },
-      { k: 'reports', n: 'Payroll reports', to: '/reports?v=payroll', ic: 'payroll', d: 'Gross, deductions and net by month.', roles: ['admin'] },
-      { k: 'reports', n: 'Attrition & retention', to: '/reports?v=attrition', ic: 'down', d: 'Exits, reasons and tenure.', roles: ['admin'] },
-      { k: 'reports', n: 'Expense & cost', to: '/reports?v=spend', ic: 'invoice', d: 'Claims, loans and cost per head.', roles: ['admin'] },
-      { k: 'reports', n: 'Statutory compliance', to: '/reports?v=compliance', ic: 'policy', d: 'PF, ESI, PT and TDS remittances.', roles: ['admin'] },
+      { k: 'helpdesk', n: 'Helpdesk SLA & analytics', to: '/helpdesk?v=sla', ic: 'timer', d: 'Response times against target.', needs: 'team' },
+      { k: 'reports', n: 'Payroll reports', to: '/reports?v=payroll', ic: 'payroll', d: 'Gross, deductions and net by month.', needs: 'all' },
+      { k: 'reports', n: 'Attrition & retention', to: '/reports?v=attrition', ic: 'down', d: 'Exits, reasons and tenure.', needs: 'all' },
+      { k: 'reports', n: 'Expense & cost', to: '/reports?v=spend', ic: 'invoice', d: 'Claims, loans and cost per head.', needs: 'all' },
+      { k: 'reports', n: 'Statutory compliance', to: '/reports?v=compliance', ic: 'policy', d: 'PF, ESI, PT and TDS remittances.', needs: 'all' },
       { k: 'customreports', n: 'Custom reports', ic: 'grid', d: 'Questions somebody saved, run as you.' },
       { k: 'exports', n: 'Export centre', ic: 'download', d: 'Take data out, and see who has.' },
       { k: 'exports', n: 'Export register', to: '/exports?v=register', ic: 'policy', d: 'What left, when, and who took it.' },
-      { k: 'exec', n: 'Executive view', ic: 'chart', d: 'The company on one page.', roles: ['admin'] },
+      { k: 'exec', n: 'Executive view', ic: 'chart', d: 'The company on one page.', needs: 'all' },
     ],
   },
 
@@ -488,7 +506,7 @@ export const NAV: NavGroup[] = [
     ic: 'settings',
     k: 'settings',
     desc: 'Accounts, permissions, integrations and the audit trail.',
-    roles: ['admin'],
+    needs: 'all',
     items: [
       { k: 'users', n: 'User management', ic: 'person', d: 'Create, approve and retire accounts.' },
       { k: 'settings', n: 'Roles & permissions', to: '/settings?v=rbac', ic: 'lock', d: 'What each role may reach.' },
@@ -497,7 +515,7 @@ export const NAV: NavGroup[] = [
       { k: 'integrations', n: 'Integrations', ic: 'puzzle', d: 'What this tenant connects to, and what it does not.' },
       { k: 'integrations', n: 'API keys', to: '/integrations?v=keys', ic: 'lock', d: 'Credentials issued to other systems.' },
       { k: 'security', n: 'Security & access review', ic: 'lock', d: 'Controls, posture and the access review.' },
-      { k: 'users', n: 'Login history', to: '/users?v=signins', ic: 'clock', d: 'Sessions started, ended and refused, across every account.', roles: ['manager', 'admin'] },
+      { k: 'users', n: 'Login history', to: '/users?v=signins', ic: 'clock', d: 'Sessions started, ended and refused, across every account.', needs: 'team' },
       { k: 'settings', n: 'Audit log', to: '/settings?v=audit', ic: 'document', d: 'Who changed what, and when.' },
     ],
   },

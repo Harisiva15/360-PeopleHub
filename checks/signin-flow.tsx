@@ -200,7 +200,7 @@ const IDENTITY = {
 const { NAV } = await import('../src/nav');
 const MODULES = [...new Set(NAV.flatMap((grp) => grp.items.map((i) => i.k)))];
 const WHO = {
-  role: 'admin',
+  role: 'company_admin',
   summary: 'Administrator',
   modules: MODULES,
   rules: Object.fromEntries(
