@@ -25,7 +25,7 @@
     "check:lastadmin": "node --import=tsx/esm scripts/last-admin.test.mjs",
     "check:managergates": "node --import=tsx/esm scripts/manager-gates.test.mjs",
     "check:invite": "node --experimental-strip-types scripts/invite.test.mjs",
-    "check:photo": "node --import=tsx/esm scripts/photo.test.mjs",
+    "check:photo": "node --experimental-strip-types scripts/photo.test.mjs",
     "check:storage": "node --experimental-strip-types scripts/storage.test.mjs",
     "check:adminapi": "node --experimental-strip-types scripts/admin-api.test.mjs",
     "check:inviterecover": "node --import=tsx/esm scripts/invite-recover.test.mjs",
