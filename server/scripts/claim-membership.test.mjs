@@ -157,7 +157,7 @@ async function withCase(email, setup) {
 const invited = (age = '0 days') => async ({ c, one, tenant, emp }) => (await one(
   `INSERT INTO tenant_membership
      (tenant_id, user_id, role, employee_id, status, invited_at, invite_sent_at)
-   VALUES ($1, NULL, 'manager', $2, 'invited', now(), now() - $3::interval)
+   VALUES ($1, NULL, 'employee', $2, 'invited', now(), now() - $3::interval)
    RETURNING id`, [tenant, emp, age])).id;
 
 console.log('\nwhat a first sign-in may claim\n');
@@ -252,7 +252,7 @@ console.log('\nwhat a first sign-in may claim\n');
         + `${ADMIN_CODE} in this database, so there is no live session to check`);
     } else {
       ok('6. the existing administrator is active with a user',
-        admin.status === 'active' && admin.user_id !== null && admin.role === 'admin',
+        admin.status === 'active' && admin.user_id !== null && admin.role === 'company_admin',
         `status=${admin.status} role=${admin.role}`);
 
       /* auth_membership is what a returning session uses; the claim is not
@@ -260,7 +260,7 @@ console.log('\nwhat a first sign-in may claim\n');
       const live = await c.query('SELECT * FROM auth_membership($1)', [admin.user_id]);
       ok('   and auth_membership still resolves them', live.rows.length === 1,
         `returned ${live.rows.length} rows`);
-      ok('   with the admin role', live.rows[0]?.role === 'admin');
+      ok('   with the admin role', live.rows[0]?.role === 'company_admin');
     }
   } finally {
     await c.end();

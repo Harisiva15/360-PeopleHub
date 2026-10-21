@@ -183,7 +183,7 @@ import {
   agentFrom, recordLoginEvent, listLoginHistory, listTenantLoginHistory,
 } from '../modules/users/loginHistory.ts';
 import {
-  effectiveModulesForTenant, effectiveRuleFor, fromLegacyRole, legacyHasReports,
+  effectiveModulesForTenant, effectiveRuleFor,
   ROLE_SUMMARY, ROLES,
 } from '../auth/policy.ts';
 import type { Role } from '../auth/policy.ts';

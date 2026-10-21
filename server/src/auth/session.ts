@@ -20,10 +20,10 @@ import { verifyAccessToken, AuthError } from './verify.ts';
 import { REFUSED, assertSecondFactorSatisfied as checkFactor } from './rules.ts';
 import type { SupabaseClaims } from './verify.ts';
 import type { Role } from './policy.ts';
-import { normaliseRole } from './policy.ts';
+import { asRole } from './policy.ts';
 
 /* The one entry point for a token's role; the mapping lives in policy.ts. */
-export { normaliseRole };
+export { asRole };
 import { withoutTenantForAuth } from '../tenancy/context.ts';
 import type { Caller } from '../tenancy/context.ts';
 
@@ -37,7 +37,7 @@ interface MembershipRow {
    *
    * Not `Caller['role']`: during the rollout this is either vocabulary, and
    * typing it as the new one would have asserted the migration had already
-   * happened. `normaliseRole` below is what makes the claim.
+   * happened. `asRole` below is what makes the claim.
    */
   role: string;
   employee_id: string | null;
@@ -138,7 +138,7 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
         tenantId: claimed.tenant_id,
         userId: claims.sub,
         employeeId: claimed.employee_id,
-        role: normaliseRole(claimed.role),
+        role: asRole(claimed.role),
         hasReports: await hasReportsFor(claims.sub),
       };
     }
@@ -161,7 +161,7 @@ export async function callerFromToken(token: string | undefined): Promise<Caller
     tenantId: row.tenant_id,
     userId: claims.sub,
     employeeId: row.employee_id,
-    role: normaliseRole(row.role),
+    role: asRole(row.role),
     hasReports: await hasReportsFor(claims.sub),
   };
 }

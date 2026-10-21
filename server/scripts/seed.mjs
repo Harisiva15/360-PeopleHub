@@ -399,7 +399,7 @@ try {
       `INSERT INTO employee (tenant_id, code, full_name, work_email, legal_entity_id,
                              joined_on, department_id, site_id, grade_id, shift_id,
                              designation, app_role, currency)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, $6, $7, $8, $9, 'Administrator', 'admin', 'INR')
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, $6, $7, $8, $9, 'Administrator', 'company_admin', 'INR')
        ON CONFLICT (tenant_id, code)
        DO UPDATE SET work_email = EXCLUDED.work_email, full_name = EXCLUDED.full_name
        RETURNING id`,
@@ -424,9 +424,9 @@ try {
   if (linkUserId) {
     await q(
       `INSERT INTO tenant_membership (tenant_id, user_id, role, employee_id, status, accepted_at)
-       VALUES ($1, $2, 'admin', $3, 'active', now())
+       VALUES ($1, $2, 'company_admin', $3, 'active', now())
        ON CONFLICT (tenant_id, user_id)
-       DO UPDATE SET role = 'admin', employee_id = EXCLUDED.employee_id, status = 'active'`,
+       DO UPDATE SET role = 'company_admin', employee_id = EXCLUDED.employee_id, status = 'active'`,
       [tenant, linkUserId, employeeId]);
     created.push(`membership for auth user ${linkUserId}`);
   }

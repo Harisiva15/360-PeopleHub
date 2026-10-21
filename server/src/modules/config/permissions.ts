@@ -26,13 +26,18 @@ export class PermissionError extends Error {
 }
 
 /**
- * Every spelling of the administrator layer a `role_permission` row may use.
+ * The administrator layer, as a `role_permission` row may name it.
  *
- * Expand leaves both vocabularies valid in the column, so a guard that names
- * one of them guards half the rows. Step C narrows this to `['company_admin']`,
- * alongside the matching list in `users/service.ts`.
+ * It read `['admin', 'company_admin']` through expand, when both were valid in
+ * the column and a guard naming one of them guarded half the rows. Step C
+ * (0060) narrowed that constraint, so 'admin' can no longer appear.
+ *
+ * Note what step C did *not* remove from this table: `manager` is still legal
+ * here, because this column holds a policy layer rather than an assigned role
+ * and an override may be written against the derived manager layer. It is the
+ * one of the four role constraints that kept a value.
  */
-const ADMIN_LAYERS = ['admin', 'company_admin'];
+const ADMIN_LAYERS = ['company_admin'];
 
 const SCOPES: Scope[] = ['none', 'own', 'team', 'all'];
 const isScope = (v: unknown): v is Scope =>
@@ -117,11 +122,11 @@ export async function setPermissions(
      * session somebody has to be talked through on the phone.
      */
     /*
-     * Both spellings, for the same reason the last-administrator count uses
-     * both: a `role_permission` row is a database value, and until step B has
-     * mapped them the layer may still be keyed 'admin'. Asking only for
-     * 'company_admin' would have let a tenant close Settings against the
-     * layer that is actually in force. Step C drops the old name.
+     * One spelling since step C, for the same reason the last-administrator
+     * count has one: a `role_permission` row is a database value, and 0060's
+     * CHECK is what makes 'admin' unwritable here. While both were legal,
+     * asking only for 'company_admin' would have let a tenant close Settings
+     * against the layer that was actually in force.
      */
     if (p.module === 'settings' && ADMIN_LAYERS.includes(p.role as string) && p.read === 'none') {
       throw new PermissionError(

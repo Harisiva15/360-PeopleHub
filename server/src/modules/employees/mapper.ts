@@ -17,7 +17,7 @@
  *      present. Empty is honest; fabricated would not be.
  */
 
-import { normaliseRole } from '../../auth/policy.ts';
+import { asRole } from '../../auth/policy.ts';
 import type { Role } from '../../auth/policy.ts';
 
 /*
@@ -169,16 +169,21 @@ export function toEmployee(r: EmployeeRow, showCompensation: boolean): Employee 
     emergency: r.emergency_contact ?? '',
     skills: r.skills ?? [],
     /*
-     * Normalised, not cast.
+     * Checked, not cast — and the history here is the argument for keeping it
+     * that way.
      *
-     * The comment here used to say a CHECK constraint restricted this column
-     * to three values so the narrowing was safe. 0056 widened that constraint
-     * to six, which made the claim false and the cast a lie: during expand the
-     * column may hold 'admin', and this field is typed `Role`, so an old value
-     * would travel to the frontend as though it were a new one and fail the
-     * `isAppRole` guard there.
+     * This comment once said a CHECK constraint restricted the column to three
+     * values, so narrowing to `Role` was safe. 0056 widened that constraint to
+     * six for the expand phase, which made the claim false and the cast a lie:
+     * an old value would have travelled to the frontend as though it were a new
+     * one and failed the `isAppRole` guard there.
+     *
+     * 0060 has narrowed it again, to exactly the four this field is typed as,
+     * so a cast would be true today. It stays a function call because that is
+     * the second time this column's constraint has moved under a comment
+     * asserting it could not, and `asRole` costs a switch statement.
      */
-    role: normaliseRole(r.app_role),
+    role: asRole(r.app_role),
     reports: r.reports ?? [],
     shift: r.shift_code ?? 'GEN',
     probation: r.on_probation,

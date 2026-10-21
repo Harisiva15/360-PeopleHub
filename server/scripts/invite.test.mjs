@@ -145,7 +145,7 @@ async function withMembership(status, opts, body) {
        (tenant_id, user_id, role, employee_id, status, invited_at, invite_sent_at)
      VALUES ($1, NULL, $2, $3, 'invited', now(), $4)
      RETURNING id`,
-    [ctx.tenant, opts.role ?? 'manager', emp, opts.sentAt ?? null])).rows[0].id;
+    [ctx.tenant, opts.role ?? 'employee', emp, opts.sentAt ?? null])).rows[0].id;
 
   if (status !== 'invited') {
     await admin.query(
@@ -330,7 +330,7 @@ console.log('\nwhat is sent, and what is written down\n');
      * the CHECK to accept both vocabularies. Step C tightens it to the new
      * names only, and this fixture has to change then.
      */
-    await withMembership('invited', { role: 'manager' }, async ({ mem, email }) => {
+    await withMembership('invited', { role: 'employee' }, async ({ mem, email }) => {
       await inviteUser(ADMIN, mem);
       ok('8. the address invited is the employee\'s own', api.calls[0]?.email === email,
         `asked for ${api.calls[0]?.email}`);
@@ -340,7 +340,7 @@ console.log('\nwhat is sent, and what is written down\n');
       const rows = await auditFor(mem);
       ok('9. an audit row is written', rows.length === 1, `${rows.length} rows`);
       ok('   naming the first send', rows[0]?.action === 'user.invited', rows[0]?.action);
-      ok('   carrying the role', /manager/.test(rows[0]?.detail ?? ''));
+      ok('   carrying the role', /employee/.test(rows[0]?.detail ?? ''));
 
       const secret = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
       const blob = JSON.stringify(rows);

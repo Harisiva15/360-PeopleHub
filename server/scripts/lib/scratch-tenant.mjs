@@ -148,7 +148,7 @@ export async function withScratchTenant(db, body) {
       `INSERT INTO employee
          (tenant_id, code, full_name, work_email, status, app_role,
           department_id, site_id, legal_entity_id, shift_id, joined_on, currency, ctc)
-       VALUES ($1, 'ZZ001', 'ZZ Scratch Admin', $2, 'active', 'admin',
+       VALUES ($1, 'ZZ001', 'ZZ Scratch Admin', $2, 'active', 'company_admin',
                $3, $4, $5, $6, DATE '2020-01-01', 'INR', 1200000)
        RETURNING id`,
       [`zz-scratch-admin-${suffix}@360.technology`, dept.id, site.id, entity.id, shift.id]);
@@ -167,7 +167,7 @@ export async function withScratchTenant(db, body) {
      */
     await db.query(
       `INSERT INTO tenant_membership (tenant_id, user_id, role, employee_id, status)
-       VALUES ($1, NULL, 'admin', $2, 'invited')`, [tenant, admin.id]);
+       VALUES ($1, NULL, 'company_admin', $2, 'invited')`, [tenant, admin.id]);
 
     return await body({
       tenant,

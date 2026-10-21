@@ -155,7 +155,7 @@ await withScratchTenant(db, async (ctx) => {
   const activeAdmins = async () => (await db.query(
     `SELECT count(*)::int n FROM tenant_membership
       WHERE tenant_id = $1 AND role = ANY($2) AND status = 'active'`,
-    [ctx.tenant, ['admin', 'company_admin']])).rows[0].n;
+    [ctx.tenant, ['company_admin']])).rows[0].n;
 
   console.log(`${NL}the demotion half${NL}`);
 
@@ -188,42 +188,84 @@ await withScratchTenant(db, async (ctx) => {
   ok('  and the membership is still active', (await statusOf(two)) === 'active',
     `status is now ${await statusOf(two)}`);
 
-  console.log(`${NL}both halves count the old spelling${NL}`);
+  console.log(`${NL}the old spelling cannot be written at all${NL}`);
 
   /*
-   * The point of the suite. With the only other administrator spelled `admin`
-   * — a row step B has not reached yet — demoting `two` must be *allowed*,
-   * because the count has to find the legacy row. If `ADMIN_ROLES` asked for
-   * 'company_admin' alone the count would be zero and this would be refused,
-   * which is the failure that would have hidden the real one: the guard
-   * passing while the last administrator was removable.
+   * What stood here, and why this replaces it.
+   *
+   * Until step C a membership could legally hold 'admin', and the block here
+   * proved the guard counted it: with the only *other* administrator spelled
+   * the old way, demoting the new-spelled one had to be allowed, because
+   * `ADMIN_ROLES` asking for 'company_admin' alone would have counted zero and
+   * refused. That refusal would have looked like the guard working while
+   * hiding the real fault — the last administrator removable, because the
+   * count could not see the row that was holding the door.
+   *
+   * 0060 narrowed the CHECK constraints, so that row cannot exist and the
+   * scenario cannot be built. The invariant itself is covered above, in the
+   * only vocabulary there now is.
+   *
+   * What is left worth asserting is the *premise*. "There is one spelling" is
+   * now load-bearing for both halves of this suite, and the thing that makes
+   * it true is the database, not everybody who writes a role remembering to.
+   * So these four prove the constraint refuses the old value on insert and on
+   * update, in both columns that hold a role. If a later migration widens
+   * those constraints again — the way 0056 widened them for expand — these
+   * fail loudly, instead of the two halves above quietly stopping covering a
+   * case that had become possible again.
    */
-  const legacyEmp = await employee('ZZ Legacy Admin');
-  const legacy = await membershipFor(legacyEmp, 'admin');
-  ok('a membership may still hold the old value during expand',
-    (await roleOf(legacy)) === 'admin', `role is ${await roleOf(legacy)}`);
+  const refusedByCheck = async (label, sql, params, constraint) => {
+    try {
+      await db.query(sql, params);
+      ok(label, false, 'the write was accepted');
+    } catch (err) {
+      /*
+       * The code matters as much as the failure. A typo in a column name also
+       * throws, and would pass a test that only asked whether something went
+       * wrong — 23514 is check_violation, and naming the constraint says which
+       * one did the refusing.
+       */
+      ok(label, err?.code === '23514' && err?.constraint === constraint,
+        `${err?.code ?? '?'} ${err?.constraint ?? '?'}: ${String(err?.message ?? '').slice(0, 70)}`);
+    }
+  };
 
-  const e = await attempt(() => users.updateUser(A, two, { role: 'employee' }));
-  ok('an old-spelled administrator counts, so the other is no longer the last',
-    e === null, `refused with: ${e?.message}`);
-  ok('  and the demotion went through', (await roleOf(two)) === 'employee',
-    `role is now ${await roleOf(two)}`);
+  const probeUser = (await db.query(
+    'INSERT INTO auth.users (id) VALUES (gen_random_uuid()) RETURNING id')).rows[0].id;
+  authUsers.push(probeUser);
+  const probeEmp = await employee('ZZ Constraint Probe');
 
-  /* Now the legacy row is the only administrator left, and is protected. */
-  ok('  leaving the old-spelled one alone in service',
+  await refusedByCheck(
+    "tenant_membership.role refuses 'admin' on insert",
+    `INSERT INTO tenant_membership (tenant_id, user_id, role, employee_id, status)
+     VALUES ($1, $2, 'admin', $3, 'active')`,
+    [ctx.tenant, probeUser, probeEmp],
+    'tenant_membership_role_check');
+
+  await refusedByCheck(
+    '  and on update, which is the way a demotion would write it',
+    "UPDATE tenant_membership SET role = 'admin' WHERE id = $1",
+    [two],
+    'tenant_membership_role_check');
+
+  await refusedByCheck(
+    "employee.app_role refuses 'admin' on insert",
+    `INSERT INTO employee (tenant_id, code, full_name, work_email, status, app_role,
+                           department_id, site_id, legal_entity_id, shift_id, joined_on)
+     VALUES ($1, 'ZZPRB1', 'ZZ Constraint Probe Two', 'zz-probe-two@360.technology',
+             'active', 'admin', $2, $3, $4, $5, CURRENT_DATE)`,
+    [ctx.tenant, deptId, siteId, ctx.entityId, ctx.shiftId],
+    'employee_app_role_check');
+
+  await refusedByCheck(
+    '  and on update',
+    "UPDATE employee SET app_role = 'admin' WHERE id = $1",
+    [probeEmp],
+    'employee_app_role_check');
+
+  /* None of those wrote anything, so the one administrator is still the one. */
+  ok('  and none of that changed who is an administrator',
     (await activeAdmins()) === 1, `found ${await activeAdmins()}`);
-
-  await refused('and it is protected in turn, under the old name',
-    () => users.updateUser(A, legacy, { role: 'employee' }),
-    /last (active )?administrator/i);
-  ok('  and still holds it', (await roleOf(legacy)) === 'admin',
-    `role is now ${await roleOf(legacy)}`);
-
-  await refused('  and cannot be deactivated either',
-    () => users.setUserStatus(A, legacy, 'Inactive'),
-    /last (active )?administrator/i);
-  ok('    and is still active', (await statusOf(legacy)) === 'active',
-    `status is now ${await statusOf(legacy)}`);
 
   console.log(`${NL}and nobody demotes themselves${NL}`);
 

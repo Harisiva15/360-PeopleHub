@@ -189,11 +189,12 @@ export async function raiseTicket(caller: Caller, draft: NewTicket): Promise<Tic
     const assignee = await db.query(
       `SELECT e.id FROM employee e
         WHERE e.department_id = $1 AND e.status <> 'exited'
-        -- Both vocabularies while the column may hold either; step C narrows
-        -- this to 'company_admin'. Ordering on a value that stopped existing
-        -- would quietly pick by joining date alone.
+        -- One vocabulary since step C (0060) took 'admin' out of the CHECK on
+        -- app_role. Still a list, and still passed as a parameter: ordering on
+        -- a value the column cannot hold would quietly fall back to picking by
+        -- joining date alone, which is the failure this line is shaped around.
         ORDER BY (e.app_role = ANY($2)) DESC, e.joined_on LIMIT 1`,
-      [cat.rows[0].owning_department_id, ['admin', 'company_admin']]);
+      [cat.rows[0].owning_department_id, ['company_admin']]);
 
     const { rows } = await db.query(
       `INSERT INTO ticket

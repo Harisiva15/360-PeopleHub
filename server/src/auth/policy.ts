@@ -388,59 +388,53 @@ export const POLICY: Record<string, ModulePolicy> = {
 export const ROLES: Role[] = ['employee', 'hr_admin', 'finance_admin', 'company_admin'];
 
 /* ---------------------------------------------------------------------------
- * A temporary bridge, which the service sweep deletes
+ * The temporary bridge is gone
  * ---------------------------------------------------------------------------
  *
- * `Caller.role` still carries the old three values, and 203 `caller.role`
- * comparisons across 47 services still read them. Converting those is a
- * *semantic* change, not a rename: `caller.role !== 'admin'` has to become a
- * question about a module and a verb, because renaming it to `company_admin`
- * would hand hr_admin and finance_admin nothing and defeat the whole model.
+ * `LegacyRole`, `fromLegacyRole` and `legacyHasReports` lived here while
+ * `Caller.role` still carried 'admin' | 'manager' | 'employee', mapping the
+ * old names onto the new ones at the few places that already asked the policy.
+ * `Caller` carries a `Role` now and `hasReports` comes from the reporting
+ * tree, so the last caller went with that change; `http/app.ts` was still
+ * importing both names and using neither.
  *
- * So that conversion is its own reviewable step, and until it lands this maps
- * the old names onto the new ones at the handful of places that already ask
- * the policy. The mapping is the migration's: `admin` became `company_admin`,
- * `manager` became an employee whose team scope is derived.
- *
- * **This function is scheduled for deletion.** When `Caller.role` carries a
- * `Role`, nothing needs it, and `checks/roles.ts` asserts it has no callers
- * left so it cannot quietly become permanent.
- */
-export type LegacyRole = 'admin' | 'manager' | 'employee';
-
-export const fromLegacyRole = (legacy: LegacyRole): Role =>
-  (legacy === 'admin' ? 'company_admin' : 'employee');
-
-/**
- * Whether a legacy caller should be treated as having reports.
- *
- * `manager` was an assigned role, so anybody holding it was presumed to answer
- * for somebody. Until the reporting tree is the authority, holding the old role
- * stands in for having reports — which keeps today's managers working through
- * the bridge rather than silently losing their team the moment the policy
- * widened.
- */
-export const legacyHasReports = (legacy: LegacyRole): boolean => legacy === 'manager';
+ * One note for the next bridge, because this one did not hold up its own
+ * promise: its comment said `checks/roles.ts` asserted it had no callers left,
+ * "so it cannot quietly become permanent". No such assertion exists in that
+ * file. The bridge outlived its purpose by however long it took somebody to
+ * read the imports, which is exactly what the missing check was supposed to
+ * prevent. A deletion deadline enforced by a comment is not enforced.
+ * --------------------------------------------------------------------------- */
 
 /**
  * The database value, as a role.
  *
- * Step A of the cutover leaves both vocabularies valid in the column, so this
- * is the one place that has to understand both:
+ * This was `normaliseRole`, and it translated between two vocabularies while
+ * both were legal in the column:
  *
  *     admin     ->  company_admin
- *     manager   ->  employee, because answering for other people is not a
- *                   role. The layer comes from the reporting tree, which
- *                   `hasReports` below reads, so a manager keeps every
- *                   manager grant without the word surviving.
- *     employee  ->  employee
+ *     manager   ->  employee
  *
- * Anything unrecognised becomes `employee`, the narrowest role there is,
- * rather than throwing: a login whose row holds a value nobody has heard of
- * should be able to see their own payslip and nothing else, not be unable to
- * sign in. The policy then fails closed on everything beyond that.
+ * Step C (0060) removed both of those values from every CHECK constraint that
+ * holds a role, so neither can be written any more and neither arm can fire.
+ * They are gone, and with them the name: nothing is being normalised now, a
+ * string is being admitted into a union type.
  *
- * Step C deletes this, once no row holds an old value.
+ * ## Why the fallback stays
+ *
+ * It would be tidier to throw on an unknown value, and it would be wrong.
+ *
+ * The one case this has to survive is the next expand phase. Adding a role
+ * means a migration that widens the constraint, and a migration runs before
+ * the deploy that understands it — so for that window the database legally
+ * holds a role this code has never heard of. That window is not hypothetical
+ * here; it is how steps A and B were run, twice.
+ *
+ * Throwing would make it a failure to sign in. Returning the narrowest role
+ * there is makes it "you can see your own payslip and nothing else" until the
+ * deploy lands, and `scopeOf` fails closed on everything beyond that. The
+ * database constraint is the guarantee that this cannot happen by accident;
+ * the fallback is what happens when it happens on purpose.
  *
  * It lives here rather than in `session.ts` for a dull but real reason:
  * `employees/mapper.ts` reads `app_role` out of a row too, and importing it
@@ -448,19 +442,15 @@ export const legacyHasReports = (legacy: LegacyRole): boolean => legacy === 'man
  * suddenly required DATABASE_URL and `check:payvisibility` could not even
  * load. This module is the vocabulary's home and has no environment of its
  * own. `session.ts` re-exports it, so it is still the one entry point for a
- * token's role.
+ * role read out of a row.
  */
-export const normaliseRole = (value: string): Role => {
+export const asRole = (value: string): Role => {
   switch (value) {
     case 'company_admin':
     case 'hr_admin':
     case 'finance_admin':
     case 'employee':
       return value;
-    case 'admin':
-      return 'company_admin';
-    case 'manager':
-      return 'employee';
     default:
       return 'employee';
   }

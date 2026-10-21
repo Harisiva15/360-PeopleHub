@@ -48,18 +48,23 @@ export class UserError extends Error {
 }
 
 /**
- * Every spelling of "administrator" the database may hold.
+ * What "administrator" is, as a column value.
  *
- * These are column values, not `Caller.role`, so the normaliser in
- * `session.ts` never sees them: during expand the column holds either name.
- * Asking for 'admin' alone would count zero the moment step B ran — the guard
- * passing silently with the last administrator removable. Step C narrows this
- * to `['company_admin']`.
+ * It read `['admin', 'company_admin']` through expand, because the column
+ * could hold either name and asking for one of them would have counted half
+ * the administrators — the guard passing in silence with the last one
+ * removable. Step C (0060) removed 'admin' from the CHECK constraints on
+ * `tenant_membership.role` and `employee.app_role`, so the column cannot hold
+ * it and the list is down to the name that is left.
+ *
+ * Still a list rather than a string, and still column values rather than
+ * `Caller.role`: a second administrator role would join it here, and
+ * `asRole()` never sees these.
  *
  * Shared by both halves of the last-administrator invariant: deactivation and
  * demotion. They were written apart, and only one of them had been expanded.
  */
-const ADMIN_ROLES = ['admin', 'company_admin'];
+const ADMIN_ROLES = ['company_admin'];
 
 /*
  * The vocabulary this module speaks is the policy's, not its own.
