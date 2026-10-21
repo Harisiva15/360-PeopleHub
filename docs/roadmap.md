@@ -335,6 +335,30 @@ next one.
 
 Two steps, with approval between them.
 
+### Known candidates, found incidentally
+
+Noticed while fixing the User Management screen on 2026-10-20, recorded here so
+2a does not have to rediscover them. **Not touched** — they are named for the
+inventory, not acted on.
+
+| table | code | name | headcount | why it looks like a test row |
+|---|---|---|---|---|
+| `department` | `ENGGG` | `eNGINEER` | **0** | tripled consonant, lowercase-leading name; `ENG`/`Engineering` already exists |
+| `department` | `SFADSA` | `sadsaD` | **0** | keyboard mash |
+
+Both are `active = true`, so both are currently offered by every department
+picker in the product — which is the visible cost of leaving them. Both have
+**zero employees** (checked 2026-10-20), so neither delete would move a person
+between departments; that makes these the cheapest possible first case for 2b's
+guarded-delete procedure, and a good one to rehearse it on.
+
+Worth noting for 2a's method: these two are *not* distinguishable from real
+configuration by audit evidence. The log records `department_created` twice on
+2026-10-13 and the real departments were seeded, so date and audit trail do not
+separate these from `HR` or `FIN`. Some of 2a will come down to a human reading
+names, which is worth knowing before the inventory is designed around evidence
+alone.
+
 ### 2a — read-only inventory
 
 135 public tables. Per table: total rows, rows reachable from VHM004 / VHM005 /

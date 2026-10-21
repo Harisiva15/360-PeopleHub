@@ -48,7 +48,7 @@
  * which this project has now done three times.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { ApiError, assertNoDemoIds } from '../src/services/http/client';
@@ -252,6 +252,81 @@ console.log('\na failed read is announced, not swallowed\n');
   ok('  and the toast is dismissed',
     /setToasts\(\(ts\) => ts\.filter\(\(t\) => t\.id !== id\)\)/.test(ctx),
     'a toast that never leaves becomes furniture');
+}
+
+/* ------------------------------------------------------------------ *
+ * 5. The screens that administer accounts read only the API
+ * ------------------------------------------------------------------ */
+
+/*
+ * The guard above is the net. This is the thing it kept catching.
+ *
+ * User Management wrote accounts into the real database while reading its
+ * department and location lists from `src/data/org.ts`. Four imports —
+ * `DEPTS`, `SITES`, `deptOf`, `siteOf` — across the list screen and the
+ * create/edit drawer. Two of them are not labels but *pickers*, and the bulk
+ * ones write to every selected person, so a drifted list does not merely
+ * mislabel a row: it sends a code the API refuses.
+ *
+ * And the lists had drifted in both directions. The static table offered
+ * locations this company does not operate and omitted three it does, so the
+ * office a new joiner would actually be posted to was the one the form could
+ * not name.
+ *
+ * Stated as "nothing in this module may import from src/data" rather than as a
+ * list of the four names, because the next import will have a different name.
+ *
+ * `src/data` is not being retired — a screen that only prints a department
+ * beside a name may read it. What may not is a screen that administers
+ * accounts, because every value it shows is a value it can also send.
+ */
+console.log('\nUser Management reads the API, not the demo dataset\n');
+{
+  const MODULE = 'src/modules/users';
+  const inModule = readdirSync(join(root, MODULE))
+    .filter((n) => n.endsWith('.ts') || n.endsWith('.tsx'));
+
+  ok(`the module has files to check (${inModule.length})`, inModule.length >= 4,
+    'a check that scans nothing passes for the wrong reason');
+
+  /* `from '…/data/…'` in any depth of relative path, and bare `src/data`. */
+  const DEMO_IMPORT = /from\s+['"](?:[./]*(?:\.\.\/)*data\/[^'"]*|[^'"]*\bsrc\/data\/[^'"]*)['"]/;
+
+  const offenders: string[] = [];
+  for (const name of inModule) {
+    const src = read(`${MODULE}/${name}`);
+    for (const [i, line] of src.split('\n').entries()) {
+      const t = line.trim();
+      if (t.startsWith('*') || t.startsWith('//')) continue;
+      if (DEMO_IMPORT.test(line)) offenders.push(`${MODULE}/${name}:${i + 1}  ${t}`);
+    }
+  }
+
+  ok(`no file in ${MODULE} imports from src/data (${offenders.length} found)`,
+    offenders.length === 0,
+    'this module writes what it displays — its lists must come from the server');
+  for (const o of offenders) console.log(`        ${o}`);
+
+  /* The detector must recognise the imports that were actually there. */
+  ok('the detector catches the imports that were there',
+    DEMO_IMPORT.test("import { DEPTS } from '../../data/org';")
+    && DEMO_IMPORT.test("import { DEPTS, SITES, deptOf, siteOf } from '../../data/org';"),
+    'it would pass the very lines it was written for');
+  ok('  and leaves the service imports alone',
+    !DEMO_IMPORT.test("import { useSites } from '../../services/sites';")
+    && !DEMO_IMPORT.test("import { useDepartments } from '../../services/departments';")
+    && !DEMO_IMPORT.test("import { useUsers } from './data';"),
+    'the replacement must not read as the offence');
+
+  /* And the replacements are actually wired, so this cannot pass by deletion. */
+  const drawer = read(`${MODULE}/Drawers.tsx`);
+  const list = read(`${MODULE}/index.tsx`);
+  ok('the drawer takes its departments from the server',
+    /useDepartments\(\)/.test(drawer) && /depts\.list\.map/.test(drawer));
+  ok('the list screen takes both from the server',
+    /useDepartments\(\)/.test(list) && /useSites\(\)/.test(list)
+    && /depts\.name\(/.test(list) && /sites\.name\(/.test(list),
+    'the pickers and the labels both have to move, not just the pickers');
 }
 
 console.log(failed

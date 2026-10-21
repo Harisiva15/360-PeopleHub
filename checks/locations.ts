@@ -118,7 +118,12 @@ const FILTERS_ONLY = new Set([
   'src/modules/events/index.tsx',
   'src/modules/lifecycle/index.tsx',
   'src/modules/shifts/Roster.tsx',
-  'src/modules/users/index.tsx',
+  /*
+   * `src/modules/users/index.tsx` was here, and should not have been. The
+   * exemption is for screens that only narrow rows already fetched, and that
+   * one also fed two bulk-update pickers — which write the chosen code to every
+   * selected person. It reads the service now.
+   */
   /* Dashboard charts the static book side by side; it is not a form. */
   'src/modules/dashboard/index.tsx',
 ]);

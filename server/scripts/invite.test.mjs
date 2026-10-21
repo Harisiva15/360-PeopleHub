@@ -67,7 +67,7 @@ const ADMIN_CODE = process.env.TEST_ADMIN_CODE ?? 'VHM004';
 
 const { default: pg } = await import('pg');
 const { sslConfig } = await import('./ssl.mjs');
-const { inviteUser, resendInvitation, passwordChanged, createUser } = await import('../src/modules/users/service.ts');
+const { inviteUser, resendInvitation, passwordChanged, createUser, nextEmployeeCode } = await import('../src/modules/users/service.ts');
 const { withScratchTenant } = await import('./lib/scratch-tenant.mjs');
 const { setAuthAdmin } = await import('../src/auth/adminApi.ts');
 
@@ -499,6 +499,52 @@ await withScratchTenant(admin, async (sctx) => {
         `${emp.rowCount} row(s) survived the rollback`);
       ok('    nor a membership', (await memFor(d.email)) === undefined);
       ok('    nor an audit trail', (await actionsFor(d.email)).length === 0);
+    } finally { setAuthAdmin(was); }
+  }
+
+  /*
+   * The suggested employee ID follows this tenant's own format.
+   *
+   * It used to be `E${n}` with the letter hard-coded and the number padded to
+   * three. That was wrong twice: it ignored the tenant's format — production
+   * uses VHM004, so it proposed E007 — and `/^E\d{3}$/` is exactly the shape
+   * the browser's demo-id guard refuses, so every suggestion was rejected by
+   * the client before it could be sent. "Suggest" could not produce a usable
+   * value for any tenant with fewer than a thousand people.
+   *
+   * The scratch tenant's only employee is ZZ001, so the successor is ZZ002:
+   * same prefix, same width.
+   */
+  {
+    /*
+     * Derived, not hard-coded. The cases above created people in this same
+     * scratch tenant and each one consumed a code, so a literal expectation
+     * here would encode the order of the whole block — and would have to be
+     * edited every time a case is added above, which is how an expectation
+     * stops meaning anything.
+     */
+    const mine = (await admin.query(
+      `SELECT code FROM employee WHERE tenant_id = $1 AND code ~ '^ZZ[0-9]+$'
+        ORDER BY code`, [sctx.tenant])).rows.map((r) => r.code);
+    const highest = Math.max(...mine.map((c) => Number(c.slice(2))));
+    const expected = `ZZ${String(highest + 1).padStart(3, '0')}`;
+
+    const first = await nextEmployeeCode(A);
+    ok('18. the suggestion keeps the tenant prefix and width',
+      first === expected,
+      `got ${first}, expected ${expected} after ${mine.join(', ')}`);
+    ok('    and is not the shape the client guard refuses',
+      !/^E\d{3}$/.test(first),
+      'every suggestion used to match it, so Suggest could never be saved');
+    ok('    and is not already taken', !mine.includes(first), first);
+
+    /* A gap, to prove the width is taken from the codes and not assumed. */
+    const api = spy(() => Promise.resolve({ kind: 'invited' }));
+    const was = setAuthAdmin(api);
+    try {
+      await createUser(A, draft({ sendInvitation: false, code: 'ZZ009' }));
+      const after = await nextEmployeeCode(A);
+      ok('    it follows the highest code, not the row count', after === 'ZZ010', after);
     } finally { setAuthAdmin(was); }
   }
 });

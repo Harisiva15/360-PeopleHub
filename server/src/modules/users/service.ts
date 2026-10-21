@@ -288,10 +288,54 @@ export async function userStats(caller: Caller) {
 export async function nextEmployeeCode(caller: Caller): Promise<string> {
   mayAdminister(caller);
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query<{ next: string }>(
-      `SELECT COALESCE(max(NULLIF(regexp_replace(code, '\\D', '', 'g'), ''))::int, 0) + 1 AS next
-         FROM employee`);
-    return `E${String(rows[0]?.next ?? 1).padStart(3, '0')}`;
+    const { rows } = await db.query<{ code: string }>(
+      "SELECT code FROM employee WHERE code IS NOT NULL AND btrim(code) <> ''");
+
+    /* Codes shaped as a prefix followed by digits — the only kind that has a
+       successor. Anything else is somebody's one-off and is skipped. */
+    const parsed = rows
+      .map((r) => /^(\D*?)(\d+)$/.exec(r.code.trim()))
+      .filter((m): m is RegExpExecArray => m !== null);
+
+    if (!parsed.length) {
+      throw new UserError(
+        'There is no existing employee ID to follow, so one cannot be suggested. '
+        + 'Type the first one — it sets the pattern the rest will follow.',
+        'invalid');
+    }
+
+    /*
+     * The prefix most of this tenant's people already use, rather than one
+     * chosen here.
+     *
+     * This used to return `E${n}` with the letter hard-coded and the number
+     * padded to three, which was wrong twice over. It ignored the tenant's own
+     * format — production uses VHM004, so it proposed E007 — and `/^E\d{3}$/`
+     * is exactly the shape the browser's demo-id guard refuses, so every
+     * suggestion was rejected by the client before it could be sent. "Suggest"
+     * could not produce a usable value for any tenant with fewer than a
+     * thousand people.
+     *
+     * Ties break alphabetically so the answer does not depend on row order.
+     */
+    const counts = new Map<string, number>();
+    for (const m of parsed) counts.set(m[1]!, (counts.get(m[1]!) ?? 0) + 1);
+    const prefix = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]![0];
+
+    const mine = parsed.filter((m) => m[1] === prefix);
+    const width = Math.max(...mine.map((m) => m[2]!.length));
+    const taken = new Set(rows.map((r) => r.code.trim()));
+
+    /* Skip anything already in use: the highest number is not always the last
+       one issued, and a collision is refused on save with a worse message. */
+    let n = Math.max(...mine.map((m) => Number(m[2]))) + 1;
+    let candidate = `${prefix}${String(n).padStart(width, '0')}`;
+    while (taken.has(candidate)) {
+      n += 1;
+      candidate = `${prefix}${String(n).padStart(width, '0')}`;
+    }
+    return candidate;
   });
 }
 
@@ -326,6 +370,21 @@ function mayGrant(caller: Caller, role: Role) {
   }
 }
 
+/**
+ * What `employee.employment_type` accepts.
+ *
+ * Mirrors `CHECK (employment_type IN (…))`, which migration 0003 put on the
+ * column and 0012 repeated on `joining_request`. Held here so the refusal can
+ * name the field, instead of Postgres refusing it as SQLSTATE 23514 and
+ * `statusFor` turning that into "this request breaks a rule the data must
+ * follow" — true, unhelpful, and identical for every CHECK in the schema.
+ *
+ * `check:users` asserts this list against the migration.
+ */
+export const EMPLOYMENT_TYPES = [
+  'permanent', 'contract', 'intern', 'consultant',
+] as const;
+
 const validate = (d: Partial<UserDraft>) => {
   if (d.name !== undefined && !d.name.trim()) throw new UserError('Give the person a name', 'invalid');
   if (d.email !== undefined) {
@@ -347,6 +406,21 @@ const validate = (d: Partial<UserDraft>) => {
   if (d.role !== undefined && !(ROLES as readonly string[]).includes(d.role)) {
     throw new UserError(`Not a role: ${ROLES.join(', ')}`, 'invalid');
   }
+  /*
+   * The employment type, named rather than left to the column.
+   *
+   * The screen sent display labels — `Full-time`, `Contract` — where the column
+   * wants `permanent`, `contract`. Every account created from the Users drawer
+   * was refused by the CHECK, and the answer said only that "this request
+   * breaks a rule the data must follow", which is the same sentence every CHECK
+   * in the schema produces. Nothing pointed at the field, so nothing pointed at
+   * the screen that was wrong.
+   */
+  if (d.empType !== undefined
+      && !(EMPLOYMENT_TYPES as readonly string[]).includes(d.empType)) {
+    throw new UserError(
+      `Not an employment type: ${EMPLOYMENT_TYPES.join(', ')}`, 'invalid');
+  }
 };
 
 export async function createUser(caller: Caller, d: UserDraft): Promise<UserAccount> {
@@ -355,6 +429,24 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
   mayGrant(caller, d.role);
   if (!d.dept) throw new UserError('Choose a department', 'invalid');
   if (!d.site) throw new UserError('Choose a location', 'invalid');
+  /*
+   * The membership records who raised and who approved it, and
+   * `tenant_membership_approval_is_attributed` refuses an approval with nobody
+   * attached. The INSERT below stamps `approved_at` whenever the status is not
+   * `pending_approval` and takes `approved_by` from the caller — so a caller
+   * with no employee record would set the first and not the second, and the
+   * CHECK would refuse it as another anonymous 23514.
+   *
+   * It should not be reachable, for the same reason as in `passwordChanged`: a
+   * membership with no `employee_id` cannot sign in. Named here anyway, because
+   * the alternative answer is a 400 that describes nothing.
+   */
+  if (!caller.employeeId) {
+    throw new UserError(
+      'Your own account is not linked to an employee record, so it cannot be '
+      + 'recorded as having created this one. Ask an administrator to check it.',
+      'invalid');
+  }
 
   return withTenant(caller, async (db) => {
     const { rows: dup } = await db.query(

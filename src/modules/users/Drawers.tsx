@@ -13,8 +13,8 @@
 import { useState } from 'react';
 import { sortBy } from '../../lib/collections';
 import { TODAY, ymd, fmtD } from '../../lib/dates';
-import { DEPTS } from '../../data/org';
 import { useSites } from '../../services/sites';
+import { useDepartments } from '../../services/departments';
 import { Badge, Banner, EmptyState, KV, Tabs } from '../../components/ui';
 import { Avatar } from '../../components/ui';
 import { Icon } from '../../components/icons';
@@ -32,7 +32,34 @@ import { ROLE_BLURB, ROLE_LABEL, RoleBadge, UserStatusBadge, whenOf } from './sh
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 const Req = () => <span className="req" aria-hidden="true">*</span>;
 
-const EMP_TYPES = ['Full-time', 'Contract', 'Intern', 'Consultant'];
+/**
+ * What `employee.employment_type` accepts, and what to call each one.
+ *
+ * The values are the column's, not the screen's. This list used to be
+ *
+ *     ['Full-time', 'Contract', 'Intern', 'Consultant']
+ *
+ * which are display labels, and it was used as both the label *and* the value.
+ * The column has carried `CHECK (employment_type IN ('permanent', 'contract',
+ * 'intern', 'consultant'))` since migration 0003, so every account created from
+ * this drawer violated it and came back as "this request breaks a rule the data
+ * must follow" — a 400 from SQLSTATE 23514 that named no field. The default,
+ * `Full-time`, was not even a case-variant of an accepted value, so the failure
+ * did not depend on which option was chosen.
+ *
+ * It broke editing too, in the other direction: the service returns the column
+ * verbatim, so `existing?.empType` is `permanent` and never matched an option,
+ * leaving the select blank on every edit.
+ *
+ * `check:users` asserts this list against the CHECK in the migration, so the
+ * two cannot drift apart again.
+ */
+const EMP_TYPES: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'permanent', label: 'Permanent' },
+  { value: 'contract', label: 'Contract' },
+  { value: 'intern', label: 'Intern' },
+  { value: 'consultant', label: 'Consultant' },
+];
 
 /* ---------------- create / edit ---------------- */
 
@@ -50,6 +77,7 @@ export function UserForm({
   const schedules = useWorkSchedules();
   const update = useUpdateUser();
   const nextCode = useNextCode();
+  const depts = useDepartments();
 
   const [tab, setTab] = useState<'basic' | 'more' | 'perm'>('basic');
   const [err, setErr] = useState('');
@@ -63,7 +91,7 @@ export function UserForm({
   const [designation, setDesignation] = useState(existing?.designation ?? '');
   const [site, setSite] = useState(existing?.site ?? '');
   const [managerId, setManagerId] = useState(existing?.managerId ?? '');
-  const [empType, setEmpType] = useState(existing?.empType ?? EMP_TYPES[0]);
+  const [empType, setEmpType] = useState(existing?.empType ?? EMP_TYPES[0]!.value);
   const [joinedOn, setJoinedOn] = useState(existing?.joinedOn ?? ymd(TODAY));
   const [role, setRole] = useState<AppRole>(existing?.role ?? 'employee');
   const [invite, setInvite] = useState(true);
@@ -180,9 +208,17 @@ export function UserForm({
 
           <div className="field">
             <label>Department <Req /></label>
-            <select className="input" value={dept} onChange={(e) => setDept(e.target.value)}>
-              <option value="">Choose…</option>
-              {DEPTS.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            {/*
+              * From the server, not `src/data`. The code chosen here is sent to
+              * `createUser`, which resolves it with `WHERE code = $1` and
+              * refuses anything it has not got — so the only list worth
+              * offering is the one that will accept the answer.
+              */}
+            <select className="input" value={dept} disabled={depts.loading}
+              onChange={(e) => setDept(e.target.value)}>
+              <option value="">{depts.loading ? 'Loading…' : 'Choose…'}</option>
+              {depts.list.map((d) =>
+                <option key={d.code} value={d.code}>{d.name}</option>)}
             </select>
           </div>
           <div className="field">
@@ -214,7 +250,7 @@ export function UserForm({
           <div className="field">
             <label>Employment type</label>
             <select className="input" value={empType} onChange={(e) => setEmpType(e.target.value)}>
-              {EMP_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              {EMP_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
           <div className="field">

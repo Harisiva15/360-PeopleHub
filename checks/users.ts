@@ -265,6 +265,85 @@ const EMPLOYEE: Caller = { role: 'employee', meId: DEMO_EMP.id };
     USERS.filter((u) => u.empId && !EMAP[u.empId]).length, 0);
   check('the roster is untouched', ACTIVE().length > 0, true);
 
+  /* ---------------------------------------------------------------- *
+   * The employment type the screen offers is one the column accepts
+   * ---------------------------------------------------------------- */
+
+  /*
+   * Three copies of one vocabulary, asserted against each other.
+   *
+   * The drawer offered `['Full-time', 'Contract', 'Intern', 'Consultant']` and
+   * used each string as the value as well as the label. The column has carried
+   * `CHECK (employment_type IN ('permanent', 'contract', 'intern',
+   * 'consultant'))` since migration 0003, so every account created from that
+   * screen was refused — and the answer was SQLSTATE 23514 rendered as "this
+   * request breaks a rule the data must follow", which is the same sentence
+   * every CHECK in the schema produces and names no field.
+   *
+   * The migration is the authority here, not either copy of the list: it is
+   * what the database will actually enforce. So this reads the CHECK out of the
+   * migration text and holds both lists against it.
+   */
+  const { readFileSync: rf } = await import('node:fs');
+  const { fileURLToPath: f2p } = await import('node:url');
+  const { dirname: dn, join: jn } = await import('node:path');
+  const repoRoot = jn(dn(f2p(import.meta.url)), '..');
+
+  const migration = rf(jn(repoRoot, 'server/db/migrations/0003_people.sql'), 'utf8');
+  const checkClause = /CHECK\s*\(\s*employment_type\s+IN\s*\(([^)]*)\)/i.exec(migration);
+  check('the employment_type CHECK is still in 0003', Boolean(checkClause), true);
+
+  const fromMigration = (checkClause?.[1] ?? '')
+    .split(',')
+    .map((s) => s.trim().replace(/^'|'$/g, ''))
+    .filter(Boolean)
+    .sort();
+  check(`the migration names four types (${fromMigration.join(', ')})`,
+    fromMigration.length, 4);
+
+  /*
+   * The server's copy, which produces the refusal message.
+   *
+   * Read as text, not imported. `users/service.ts` pulls in `config.ts`, which
+   * throws on a missing `DATABASE_URL` at module load — importing it from a
+   * frontend check turns this suite into one that cannot run without a database
+   * it never uses. That mistake has already been made once in this repo, to
+   * `check:payvisibility`.
+   */
+  const svcSrc = rf(jn(repoRoot, 'server/src/modules/users/service.ts'), 'utf8');
+  const svcBlock = /const EMPLOYMENT_TYPES\s*=\s*\[([\s\S]*?)\]\s*as const;/.exec(svcSrc);
+  check('the server still declares EMPLOYMENT_TYPES', Boolean(svcBlock), true);
+  const fromServer = [...(svcBlock?.[1] ?? '').matchAll(/'([^']+)'/g)]
+    .map((m) => m[1]!)
+    .sort();
+  check(`the server list matches the migration (${fromServer.join(', ')})`,
+    fromServer.join(','), fromMigration.join(','));
+
+  /* And the validator actually consults it, rather than declaring it unused. */
+  check('the validator refuses anything outside that list',
+    /EMPLOYMENT_TYPES as readonly string\[\]\)\.includes\(d\.empType\)/.test(svcSrc), true);
+
+  /*
+   * The drawer's copy. Read as text rather than imported, because the module is
+   * a React component and importing it here would drag the whole tree in.
+   */
+  const drawerSrc = rf(jn(repoRoot, 'src/modules/users/Drawers.tsx'), 'utf8');
+  const block = /const EMP_TYPES[^=]*=\s*\[([\s\S]*?)\];/.exec(drawerSrc);
+  check('the drawer still declares EMP_TYPES', Boolean(block), true);
+  const fromDrawer = [...(block?.[1] ?? '').matchAll(/value:\s*'([^']+)'/g)]
+    .map((m) => m[1]!)
+    .sort();
+  check(`the drawer offers the column's values (${fromDrawer.join(', ')})`,
+    fromDrawer.join(','), fromMigration.join(','));
+
+  /* The label is allowed to be prettier than the value; it may not be empty. */
+  const labels = [...(block?.[1] ?? '').matchAll(/label:\s*'([^']+)'/g)].map((m) => m[1]!);
+  check('every option has a label', labels.length, fromDrawer.length);
+
+  /* And the default is a value, not a label — that was the live failure. */
+  check('the default employment type is one of them',
+    /EMP_TYPES\[0\]!?\.value/.test(drawerSrc), true);
+
   console.log();
   if (failed) {
     console.error(`${failed} user-administration checks failed`);

@@ -18,7 +18,8 @@
 import { useState } from 'react';
 import { sortBy, uniq } from '../../lib/collections';
 import { downloadCSV } from '../../lib/csv';
-import { DEPTS, SITES, deptOf, siteOf } from '../../data/org';
+import { useSites } from '../../services/sites';
+import { useDepartments } from '../../services/departments';
 import { USER_STATUSES } from '../../services';
 import type { UserAccount, UserFilter, UserStatus } from '../../services';
 import { Avatar, Card, EmptyState, StatRow, Tabs, Tile } from '../../components/ui';
@@ -56,6 +57,10 @@ function Filters({
   rows: UserAccount[];
 }) {
   const dir = useVisiblePeople();
+  /* From the server. A filter that offers a department this tenant does not
+     have returns nothing and explains nothing. */
+  const depts = useDepartments();
+  const sites = useSites();
   const managers = uniq(rows.map((u) => u.managerId).filter(Boolean) as string[]);
   const types = uniq(rows.map((u) => u.empType));
   const one = (k: keyof UserFilter) => (v: string) => set({ ...f, [k]: v || undefined });
@@ -77,7 +82,7 @@ function Filters({
       <select className="input sm" value={f.dept ?? ''} aria-label="Department"
         onChange={(e) => one('dept')(e.target.value)}>
         <option value="">All departments</option>
-        {DEPTS.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+        {depts.list.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
       </select>
 
       <select className="input sm" value={f.role ?? ''} aria-label="Role"
@@ -91,7 +96,7 @@ function Filters({
       <select className="input sm" value={f.site ?? ''} aria-label="Location"
         onChange={(e) => one('site')(e.target.value)}>
         <option value="">All locations</option>
-        {SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        {sites.list.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select>
 
       <select className="input sm" value={f.managerId ?? ''} aria-label="Manager"
@@ -142,6 +147,15 @@ function UsersView() {
   const layer = useLayer();
   const dir = useVisiblePeople();
   const can = useMay();
+  /*
+   * Departments and locations come from the server, never from `src/data`.
+   *
+   * The bulk pickers below *write* these values, so a stale list does not just
+   * mislabel a row — it sends a code the API will refuse, for every person
+   * selected. The static tables had already drifted in both directions.
+   */
+  const depts = useDepartments();
+  const sites = useSites();
 
   const [tab, setTab] = useTabFromUrl<Tab>('all',
     ['all', 'pending', 'active', 'inactive', 'locked', 'invited', 'signins']);
@@ -236,7 +250,7 @@ function UsersView() {
     ['Employee ID', 'Name', 'Email', 'Department', 'Designation', 'Location',
       'Role', 'Manager', 'Status', 'Employment type', 'Joined', 'Last login'],
     ...rows.map((u) => [
-      u.code, u.name, u.email, deptOf(u.dept).name, u.designation, siteOf(u.site).name,
+      u.code, u.name, u.email, depts.name(u.dept), u.designation, sites.name(u.site),
       u.role, u.managerId ? dir.name(u.managerId) : '—', u.status, u.empType,
       u.joinedOn, u.lastLoginAt ?? 'Never',
     ]),
@@ -323,12 +337,12 @@ function UsersView() {
             <select className="input sm" defaultValue="" aria-label="Change department"
               onChange={(e) => e.target.value && bulkSet({ dept: e.target.value })}>
               <option value="">Change department…</option>
-              {DEPTS.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              {depts.list.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
             </select>
             <select className="input sm" defaultValue="" aria-label="Change location"
               onChange={(e) => e.target.value && bulkSet({ site: e.target.value })}>
               <option value="">Change location…</option>
-              {SITES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {sites.list.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             <select className="input sm" defaultValue="" aria-label="Assign manager"
               onChange={(e) => e.target.value && bulkSet({ managerId: e.target.value })}>
@@ -383,7 +397,7 @@ function UsersView() {
                       </div>
                     </td>
                     <td className="mono nowrap">{u.code}</td>
-                    <td className="nowrap">{deptOf(u.dept).name}</td>
+                    <td className="nowrap">{depts.name(u.dept)}</td>
                     <td><RoleBadge r={u.role} /></td>
                     <td className="nowrap">{u.managerId ? dir.name(u.managerId) : '—'}</td>
                     <td><UserStatusBadge s={u.status} /></td>
