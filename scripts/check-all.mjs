@@ -16,9 +16,33 @@
  * anything the chain omitted appended and called out.
  *
  * Exit code is 1 if any suite failed, so it is still usable as a gate.
+ *
+ * ## A skip is not a pass
+ *
+ * It used to count one as a pass, and that is how a broken suite reached CI.
+ * `check:photo` needs a database, so locally it printed SKIPPED and exited 0;
+ * the summary said "61 passed, every suite green"; and the thing that was
+ * actually broken — it could not start without `tsx`, which the Pages workflow
+ * does not install — was on a path a skipping run never reaches. The gate was
+ * green and the deploy failed ten minutes later.
+ *
+ * So a skip is now its own outcome, counted and named. It does not fail the
+ * gate, because skipping is legitimate: the frontend checks have no database
+ * and are not meant to. What it does is stop a green line from claiming
+ * coverage that was never exercised.
+ *
+ * A suite that skips only part of itself is listed here too — `check:roles`
+ * runs its static half and skips the runtime half without a database, and
+ * that half is no more exercised than a whole suite would be. The line the
+ * suite printed is shown next to it, and says which case it is.
+ *
+ * Detecting it needs the suite's output, which is why the child's streams are
+ * piped and written through rather than inherited: a 90-second suite must
+ * still print as it goes, and buffering until it exits would have made this
+ * change cost more than it is worth.
  */
 import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const scripts = pkg.scripts ?? {};
@@ -47,25 +71,54 @@ const run = only.length ? ordered.filter((k) => only.includes(k)) : ordered;
 
 const failed = [];
 const passed = [];
+const skipped = [];
 const started = Date.now();
+
+/*
+ * One command string rather than a command and an argument array: with
+ * `shell: true` the two are concatenated anyway, and passing them separately
+ * earns a deprecation warning (DEP0190) on every one of sixty-one suites. The
+ * names come from our own package.json keys.
+ */
+const runSuite = (name) => new Promise((resolve) => {
+  const child = spawn(`npm run --silent ${name}`, { shell: true, stdio: ['inherit', 'pipe', 'pipe'] });
+  let text = '';
+  const tee = (src, dst) => src.on('data', (chunk) => {
+    const s = chunk.toString();
+    text += s;
+    dst.write(s);
+  });
+  tee(child.stdout, process.stdout);
+  tee(child.stderr, process.stderr);
+  child.on('error', (e) => resolve({ code: -1, text: `${text}\n${e.message}` }));
+  child.on('close', (code) => resolve({ code: code ?? -1, text }));
+});
 
 for (const name of run) {
   const t0 = Date.now();
   process.stdout.write(`\n── ${name} ──\n`);
-  const r = spawnSync('npm', ['run', '--silent', name], {
-    stdio: 'inherit',
-    shell: true,
-  });
+  // eslint-disable-next-line no-await-in-loop
+  const { code, text } = await runSuite(name);
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
-  if (r.status === 0) passed.push({ name, secs });
-  else failed.push({ name, secs, code: r.status ?? -1 });
+  /* The suite's own words for what it left out, so the summary can quote it. */
+  const why = text.split(/\r?\n/).find((l) => /\bSKIPPED\b/.test(l))?.trim();
+  if (code !== 0) failed.push({ name, secs, code });
+  else if (why) skipped.push({ name, secs, why });
+  else passed.push({ name, secs });
 }
 
 const total = ((Date.now() - started) / 1000).toFixed(0);
 
 console.log('');
 console.log('─'.repeat(64));
-console.log(`${passed.length} passed, ${failed.length} failed, ${run.length} run in ${total}s`);
+console.log(`${passed.length} passed, ${skipped.length} skipped, ${failed.length} failed, `
+  + `${run.length} run in ${total}s`);
+
+if (skipped.length) {
+  console.log('');
+  console.log('skipped, in whole or in part — not evidence of anything:');
+  for (const s of skipped) console.log(`  ${s.name.padEnd(26)} ${s.why}`);
+}
 
 if (failed.length) {
   console.log('');
@@ -76,5 +129,8 @@ if (failed.length) {
   process.exit(1);
 }
 
-console.log('every suite green');
+console.log('');
+console.log(skipped.length
+  ? `no suite failed, and ${skipped.length} did not run in full`
+  : 'every suite green');
 process.exit(0);
