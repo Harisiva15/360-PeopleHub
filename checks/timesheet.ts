@@ -23,6 +23,7 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { PROJECTS } from '../src/data/org';
+import { sourceFiles } from './lib/sources';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -73,8 +74,8 @@ console.log('\nprojects come from the API, not a hand-written list\n');
  */
 console.log('\nno timesheet screen offers the static project list\n');
 
-const tsFiles = execSync('git ls-files src/modules/timesheet', { cwd: root, encoding: 'utf8' })
-  .split('\n').filter((f) => /\.tsx?$/.test(f));
+const tsFiles = sourceFiles(root, 'src/modules/timesheet', /\.(ts|tsx)$/)
+    .filter(Boolean).filter((f) => /\.tsx?$/.test(f));
 
 const offenders = tsFiles.filter((rel) => /\{PROJECTS[.\s]/.test(read(rel)));
 ok('no PROJECTS.map in a timesheet screen', offenders.length === 0,

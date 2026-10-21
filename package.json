@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "check": "vite-node checks/services.ts",
     "check:routes": "node checks/demo-mode.mjs checks/routes.tsx",
+    "check:sourcevis": "vite-node checks/source-visibility.ts",
     "check:gate": "vite-node checks/auth-gate.tsx",
     "check:identitygate": "vite-node checks/identity-gate.ts",
     "check:signin": "vite-node checks/signin-flow.tsx",

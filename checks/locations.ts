@@ -31,6 +31,7 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { SITES } from '../src/data/org';
+import { sourceFiles } from './lib/sources';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -100,8 +101,8 @@ ok('no other site claims the headquarters kind',
 
 console.log('\nno form builds its locations from the static table\n');
 
-const files = execSync('git ls-files src', { cwd: root, encoding: 'utf8' })
-  .split('\n')
+const files = sourceFiles(root, 'src', /\.(ts|tsx)$/)
+    .filter(Boolean)
   .filter((f) => /\.tsx$/.test(f));
 
 /*

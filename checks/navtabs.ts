@@ -18,6 +18,7 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { NAV, hrefOf } from '../src/nav';
+import { sourceFiles } from './lib/sources';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -26,8 +27,8 @@ const fail = (msg: string) => { failed++; console.error(`  FAIL  ${msg}`); };
 
 /* ---- what tabs does each module accept? ---- */
 
-const files = execSync('git ls-files src/modules', { cwd: root, encoding: 'utf8' })
-  .split('\n').filter((f) => /\.tsx?$/.test(f));
+const files = sourceFiles(root, 'src/modules', /\.(ts|tsx)$/)
+    .filter(Boolean).filter((f) => /\.tsx?$/.test(f));
 
 /** route key -> the tab values its `useTabFromUrl` will accept */
 const tabsFor = new Map<string, Set<string>>();

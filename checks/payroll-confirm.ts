@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { sourceFiles } from './lib/sources';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -39,8 +40,8 @@ const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
 
 console.log('\nprocessing payroll goes through a confirmation\n');
 
-const files = execSync('git ls-files src', { cwd: root, encoding: 'utf8' })
-  .split('\n')
+const files = sourceFiles(root, 'src', /\.(ts|tsx)$/)
+    .filter(Boolean)
   .filter((f) => /\.tsx?$/.test(f));
 
 /*

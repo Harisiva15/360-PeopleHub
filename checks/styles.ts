@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { sourceFiles } from './lib/sources';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CSS = join(root, 'src/styles/global.css');
@@ -33,8 +34,8 @@ const ok = (label: string, cond: boolean, detail = '') => {
 
 /* ---------------- classes nothing renders ---------------- */
 
-const files = execSync('git ls-files src', { cwd: root, encoding: 'utf8' })
-  .split('\n').filter((f) => /\.tsx?$/.test(f));
+const files = sourceFiles(root, 'src', /\.(ts|tsx)$/)
+    .filter(Boolean).filter((f) => /\.tsx?$/.test(f));
 
 const rendered = new Set<string>();
 for (const rel of files) {

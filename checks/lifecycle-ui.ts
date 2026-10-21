@@ -22,6 +22,7 @@ import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mockServices } from '../src/services/mock';
 import { createHttpServices } from '../src/services/http';
+import { sourceFiles } from './lib/sources';
 
 let failed = 0;
 const ok = (label: string, cond: boolean, detail = '') => {
@@ -187,8 +188,8 @@ ok('an employee with no grade is not shown as holding one',
 
 console.log('\npromotion is recorded in one place\n');
 
-const screens = execSync('git ls-files src/modules', { cwd: root, encoding: 'utf8' })
-  .split('\n').filter((f) => /\.tsx$/.test(f));
+const screens = sourceFiles(root, 'src/modules', /\.(ts|tsx)$/)
+    .filter(Boolean).filter((f) => /\.tsx$/.test(f));
 const promoters = screens.filter((f) =>
   f !== 'src/modules/lifecycle/index.tsx' && /\.promote\(/.test(read(f)));
 ok('only the lifecycle drawer records a promotion', promoters.length === 0,

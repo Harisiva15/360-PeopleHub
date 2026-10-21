@@ -28,6 +28,7 @@ import { AuthGate, Routed } from '../src/App';
 import { authConfigured } from '../src/auth/supabase';
 import { ALL_ROUTES } from '../src/nav';
 import { loadAllRoutes } from '../src/modules';
+import { sourceFiles } from './lib/sources';
 
 await loadAllRoutes();
 
@@ -145,8 +146,7 @@ const fail = (label: string, cond: boolean, detail = '') => {
 {
   const KEY = 'SUPABASE_SERVICE_ROLE_KEY';
 
-  const frontend = execSync('git ls-files src', { cwd: root, encoding: 'utf8' })
-    .split('\n').filter(Boolean);
+  const frontend = sourceFiles(root, 'src', /\.(ts|tsx)$/);
   const leaked = frontend.filter((rel) => readFileSync(join(root, rel), 'utf8').includes(KEY));
   fail(
     'no frontend source names the service-role key',
@@ -183,8 +183,7 @@ const fail = (label: string, cond: boolean, detail = '') => {
    * worth defending. Widening this list again should mean adding a consumer of
    * `serviceHeaders`, not another reader.
    */
-  const serverFiles = execSync('git ls-files server/src', { cwd: root, encoding: 'utf8' })
-    .split('\n').filter(Boolean);
+  const serverFiles = sourceFiles(root, 'server/src', /\.(ts|tsx)$/);
   const readers = serverFiles.filter((rel) =>
     /config\.supabaseServiceKey/.test(readFileSync(join(root, rel), 'utf8')));
   fail(
