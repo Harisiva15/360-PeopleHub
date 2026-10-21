@@ -603,12 +603,22 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
     /*
      * Whether an invitation is actually going out.
      *
-     * Both halves matter. `status === 'invited'` means an administrator made
-     * this account rather than a manager raising a joiner — a joiner waits for
-     * approval and must not be emailed a sign-in. `sendInvitation !== false`
-     * is the form's "I'll tell them myself" unticked.
+     * `status === 'invited'` means an administrator made this account rather
+     * than a manager raising a joiner — a joiner waits for approval and must
+     * not be emailed a sign-in.
+     *
+     * **`=== true`, not `!== false`.** Sending mail to a real person is an
+     * outbound side effect and has to be asked for, not merely left
+     * un-refused. This read `!== false` for one commit, which made *omitting*
+     * the flag mean "send": `users/import.ts` omits it entirely, so a bulk
+     * import of a hundred people would have emailed all hundred of them, and
+     * `hierarchy.test.mjs` — which also omits it — caught exactly that by
+     * asserting "creating an account sends nothing by itself".
+     *
+     * The drawer always passes the checkbox explicitly, so the screen behaves
+     * the same either way. Everything that does not ask now stays silent.
      */
-    const sending = status === 'invited' && d.sendInvitation !== false;
+    const sending = status === 'invited' && d.sendInvitation === true;
 
     /*
      * Called inside the transaction, exactly as `inviteUser` does it, and for
