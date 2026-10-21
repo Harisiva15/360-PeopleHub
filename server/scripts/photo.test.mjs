@@ -11,8 +11,6 @@
  *   node --import=tsx/esm scripts/photo.test.mjs
  */
 
-import pg from 'pg';
-
 const NL = String.fromCharCode(10);
 let failed = 0;
 const ok = (label, cond, detail = '') => {
@@ -52,6 +50,22 @@ process.env.SUPABASE_URL ??= 'http://127.0.0.1:1';
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= ['sb', 'secret', 'notarealkeyfortests', '0'.repeat(8)].join('_');
 process.env.SUPABASE_STORAGE_BUCKET ??= 'test-bucket';
 
+/*
+ * Every dependency is imported after the skip above, `pg` included, and that
+ * ordering is load-bearing rather than tidy.
+ *
+ * The root `check:all` delegates this suite to the server, and the Pages
+ * workflow that runs it installs only the frontend's dependencies — there is
+ * no `server/node_modules` there at all. A static `import pg from 'pg'` is
+ * resolved before the first line of this file runs, so the suite died on a
+ * missing package instead of skipping, failed check:all, and took the deploy
+ * with it. Twice: once on `tsx`, then once on `pg`.
+ *
+ * So nothing this file needs may be named at the top. `scripts/auth-no-tenant.test.mjs`
+ * defers its own `pg` for the same reason, and is why that suite has always
+ * been fine in that workflow.
+ */
+const { default: pg } = await import('pg');
 const { withScratchTenant } = await import('./lib/scratch-tenant.mjs');
 const { setStorage, StorageError } = await import('../src/storage/index.ts');
 const { setPhoto, photoUrl, removePhoto, PhotoError, PHOTO_MAX_BYTES } =
