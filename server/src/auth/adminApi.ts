@@ -70,16 +70,37 @@ const post = async (path: string, body: unknown): Promise<Response> => {
       + '(SUPABASE_SERVICE_ROLE_KEY is not set)',
       'not_configured');
   }
-  return fetch(`${config.supabaseUrl}${path}`, {
-    method: 'POST',
-    headers: {
-      /* Both are required by GoTrue. Neither is ever logged or returned. */
-      apikey: config.supabaseServiceKey,
-      authorization: `Bearer ${config.supabaseServiceKey}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  /*
+   * A network failure is not a 500.
+   *
+   * `fetch` rejects rather than resolving when it cannot reach the host at
+   * all — DNS, TLS, a refused connection, a timeout. Unwrapped, that rejection
+   * is a bare `TypeError: fetch failed`, which matches no branch of
+   * `statusFor` and so reached the administrator as a blank 500 with no
+   * detail. "Could not reach Supabase" is a different problem from "Supabase
+   * refused this", and the person deciding whether to retry needs to know
+   * which one they have.
+   *
+   * The cause is attached but the request is not echoed, because the request
+   * carried the key.
+   */
+  try {
+    return await fetch(`${config.supabaseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        /* Both are required by GoTrue. Neither is ever logged or returned. */
+        apikey: config.supabaseServiceKey,
+        authorization: `Bearer ${config.supabaseServiceKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (cause) {
+    const detail = cause instanceof Error && cause.message ? cause.message : 'no further detail';
+    throw new AdminApiError(
+      `could not reach Supabase to send this (${redactKey(detail)})`,
+      'unreachable');
+  }
 };
 
 /**

@@ -106,10 +106,27 @@ export function assertNoDemoIds(method: string, path: string, body?: unknown): v
   }
 
   if (found.length) {
+    /*
+     * What this says, and what it must not claim.
+     *
+     * `DEMO_ID` matches a *shape*, not a list of real demo ids, so a value it
+     * refuses has not been proved to come from anywhere in particular. The
+     * message used to assert "This id comes from src/data" and that was wrong
+     * the first time it fired in anger: the server's own `nextEmployeeCode`
+     * minted `E007` for a tenant whose codes are VHM004-006, the guard refused
+     * it, and the sentence sent the reader hunting through `src/data` for a
+     * value that was never there.
+     *
+     * So it now describes what was observed and offers the demo dataset as the
+     * likely cause rather than the established one. The refusal itself is
+     * unchanged — a value of this shape is still never sent.
+     */
     throw new ApiError(0,
-      `Refusing to send demo data to the API: ${found.join(', ')} in ${method} ${path}. `
-      + 'This id comes from src/data, not from the signed-in session — the screen '
-      + 'that made this call is reading the demo dataset.');
+      `Refusing to send: ${found.join(', ')} in ${method} ${path}. `
+      + 'That value looks like a demo id (E followed by three digits), which is '
+      + 'how src/data numbers its people — so the screen that made this call may '
+      + 'be reading the demo dataset. If it is not, something upstream is '
+      + 'generating ids in that shape.');
   }
 }
 

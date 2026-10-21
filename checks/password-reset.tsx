@@ -272,8 +272,49 @@ ok('10.  the gate has not fallen through into the application',
   !/My payslips|Dashboard/i.test(text()),
   'mustChange was cleared locally despite the server refusing');
 
+/*
+ * A disabled button says why.
+ *
+ * Asserted against the exported function rather than by driving the form,
+ * because the interesting states are the partly-filled ones and this suite has
+ * already submitted. The rule the button must never break: every state in
+ * which it is disabled and the person has typed something carries a sentence.
+ */
+const { whyNotReady, passwordOk: pwOk } = await import('../src/auth/SetPassword.tsx');
+
+ok('11. an untouched form is not told off', whyNotReady('', '') === null);
+ok('12. a password short of the rules says so',
+  /three rules/i.test(whyNotReady('short', '') ?? ''),
+  whyNotReady('short', '') ?? 'no reason given');
+ok('13.  and a valid one awaiting confirmation says that instead',
+  /type the password again/i.test(whyNotReady('Longenough1pass', '') ?? ''),
+  whyNotReady('Longenough1pass', '') ?? 'no reason given');
+ok('14.  and two that differ say that',
+  /do not match/i.test(whyNotReady('Longenough1pass', 'Longenough1pas') ?? ''),
+  whyNotReady('Longenough1pass', 'Longenough1pas') ?? 'no reason given');
+ok('15. a ready form has nothing left to say',
+  whyNotReady('Longenough1pass', 'Longenough1pass') === null);
+
+/*
+ * The gap this closes, stated as the invariant: there is no input the person
+ * can type that leaves the button disabled and the screen silent about it.
+ */
+const SAMPLES = ['a', 'short', 'alllowercase1', 'ALLUPPERCASE1', 'NoDigitsHere',
+  'Longenough1pass', 'Longenough1pass2'];
+const silent: string[] = [];
+for (const pw of SAMPLES) {
+  for (const again of ['', pw, `${pw}x`]) {
+    const isReady = pwOk(pw) && pw.length > 0 && pw === again;
+    if (!isReady && pw.length > 0 && whyNotReady(pw, again) === null) {
+      silent.push(`${JSON.stringify(pw)} + ${JSON.stringify(again)}`);
+    }
+  }
+}
+ok('16. no typed state leaves the button dead and silent',
+  silent.length === 0, silent.join(', '));
+
 clearTimeout(watchdog);
 console.log('');
 if (failed) { console.error(`${failed} FAILED\n`); process.exit(1); }
-console.log('a failed reset reports the failure and keeps the person on the screen\n');
+console.log('a failed reset reports the failure, and a dead button says why\n');
 process.exit(0);

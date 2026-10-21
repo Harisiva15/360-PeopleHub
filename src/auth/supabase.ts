@@ -19,14 +19,19 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 const url = import.meta.env.VITE_SUPABASE_URL ?? '';
 
 /*
- * Supabase renamed the browser-side key: newer projects issue
- * `sb_publishable_...` where older ones issued an anon JWT. Both go in the same
- * argument and both are safe to ship in a bundle — they identify the project,
- * they do not authorise anything. Row-level security is what authorises.
+ * The browser-side key. Safe to ship in a bundle — it identifies the project
+ * and authorises nothing; row-level security is what authorises.
+ *
+ * There used to be a fallback to `VITE_SUPABASE_ANON_KEY`, from when Supabase
+ * issued an anon JWT here instead of `sb_publishable_...`. It is gone, because
+ * this project's legacy JWT-based API keys have been disabled: the fallback
+ * could no longer reach a working key, and all it could still do is turn a
+ * missing publishable key into a build that looks configured, fails every
+ * request at Supabase, and says nothing about why.
+ *
+ * Missing is now simply missing, and `authConfigured` reports it as demo mode.
  */
-const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-  ?? import.meta.env.VITE_SUPABASE_ANON_KEY
-  ?? '';
+const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? '';
 
 /** True when this build has a project to authenticate against. */
 export const authConfigured = Boolean(url && publishableKey);

@@ -72,7 +72,7 @@ as HTTP.
 ### Signing in
 
 The build has two modes, chosen by whether `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_ANON_KEY` are set:
+`VITE_SUPABASE_PUBLISHABLE_KEY` are set:
 
 - **Demo** (unset) — no sign-in, the role switcher in the topbar, in-memory
   data. This is what the public GitHub Pages site is.

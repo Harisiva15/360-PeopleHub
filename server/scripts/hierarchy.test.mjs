@@ -285,8 +285,20 @@ const employeeOf = async (account) => (await admin.query(
 
   console.log('\nthe invitation path\n');
 
+  /*
+   * These accounts were created without asking for an invitation, so nothing
+   * should have gone out. The detail line used to read "createUser records
+   * invite_sent_at; sending is a separate call", which described the defect
+   * rather than the design: `createUser` stamped `invite_sent_at` and
+   * `invited_count = 1` while asking the provider for nothing, so every
+   * account made from the Users screen recorded an invitation nobody sent.
+   *
+   * It sends when asked now, in the same transaction, and records nothing when
+   * it is not asked. This assertion is what caught the first attempt at that,
+   * which treated an omitted flag as consent.
+   */
   ok('creating an account sends nothing by itself', sent.length === 0,
-    'createUser records invite_sent_at; sending is a separate call');
+    'no invitation was requested, so none may be sent — and none recorded');
 
   await users.inviteUser(ADMIN, mgrAccount.id);
   ok('an admin can send the invitation', sent.length === 1);

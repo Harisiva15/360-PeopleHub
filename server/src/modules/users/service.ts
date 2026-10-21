@@ -288,10 +288,54 @@ export async function userStats(caller: Caller) {
 export async function nextEmployeeCode(caller: Caller): Promise<string> {
   mayAdminister(caller);
   return withTenantReadOnly(caller, async (db) => {
-    const { rows } = await db.query<{ next: string }>(
-      `SELECT COALESCE(max(NULLIF(regexp_replace(code, '\\D', '', 'g'), ''))::int, 0) + 1 AS next
-         FROM employee`);
-    return `E${String(rows[0]?.next ?? 1).padStart(3, '0')}`;
+    const { rows } = await db.query<{ code: string }>(
+      "SELECT code FROM employee WHERE code IS NOT NULL AND btrim(code) <> ''");
+
+    /* Codes shaped as a prefix followed by digits — the only kind that has a
+       successor. Anything else is somebody's one-off and is skipped. */
+    const parsed = rows
+      .map((r) => /^(\D*?)(\d+)$/.exec(r.code.trim()))
+      .filter((m): m is RegExpExecArray => m !== null);
+
+    if (!parsed.length) {
+      throw new UserError(
+        'There is no existing employee ID to follow, so one cannot be suggested. '
+        + 'Type the first one — it sets the pattern the rest will follow.',
+        'invalid');
+    }
+
+    /*
+     * The prefix most of this tenant's people already use, rather than one
+     * chosen here.
+     *
+     * This used to return `E${n}` with the letter hard-coded and the number
+     * padded to three, which was wrong twice over. It ignored the tenant's own
+     * format — production uses VHM004, so it proposed E007 — and `/^E\d{3}$/`
+     * is exactly the shape the browser's demo-id guard refuses, so every
+     * suggestion was rejected by the client before it could be sent. "Suggest"
+     * could not produce a usable value for any tenant with fewer than a
+     * thousand people.
+     *
+     * Ties break alphabetically so the answer does not depend on row order.
+     */
+    const counts = new Map<string, number>();
+    for (const m of parsed) counts.set(m[1]!, (counts.get(m[1]!) ?? 0) + 1);
+    const prefix = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]![0];
+
+    const mine = parsed.filter((m) => m[1] === prefix);
+    const width = Math.max(...mine.map((m) => m[2]!.length));
+    const taken = new Set(rows.map((r) => r.code.trim()));
+
+    /* Skip anything already in use: the highest number is not always the last
+       one issued, and a collision is refused on save with a worse message. */
+    let n = Math.max(...mine.map((m) => Number(m[2]))) + 1;
+    let candidate = `${prefix}${String(n).padStart(width, '0')}`;
+    while (taken.has(candidate)) {
+      n += 1;
+      candidate = `${prefix}${String(n).padStart(width, '0')}`;
+    }
+    return candidate;
   });
 }
 
@@ -326,6 +370,21 @@ function mayGrant(caller: Caller, role: Role) {
   }
 }
 
+/**
+ * What `employee.employment_type` accepts.
+ *
+ * Mirrors `CHECK (employment_type IN (…))`, which migration 0003 put on the
+ * column and 0012 repeated on `joining_request`. Held here so the refusal can
+ * name the field, instead of Postgres refusing it as SQLSTATE 23514 and
+ * `statusFor` turning that into "this request breaks a rule the data must
+ * follow" — true, unhelpful, and identical for every CHECK in the schema.
+ *
+ * `check:users` asserts this list against the migration.
+ */
+export const EMPLOYMENT_TYPES = [
+  'permanent', 'contract', 'intern', 'consultant',
+] as const;
+
 const validate = (d: Partial<UserDraft>) => {
   if (d.name !== undefined && !d.name.trim()) throw new UserError('Give the person a name', 'invalid');
   if (d.email !== undefined) {
@@ -347,6 +406,21 @@ const validate = (d: Partial<UserDraft>) => {
   if (d.role !== undefined && !(ROLES as readonly string[]).includes(d.role)) {
     throw new UserError(`Not a role: ${ROLES.join(', ')}`, 'invalid');
   }
+  /*
+   * The employment type, named rather than left to the column.
+   *
+   * The screen sent display labels — `Full-time`, `Contract` — where the column
+   * wants `permanent`, `contract`. Every account created from the Users drawer
+   * was refused by the CHECK, and the answer said only that "this request
+   * breaks a rule the data must follow", which is the same sentence every CHECK
+   * in the schema produces. Nothing pointed at the field, so nothing pointed at
+   * the screen that was wrong.
+   */
+  if (d.empType !== undefined
+      && !(EMPLOYMENT_TYPES as readonly string[]).includes(d.empType)) {
+    throw new UserError(
+      `Not an employment type: ${EMPLOYMENT_TYPES.join(', ')}`, 'invalid');
+  }
 };
 
 export async function createUser(caller: Caller, d: UserDraft): Promise<UserAccount> {
@@ -355,6 +429,24 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
   mayGrant(caller, d.role);
   if (!d.dept) throw new UserError('Choose a department', 'invalid');
   if (!d.site) throw new UserError('Choose a location', 'invalid');
+  /*
+   * The membership records who raised and who approved it, and
+   * `tenant_membership_approval_is_attributed` refuses an approval with nobody
+   * attached. The INSERT below stamps `approved_at` whenever the status is not
+   * `pending_approval` and takes `approved_by` from the caller — so a caller
+   * with no employee record would set the first and not the second, and the
+   * CHECK would refuse it as another anonymous 23514.
+   *
+   * It should not be reachable, for the same reason as in `passwordChanged`: a
+   * membership with no `employee_id` cannot sign in. Named here anyway, because
+   * the alternative answer is a 400 that describes nothing.
+   */
+  if (!caller.employeeId) {
+    throw new UserError(
+      'Your own account is not linked to an employee record, so it cannot be '
+      + 'recorded as having created this one. Ask an administrator to check it.',
+      'invalid');
+  }
 
   return withTenant(caller, async (db) => {
     const { rows: dup } = await db.query(
@@ -508,22 +600,71 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
       ? 'invited'
       : 'pending_approval';
 
+    /*
+     * Whether an invitation is actually going out.
+     *
+     * `status === 'invited'` means an administrator made this account rather
+     * than a manager raising a joiner — a joiner waits for approval and must
+     * not be emailed a sign-in.
+     *
+     * **`=== true`, not `!== false`.** Sending mail to a real person is an
+     * outbound side effect and has to be asked for, not merely left
+     * un-refused. This read `!== false` for one commit, which made *omitting*
+     * the flag mean "send": `users/import.ts` omits it entirely, so a bulk
+     * import of a hundred people would have emailed all hundred of them, and
+     * `hierarchy.test.mjs` — which also omits it — caught exactly that by
+     * asserting "creating an account sends nothing by itself".
+     *
+     * The drawer always passes the checkbox explicitly, so the screen behaves
+     * the same either way. Everything that does not ask now stays silent.
+     */
+    const sending = status === 'invited' && d.sendInvitation === true;
+
+    /*
+     * Called inside the transaction, exactly as `inviteUser` does it, and for
+     * the same reason: if the provider refuses, the throw takes the employee
+     * row, the membership and the audit entry with it, so a refused send
+     * cannot leave behind an account that claims one happened.
+     *
+     * This used to be missing entirely. `invite_sent_at` was stamped whenever
+     * the status was `invited` and `invited_count` was hard-coded to 1, while
+     * nothing ever asked Supabase for anything — so every account created from
+     * the Users screen recorded an invitation that was never sent, and the
+     * drawer displayed the date of it. `sendInvitation` reached only
+     * `must_change_password`, which is why ticking the box changed nothing an
+     * email could come out of.
+     */
+    if (sending) {
+      await authAdmin().inviteToSetPassword(d.email.trim(), inviteRedirect());
+    }
+
     const { rows } = await db.query<{ id: string }>(
       `INSERT INTO tenant_membership
          (user_id, role, employee_id, status, invited_at, invite_sent_at,
           invited_count, must_change_password, requested_by,
           approved_by, approved_at)
        VALUES (NULL, $1, $2, $3, now(),
-               CASE WHEN $3 = 'invited' THEN now() ELSE NULL END,
-               1, $4, $5,
+               CASE WHEN $7 THEN now() ELSE NULL END,
+               CASE WHEN $7 THEN 1 ELSE 0 END,
+               $4, $5,
                CASE WHEN $3 <> 'pending_approval' THEN $6::uuid ELSE NULL END,
                CASE WHEN $3 <> 'pending_approval' THEN now() ELSE NULL END)
        RETURNING id`,
       [d.role, emp[0]!.id, status, d.sendInvitation === false, caller.employeeId,
-        caller.employeeId]);
+        caller.employeeId, sending]);
 
     await audit(db, caller, 'user.created', rows[0]!.id,
       `${d.name.trim()} · ${d.role} · ${FROM_DB[status]}`);
+
+    /*
+     * A second row when one went out, in the same shape `inviteUser` writes,
+     * so "was this person ever sent an invitation?" has one answer to look for
+     * rather than two depending on which screen created them.
+     */
+    if (sending) {
+      await audit(db, caller, 'user.invited', rows[0]!.id,
+        `${d.role} · attempt 1 · sent with the account`);
+    }
     const made = await getUser(caller, rows[0]!.id);
     if (!made) throw new UserError('The account was not created', 'invalid');
     return made;
@@ -1035,12 +1176,44 @@ export async function accountObligations(
  * Recorded either way, so an administrator can see the reset was answered.
  */
 export async function passwordChanged(caller: Caller): Promise<{ ok: true }> {
-  if (!caller.employeeId) return { ok: true };
+  /*
+   * No employee record on the membership, so there is no row to clear.
+   *
+   * This used to `return { ok: true }`, which is the worst available answer:
+   * the flag stays set, the caller is told the change was recorded, and the
+   * next sign-in asks for a new password again — forever, with nothing
+   * anywhere saying why. A person in that state cannot get past the screen by
+   * trying harder, and nobody looking at the logs would see a failure.
+   *
+   * It should not be reachable: `callerFromToken` builds a Caller from a
+   * membership, and a membership with no `employee_id` cannot sign in. That is
+   * exactly why it must say so loudly rather than shrug — if it ever does
+   * happen, the row is broken in a way that needs a person, and the cost of
+   * guessing wrong is somebody locked out of the product with no diagnosis.
+   */
+  if (!caller.employeeId) {
+    throw new UserError(
+      'This account is not linked to an employee record, so the password '
+      + 'change could not be recorded. Your new password was saved. Ask an '
+      + 'administrator to check the account before signing in again.',
+      'invalid');
+  }
+
+  /*
+   * Captured before the closure, not read inside it.
+   *
+   * The guard above proves it is a string, but the narrowing does not survive
+   * into the callback — `caller` is still `Caller`, so `caller.employeeId` is
+   * `string | null` in there and `audit` wants a `string`. A local const keeps
+   * the narrowing and needs no `?? ''`, which is what the guard was for.
+   */
+  const employeeId = caller.employeeId;
+
   return withTenant(caller, async (db) => {
     await db.query(
       'UPDATE tenant_membership SET must_change_password = false WHERE employee_id = $1',
-      [caller.employeeId]);
-    await audit(db, caller, 'user.password_changed', caller.employeeId ?? '',
+      [employeeId]);
+    await audit(db, caller, 'user.password_changed', employeeId,
       'set a new password at sign-in');
     return { ok: true } as const;
   });

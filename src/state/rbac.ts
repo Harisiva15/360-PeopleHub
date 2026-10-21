@@ -260,7 +260,21 @@ export const scopeOfDemo = (
  * answered as though the caller were a manager. That is the worst possible
  * reading of an unknown role, and it is silent.
  */
-const ROLES = new Set<string>(['employee', 'hr_admin', 'finance_admin', 'company_admin']);
+/**
+ * Every role, in the order a screen should offer them — least privilege first.
+ *
+ * The one ordered list. Annotated rather than asserted: `readonly AppRole[]`
+ * makes a value outside the union a compile error, where `as AppRole[]` would
+ * have silently accepted one. That distinction is not academic — the users
+ * drawer carried `['employee', 'manager', 'admin'] as AppRole[]` through the
+ * whole four-role migration, and the cast is the only reason neither the
+ * typechecker nor the sweep saw it.
+ */
+export const APP_ROLES: readonly AppRole[] =
+  ['employee', 'hr_admin', 'finance_admin', 'company_admin'] as const;
+
+/* Derived, so the set and the list cannot disagree about what a role is. */
+const ROLES = new Set<string>(APP_ROLES);
 export const isAppRole = (r: unknown): r is AppRole => typeof r === 'string' && ROLES.has(r);
 
 export interface ScopeInfo {
