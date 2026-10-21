@@ -48,11 +48,33 @@ check('no salary band runs backwards',
 check('no experience band runs backwards',
   REQUIREMENTS.filter((r) => r.expMax < r.expMin).length, 0);
 
-/* The markup is stored, so it must still describe the rates it was quoted on. */
+/*
+ * The markup is stored, so it must still describe the rates it was quoted on.
+ *
+ * The tolerance allows for rounding, because `payRate` is derived and then
+ * rounded to a whole unit:
+ *
+ *     payRate: Math.round(billRate / (1 + markupPct / 100))
+ *
+ * Recomputing the markup from that integer cannot return the original. The
+ * error is largest when the rate is small: at pay 37 / bill 52 / markup 39 the
+ * true pay is 37.41, so rounding to 37 implies 40.54 — off by 1.54 against a
+ * flat tolerance of 1.5, which is how this assertion came to fail on
+ * 2026-10-21 having passed the day before. The data is date-seeded, so which
+ * row sits closest to the edge changes daily; a flat number was always going
+ * to be crossed eventually.
+ *
+ * So the slack is the bound on that rounding rather than a round number:
+ * d(implied)/d(pay) is `-100 * bill / pay²`, and `Math.round` moves pay by at
+ * most half a unit, giving `50 * bill / pay²`. Anything beyond that is not
+ * rounding and still fails — at these rates the allowance is about 1.9, so a
+ * genuinely mis-stored markup is still caught.
+ */
 const markupDrift = REQUIREMENTS.filter((r) => {
   if (r.payRate === null || r.markupPct === null) return false;
   const implied = ((r.billRate - r.payRate) / r.payRate) * 100;
-  return Math.abs(implied - r.markupPct) > 1.5;
+  const rounding = (50 * r.billRate) / (r.payRate ** 2);
+  return Math.abs(implied - r.markupPct) > Math.max(1.5, rounding);
 });
 check('the stored markup matches the rates it was quoted on', markupDrift.length, 0);
 
