@@ -106,6 +106,61 @@ check('a reimbursement adds to net without being taxed',
   [withReimb.net - full.net, withReimb.gross - full.gross], [3000, 0]);
 console.log('  ok    a month computes, scales and nets correctly');
 
+/* ------------------------------------------------------------------ *
+ * One bad payslip may not blank the page
+ * ------------------------------------------------------------------ */
+
+/*
+ * The salary register read the basic pay line as `s.p.earn[0].a`, in a table
+ * cell and in its CSV export. A payslip whose `earn` array is empty makes that
+ * a TypeError, and in the table cell it is thrown during render — so React
+ * unmounts the tree and the whole Payroll page goes blank. A blank cell is the
+ * correct size of failure for one malformed row.
+ *
+ * Two assertions, because the fix has two halves that fail differently: the
+ * accessor must tolerate the empty case, and nothing may go back to reaching
+ * into the array directly. The second is the one that catches a regression —
+ * the first would still pass if a new call site were added beside it.
+ */
+console.log('');
+console.log('one malformed payslip does not take the page with it');
+
+const { basicOf } = await import('../src/modules/payroll/index');
+
+/*
+ * Through a catch, because the failure being guarded against is a throw. Left
+ * bare, a regression here takes this script down with a stack trace instead of
+ * reporting a mismatch — still a non-zero exit, but it reads as the suite
+ * being broken rather than the code.
+ */
+const safely = (fn: () => number): number | string => {
+  try { return fn(); } catch (e) { return `threw: ${e instanceof Error ? e.message : String(e)}`; }
+};
+
+check('an empty earnings array reads as zero', safely(() => basicOf({ earn: [] })), 0);
+check('a normal payslip reads its first line',
+  safely(() => basicOf({ earn: [{ a: 42000 }, { a: 8000 }] })), 42000);
+check('a single-line payslip reads that line',
+  safely(() => basicOf({ earn: [{ a: 1 }] })), 1);
+
+const { readFileSync } = await import('node:fs');
+const { fileURLToPath } = await import('node:url');
+const { dirname, join } = await import('node:path');
+const payrollSrc = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../src/modules/payroll/index.tsx'),
+  'utf8',
+);
+
+/* Every `earn[0]` outside a comment and outside the accessor's own body. */
+const direct = payrollSrc.split('\n')
+  .map((line, i) => ({ line: line.trim(), n: i + 1 }))
+  .filter(({ line }) => /\bearn\[0\]/.test(line))
+  .filter(({ line }) => !line.startsWith('*') && !line.startsWith('//'))
+  .filter(({ line }) => !line.includes('export const basicOf'));
+
+check(`nothing reaches into earn[0] directly (${direct.map((d) => d.n).join(', ') || 'none'})`,
+  direct.length, 0);
+
 console.log(failed
   ? `\n${failed} payroll rule check(s) FAILED`
   : '\nthe server payroll rules match the prototype exactly');

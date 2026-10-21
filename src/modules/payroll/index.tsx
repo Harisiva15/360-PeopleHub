@@ -37,6 +37,21 @@ const mS = (e: Employee, a: number) => moneyShort(a, e.ccy);
 /** Deductions split into statutory vs income tax, by label. */
 const TAX_RE = /Tax|TDS|PAYE/;
 
+/**
+ * The basic pay line, which is the first earning by convention.
+ *
+ * Read through here rather than as `p.earn[0].a`, which is how it was written
+ * in two places: the salary register's table cell and its CSV export. A
+ * payslip with no earnings at all makes that a `TypeError`, and in the table
+ * cell it is thrown during render — so one malformed row took the whole
+ * Payroll page down to a blank screen rather than showing a blank cell.
+ *
+ * Zero is the honest answer for a payslip with nothing on it. The row still
+ * renders, with its gross and net as the service computed them, so a bad
+ * payslip is visible rather than fatal — which is what makes it reportable.
+ */
+export const basicOf = (p: { earn: readonly { a: number }[] }): number => p.earn[0]?.a ?? 0;
+
 /* ---------------- Payroll runs ---------------- */
 
 function PyRuns({ goRegister }: { goRegister: (mk: string) => void }) {
@@ -242,7 +257,7 @@ function PyRegister({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
           const statEE = sum(s.p.ded.filter((d) => !TAX_RE.test(d.k) && !/Loan/.test(d.k)), (d) => d.a);
           const tax = sum(s.p.ded.filter((d) => TAX_RE.test(d.k)), (d) => d.a);
           return [s.e.code, s.e.name, s.e.country, s.e.ccy, String(s.p.payDays), String(s.p.lop),
-            String(s.p.earn[0].a), String(sum(s.p.earn.slice(1), (x) => x.a)), String(s.p.gross),
+            String(basicOf(s.p)), String(sum(s.p.earn.slice(1), (x) => x.a)), String(s.p.gross),
             String(statEE), String(tax), String(s.p.net), String(toBase(s.p.net, s.e.ccy))];
         }),
       ),
@@ -285,7 +300,7 @@ function PyRegister({ mk, setMk }: { mk: string; setMk: (s: string) => void }) {
                       {s.p.payDays}/{s.p.dim}
                       {s.p.lop > 0 && <> <Badge kind="crit">{s.p.lop} LOP</Badge></>}
                     </td>
-                    <td className="num">{m(s.e, s.p.earn[0].a)}</td>
+                    <td className="num">{m(s.e, basicOf(s.p))}</td>
                     <td className="num">{m(s.e, allow)}</td>
                     <td className="num strong">{m(s.e, s.p.gross)}</td>
                     <td className="num">{m(s.e, statEE)}</td>
