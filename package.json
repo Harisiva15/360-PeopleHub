@@ -13,6 +13,7 @@
     "check:gate": "vite-node checks/auth-gate.tsx",
     "check:identitygate": "vite-node checks/identity-gate.ts",
     "check:signin": "vite-node checks/signin-flow.tsx",
+    "check:inviteflow": "vite-node checks/invite-flow.tsx",
     "check:passwordreset": "vite-node checks/password-reset.tsx",
     "check:authnotenant": "npm --prefix server run --silent check:authnotenant",
     "check:adminapi": "npm --prefix server run --silent check:adminapi",

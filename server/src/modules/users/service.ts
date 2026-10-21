@@ -638,20 +638,41 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
       await authAdmin().inviteToSetPassword(d.email.trim(), inviteRedirect());
     }
 
+    /*
+     * `must_change_password` is `true`, unconditionally.
+     *
+     * It used to be `d.sendInvitation === false` — set only when the
+     * administrator was going to tell the person their password themselves, and
+     * left `false` when an invitation was sent, on the assumption that the
+     * invitation link forces a password to be chosen. It does not. Supabase's
+     * invite link hands back a working session, which arrives as an ordinary
+     * sign-in, and `SetPassword` renders only when `account-status` reports
+     * `mustChangePassword` or the auth event was `PASSWORD_RECOVERY`. So an
+     * invited person went straight to the home page and ended up with an
+     * account they could reach and no password they had chosen.
+     *
+     * There is no case where a newly created account should be `false`: this
+     * path never sets a password, so until somebody chooses one there is
+     * nothing to keep. An invitation can only ever mean "set your password".
+     *
+     * The flag is the reliable half of the gate — it is a fact in the database
+     * rather than a guess about which event Supabase emitted. The link type is
+     * read on the client too, so the screen appears before the first request
+     * comes back, but if the two ever disagree this is the one that decides.
+     */
     const { rows } = await db.query<{ id: string }>(
       `INSERT INTO tenant_membership
          (user_id, role, employee_id, status, invited_at, invite_sent_at,
           invited_count, must_change_password, requested_by,
           approved_by, approved_at)
        VALUES (NULL, $1, $2, $3, now(),
-               CASE WHEN $7 THEN now() ELSE NULL END,
-               CASE WHEN $7 THEN 1 ELSE 0 END,
-               $4, $5,
-               CASE WHEN $3 <> 'pending_approval' THEN $6::uuid ELSE NULL END,
+               CASE WHEN $6 THEN now() ELSE NULL END,
+               CASE WHEN $6 THEN 1 ELSE 0 END,
+               true, $4,
+               CASE WHEN $3 <> 'pending_approval' THEN $5::uuid ELSE NULL END,
                CASE WHEN $3 <> 'pending_approval' THEN now() ELSE NULL END)
        RETURNING id`,
-      [d.role, emp[0]!.id, status, d.sendInvitation === false, caller.employeeId,
-        caller.employeeId, sending]);
+      [d.role, emp[0]!.id, status, caller.employeeId, caller.employeeId, sending]);
 
     await audit(db, caller, 'user.created', rows[0]!.id,
       `${d.name.trim()} · ${d.role} · ${FROM_DB[status]}`);
@@ -998,9 +1019,21 @@ export async function inviteUser(caller: Caller, id: string): Promise<UserAccoun
      */
     const outcome = await authAdmin().inviteToSetPassword(fresh.work_email, inviteRedirect());
 
+    /*
+     * `must_change_password` goes true here as well as in `createUser`.
+     *
+     * This path invites a membership that already exists — a first invitation
+     * for a joiner an administrator has just approved, or a re-invitation. In
+     * either case the link that goes out can only mean "set your password", so
+     * the flag has to be true whatever it was before. Setting it only at
+     * creation would leave a re-invited person walking straight in, which is
+     * the same defect in a different doorway.
+     */
     await db.query(
       `UPDATE tenant_membership
-          SET invited_count = invited_count + 1, invite_sent_at = now()
+          SET invited_count = invited_count + 1,
+              invite_sent_at = now(),
+              must_change_password = true
         WHERE id = $1`, [id]);
 
     /*

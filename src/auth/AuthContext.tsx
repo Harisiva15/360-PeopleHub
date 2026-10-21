@@ -13,7 +13,10 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { authConfigured, redirectTo, supabase } from './supabase';
+import {
+  arrivedToSetPassword, clearArrivedToSetPassword,
+  authConfigured, redirectTo, supabase,
+} from './supabase';
 import { clearLastActivity } from './idle';
 import { assurance, blocksOn, mfaAvailable, usedFactor } from './mfa';
 
@@ -87,8 +90,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Supabase reports a recovery link as its own event. The session it hands
    * back is real and would otherwise drop somebody straight into the app
    * without ever asking for the new password the link was for.
+   *
+   * Seeded from the link type rather than starting false, because an
+   * *invitation* is not reported as its own event — Supabase treats verifying
+   * one as an ordinary sign-in, so `PASSWORD_RECOVERY` never fires and the
+   * handler below never ran. An invited person therefore landed on the home
+   * page with a session and no password of their own.
+   *
+   * `arrivedToSetPassword` is read at module load, before the client consumes
+   * the URL fragment, and is true only for `invite` and `recovery`. Seeding the
+   * state means the password screen is up on the first render rather than after
+   * `account-status` answers; `must_change_password` in the database is the
+   * authority, and this only makes the gate close sooner.
    */
-  const [recovering, setRecovering] = useState(false);
+  const [recovering, setRecovering] = useState(arrivedToSetPassword);
   /*
    * Set when a sign-in begins and cleared when it is recorded, so the
    * history gets exactly one row per sign-in — written after the second
@@ -232,6 +247,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         + (e instanceof Error ? e.message : 'The server did not answer.'),
       );
     }
+    /*
+     * Discharge the link's obligation as well as the state.
+     *
+     * `recovering` is this provider's state; the module-level flag outlives it.
+     * Clearing only the state leaves the flag true, so the next time the
+     * provider mounts it seeds `recovering` true again and sends somebody who
+     * has just chosen a password straight back to the screen for it.
+     */
+    clearArrivedToSetPassword();
     setRecovering(false);
     setMustChange(false);
   }, []);

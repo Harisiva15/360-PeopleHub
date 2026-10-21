@@ -462,6 +462,19 @@ await withScratchTenant(admin, async (sctx) => {
       ok('    and a user.invited row was written',
         (await actionsFor(d.email)).includes('user.invited'),
         (await actionsFor(d.email)).join(', '));
+      /*
+       * The flag, which is the half of the gate that does not depend on what
+       * event Supabase emits.
+       *
+       * It used to be `sendInvitation === false`, so sending an invitation
+       * left it false — and because an invite link arrives as an ordinary
+       * sign-in rather than PASSWORD_RECOVERY, nothing asked the person for a
+       * password and they ended up with an account and no credential of their
+       * own. An invitation can only ever mean "set your password".
+       */
+      ok('    and they must set a password at first sign-in',
+        m?.must_change_password === true,
+        'an invited account with the flag false walks straight in');
     } finally { setAuthAdmin(was); }
   }
 
@@ -545,6 +558,35 @@ await withScratchTenant(admin, async (sctx) => {
       await createUser(A, draft({ sendInvitation: false, code: 'ZZ009' }));
       const after = await nextEmployeeCode(A);
       ok('    it follows the highest code, not the row count', after === 'ZZ010', after);
+    } finally { setAuthAdmin(was); }
+  }
+
+  /*
+   * Re-inviting restores the obligation.
+   *
+   * Setting the flag only at creation would leave a re-invited person walking
+   * straight in — the same defect in a different doorway. So this clears it
+   * behind the service's back, sends an invitation, and expects it back.
+   */
+  {
+    const api = spy(() => Promise.resolve({ kind: 'invited' }));
+    const was = setAuthAdmin(api);
+    try {
+      const d = draft({ sendInvitation: false });
+      const made = await createUser(A, d);
+
+      await admin.query(
+        'UPDATE tenant_membership SET must_change_password = false WHERE id = $1',
+        [made.id]);
+      const before = await memFor(d.email);
+      ok('19. the flag was cleared behind the service', before?.must_change_password === false);
+
+      await inviteUser(A, made.id);
+      const after = await memFor(d.email);
+      ok('    inviting sets it again', after?.must_change_password === true,
+        'a re-invited person would otherwise walk straight in');
+      ok('    and the invitation really went', api.calls.length === 1,
+        `${api.calls.length} call(s)`);
     } finally { setAuthAdmin(was); }
   }
 });
