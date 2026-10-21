@@ -33,6 +33,7 @@ import { Menu } from '../components/Menu';
 import { Icon } from '../components/icons';
 import type { IconName } from '../components/icons';
 import { WorldClocks } from './WorldClocks';
+import { usePhotoUrl } from '../services/photos';
 
 /* ---------------- what the header can reach ---------------- */
 
@@ -219,6 +220,17 @@ export function TopBar({ mobile, onMenu, actionRef }: {
   const ctx = { role: app.role, meId: app.meId, me: app.me };
   /* The server's answer where there is one; the dataset's row otherwise. */
   const who = app.identity ?? app.me;
+  /*
+   * Your own photo, and only your own. One person means one signed URL; the
+   * search results below render many people and deliberately keep initials,
+   * because a list of photos needs a bulk signing endpoint that does not
+   * exist yet — see services/photos.ts.
+   *
+   * `app.meId` rather than `who.id`: `who` may be a MeIdentity, which
+   * carries `empId` and no `id`, and meId is the resolved employee either
+   * way. It is also the value AuthGate waits for, so it is never a demo id.
+   */
+  const { data: myPhoto } = usePhotoUrl(app.meId);
 
   /* What is waiting on this person, module by module, heaviest first. */
   const waiting = dests
@@ -313,7 +325,7 @@ export function TopBar({ mobile, onMenu, actionRef }: {
           */}
         <Menu label="Your account" width={252} trigger={(
           <span className="who">
-            <Avatar name={who.name} />
+            <Avatar name={who.name} src={myPhoto} />
             <span className="who-t">
               <b>{who.name}</b>
               <i>{ROLE_LABEL[app.role]}</i>
@@ -323,7 +335,7 @@ export function TopBar({ mobile, onMenu, actionRef }: {
           {(close) => (
             <>
               <div className="menu-id">
-                <Avatar name={who.name} size="lg" />
+                <Avatar name={who.name} size="lg" src={myPhoto} />
                 <div style={{ minWidth: 0 }}>
                   <b>{who.name}</b>
                   <i>{who.designation}</i>

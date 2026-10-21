@@ -42,6 +42,15 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       setRole: (id: string, role: AppRole) =>
         api.put<Employee>(`/employees/${id}/role`, { role }),
 
+      photoUrl: async (id: string) =>
+        (await api.get<{ url: string | null }>(`/employees/${id}/photo`)).url,
+      /* A raw body: the bytes go as bytes, not base64 inside JSON. */
+      setPhoto: (id: string, blob: Blob, mimeType: string) =>
+        api.put<{ url: string }>(`/employees/${id}/photo`, { blob, mimeType }),
+      removePhoto: async (id: string) => {
+        await api.del<{ ok: true }>(`/employees/${id}/photo`);
+      },
+
       /*
        * `profile` waited on payroll. The route existed all along but answered
        * three of the contract's eighteen fields, so claiming it here would

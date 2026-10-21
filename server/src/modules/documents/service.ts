@@ -7,10 +7,19 @@
  * the offer goes out and long before any PDF exists, so the request is its own
  * record and points at a file only once there is one.
  *
- * **This deployment has no object storage**, so today every request lives its
- * whole life with nothing attached. That is a real limitation and it is also
- * the less important half: HR needs to know what is outstanding and who is
- * chasing it. Attaching the file is a later commit and a storage bucket.
+ * **There is object storage now**, and this module does not use it yet. Phase 0
+ * added `server/src/storage/` — `put`, `signedUrl`, `remove`, with the byte cap
+ * and the magic-number check — and phase 4 is the first caller, for profile
+ * photos. So the sentence that used to be here, that every request lives its
+ * whole life with nothing attached, is no longer a fact about the deployment;
+ * it is a fact about this module.
+ *
+ * Attaching a file to a request means writing a `document` row and pointing
+ * `document_request.document_id` at it, the way `employee.photo_document_id`
+ * points at a photo. The permission question is the harder half and is not
+ * answered here: a degree certificate is more sensitive than a profile
+ * picture, and who may read somebody else's is a decision for phase 6 rather
+ * than a default inherited from photos.
  *
  * **Verification is a person and a date, not a flag.** The schema refuses a
  * verified request without both — a tick with nobody behind it is the state

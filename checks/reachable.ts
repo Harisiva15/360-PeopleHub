@@ -38,6 +38,16 @@ const ALLOWED: Record<string, string> = {
   /* plumbing */
   'employees.visible': 'called through services/people.ts, which every module shares',
   /*
+   * Same shape as `employees.visible`: a hook in `services/` is the only
+   * caller, because a signed photo URL lives five minutes and must be asked
+   * for per render rather than carried in a list payload. `services/photos.ts`
+   * is where that constraint is written down, and the screens use the hook.
+   *
+   * `setPhoto` and `removePhoto` are *not* here — the account screen calls
+   * them by name, and if that ever stops being true this check should say so.
+   */
+  'employees.photoUrl': 'called through services/photos.ts, which signs one URL per render',
+  /*
    * `employees.byIds` used to sit here, reached only through
    * `services/people.ts`. `AppContext` now calls it by name to read the
    * signed-in person's own employee row — which is what makes `app.me` the

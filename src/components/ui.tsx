@@ -1,14 +1,46 @@
-import { Children, cloneElement, isValidElement } from 'react';
+import { Children, cloneElement, isValidElement, useEffect, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { avColor, initials } from '../lib/format';
 import type { Employee } from '../types/employee';
 
 /* ---------- Avatar & person ---------- */
 
-export function Avatar({ name, size }: { name: string; size?: 'sm' | 'lg' | 'xl' }) {
+/**
+ * Somebody's face, or their initials.
+ *
+ * `src` is optional and failing is normal: most people have no photo, a signed
+ * URL expires after five minutes, and a purged document leaves a key that no
+ * longer resolves. So the initials are not a placeholder shown while loading —
+ * they are the resting state, and the image is drawn over them only once it has
+ * actually decoded. An `onError` puts it back, which covers the expired URL
+ * without the caller having to think about it.
+ *
+ * The photo is rendered at a fixed size with `object-fit: cover`, because the
+ * server cannot verify dimensions — it has no image decoder — so a 4000px
+ * square and a 40px one both have to come out as the same circle.
+ */
+export function Avatar({
+  name, size, src,
+}: { name: string; size?: 'sm' | 'lg' | 'xl'; src?: string | null }) {
+  const [broken, setBroken] = useState(false);
+  const show = Boolean(src) && !broken;
+
+  /* A new src is a new attempt: a replaced photo must not inherit the old
+     one's failure. */
+  useEffect(() => { setBroken(false); }, [src]);
+
   return (
     <div className={'av' + (size ? ' ' + size : '')} style={{ background: avColor(name) }}>
-      {initials(name)}
+      {show
+        ? (
+          <img
+            className="av-img"
+            src={src ?? ''}
+            alt=""
+            onError={() => setBroken(true)}
+          />
+        )
+        : initials(name)}
     </div>
   );
 }

@@ -189,6 +189,8 @@ import {
 import type { Role } from '../auth/policy.ts';
 import { overridesFor } from '../auth/overrides.ts';
 import { moduleForPath } from './route-modules.ts';
+import { photoUrl, setPhoto, removePhoto, PhotoError } from '../modules/photos/service.ts';
+import { StorageError } from '../storage/index.ts';
 import {
   permissionGrid, setPermissions, resetModule, PermissionError,
 } from '../modules/config/permissions.ts';
@@ -235,6 +237,19 @@ interface Route {
   /** Path pattern with :name segments, e.g. /employees/:id/profile. */
   pattern: string;
   handler: Handler;
+  /**
+   * Hand the handler the raw bytes instead of parsed JSON.
+   *
+   * For the one thing a form cannot carry: an uploaded file. `readJsonBody`
+   * caps a body at a megabyte and parses it, both of which are right for every
+   * other route and wrong for a photo — base64 in JSON would inflate 2 MB of
+   * image to 2.7 MB of body and spend the difference on nothing.
+   *
+   * The cap still exists, it is just the route's own: `readRawBody` takes the
+   * largest size any raw route accepts and the service then applies its own,
+   * stricter limit against the bytes it actually received.
+   */
+  raw?: true;
 }
 
 /**
@@ -316,6 +331,43 @@ const routes: Route[] = [
       const profile = await getEmployeeProfile(caller, params.id!);
       if (!profile) throw new NotFound('no such employee');
       return profile;
+    },
+  },
+  /*
+   * The profile photo.
+   *
+   * `{ url: null }` rather than a 404 when somebody has no photo: not having
+   * one is the ordinary case, and the screen's answer to it is to render
+   * initials rather than to show a failure. A 404 would make the absence look
+   * like a broken request in every network log.
+   */
+  {
+    method: 'GET',
+    pattern: '/employees/:id/photo',
+    handler: async (caller, _req, params) => ({
+      url: await photoUrl(caller, params.id!),
+    }),
+  },
+  /*
+   * `raw`, so the bytes arrive as bytes. The declared content type is the
+   * caller's claim and is checked against the file's magic number in
+   * `storage/validate` before anything is stored.
+   */
+  {
+    method: 'PUT',
+    pattern: '/employees/:id/photo',
+    raw: true,
+    handler: async (caller, _req, params, body) => {
+      const { bytes, mimeType } = body as { bytes: Buffer; mimeType: string };
+      return setPhoto(caller, params.id!, bytes, mimeType);
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: '/employees/:id/photo',
+    handler: async (caller, _req, params) => {
+      await removePhoto(caller, params.id!);
+      return { ok: true };
     },
   },
   {
@@ -2284,6 +2336,34 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
+/**
+ * The body as bytes, for a route marked `raw`.
+ *
+ * The cap here is the outer bound across every raw route — the ceiling that
+ * stops a request consuming memory before anybody has looked at it. It is
+ * deliberately *not* the rule a feature cares about: a profile photo may be
+ * 2 MB and says so itself, measured against the bytes in `storage/validate`,
+ * which also checks the type against the file's magic number. Two limits, and
+ * the specific one is the one a person sees.
+ *
+ * The content type is the caller's claim and is passed through untouched. It is
+ * verified against the bytes downstream rather than trusted here, because a
+ * header is not evidence.
+ */
+const RAW_BODY_MAX = 4 * 1024 * 1024;
+
+async function readRawBody(req: IncomingMessage): Promise<{ bytes: Buffer; mimeType: string }> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > RAW_BODY_MAX) throw new BadRequest('that upload is too large');
+    chunks.push(chunk as Buffer);
+  }
+  const type = String(req.headers['content-type'] ?? '').split(';')[0]!.trim();
+  return { bytes: Buffer.concat(chunks), mimeType: type };
+}
+
 export class BadRequest extends Error {}
 
 const bearer = (req: IncomingMessage): string | undefined => {
@@ -2335,6 +2415,22 @@ function statusFor(error: unknown): { status: number; message: string } {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404
         : error.code === 'invalid' ? 400 : 409;
+    return { status, message: error.message };
+  }
+  if (error instanceof PhotoError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404 : 400;
+    return { status, message: error.message };
+  }
+  /*
+   * A storage refusal is the caller's fault when it is about the file and
+   * ours when it is about the configuration or the network — so they map to
+   * different classes rather than all to 400.
+   */
+  if (error instanceof StorageError) {
+    const status = error.code === 'not_configured' ? 503
+      : error.code === 'unreachable' ? 502
+        : error.code === 'too_large' ? 413 : 400;
     return { status, message: error.message };
   }
   if (error instanceof AdminApiError) {
@@ -2657,7 +2753,9 @@ export function createApp() {
             }
           }
 
-          const body = req.method === 'GET' ? undefined : await readJsonBody(req);
+          const body = req.method === 'GET'
+            ? undefined
+            : route.raw ? await readRawBody(req) : await readJsonBody(req);
           const result = await route.handler(caller, req, params, body);
           send(res, 200, result);
           return;

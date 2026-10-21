@@ -135,6 +135,22 @@ export interface EmployeeProfile {
 }
 
 export interface EmployeeService {
+  /**
+   * Somebody's profile photo as a short-lived signed URL, or null.
+   *
+   * Null rather than an error when they have none: that is the ordinary case,
+   * and the screen's answer to it is to render initials. The URL expires in
+   * minutes, so it is fetched when needed and never stored.
+   */
+  photoUrl(id: string): Promise<string | null>;
+  /**
+   * Replace it. The browser resizes to 256px first as a courtesy to bandwidth;
+   * the server enforces the byte cap and the type against the file's own magic
+   * number, because it cannot verify dimensions.
+   */
+  setPhoto(id: string, blob: Blob, mimeType: string): Promise<{ url: string }>;
+  /** Clear the pointer and purge the document. Avatar falls back to initials. */
+  removePhoto(id: string): Promise<void>;
   /** Everyone the caller may see — the whole company, their tree, or themselves. */
   visible(c: Caller): Promise<Employee[]>;
   byId(id: string): Promise<Employee | null>;

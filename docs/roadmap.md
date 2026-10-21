@@ -414,6 +414,20 @@ Decision 12 means the server cannot verify pixel dimensions without an image
 decoder. The code says so where the resize is trusted, rather than implying a
 guarantee it does not make.
 
+**Not built: signing many photos in one call.** A signed URL lives five
+minutes, so it cannot be cached across a session or carried in a list payload
+— each one is minted per render. That makes `employees.photoUrl` right for the
+places that show **one** known person (the top bar, the account screen, a
+profile header) and wrong for a directory of two hundred, where it would be
+two hundred requests.
+
+So the top bar and the account screen have photos and the directory and org
+chart still render initials, which is why the Screens row above is only half
+done. Finishing it needs an endpoint that takes a list of employee ids and
+returns a signed URL for each, with the same permission check applied per row.
+`src/services/photos.ts` states the constraint at the one place a screen would
+otherwise reach for the wrong hook.
+
 ---
 
 ## Phase 5 — branded PDFs

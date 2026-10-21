@@ -17,6 +17,7 @@
     "check:inviteflow": "node checks/lib/deadline.mjs 240 vite-node checks/invite-flow.tsx",
     "check:passwordreset": "node checks/lib/deadline.mjs 240 vite-node checks/password-reset.tsx",
     "check:authnotenant": "npm --prefix server run --silent check:authnotenant",
+    "check:photo": "npm --prefix server run --silent check:photo",
     "check:storage": "npm --prefix server run --silent check:storage",
     "check:adminapi": "npm --prefix server run --silent check:adminapi",
     "check:payroutes": "node checks/lib/deadline.mjs 240 vite-node checks/pay-routes.ts",

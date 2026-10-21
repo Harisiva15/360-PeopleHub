@@ -130,8 +130,26 @@ export function assertNoDemoIds(method: string, path: string, body?: unknown): v
   }
 }
 
+/**
+ * A body that is bytes rather than a form.
+ *
+ * Only an uploaded file needs this. Sent as-is with its own content type, so
+ * the server reads it with `readRawBody` instead of parsing JSON — base64 in a
+ * JSON body would inflate 2 MB of image to 2.7 MB of request and spend the
+ * difference on nothing. The content type is a claim and the server verifies
+ * it against the file's magic number; it is not trusted here.
+ */
+export interface RawBody {
+  blob: Blob;
+  mimeType: string;
+}
+
+const isRaw = (b: unknown): b is RawBody =>
+  typeof b === 'object' && b !== null && 'blob' in b && 'mimeType' in b;
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  assertNoDemoIds(method, path, body);
+  /* A Blob carries no ids to leak, and walking one is meaningless. */
+  if (!isRaw(body)) assertNoDemoIds(method, path, body);
 
   const token = await bearerToken();
   if (!token) throw new ApiError(401, 'You are not signed in');
@@ -142,9 +160,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       method,
       headers: {
         authorization: `Bearer ${token}`,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...(body === undefined ? {} : isRaw(body)
+          ? { 'content-type': body.mimeType }
+          : { 'content-type': 'application/json' }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : {
+        body: isRaw(body) ? body.blob : JSON.stringify(body),
+      }),
     });
   } catch {
     // fetch rejects for network failure and for CORS. The browser deliberately

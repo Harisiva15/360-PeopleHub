@@ -28,6 +28,7 @@ import { useLoginHistory, useVisiblePeople } from '../users/data';
 import { SignInAdvice, SignInTable } from '../users/SignIns';
 import { whenOf } from '../users/shared';
 import { MfaSetup } from '../../auth/MfaSetup';
+import { ProfilePhoto } from './ProfilePhoto';
 
 type Tab = 'signins' | 'security';
 
@@ -67,6 +68,16 @@ function AccountView() {
           value={loading ? '—' : addresses.size}
           foot="Distinct networks you have signed in from" />
       </StatRow>
+
+      {/*
+        * Outside the tabs, because a photo is neither a sign-in record nor a
+        * security setting — the two things the tabs divide this screen into.
+        *
+        * Only rendered once the directory has resolved who you are: the card
+        * needs an employee id to ask for and to upload against, and passing an
+        * empty one would make its query a request for nobody's photo.
+        */}
+      {me && <ProfilePhoto empId={me.id} name={me.name} />}
 
       <Tabs
         value={tab}

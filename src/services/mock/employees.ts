@@ -24,7 +24,43 @@ import { ok } from './util';
  * in rather than read from React context.
  */
 
+/**
+ * Photos, in the demo, are nobody's.
+ *
+ * The demo dataset has no image files and no object storage behind it, so
+ * `photoUrl` answers null and every `Avatar` falls back to initials — which is
+ * exactly what the public demo should show. `setPhoto` and `removePhoto` are
+ * not stubbed to pretend: a mock that resolved as though it had stored
+ * something would put "Photo updated" on screen over nothing, which is the
+ * class of lie `check:fakesuccess` exists to catch.
+ *
+ * Kept in memory per session rather than persisted, so the demo can show the
+ * mechanism working without inventing a backend.
+ */
+const demoPhotos = new Map<string, string>();
+
 export const employeeService: EmployeeService = {
+  photoUrl(id) {
+    return ok(demoPhotos.get(id) ?? null);
+  },
+
+  async setPhoto(id, blob, mimeType) {
+    /* A data URL, because the demo has nowhere to put bytes. Revoked on
+       replace so a session does not accumulate them. */
+    const url = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('That image could not be read'));
+      r.readAsDataURL(new Blob([blob], { type: mimeType }));
+    });
+    demoPhotos.set(id, url);
+    return { url };
+  },
+
+  async removePhoto(id) {
+    demoPhotos.delete(id);
+  },
+
   visible(c) {
     const allowed = new Set(visibleIds(c.role, c.meId));
     return ok(ACTIVE().filter((e) => allowed.has(e.id)));
