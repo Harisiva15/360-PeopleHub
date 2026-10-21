@@ -162,15 +162,47 @@ const fail = (label: string, cond: boolean, detail = '') => {
     `${vite.join(', ')} — Vite inlines VITE_* into the bundle`,
   );
 
-  /* And only the one module reads it server-side. */
+  /*
+   * And only one module reads it server-side.
+   *
+   * The test is on **reading the value**, `config.supabaseServiceKey`, not on
+   * mentioning the environment variable's name. Those are different acts: a
+   * module that says "SUPABASE_SERVICE_ROLE_KEY is not set" in a refusal is
+   * being helpful and holds nothing, while a module that reads the value has
+   * the credential that bypasses every row-level security policy in the schema.
+   *
+   * It used to match either, and the allow-list was `config.ts` and
+   * `adminApi.ts` — which held while sending invitations was the only thing
+   * that needed the key. Phase 0's storage adapter is a second consumer, since
+   * Supabase Storage authenticates with the same credential. Rather than let
+   * the credential live in two modules, `auth/serviceKey.ts` now owns it and
+   * hands out a header; `adminApi` and `storage` both go through it and read
+   * nothing themselves.
+   *
+   * So the count below is still one module plus config, which is the property
+   * worth defending. Widening this list again should mean adding a consumer of
+   * `serviceHeaders`, not another reader.
+   */
   const serverFiles = execSync('git ls-files server/src', { cwd: root, encoding: 'utf8' })
     .split('\n').filter(Boolean);
   const readers = serverFiles.filter((rel) =>
-    /supabaseServiceKey|SUPABASE_SERVICE_ROLE_KEY/.test(readFileSync(join(root, rel), 'utf8')));
+    /config\.supabaseServiceKey/.test(readFileSync(join(root, rel), 'utf8')));
   fail(
-    `only config and the admin API read it (${readers.length})`,
-    readers.every((r) => /config\.ts$|adminApi\.ts$/.test(r)),
+    `only config and serviceKey read the value (${readers.length})`,
+    readers.every((r) => /config\.ts$|serviceKey\.ts$/.test(r)),
     readers.join(', '),
+  );
+
+  /*
+   * And the header is built in exactly one place, so a second consumer cannot
+   * quietly assemble its own from a value it got some other way.
+   */
+  const builders = serverFiles.filter((rel) =>
+    /authorization:\s*`Bearer \$\{/.test(readFileSync(join(root, rel), 'utf8')));
+  fail(
+    `only serviceKey builds the service authorization header (${builders.length})`,
+    builders.every((r) => /serviceKey\.ts$/.test(r)),
+    builders.join(', '),
   );
 }
 

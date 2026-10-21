@@ -37,6 +37,7 @@
 
 import { createHash, randomUUID } from 'node:crypto';
 import { config } from '../config.ts';
+import { hasServiceKey, serviceHeaders, redactServiceKey } from '../auth/serviceKey.ts';
 
 export class StorageError extends Error {
   readonly code: string;
@@ -162,7 +163,7 @@ const bucket = (): string => {
       + '(SUPABASE_STORAGE_BUCKET is not set)',
       'not_configured');
   }
-  if (!config.supabaseServiceKey) {
+  if (!hasServiceKey()) {
     throw new StorageError(
       'this server has no credential for file storage '
       + '(SUPABASE_SERVICE_ROLE_KEY is not set)',
@@ -171,12 +172,8 @@ const bucket = (): string => {
   return config.supabaseStorageBucket;
 };
 
-/** Keeps the key out of anything that gets logged or returned. See adminApi. */
-const redactKey = (text: string): string => {
-  const key = config.supabaseServiceKey;
-  if (!key || !text) return text;
-  return text.split(key).join('[redacted]');
-};
+/** Keeps the key out of anything logged or returned. Lives in serviceKey.ts. */
+const redactKey = redactServiceKey;
 
 const reasonFrom = async (res: Response): Promise<string> => {
   let detail = '';
@@ -192,12 +189,8 @@ const reasonFrom = async (res: Response): Promise<string> => {
   return redactKey(detail) || `Supabase Storage returned ${res.status}`;
 };
 
-/* The service key, never logged and never returned. */
-const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
-  apikey: config.supabaseServiceKey,
-  authorization: `Bearer ${config.supabaseServiceKey}`,
-  ...extra,
-});
+/* From serviceKey.ts, the one module that reads the credential. */
+const headers = serviceHeaders;
 
 /** A network failure is not a 500 with no detail. See adminApi for the reasoning. */
 const reach = async (url: string, init: RequestInit): Promise<Response> => {

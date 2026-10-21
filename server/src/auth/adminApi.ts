@@ -25,6 +25,7 @@
  */
 
 import { config } from '../config.ts';
+import { hasServiceKey, serviceHeaders, redactServiceKey } from './serviceKey.ts';
 
 export class AdminApiError extends Error {
   readonly code: string;
@@ -64,7 +65,7 @@ export interface AuthAdmin {
  * ------------------------------------------------------------------ */
 
 const post = async (path: string, body: unknown): Promise<Response> => {
-  if (!config.supabaseServiceKey) {
+  if (!hasServiceKey()) {
     throw new AdminApiError(
       'this server is not configured to send invitations '
       + '(SUPABASE_SERVICE_ROLE_KEY is not set)',
@@ -87,12 +88,8 @@ const post = async (path: string, body: unknown): Promise<Response> => {
   try {
     return await fetch(`${config.supabaseUrl}${path}`, {
       method: 'POST',
-      headers: {
-        /* Both are required by GoTrue. Neither is ever logged or returned. */
-        apikey: config.supabaseServiceKey,
-        authorization: `Bearer ${config.supabaseServiceKey}`,
-        'content-type': 'application/json',
-      },
+      /* Both headers come from serviceKey.ts, the one reader of the key. */
+      headers: serviceHeaders({ 'content-type': 'application/json' }),
       body: JSON.stringify(body),
     });
   } catch (cause) {
@@ -126,22 +123,11 @@ const reasonFrom = async (res: Response): Promise<string> => {
 /**
  * Remove the service-role key from anything on its way into an error message.
  *
- * This module's whole claim is that the key is read from config, put in a
- * header, and appears in no return value, no error message and no log line. The
- * first three were true; the last two had a gap, because a provider's error body
- * is passed through verbatim and the request that produced it carried the key. A
- * provider that echoed it back — in a validation message, a proxy error, a
- * misconfigured gateway — would have written it into whatever logged the failure.
- *
- * Not a likely response, but the cost of being wrong is the one credential that
- * bypasses row-level security, and the check is two lines. The key is never
- * compared against anything, only removed, so this says nothing about it either.
+ * The reasoning and the implementation both live in `serviceKey.ts` now, which
+ * is the only module that reads the credential. This alias is kept so the call
+ * sites below read as they did.
  */
-const redactKey = (text: string): string => {
-  const key = config.supabaseServiceKey;
-  if (!key || !text) return text;
-  return text.split(key).join('[redacted]');
-};
+const redactKey = redactServiceKey;
 
 /** Whether Supabase is saying "that address already has an account". */
 const alreadyRegistered = (status: number, reason: string): boolean =>
