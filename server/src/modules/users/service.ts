@@ -1189,12 +1189,21 @@ export async function passwordChanged(caller: Caller): Promise<{ ok: true }> {
       'invalid');
   }
 
+  /*
+   * Captured before the closure, not read inside it.
+   *
+   * The guard above proves it is a string, but the narrowing does not survive
+   * into the callback — `caller` is still `Caller`, so `caller.employeeId` is
+   * `string | null` in there and `audit` wants a `string`. A local const keeps
+   * the narrowing and needs no `?? ''`, which is what the guard was for.
+   */
+  const employeeId = caller.employeeId;
+
   return withTenant(caller, async (db) => {
     await db.query(
       'UPDATE tenant_membership SET must_change_password = false WHERE employee_id = $1',
-      [caller.employeeId]);
-    /* No `?? ''` — the guard above means this is a real id by now. */
-    await audit(db, caller, 'user.password_changed', caller.employeeId,
+      [employeeId]);
+    await audit(db, caller, 'user.password_changed', employeeId,
       'set a new password at sign-in');
     return { ok: true } as const;
   });
