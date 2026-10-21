@@ -81,4 +81,19 @@ export const config = {
    * answer — an invitation must not point wherever the caller happened to be.
    */
   appBaseUrl: (process.env.APP_BASE_URL ?? '').replace(/\/+$/, ''),
+
+  /**
+   * The private Supabase Storage bucket that holds uploaded bytes.
+   *
+   * A name, not a credential — the credential is `supabaseServiceKey` above,
+   * and it is what makes the bucket reachable at all. The bucket is private, so
+   * nothing is served from it directly: `storage/signedUrl` mints a short-lived
+   * URL per request and stores none of them.
+   *
+   * Optional, like the service key and for the same reason: a deployment with
+   * no file storage should boot rather than be forced to name a bucket it has
+   * no use for. The storage adapter refuses clearly when it is absent instead
+   * of guessing a name and getting a 404 from Supabase that says nothing.
+   */
+  supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET ?? '',
 } as const;

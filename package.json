@@ -16,6 +16,7 @@
     "check:inviteflow": "vite-node checks/invite-flow.tsx",
     "check:passwordreset": "vite-node checks/password-reset.tsx",
     "check:authnotenant": "npm --prefix server run --silent check:authnotenant",
+    "check:storage": "npm --prefix server run --silent check:storage",
     "check:adminapi": "npm --prefix server run --silent check:adminapi",
     "check:payroutes": "vite-node checks/pay-routes.ts",
     "check:rolegates": "vite-node checks/role-gates.ts",
