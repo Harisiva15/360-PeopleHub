@@ -43,7 +43,7 @@ import {
   DeactivateConfirmation, DeleteConfirmation, UserForm, UserProfile,
 } from './Drawers';
 import { SignInTable } from './SignIns';
-import { PermissionGuard, RoleBadge, UserStatusBadge, useMay, whenOf } from './shared';
+import { PermissionGuard, ROLE_LABEL, RoleBadge, UserStatusBadge, useMay, whenOf } from './shared';
 
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -85,12 +85,26 @@ function Filters({
         {depts.list.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
       </select>
 
+      {/*
+        * Read from `ROLE_LABEL`, not written out here.
+        *
+        * These options said `admin`, `manager` and `employee` — the vocabulary
+        * from before the cutover. `admin` stopped existing when step B moved
+        * every row to `company_admin`, so choosing "Administrator" filtered on
+        * a value no row holds and returned nothing at all; `manager` was never
+        * a role, it is the layer derived from the reporting tree. Two of the
+        * three filters were dead and the screen said nothing about it.
+        *
+        * `ROLE_LABEL` is re-exported from ./shared for exactly this reason, so
+        * a role added to the policy appears here without anybody remembering
+        * to come back.
+        */}
       <select className="input sm" value={f.role ?? ''} aria-label="Role"
         onChange={(e) => one('role')(e.target.value)}>
         <option value="">All roles</option>
-        <option value="admin">Administrator</option>
-        <option value="manager">Manager</option>
-        <option value="employee">Employee</option>
+        {(Object.keys(ROLE_LABEL) as AppRole[]).map((r) => (
+          <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+        ))}
       </select>
 
       <select className="input sm" value={f.site ?? ''} aria-label="Location"
@@ -111,13 +125,29 @@ function Filters({
         {types.map((t) => <option key={t} value={t}>{t}</option>)}
       </select>
 
-      <input className="input sm" type="date" value={f.joinedFrom ?? ''}
-        aria-label="Joined on or after" style={{ width: 150 }}
-        onChange={(e) => one('joinedFrom')(e.target.value)} />
+      {/*
+        * The label is visible, not just announced.
+        *
+        * It carried an `aria-label` and nothing on screen, so a screen reader
+        * knew what it filtered and everybody else saw a bare mm/dd/yyyy box —
+        * which, next to five dropdowns that each say what they are, reads as a
+        * date for no stated purpose. Wrapping the input in its own `label`
+        * gives the text and the association together, so the aria-label is no
+        * longer needed and would now override the words beside it.
+        */}
+      <label className="row" style={{ gap: 6, alignItems: 'center' }}>
+        <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+          Joined on or after
+        </span>
+        <input className="input sm" type="date" value={f.joinedFrom ?? ''}
+          style={{ width: 150 }}
+          onChange={(e) => one('joinedFrom')(e.target.value)} />
+      </label>
 
       <div className="spacer" />
+      {/* Still conditional: a clear button with nothing to clear is furniture. */}
       {Object.values(f).some(Boolean) && (
-        <button className="btn sm" onClick={() => set({})}>Reset</button>
+        <button className="btn sm" onClick={() => set({})}>Clear filters</button>
       )}
     </div>
   );
@@ -281,7 +311,7 @@ function UsersView() {
         </PermissionGuard>
         <PermissionGuard action="user.create">
           <button className="btn primary" onClick={() => openForm()}>
-            <Icon n="add" size="lg" /> Create New User
+            <Icon n="add" size="lg" /> Add user
           </button>
         </PermissionGuard>
       </PageActions>
