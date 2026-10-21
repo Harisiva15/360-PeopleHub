@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import type { ComponentType, ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes, Link } from 'react-router-dom';
 import { AppProvider, useApp } from './state/AppContext';
@@ -47,7 +48,16 @@ function RouteView({ route }: { route: string }) {
   const View = LAZY[route];
   if (!View) return <Navigate to="/dashboard" replace />;
   if (!app.can(route)) return <AccessDenied route={route} />;
-  return <View />;
+  /*
+   * Inside the shell and around the page only, and keyed by route so moving
+   * away builds a new one. A crash costs the page and keeps the navigation —
+   * see the boundary's own header for why that is the whole point.
+   */
+  return (
+    <ErrorBoundary key={route} where={route}>
+      <View />
+    </ErrorBoundary>
+  );
 }
 
 export function Routed() {
