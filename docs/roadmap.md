@@ -396,8 +396,37 @@ Most of this already has columns. `legal_entity` holds `legal_name`,
 |---|---|
 | **Migrations** | Add `gstin`, `pan`, `signatory_name`, `signatory_title`, `logo_document_id` (FK → `document`) to `legal_entity`. |
 | **Screens** | Settings → Company: a form over the existing and new fields, plus logo upload with preview, replace and remove. |
-| **Permissions** | `settings` → **company_admin only**. hr_admin holds nothing on `settings`, by the earlier decision that users, roles and settings are one job. |
-| **Checks** | Over 1 MB refused; anything but PNG or JPG refused by declared type **and** magic bytes; SVG refused explicitly, with the reason in the message; signed URLs expire; a non-company_admin gets 403 on both read and write. |
+| **Permissions** | **Writing** — upload, replace, remove — is `settings` write, which is **company_admin only**; hr_admin holds nothing on `settings`, by the earlier decision that users, roles and settings are one job. **Reading is open to any signed-in caller**, because the logo renders in the app header for everyone. |
+| **Checks** | Over **2 MB** refused; anything but PNG or JPG refused by declared type **and** magic bytes; SVG refused explicitly, with the reason in the message; signed URLs expire; a non-company_admin gets **403 on write and 200 on read**. |
+
+Three decisions taken on 2026-10-21, which this table now reflects rather than
+what it said first:
+
+- **2 MB, not 1 MB** — the same cap as a profile photo. One number for every
+  upload in the product is easier to hold than two, and a logo wants more
+  resolution than a 256px avatar, not less.
+- **Read is open; write is company_admin.** The first draft here had a
+  non-company_admin getting 403 on *both*. That cannot be right: the mark is in
+  the header of every page, so every signed-in person reads it.
+- **One upload, no dark variant.** A second "logo for dark grounds" slot stays
+  available as a later option and is not being built.
+
+That last one carries a consequence worth stating plainly, because it is not
+symmetrical with the built-in mark. The bundled logo has *two* assets, and the
+reversed one is **derived at build time** by `scripts/reverse-logo.mjs` —
+there is no equivalent for an upload. The server has no image decoder (phase 0,
+decision 12), and nothing re-runs that script against a customer's file. So an
+uploaded logo is rendered **as supplied, on every ground**, including the navy
+rail: artwork with dark ink in it will be hard to read there, and the automatic
+variant continues to apply only to the built-in fallback. The cheapest
+mitigation if it looks wrong on a real logo is a white plate behind the mark on
+dark grounds — CSS only, no second upload, and reversible.
+
+Beyond the logo, the fields currently rendered from the `ORG` constant in
+`src/data/org.ts` are a separate piece of work, proposed and not yet approved:
+trading name and financial year already have columns on `tenant`
+(`display_name`, `fiscal_year_start_month`) and need only a write path, while
+TAN wants a new `legal_entity.tan` and the tagline a new `tenant.tagline`.
 
 ---
 
