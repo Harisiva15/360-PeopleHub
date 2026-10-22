@@ -69,9 +69,20 @@ const mayManage = (c: Caller, e: CompanyEvent) =>
  * the point of a draft is being able to change your mind about the date
  * without forty people putting it in their calendar. Everything published is
  * visible to the people it is for, and to anybody who can manage events.
+ *
+ * ## The scope that decides this is `write`, not `read`
+ *
+ * The short-circuit tested `read` at `all`, using "can see every event" as a
+ * stand-in for "runs events". The policy grants an employee exactly that —
+ * `events: ['all', 'own', 'none']`, because a company event is public — so
+ * once `scopeOfDemo` started answering from the policy rather than from the
+ * role's rank, every employee fell into this branch and saw the drafts.
+ *
+ * Managing events is what the branch is about, and `mayManage` above already
+ * says so with the same scope and verb.
  */
 function visible(c: Caller): CompanyEvent[] {
-  if (callerCovers(c, 'events', 'all')) return EVENTS;
+  if (callerCovers(c, 'events', 'all', 'write')) return EVENTS;
   return EVENTS.filter((e) =>
     e.organiserId === c.meId
     || (e.status !== 'Draft' && (isInvited(e, c.meId) || teamOf(c.meId, true).length > 0)));
