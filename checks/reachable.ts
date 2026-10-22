@@ -35,24 +35,16 @@ import { mockServices } from '../src/services/mock';
  * — each of those is a missing feature, stated rather than forgotten.
  */
 const ALLOWED: Record<string, string> = {
-  /* plumbing */
-  'employees.visible': 'called through services/people.ts, which every module shares',
   /*
-   * Same shape as `employees.visible`: a hook in `services/` is the only
-   * caller, because a signed photo URL lives five minutes and must be asked
-   * for per render rather than carried in a list payload. `services/photos.ts`
-   * is where that constraint is written down, and the screens use the hook.
+   * Two entries used to live here — `employees.visible` and
+   * `employees.photoUrl` — and both said, in their own reason, that the caller
+   * was a file under `services/`. They were not exemptions from the rule; they
+   * were a record of where this check was not looking. `src/services` is
+   * walked now (implementations excluded), so both are reachable by name and
+   * the list is down to one real exemption.
    *
-   * `setPhoto` and `removePhoto` are *not* here — the account screen calls
-   * them by name, and if that ever stops being true this check should say so.
-   */
-  'employees.photoUrl': 'called through services/photos.ts, which signs one URL per render',
-  /*
-   * `employees.byIds` used to sit here, reached only through
-   * `services/people.ts`. `AppContext` now calls it by name to read the
-   * signed-in person's own employee row — which is what makes `app.me` the
-   * server's record rather than a lookup into the demo dataset — and
-   * `src/state` is walked, so the entry went stale and this check said so.
+   * `employees.byIds` had the same history and came off earlier for the same
+   * reason: `AppContext` calls it, and `src/state` was added to the walk.
    */
 
   /*
@@ -97,6 +89,32 @@ walk('src/auth');
  * built-and-unreachable while it was running on every sign-in.
  */
 walk('src/state');
+/*
+ * And the shared hooks. `services/photos.ts`, `services/people.ts`,
+ * `services/sites.ts`, `services/departments.ts` and `services/holidays.ts`
+ * exist because several modules need the same query and must not each write
+ * their own; a method reached through one of them is reached from a screen as
+ * surely as one called inline, just once instead of ten times.
+ *
+ * Leaving them out cost this list two standing exemptions — `employees.visible`
+ * and `employees.photoUrl`, both of which said in their reason that a file in
+ * `services/` was the caller — and would have cost a third the moment the
+ * holiday calendar moved off its bundled constant.
+ *
+ * `mock/` and `http/` are skipped deliberately, and the distinction is the
+ * whole point: those *implement* the services. `http/index.ts` contains
+ * `base.documents.documents(` inside an `unbacked(...)` wrapper, so reading it
+ * would let a method satisfy this check by being defined rather than by being
+ * wanted — which is the exact failure the file below guards against.
+ */
+const SERVICE_IMPL = ['src/services/mock', 'src/services/http'];
+const walkServices = (dir: string) => readdirSync(dir).forEach((f) => {
+  const p = join(dir, f);
+  if (SERVICE_IMPL.some((skip) => p.replace(/\\/g, '/').startsWith(skip))) return;
+  if (statSync(p).isDirectory()) walkServices(p);
+  else if (/\.tsx?$/.test(f)) files.push(p);
+});
+walkServices('src/services');
 const src = files.map((f) => readFileSync(f, 'utf8')).join('\n');
 
 /* Every line, with the file it came from, for the guard test below. */
