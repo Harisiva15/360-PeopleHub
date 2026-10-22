@@ -61,7 +61,7 @@ interface AppState {
   /** Bumped by `bump()` to re-render views after the mutable dataset changes. */
   revision: number;
 
-  signInAs: (role: AppRole) => void;
+  signInAs: (role: AppRole, empId?: string) => void;
   toggleTheme: () => void;
   /** Call after mutating the dataset so dependent views recompute. */
   bump: () => void;
@@ -400,9 +400,20 @@ export function AppProvider({ children, initialRole = 'company_admin' }: { child
    * it refuses in API mode rather than relying on the switcher being hidden
    * there. The UI already hides it; this makes the function itself safe.
    */
-  const signInAs = useCallback((next: AppRole) => {
+  /*
+   * `empId` because a role is not an identity. Two of the demo accounts are
+   * employees — one with reports, one without — and matching on the role
+   * alone found the first of them every time, so "Employee (Self-service)"
+   * signed you in as the reporting manager and the self-service account could
+   * not be reached at all. The only distinction the manager layer turns on
+   * was the one the switcher could not express.
+   *
+   * It stays optional: `settings/access.tsx` switches by role, where any
+   * holder of it will do.
+   */
+  const signInAs = useCallback((next: AppRole, empId?: string) => {
     if (apiMode) return;
-    const acc = ACCOUNTS().find((a) => a.role === next);
+    const acc = ACCOUNTS().find((a) => a.role === next && (!empId || a.empId === empId));
     if (!acc) return;
     setRole(acc.role);
     setMeId(acc.empId);

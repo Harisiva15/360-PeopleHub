@@ -24,6 +24,22 @@ export const ROLE_LABELS = {
 export type RoleKey = keyof typeof ROLE_LABELS;
 
 /**
+ * The demo accounts, as `ACCOUNTS()` labels them and the switcher now draws
+ * them. Five, not four: two of them are employees, one with reports and one
+ * without, which is the distinction the manager layer turns on. Each maps to
+ * the role label the top bar shows once you are signed in as them.
+ */
+export const ACCOUNTS = {
+  'Company Administrator': 'company_admin',
+  'HR Administrator': 'hr_admin',
+  'Finance Administrator': 'finance_admin',
+  'Reporting Manager (has reports)': 'employee',
+  'Employee (Self-service)': 'employee',
+} as const satisfies Record<string, RoleKey>;
+
+export type AccountLabel = keyof typeof ACCOUNTS;
+
+/**
  * Open the app at a hash route, as a cold load.
  *
  * ## Why `about:blank` first
@@ -83,23 +99,24 @@ export async function openHref(page: Page, href: string): Promise<void> {
   await open(page, hash.replace(/^\//, ''));
 }
 
+/** Open the top bar's own menu, where the demo accounts live. */
+export async function openUserMenu(page: Page): Promise<void> {
+  await page.locator('header.topbar').getByText(/administrator|Employee/i).first().click();
+  await expect(page.getByRole('menuitem').first()).toBeVisible();
+}
+
 /**
- * Switch the demo build to another role, and wait until the shell agrees.
+ * Sign in as one of the demo accounts, and wait until the shell agrees.
  *
- * `nth` picks between entries that carry the same label, which the switcher
- * currently needs: `ACCOUNTS()` holds two `employee` rows — a reporting
- * manager and a self-service employee — and `TopBar` labels both from
- * `ROLE_LABEL[a.role]`, so the menu reads "Employee" twice and each row's own
- * `label` ("Reporting Manager (has reports)", "Employee (Self-service)") is
- * never drawn. 0 is the reporting manager, 1 is the plain employee, in the
- * order `ACCOUNTS()` lists them.
+ * Selected by the account's own label rather than by role, because a role is
+ * not an identity: two accounts are employees, and picking by role reached
+ * only the first of them.
  */
-export async function switchRole(page: Page, role: RoleKey, nth = 0): Promise<void> {
-  const label = ROLE_LABELS[role];
-  /* The trigger carries the current role's label; the menu carries the others. */
-  await page.locator('header.topbar').getByText(/administrator|Employee/).first().click();
-  await page.getByRole('menuitem', { name: label, exact: true }).nth(nth).click();
-  await expect(page.locator('header.topbar').getByText(label, { exact: true }).first())
+export async function switchAccount(page: Page, account: AccountLabel): Promise<void> {
+  await openUserMenu(page);
+  await page.getByRole('menuitem', { name: account, exact: true }).click();
+  const role = ROLE_LABELS[ACCOUNTS[account]];
+  await expect(page.locator('header.topbar').getByText(role, { exact: true }).first())
     .toBeVisible();
 }
 

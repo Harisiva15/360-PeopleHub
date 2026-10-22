@@ -121,7 +121,15 @@ export function NavFlyout({
             const b = badges[i.k] || 0;
             return (
               <Link
-                key={hrefOf(i)}
+                /*
+                 * The name, not the destination. Two Payroll items share
+                 * `/payroll?v=struct` — "Salary details" for your own and
+                 * "Employee compensation" for everybody's, which differ by
+                 * the scope they need rather than by where they go — so
+                 * keying on the href gave React two children with the same
+                 * key on every menu open. Names are unique within a group.
+                 */
+                key={i.n}
                 to={hrefOf(i)}
                 role="menuitem"
                 className={'nav-fly-i' + (isCurrent(i) ? ' on' : '')}

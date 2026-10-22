@@ -11,9 +11,9 @@
 
 import { test, expect } from '@playwright/test';
 import {
-  open, openHref, readMenu, routeOf, switchRole, activeTab, CRASH,
+  ACCOUNTS, open, openHref, openUserMenu, readMenu, routeOf, switchAccount, activeTab, CRASH,
 } from './shell';
-import type { RoleKey } from './shell';
+import type { AccountLabel } from './shell';
 
 /** Routes closed for launch. A sample across the reasons, not all 25. */
 const HIDDEN_ROUTES = ['reports', 'hiring', 'performance', 'learning', 'software',
@@ -130,22 +130,47 @@ test.describe('a hidden tab is not rendered as a page default', () => {
   });
 });
 
-test.describe('the demo role switcher', () => {
-  /*
-   * Recorded as an expected failure rather than worked around, so it is in the
-   * report and not in somebody's memory. It goes green the moment it is fixed,
-   * which is when this `fail` should come off.
-   */
-  test.fail();
-  test('offers each role once, and every role', async ({ page }) => {
+test.describe('the demo account switcher', () => {
+  test('offers every account exactly once, and each one works', async ({ page }) => {
+    /*
+     * It used to label all five from `ROLE_LABEL[a.role]`, so the menu read
+     * "Employee" twice with nothing to tell them apart, React saw two
+     * children keyed `employee`, both rows ticked at once, and `signInAs`
+     * matched on the role — reaching the first of the two every time, so the
+     * self-service account could not be selected at all.
+     */
     await open(page);
-    await page.locator('header.topbar').getByText(/administrator|Employee/).first().click();
+    await openUserMenu(page);
 
-    /* Two `employee` rows in ACCOUNTS(), both labelled "Employee". */
-    await expect(page.getByRole('menuitem', { name: 'Employee', exact: true })).toHaveCount(1);
-    /* And no finance_admin row at all, so the role cannot be demoed. */
-    await expect(page.getByRole('menuitem', { name: 'Finance administrator', exact: true }))
-      .toHaveCount(1);
+    for (const label of Object.keys(ACCOUNTS)) {
+      await expect(page.getByRole('menuitem', { name: label, exact: true }),
+        `${label} appears once`).toHaveCount(1);
+    }
+    /* Exactly one is ticked: the one you are signed in as. */
+    await expect(page.locator('.menu-row.on')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+
+    /* And each one actually lands on the person it names. */
+    for (const label of Object.keys(ACCOUNTS) as (keyof typeof ACCOUNTS)[]) {
+      await switchAccount(page, label);
+      await openUserMenu(page);
+      await expect(page.locator('.menu-row.on')).toHaveText(label);
+      await page.keyboard.press('Escape');
+    }
+  });
+
+  test('the two employee accounts are different people', async ({ page }) => {
+    /* One has reports and one does not, which is what the manager layer
+       turns on — so they must not resolve to the same employee. */
+    await open(page);
+
+    await switchAccount(page, 'Reporting Manager (has reports)');
+    const managerSees = (await readMenu(page)).length;
+
+    await switchAccount(page, 'Employee (Self-service)');
+    const employeeSees = (await readMenu(page)).length;
+
+    expect(managerSees).toBeGreaterThan(employeeSees);
   });
 });
 
@@ -156,18 +181,19 @@ test.describe('every item the menu offers opens', () => {
    * and `employee` appears twice — once with reports, once without — which is
    * the distinction the manager layer turns on.
    */
-  const shapes: { role: RoleKey; nth: number; as: string }[] = [
-    { role: 'company_admin', nth: 0, as: 'Company administrator' },
-    { role: 'hr_admin', nth: 0, as: 'HR administrator' },
-    { role: 'employee', nth: 0, as: 'an employee with reports' },
-    { role: 'employee', nth: 1, as: 'an employee with none' },
+  const shapes: AccountLabel[] = [
+    'Company Administrator',
+    'HR Administrator',
+    'Finance Administrator',
+    'Reporting Manager (has reports)',
+    'Employee (Self-service)',
   ];
 
-  for (const shape of shapes) {
-    test(`as ${shape.as}`, async ({ page }) => {
+  for (const account of shapes) {
+    test(`as ${account}`, async ({ page }) => {
       test.slow();
       await open(page);
-      if (shape.role !== 'company_admin') await switchRole(page, shape.role, shape.nth);
+      if (account !== 'Company Administrator') await switchAccount(page, account);
 
       const menu = await readMenu(page);
       expect(menu.length).toBeGreaterThan(0);
@@ -191,7 +217,7 @@ test.describe('every item the menu offers opens', () => {
         }
       }
 
-      expect(broken, `${broken.length} of ${menu.length} items broken as ${shape.as}`).toEqual([]);
+      expect(broken, `${broken.length} of ${menu.length} items broken as ${account}`).toEqual([]);
     });
   }
 });

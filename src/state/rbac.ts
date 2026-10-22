@@ -1,4 +1,4 @@
-import { ACTIVE, DEMO_EMP, DEMO_MGR, EMAP, HRHEAD, teamOf } from '../data/employees';
+import { ACTIVE, DEMO_EMP, DEMO_MGR, EMAP, HEADS, HRHEAD, teamOf } from '../data/employees';
 import { apiConfigured } from '../services/http';
 import type { AppRole, Employee } from '../types/employee';
 
@@ -394,6 +394,13 @@ export const ROLE_LABEL: Record<AppRole, string> = {
 export const ACCOUNTS = (): Account[] => [
   { role: 'company_admin', empId: HRHEAD.id, label: 'Company Administrator' },
   { role: 'hr_admin', empId: HRHEAD.id, label: 'HR Administrator' },
+  /*
+   * The finance head, and the role was missing entirely. Nobody holds
+   * finance_admin in the live tenant, so the demo was the only place it could
+   * be looked at — and it could not be selected, which left the one role
+   * nobody uses the one role nobody could check.
+   */
+  { role: 'finance_admin', empId: HEADS.FIN!.id, label: 'Finance Administrator' },
   { role: 'employee', empId: DEMO_MGR.id, label: 'Reporting Manager (has reports)' },
   { role: 'employee', empId: DEMO_EMP.id, label: 'Employee (Self-service)' },
 ];

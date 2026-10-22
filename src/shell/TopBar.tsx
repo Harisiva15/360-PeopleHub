@@ -361,16 +361,29 @@ export function TopBar({ mobile, onMenu, actionRef }: {
               {!auth.configured ? (
                 <>
                   <div className="menu-h">Demo · switch role</div>
-                  {accounts.map((a) => (
-                    <button key={a.role} type="button" role="menuitem"
-                      className={'menu-row' + (app.role === a.role ? ' on' : '')}
-                      onClick={() => { app.signInAs(a.role); close(); }}>
-                      <span className="gs-ic" aria-hidden="true">
-                        {app.role === a.role ? <Icon n="ok" /> : null}
-                      </span>
-                      {ROLE_LABEL[a.role]}
-                    </button>
-                  ))}
+                  {/*
+                    * Keyed, labelled and ticked on the account, not its role.
+                    * Two of them are employees, so keying on the role gave
+                    * React two children with the key `employee`, drew
+                    * "Employee" twice with no way to tell which was which,
+                    * ticked both at once, and discarded the labels that say
+                    * what they are — "Reporting Manager (has reports)" and
+                    * "Employee (Self-service)", the distinction the manager
+                    * layer turns on.
+                    */}
+                  {accounts.map((a) => {
+                    const here = app.role === a.role && app.meId === a.empId;
+                    return (
+                      <button key={`${a.role}:${a.empId}`} type="button" role="menuitem"
+                        className={'menu-row' + (here ? ' on' : '')}
+                        onClick={() => { app.signInAs(a.role, a.empId); close(); }}>
+                        <span className="gs-ic" aria-hidden="true">
+                          {here ? <Icon n="ok" /> : null}
+                        </span>
+                        {a.label}
+                      </button>
+                    );
+                  })}
                 </>
               ) : (
                 <>

@@ -14,7 +14,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { open, openHref, goHash, readMenu, switchRole, activeTab, CRASH } from './shell';
+import { open, openHref, goHash, readMenu, switchAccount, activeTab, CRASH } from './shell';
 
 test.afterEach(async ({ page }) => {
   /* No flow may leave the error boundary on screen. */
@@ -224,7 +224,7 @@ test.describe('Accessibility of the pieces these flows touch', () => {
 test.describe('An employee sees less', () => {
   test('no Administration or Company Setup in the menu', async ({ page }) => {
     await open(page);
-    await switchRole(page, 'employee', 1);
+    await switchAccount(page, 'Employee (Self-service)');
     const labels = await page.locator('nav.nav .nav-label').allInnerTexts();
     expect(labels).not.toContain('Administration');
     expect(labels).not.toContain('Company Setup');
@@ -238,7 +238,7 @@ test.describe('An employee sees less', () => {
      * to assert is that the page itself does not render behind it.
      */
     await open(page);
-    await switchRole(page, 'employee', 1);
+    await switchAccount(page, 'Employee (Self-service)');
 
     for (const route of ['settings', 'users']) {
       /*
