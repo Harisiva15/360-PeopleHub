@@ -191,7 +191,15 @@ test.describe('every item the menu offers opens', () => {
 
   for (const account of shapes) {
     test(`as ${account}`, async ({ page }) => {
-      test.slow();
+      /*
+       * Forty-five cold document loads, each waiting for its page's content.
+       * `test.slow()` gives 90 seconds and the walk lands within a few
+       * seconds of it — Sign-in Activity alone renders 500 rows from the demo
+       * dataset — so one slow page failed the whole walk with "no content"
+       * rather than for any reason in the product. The budget is explicit
+       * instead, with room to spare.
+       */
+      test.setTimeout(300_000);
       await open(page);
       if (account !== 'Company Administrator') await switchAccount(page, account);
 
