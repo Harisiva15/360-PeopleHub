@@ -28,6 +28,7 @@ import {
   scopeOfDemo,
   visibleIds,
 } from '../src/state/rbac';
+import { POLICY_MIRROR } from '../src/state/policyMirror';
 import { HRHEAD } from '../src/data/employees';
 import type { AppRole } from '../src/types/employee';
 import {
@@ -476,6 +477,79 @@ if (srv.read !== 'none' || srv.write !== 'none' || srv.approve !== 'none') {
   fail(`the server grants an unrecognised role ${JSON.stringify(srv)}`);
 } else {
   ok('and the server grants it nothing either');
+}
+
+/* ===========================================================================
+ * The client's mirror of the policy, cell for cell
+ *
+ * `src/state/policyMirror.ts` exists because the frontend does not import
+ * `server/src` at build time and the demo build has no server to ask. A copy
+ * needs something to keep it honest, and this is it: every module, every
+ * layer, every verb. Not a sample — the whole table, because the divergence
+ * it replaced was 300 cells wide and the two that happened to reach the menu
+ * were the only ones anybody noticed.
+ * ======================================================================== */
+
+const MIRROR_LAYERS = ['employee', 'manager', 'hr_admin', 'finance_admin',
+  'company_admin'] as const;
+const MIRROR_VERBS = ['read', 'write', 'approve'] as const;
+
+const mirrorModules = Object.keys(POLICY_MIRROR).sort();
+const policyModules = Object.keys(POLICY).sort();
+
+if (mirrorModules.join(',') !== policyModules.join(',')) {
+  const missing = policyModules.filter((m) => !mirrorModules.includes(m));
+  const extra = mirrorModules.filter((m) => !policyModules.includes(m));
+  fail(`the mirror names different modules — missing ${missing.join(' ') || 'none'},`
+    + ` extra ${extra.join(' ') || 'none'}`);
+} else {
+  ok(`the mirror names the same ${policyModules.length} modules`);
+}
+
+const cellDrift: string[] = [];
+for (const m of policyModules) {
+  for (const layer of MIRROR_LAYERS) {
+    for (const v of MIRROR_VERBS) {
+      const mine = POLICY_MIRROR[m]?.[layer]?.[v];
+      const theirs = ruleFor(layer, m)[v];
+      if (mine !== theirs) cellDrift.push(`${m}.${layer}.${v}: mirror=${mine} policy=${theirs}`);
+    }
+  }
+}
+if (cellDrift.length) {
+  fail(`${cellDrift.length} mirrored cell(s) disagree with the policy:\n      `
+    + cellDrift.slice(0, 12).join('\n      '));
+} else {
+  ok(`every mirrored cell matches the policy `
+    + `(${policyModules.length} modules x ${MIRROR_LAYERS.length} layers x 3 verbs)`);
+}
+
+/*
+ * And the union the demo computes is the union the server computes. The cells
+ * above could all match while the two combined them differently — the manager
+ * layer applied when it should not be, or the employee baseline dropped.
+ */
+const unionDrift: string[] = [];
+for (const m of policyModules) {
+  for (const role of ROLES) {
+    for (const hasReports of [false, true]) {
+      for (const v of MIRROR_VERBS) {
+        const demo = scopeOfDemo(role as AppRole, hasReports, m, v);
+        const srvScope = effectiveFor(role, hasReports, m)[v];
+        if (demo !== srvScope) {
+          unionDrift.push(`${m} ${role}${hasReports ? '+reports' : ''} ${v}:`
+            + ` demo=${demo} policy=${srvScope}`);
+        }
+      }
+    }
+  }
+}
+if (unionDrift.length) {
+  fail(`${unionDrift.length} of ${policyModules.length * ROLES.length * 2 * 3} union(s) disagree:`
+    + `\n      ${unionDrift.slice(0, 12).join('\n      ')}`);
+} else {
+  ok(`scopeOfDemo answers exactly as the server does, on every module, role, `
+    + `reporting state and verb (${policyModules.length * ROLES.length * 2 * 3} cells)`);
 }
 
 console.log(`\n${Object.keys(POLICY).length} modules x ${ROLES.length} roles defined`);

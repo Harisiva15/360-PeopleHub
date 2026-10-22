@@ -1,5 +1,6 @@
 import { ACTIVE, DEMO_EMP, DEMO_MGR, EMAP, HEADS, HRHEAD, teamOf } from '../data/employees';
 import { apiConfigured } from '../services/http';
+import { effectiveRule } from './policyMirror';
 import type { AppRole, Employee } from '../types/employee';
 
 /**
@@ -231,9 +232,23 @@ export const callerCovers = (
 /**
  * One module's scope in the demo build, where there is no server to ask.
  *
- * The verb is not a parameter because the demo dataset draws no distinction
- * between reading and writing - it has no enforcement at all, being a
- * demonstration. Anything finer would be invention dressed as a permission.
+ * ## It used to answer from rank
+ *
+ * The old body asked two questions — is the module in `PERMS[role]`, and does
+ * the manager layer add anything — and then returned `'all'` for any role but
+ * `employee`. The verb was accepted and ignored, on the reasoning that the
+ * demo draws no distinction between reading and writing.
+ *
+ * It does now, because the menu reads this. The result disagreed with the
+ * policy in 300 of 1104 cells: hr_admin writing the dashboard, finance_admin
+ * writing the attendance and leave it may only read, every role approving
+ * what the policy lets nobody approve. Two of those reached the interface and
+ * `checks/permissions-matrix.ts` caught them — finance_admin offered Request
+ * queue and Shifts & work schedules at team scope on an `own` grant.
+ *
+ * It is the policy's own union now, from `POLICY_MIRROR`, which
+ * `checks/roles.ts` holds to the server's table. In a configured build none of
+ * this runs: `reaches` prefers the rules the server sent.
  */
 export const scopeOfDemo = (
   role: AppRole,
@@ -242,12 +257,7 @@ export const scopeOfDemo = (
   verb: Verb = 'read',
 ): Scope => {
   if (!isAppRole(role)) return 'none';
-  const byRole = PERMS[role].includes(module);
-  const fromTree = hasReports ? (MANAGER_LAYER[module]?.[verb] ?? 'none') : 'none';
-  if (!byRole && fromTree === 'none') return 'none';
-  if (role !== 'employee') return 'all';
-  /* The layer answers for an employee who has reports; otherwise themselves. */
-  return fromTree === 'none' ? 'own' : fromTree;
+  return effectiveRule(role, hasReports, module)[verb];
 };
 
 /**
