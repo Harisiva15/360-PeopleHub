@@ -522,6 +522,114 @@ export const NAV: NavGroup[] = [
 ];
 export const TABBAR = ['dashboard', 'attendance', 'timesheet', 'leave', 'approvals'];
 
+/* ---------------------------------------------------------------------------
+ * What is in scope for go-live
+ * ---------------------------------------------------------------------------
+ *
+ * The product has 117 menu items and this company is launching with five
+ * people. Most of those items are finished code over empty tables — nobody has
+ * a performance review, a candidate, a course enrolment or an invoice — and an
+ * honest-but-empty screen reads as broken rather than unused. So the menu is
+ * narrowed to what the first weeks actually need.
+ *
+ * Two rules make this safe to undo, which matters more than the list itself:
+ *
+ *   1. **`NAV` stays complete.** Nothing is deleted. `ALL_ROUTES` still names
+ *      every route, every module still registers, and `check:routes` and
+ *      `check:renders` still mount the hidden ones — so a hidden module cannot
+ *      rot unnoticed while it is out of sight.
+ *   2. **Hiding is enforced, not cosmetic.** A route in `HIDDEN_ROUTES`
+ *      redirects when reached by URL, and a tab in `HIDDEN_TABS` falls back to
+ *      its page's default. Removing an item from a menu is not security and was
+ *      never meant to be read as such; `checks/launch-scope.tsx` asserts both.
+ *
+ * Turning a module back on is one line here.
+ */
+
+/** Routes whose every menu item is out of scope, so the route itself is closed. */
+export const HIDDEN_ROUTES: ReadonlySet<string> = new Set([
+  /* People: nothing configured — 0 lifecycle events, 0 journeys, 0 exits. */
+  'lifecycle', 'onboarding', 'exit',
+  /* Performance and engagement: 0 reviews, 0 goals, 0 feedback, 0 surveys. */
+  'performance', 'engagement',
+  /* Learning: 6 courses and 0 enrolments. */
+  'learning', 'devplans',
+  /* The whole ATS and staffing business: 0 candidates, clients, placements. */
+  'hiring', 'recruitment', 'placements', 'bench', 'clients', 'vendors',
+  'billing', 'requirements',
+  /* Software asset management: 0 products, 0 seats. */
+  'software',
+  /* Reports over empty modules mislead; re-enable per module as each fills. */
+  'reports', 'customreports', 'exports', 'exec',
+  /* Administration extras: 0 integrations, 0 API keys, 0 posture snapshots. */
+  'integrations', 'security',
+  /* Payroll extras: 0 declarations, 0 benefit plans, 0 claims. */
+  'tax', 'benefits', 'expenses',
+]);
+
+/**
+ * Tabs that are out of scope on a page that is otherwise in scope, as
+ * `route:tab`.
+ *
+ * This level exists because the menu and the page disagree about what a
+ * "screen" is. Payroll processing, Inputs, the register, disbursal and
+ * statutory remittances are five menu items and one route — so dropping them
+ * from the menu would leave the tab strip on `/payroll` offering every one of
+ * them.
+ */
+export const HIDDEN_TABS: ReadonlySet<string> = new Set([
+  /* Payroll processing is parked for launch; payslips and structures are not. */
+  'payroll:runs', 'payroll:inputs', 'payroll:reg', 'payroll:bank', 'payroll:stat',
+  /* Projects: the list and time booking stay, the planning surfaces go. */
+  'planner:board', 'planner:actions', 'planner:iterations',
+  'timesheet:rep',
+  /* Helpdesk requests stay; the knowledge base is empty and SLA is a report. */
+  'helpdesk:kb', 'helpdesk:sla',
+]);
+
+export const isHiddenRoute = (route: string): boolean =>
+  HIDDEN_ROUTES.has(route.replace(/^\//, '').split('?')[0]!);
+
+export const isHiddenTab = (route: string, tab: string): boolean =>
+  HIDDEN_TABS.has(`${route.replace(/^\//, '').split('?')[0]}:${tab}`);
+
+/**
+ * Letter generation, which is neither a route nor a tab but an action.
+ *
+ * `documents/data.ts` wraps `letterContext` in `unbacked(…, null)`, so a
+ * configured build has no salary structure to quote and prints a letter with
+ * an empty pay line. The requests and approvals around letters are real; only
+ * the rendered document is hollow. A salary letter is something a person sends
+ * to a bank, so it waits for phase 5 to give `letterContext` a server.
+ */
+export const LAUNCH_LETTERS = false;
+
+/**
+ * Is this menu item out of scope?
+ *
+ * Both levels, because an item names either a route or a tab on one: five of
+ * Payroll's menu items are tabs of `/payroll`, and checking only the route
+ * would show all of them.
+ */
+export const isHiddenItem = (i: NavItem): boolean => {
+  const href = i.to ?? `/${i.k}`;
+  const [path, query] = href.replace(/^\//, '').split('?');
+  const tab = new URLSearchParams(query ?? '').get('v');
+  return isHiddenRoute(path!) || (tab ? isHiddenTab(path!, tab) : false);
+};
+
+/**
+ * The menu as it is shown.
+ *
+ * A group survives if anything in it survives. A group that carries no items
+ * of its own — Dashboard is one — survives unless its own route is hidden,
+ * since there is nothing else to judge it by.
+ */
+export const VISIBLE_NAV: NavGroup[] = NAV
+  .map((g) => ({ ...g, items: g.items.filter((i) => !isHiddenItem(i)) }))
+  .filter((g) => (g.items.length > 0) || (NAV.find((o) => o.group === g.group)!.items.length === 0
+    && !isHiddenRoute(g.k)));
+
 /**
  * Every route the navigation can reach. Deduplicated, because a module can
  * appear in more than one section.
@@ -556,6 +664,19 @@ export const QUICK_ACTIONS = [
 ] as const;
 
 /**
+ * The quick actions that are in scope.
+ *
+ * The authored list above is left intact so checks/routes.tsx can keep
+ * asserting that every name resolves to a real view. This is what the header
+ * renders — 'Reimbursements' points at a module with no claims in it, and an
+ * action that opens an empty page is worse than one that is absent.
+ */
+export const VISIBLE_QUICK_ACTIONS: readonly string[] = QUICK_ACTIONS
+  /* VISIBLE_NAV, not ALL_VIEWS: that is declared below this line, and reading
+     it here would throw at import time rather than fail to compile. */
+  .filter((name) => VISIBLE_NAV.some((g) => g.items.some((i) => i.n === name)));
+
+/**
  * Every view in the product, flattened, for the sidebar's search.
  *
  * Searching section names alone would mean knowing that "disbursal" lives
@@ -570,7 +691,7 @@ export interface NavHit {
   href: string;
 }
 
-export const ALL_VIEWS: NavHit[] = NAV.flatMap((g) =>
+export const ALL_VIEWS: NavHit[] = VISIBLE_NAV.flatMap((g) =>
   g.items.map((i) => ({
     group: g.group,
     groupKey: g.k,

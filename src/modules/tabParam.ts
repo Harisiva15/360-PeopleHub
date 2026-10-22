@@ -25,14 +25,24 @@
 
 import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { isHiddenTab } from '../nav';
 
 export function useTabFromUrl<T extends string>(fallback: T, allowed: readonly T[]): [T, (v: T) => void] {
-  const { search } = useLocation();
+  const { pathname, search } = useLocation();
   const [tab, setTab] = useState<T>(() => {
     try {
       const asked = new URLSearchParams(search).get('v') as T | null;
+      if (!asked) return fallback;
+      /*
+       * A tab that is out of scope for go-live is treated exactly like an
+       * unknown one. Payroll keeps five of those — processing, inputs, the
+       * register, disbursal, statutory — and `?v=inputs` in a bookmark lands
+       * on the page default rather than the parked screen.
+       */
+      const route = pathname.replace(/^\//, '').split('?')[0] ?? '';
+      if (isHiddenTab(route, asked)) return fallback;
       /* An unknown tab in a stale bookmark falls back rather than blanking. */
-      return asked && allowed.includes(asked) ? asked : fallback;
+      return allowed.includes(asked) ? asked : fallback;
     } catch {
       return fallback;
     }

@@ -29,7 +29,7 @@
  * moment the policy does.
  */
 
-import { ALL_VIEWS, NAV } from '../src/nav';
+import { ALL_VIEWS, isHiddenTab, NAV } from '../src/nav';
 import type { NavItem } from '../src/nav';
 import { scopeOfDemo, covers, can, PERMS } from '../src/state/rbac';
 import { POLICY } from '../server/src/auth/policy';
@@ -246,16 +246,38 @@ const hit = (needle: string): string[] => ALL_VIEWS
     || (v.item.alt ?? []).some((a) => a.toLowerCase().includes(needle.toLowerCase())))
   .map((v) => `${v.group} · ${v.item.n}`);
 
+/*
+ * Both of the next assertions are written against the launch scope rather than
+ * against a fixed answer, because the thing they test — the sidebar search —
+ * reads `ALL_VIEWS`, and `ALL_VIEWS` is now the *visible* menu. A hidden view
+ * is deliberately unsearchable: offering "Sprints" to somebody who cannot open
+ * it is worse than not offering it.
+ *
+ * Asking `isHiddenTab` rather than hard-coding "finds nothing" keeps the
+ * original expectation alive. The day Sprints comes back into scope, these
+ * flip to demanding it again without anybody remembering to come back here —
+ * which is the failure mode of every "temporarily relaxed" assertion.
+ */
 const iter = hit('Iterations');
-ok('17. "Iterations" still finds Sprints',
-  iter.some((l) => /Sprints/.test(l)), iter.join(', ') || '(nothing)');
+ok(isHiddenTab('planner', 'iterations')
+  ? '17. "Iterations" finds nothing while Sprints is out of scope'
+  : '17. "Iterations" still finds Sprints',
+isHiddenTab('planner', 'iterations')
+  ? !iter.some((l) => /Sprints/.test(l))
+  : iter.some((l) => /Sprints/.test(l)),
+iter.join(', ') || '(nothing)');
 
 const ts = hit('Timesheet');
 ok('18. "Timesheet" finds the weekly views', ts.some((l) => /My timesheet/.test(l)));
-ok('19. and the two that moved to Projects',
-  ts.some((l) => /Projects · Projects/.test(l))
-  && ts.some((l) => /Utilisation & effort/.test(l)),
-  ts.join(', '));
+ok('19. and the project list that moved to Projects',
+  ts.some((l) => /Projects · Projects/.test(l)), ts.join(', '));
+ok(isHiddenTab('timesheet', 'rep')
+  ? '19b. "Utilisation & effort" is unsearchable while it is out of scope'
+  : '19b. and "Utilisation & effort" alongside it',
+isHiddenTab('timesheet', 'rep')
+  ? !ts.some((l) => /Utilisation & effort/.test(l))
+  : ts.some((l) => /Utilisation & effort/.test(l)),
+ts.join(', '));
 
 /* ------------------------------------------------------------------ *
  * The mirror, and the phone

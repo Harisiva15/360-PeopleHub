@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { LOGO_ON_RAIL } from '../assets/logo';
-import { ALL_VIEWS, hrefOf, NAV, TABBAR } from '../nav';
+import { ALL_VIEWS, hrefOf, TABBAR, VISIBLE_NAV as NAV } from '../nav';
 import type { NavItem } from '../nav';
 import { useNavBadges } from './badges';
 import { ORG } from '../data/org';

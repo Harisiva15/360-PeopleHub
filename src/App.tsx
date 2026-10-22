@@ -14,7 +14,7 @@ import { LoginPage } from './auth/LoginPage';
 import { LayerProvider } from './components/Layer';
 import { TooltipLayer } from './components/Tooltip';
 import { Shell } from './shell/Shell';
-import { ALL_ROUTES } from './nav';
+import { ALL_ROUTES, isHiddenRoute } from './nav';
 import { loadRoute } from './modules';
 
 /**
@@ -47,6 +47,13 @@ function RouteView({ route }: { route: string }) {
   const app = useApp();
   const View = LAZY[route];
   if (!View) return <Navigate to="/dashboard" replace />;
+  /*
+   * Out of scope for go-live, and closed rather than merely unlisted.
+   * Removing an item from a menu is not access control: the module is still
+   * registered, still routed and still rendered by check:renders, so without
+   * this a bookmark or a typed URL would walk straight into it.
+   */
+  if (isHiddenRoute(route)) return <Navigate to="/dashboard" replace />;
   if (!app.can(route)) return <AccessDenied route={route} />;
   /*
    * Inside the shell and around the page only, and keyed by route so moving

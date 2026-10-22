@@ -19,7 +19,7 @@
 
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { hrefOf, NAV, QUICK_ACTIONS } from '../nav';
+import { hrefOf, VISIBLE_NAV as NAV, VISIBLE_QUICK_ACTIONS as QUICK_ACTIONS } from '../nav';
 import type { NavGroup, NavItem } from '../nav';
 import { TITLES } from '../modules/titles';
 import { SUBTITLES } from '../modules/subtitles';

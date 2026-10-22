@@ -1,4 +1,6 @@
 import { Children, cloneElement, isValidElement, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { isHiddenTab } from '../nav';
 import type { CSSProperties, ReactNode } from 'react';
 import { avColor, initials } from '../lib/format';
 import type { Employee } from '../types/employee';
@@ -356,6 +358,19 @@ export function Seg<T extends string>({
 
 /* ---------- Tabs ---------- */
 
+/**
+ * The tab strip, minus anything out of scope for go-live.
+ *
+ * Filtering here rather than in each page is the whole reason this is
+ * bearable: thirty-eight modules render tabs, and five of Payroll's menu items
+ * are tabs of one route. Taking them out of the menu would leave the strip on
+ * `/payroll` still offering Processing, Inputs, the register, disbursal and
+ * statutory remittances — so the menu would say launch scope and the page
+ * would not.
+ *
+ * It reads the route from the router, so a page must be inside one. Every page
+ * is, and any suite that renders one wraps it in a MemoryRouter already.
+ */
 export function Tabs<T extends string>({
   value,
   options,
@@ -365,9 +380,17 @@ export function Tabs<T extends string>({
   options: { v: T; label: ReactNode }[];
   onChange: (v: T) => void;
 }) {
+  const { pathname } = useLocation();
+  const route = pathname.replace(/^\//, '').split('?')[0] ?? '';
+  const shown = options.filter((o) => !isHiddenTab(route, o.v));
+  /*
+   * One tab is not a choice. A strip with a single button left reads as a
+   * disabled control rather than a navigation aid, so it goes.
+   */
+  if (shown.length < 2) return null;
   return (
     <div className="tabs">
-      {options.map((o) => (
+      {shown.map((o) => (
         <button key={o.v} className={value === o.v ? 'on' : ''} onClick={() => onChange(o.v)}>
           {o.label}
         </button>
