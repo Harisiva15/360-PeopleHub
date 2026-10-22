@@ -310,7 +310,20 @@ export const NAV: NavGroup[] = [
     desc: 'Requests, balances, the team calendar and public holidays.',
     items: [
       { k: 'leave', n: 'My leave', ic: 'holiday', d: 'Apply for leave and check your balance.' },
-      { k: 'leave', n: 'Holiday calendar', to: '/leave?v=cal', ic: 'calendar', d: 'Public holidays by location.' },
+      /*
+       * `attendance`, not `leave`. This named "Public holidays by location"
+       * and opened `/leave?v=cal`, which the Leave module renders as its Team
+       * Calendar — a grid of who is off, not a list of holidays. The table
+       * this describes, with the "Applies to" column the per-site holidays
+       * were built for, is `AttCal` on the Attendance page, and no menu item
+       * led there: the 184 rows loaded in October were reachable only by
+       * somebody who already knew to open Attendance and click the fifth tab.
+       *
+       * It stays in the Leave group, because that is where a person looks for
+       * holidays. The group gates on its own key, the item on this one, and
+       * every role reaches `attendance` for reading.
+       */
+      { k: 'attendance', n: 'Holiday calendar', to: '/attendance?v=cal', ic: 'calendar', d: 'Public holidays by location.' },
       { k: 'leave', n: 'Team leave', to: '/leave?v=team', ic: 'team', d: 'Your line’s leave, in one calendar.', needs: 'team' },
       { k: 'leave', n: 'Leave approvals', to: '/leave?v=appr', ic: 'done', d: 'Decide the requests waiting on you.', needs: 'team' },
     ],

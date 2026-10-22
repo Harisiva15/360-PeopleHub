@@ -14,7 +14,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { open, goHash, switchRole, activeTab, CRASH } from './shell';
+import { open, openHref, goHash, readMenu, switchRole, activeTab, CRASH } from './shell';
 
 test.afterEach(async ({ page }) => {
   /* No flow may leave the error boundary on screen. */
@@ -66,18 +66,22 @@ test.describe('Holidays', () => {
 });
 
 test.describe('Holidays — the menu route', () => {
-  /* `test.fail()` annotates its whole describe, so it needs one of its own. */
-  test.fail();
   test('the menu item called "Holiday calendar" opens it', async ({ page }) => {
     /*
-     * `src/nav.ts:313` points "Holiday calendar — Public holidays by location"
-     * at `/leave?v=cal`, which the Leave module renders as its Team Calendar.
-     * The table that name describes is `/attendance?v=cal`, and no menu item
-     * leads there — it is reachable only by someone who already knows to open
-     * Attendance and click the fifth tab.
+     * Driven from the menu, not from a URL this test chose: the defect was
+     * that the item pointed somewhere else — `/leave?v=cal`, which the Leave
+     * module renders as its Team Calendar — so a test that navigated straight
+     * to the right page would have passed throughout.
      */
-    await open(page, 'leave?v=cal');
+    await open(page);
+    const menu = await readMenu(page);
+    const item = menu.find((m) => m.name === 'Holiday calendar');
+    expect(item, 'the menu offers a Holiday calendar').toBeDefined();
+
+    await openHref(page, item!.href);
+    expect(await activeTab(page)).toBe('Holiday Calendar');
     await expect(page.getByText('Applies to').first()).toBeVisible();
+    expect(await page.locator('table tbody tr').count()).toBeGreaterThan(0);
   });
 });
 
