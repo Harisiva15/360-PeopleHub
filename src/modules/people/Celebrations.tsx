@@ -23,7 +23,8 @@ import type { Celebration } from '../../services';
 import type { Employee } from '../../types/employee';
 import { sortBy } from '../../lib/collections';
 import { addDays, daysBetween, DOW, fmtD, fmtDS, MONL, parseYmd, TODAY, ymd } from '../../lib/dates';
-import { deptOf, HOLIDAYS, ORG } from '../../data/org';
+import { deptOf, ORG } from '../../data/org';
+import { useHolidays } from '../../services/holidays';
 import { Avatar, Badge, Card, EmptyState, StatRow, Tabs, Tile } from '../../components/ui';
 import { ListRow } from '../../components/common';
 import { Icon } from '../../components/icons';
@@ -228,10 +229,18 @@ export function CelebrationsView({
     return (id: string) => m.get(id) ?? '—';
   }, [everyone]);
 
+  /*
+   * The tenant's holidays, not the bundled demo ones. This listed festivals a
+   * company that has configured no calendar does not observe, mixed in with
+   * real birthdays and anniversaries — so the fiction was the hardest kind to
+   * spot, sitting next to facts.
+   */
+  const { data: holidays } = useHolidays();
+
   /* The calendar shows whichever month is on screen; the lists look ahead. */
   const monthOccasions = useMemo(
-    () => occasionsIn(monthKey, cel, everyone, HOLIDAYS, nameOf),
-    [monthKey, cel, everyone, nameOf]);
+    () => occasionsIn(monthKey, cel, everyone, holidays, nameOf),
+    [monthKey, cel, everyone, holidays, nameOf]);
 
   const upcoming = useMemo(() => {
     const today = ymd(TODAY);
@@ -240,9 +249,9 @@ export function CelebrationsView({
     [thisMonth, ymd(addDays(parseYmd(thisMonth + '-01'), 32)).slice(0, 7),
       ymd(addDays(parseYmd(thisMonth + '-01'), 64)).slice(0, 7),
       ymd(addDays(parseYmd(thisMonth + '-01'), 96)).slice(0, 7)]
-      .forEach((k) => out.push(...occasionsIn(k, cel, everyone, HOLIDAYS, nameOf)));
+      .forEach((k) => out.push(...occasionsIn(k, cel, everyone, holidays, nameOf)));
     return sortBy(out.filter((o) => o.date >= today && o.date <= horizon), (o) => o.date);
-  }, [cel, everyone, nameOf, thisMonth]);
+  }, [cel, everyone, holidays, nameOf, thisMonth]);
 
   const today = ymd(TODAY);
   const todays = upcoming.filter((o) => o.date === today);

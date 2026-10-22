@@ -1235,8 +1235,11 @@ const routes: Route[] = [
     method: 'POST',
     pattern: '/config/holidays',
     handler: (c, _r, _p, body) => {
-      const b = body as { date: string; name: string; optional?: boolean };
-      return addHoliday(c, b.date, b.name, Boolean(b.optional));
+      const b = body as {
+        date: string; name: string; optional?: boolean; site?: string | null;
+      };
+      /* No site means every location, which is what the card defaults to. */
+      return addHoliday(c, b.date, b.name, Boolean(b.optional), b.site ?? null);
     },
   },
   {

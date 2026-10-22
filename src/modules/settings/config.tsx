@@ -405,9 +405,23 @@ const LEAVE_RULE_TOGGLES: [string, boolean][] = [
   ['Notify team on approval', true],
 ];
 
-function AddHolidayBody({ onChange }: { onChange: (v: { d: string; n: string; opt: boolean }) => void }) {
-  const [v, setV] = useState({ d: ymd(addDays(TODAY, 30)), n: '', opt: false });
-  const set = (next: typeof v) => { setV(next); onChange(next); };
+export interface HolidayDraft {
+  d: string;
+  n: string;
+  opt: boolean;
+  /** Site id, or '' for every location. */
+  site: string;
+  /** The site name, carried so the confirmation can say where. */
+  siteLabel: string;
+}
+
+function AddHolidayBody({ onChange }: { onChange: (v: HolidayDraft) => void }) {
+  const [v, setV] = useState<HolidayDraft>({
+    d: ymd(addDays(TODAY, 30)), n: '', opt: false, site: '', siteLabel: '',
+  });
+  const set = (next: HolidayDraft) => { setV(next); onChange(next); };
+  /* The tenant's own locations, so the list cannot offer one it does not have. */
+  const { data: sites = [] } = useSites();
   return (
     <>
       <div className="field">
@@ -418,12 +432,34 @@ function AddHolidayBody({ onChange }: { onChange: (v: { d: string; n: string; op
         <label>Holiday name</label>
         <input className="input" placeholder="e.g. Founders Day" value={v.n} onChange={(e) => set({ ...v, n: e.target.value })} />
       </div>
+      {/*
+        * Defaults to every location, which is the safe answer: a holiday the
+        * whole company observes is the common case, and the resolver lets a
+        * site-specific row override it on the same date if one is added later.
+        */}
+      <div className="field">
+        <label>Location</label>
+        <select className="input" value={v.site} onChange={(e) => set({ ...v, site: e.target.value, siteLabel: e.target.selectedOptions[0]?.text ?? '' })}>
+          <option value="">All locations</option>
+          {sites.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+        <span className="muted" style={{ fontSize: 12 }}>
+          Republic Day belongs to the Indian sites and Thanksgiving to the US one,
+          so most holidays want a location rather than all of them.
+        </span>
+      </div>
       <div className="field">
         <label>Type</label>
         <select className="input" value={v.opt ? '1' : '0'} onChange={(e) => set({ ...v, opt: e.target.value === '1' })}>
           <option value="0">Fixed</option>
           <option value="1">Optional</option>
         </select>
+        <span className="muted" style={{ fontSize: 12 }}>
+          One fixed holiday per date per location. Optional holidays are exempt,
+          so two can share a date.
+        </span>
       </div>
     </>
   );
@@ -446,7 +482,7 @@ export function LeavePolicyTab() {
   };
 
   const addHoliday = () => {
-    let draft = { d: ymd(addDays(TODAY, 30)), n: '', opt: false };
+    let draft: HolidayDraft = { d: ymd(addDays(TODAY, 30)), n: '', opt: false, site: '', siteLabel: '' };
     layer.modal({
       title: 'Add holiday',
       size: 'narrow',
@@ -458,9 +494,13 @@ export function LeavePolicyTab() {
             className="btn primary"
             onClick={async () => {
               try {
-                await addHolidayCmd.mutate(draft.d, draft.n || 'Company holiday', draft.opt);
+                await addHolidayCmd.mutate(
+                  draft.d, draft.n || 'Company holiday', draft.opt, draft.site || null,
+                );
                 close();
-                app.toast('Holiday added to the calendar', 'ok');
+                app.toast(draft.site
+                  ? `Holiday added for ${draft.siteLabel}`
+                  : 'Holiday added for all locations', 'ok');
               } catch (e) {
                 app.toast(e instanceof Error ? e.message : 'Could not add the holiday', 'err');
               }
@@ -558,14 +598,25 @@ export function LeavePolicyTab() {
             {HOLIDAYS.map((h) => {
               const d = parseYmd(h.d);
               return (
-                <ListRow key={h.d + h.n}>
+                /*
+                  * The location is part of the key. Two sites may hold the
+                  * same holiday on the same date — Independence Day at Chennai
+                  * and at Bengaluru — and keying on date and name alone gives
+                  * React duplicate keys as soon as per-location holidays
+                  * exist.
+                  */
+                <ListRow key={`${h.d}|${h.n}|${h.site ?? 'all'}`}>
                   <div className="right" style={{ width: 48, flex: '0 0 48px' }}>
                     <div style={{ fontWeight: 750 }}>{d.getDate()}</div>
                     <div className="muted" style={{ fontSize: 10 }}>{MON[d.getMonth()]}</div>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 650, fontSize: 12.5 }}>{h.n}</div>
-                    <div className="muted" style={{ fontSize: 11 }}>{DOW[d.getDay()]}</div>
+                    <div className="muted" style={{ fontSize: 11 }}>
+                      {DOW[d.getDay()]}
+                      {' · '}
+                      {h.site ?? 'All locations'}
+                    </div>
                   </div>
                   <Badge kind={h.opt ? 'info' : 'mute'}>{h.opt ? 'Optional' : 'Fixed'}</Badge>
                 </ListRow>

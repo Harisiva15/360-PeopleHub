@@ -37,7 +37,12 @@ export const useSaveComponent = () =>
   useMutation((s, draft: ComponentDraft) => s.compensation.saveComponent(draft));
 export const useRemoveComponent = () =>
   useMutation((s, code: string) => s.compensation.removeComponent(code));
-export const useHolidays = () => useQuery((s) => s.config.holidays(), []);
+/*
+ * Re-exported, not redefined. Two identical hooks over the same endpoint is
+ * how the Attendance panel and this screen came to disagree about what a
+ * holiday calendar is; one source of truth now lives in services/holidays.ts.
+ */
+export { useHolidays } from '../../services/holidays';
 export const useCompensation = () => useQuery((s) => s.payroll.compensation(), []);
 export const usePayRuns = () => useQuery((s) => s.payroll.runs(), []);
 export const useRequisitions = () => useQuery((s) => s.hiring.requisitions(), []);
@@ -52,7 +57,8 @@ export const useSetRole = () => useMutation((s, id: string, role: AppRole) => s.
 export const useSetLeaveQuota = () =>
   useMutation((s, typeId: string, quota: number) => s.config.setLeaveQuota(typeId, quota));
 export const useAddHoliday = () =>
-  useMutation((s, date: string, name: string, optional: boolean) => s.config.addHoliday(date, name, optional));
+  useMutation((s, date: string, name: string, optional: boolean, site?: string | null) =>
+    s.config.addHoliday(date, name, optional, site ?? null));
 
 /* ---------- permission narrowing ---------- */
 

@@ -747,9 +747,22 @@ export const configService: ConfigService = {
     return ok({ type: t.name, quota, repriced });
   },
 
-  addHoliday(date, name, optional) {
-    if (HOLIDAYS.some((h) => h.d === date)) return Promise.reject(new Error('A holiday is already set for ' + date));
-    HOLIDAYS.push({ d: date, n: name, opt: optional });
+  addHoliday(date, name, optional, site) {
+    /*
+     * The same rule the database enforces, so the demo refuses what the
+     * product refuses: a clash is two *mandatory* holidays on one date at the
+     * same location, and "all locations" is its own slot rather than a
+     * wildcard. Checking the date alone, as this did, would reject Bengaluru's
+     * Ugadi because Chennai already had Telugu New Year on it.
+     */
+    const where = site ?? null;
+    if (HOLIDAYS.some((h) => h.d === date && !h.opt && !optional
+      && (h.site ?? null) === where)) {
+      return Promise.reject(new Error(where
+        ? `${date} already has a holiday at ${where}`
+        : `${date} already has a holiday for all locations`));
+    }
+    HOLIDAYS.push({ d: date, n: name, opt: optional, site: where });
     HOLIDAYS.sort((a, b) => (a.d < b.d ? -1 : 1));
     /* Only fixed holidays close the office, so only those enter the map. */
     if (!optional) HOLIDAY_MAP[date] = name;

@@ -57,6 +57,16 @@ export interface Holiday {
   n: string;
   /** Optional/restricted holiday — excluded from the paid-holiday map. */
   opt: boolean;
+  /**
+   * The location this applies to, by site name, or null for every location.
+   *
+   * Optional on the type because the demo dataset in `src/data/org.ts` is a
+   * single-site fiction and carries none; anything from the server always sets
+   * it. A screen that shows holidays to one person should not need this at all
+   * — the server resolves "this employee's holidays" already — so it is here
+   * for the calendar *administration* screen, which lists every site's.
+   */
+  site?: string | null;
 }
 
 export interface LeaveType {

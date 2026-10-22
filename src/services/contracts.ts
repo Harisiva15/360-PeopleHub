@@ -2353,7 +2353,8 @@ export interface ConfigService {
   setSiteActive(siteId: string, active: boolean): Promise<Site>;
   /** Sets an entitlement and reprices open balances to match. */
   setLeaveQuota(typeId: string, quota: number): Promise<{ type: string; quota: number; repriced: number }>;
-  addHoliday(date: string, name: string, optional: boolean): Promise<Holiday[]>;
+  /** `site` is a site code, or null|omitted for every location. */
+  addHoliday(date: string, name: string, optional: boolean, site?: string | null): Promise<Holiday[]>;
 
   /**
    * Per-tenant permission narrowing, with the code's ceiling alongside.

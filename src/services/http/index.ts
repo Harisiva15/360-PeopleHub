@@ -444,8 +444,8 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
       permissions: () => api.get('/config/permissions'),
       setPermissions: (_c, patches) => api.put('/config/permissions', { patches }),
       resetPermissions: (_c, module) => api.post('/config/permissions/reset', { module }),
-      addHoliday: (date, name, optional) =>
-        api.post('/config/holidays', { date, name, optional }),
+      addHoliday: (date, name, optional, site) =>
+        api.post('/config/holidays', { date, name, optional, site: site ?? null }),
     },
 
     leave: {

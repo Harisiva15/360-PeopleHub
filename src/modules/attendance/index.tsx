@@ -4,7 +4,8 @@ import { addDays, DOW, dowOf, fmtD, fmtDS, fmtTime, hhmm, monthKey, monthLabelLo
 import { pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import type { AttRecord, Employee } from '../../services';
-import { DEPTS, deptOf, HOLIDAYS, siteOf, SITES } from '../../data/org';
+import { DEPTS, deptOf, siteOf, SITES } from '../../data/org';
+import { useHolidays } from '../../services/holidays';
 import { Avatar, Badge, Banner, Card, EmptyState, KV, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { ListRow, StatusBadge } from '../../components/common';
 import { BarChart, HBar, Legend, PAL } from '../../components/charts';
@@ -576,11 +577,19 @@ function AttCal() {
   /* Active patterns only: a withdrawn one is not the policy any more. */
   const { data: schedules = [] } = useWorkSchedules();
   const patterns = schedules.filter((w) => w.active);
+  /*
+   * From the server, not from `src/data/org`. This panel listed the bundled
+   * demo calendar, so a tenant with no holidays configured saw a full and
+   * convincing year — and an administrator who added one in Settings watched
+   * this page not change, because it was never reading the database.
+   */
+  const { data: HOLIDAYS } = useHolidays();
   const exportCsv = () =>
     downloadCSV(
       `holiday_calendar_${y}.csv`,
-      [['Date', 'Day', 'Holiday', 'Type']].concat(
-        HOLIDAYS.map((h) => [h.d, DOW[parseYmd(h.d).getDay()], h.n, h.opt ? 'Optional' : 'Fixed']),
+      [['Date', 'Day', 'Holiday', 'Type', 'Applies to']].concat(
+        HOLIDAYS.map((h) => [h.d, DOW[parseYmd(h.d).getDay()], h.n,
+          h.opt ? 'Optional' : 'Fixed', h.site ?? 'All locations']),
       ),
     );
 
@@ -597,12 +606,13 @@ function AttCal() {
               </thead>
               <tbody>
                 {HOLIDAYS.map((h) => (
-                  <tr key={h.d + h.n}>
+                  /* Keyed with the location: two sites may share a date and a name. */
+                  <tr key={`${h.d}|${h.n}|${h.site ?? 'all'}`}>
                     <td className="nowrap">{fmtD(h.d)}</td>
                     <td>{DOW[parseYmd(h.d).getDay()]}</td>
                     <td><b>{h.n}</b></td>
                     <td>{h.opt ? <Badge kind="info">Optional</Badge> : <Badge>Fixed</Badge>}</td>
-                    <td>All locations</td>
+                    <td>{h.site ?? `All locations`}</td>
                     <td className="right">{h.d < ymd(TODAY) ? <span className="muted">Past</span> : <Badge kind="good">Upcoming</Badge>}</td>
                   </tr>
                 ))}

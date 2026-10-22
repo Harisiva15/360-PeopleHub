@@ -58,7 +58,31 @@ export interface Holiday {
   d: string;
   n: string;
   opt: boolean;
+  /**
+   * The site this holiday applies to, by name, or null for every site.
+   *
+   * The column has been here since the table was created and nothing ever set
+   * it, so every holiday was tenant-wide: one calendar for Chennai, Bengaluru
+   * and New Jersey alike, which is wrong in both directions — Republic Day is
+   * not a holiday in New Jersey and Thanksgiving is not one in Chennai.
+   *
+   * The read side was already right. `calendar/service.ts` resolves a person's
+   * holidays as `site_id IS NULL OR site_id = their site`, preferring the site
+   * row where a date carries both, and leave counts days through that same
+   * resolver. Only the write path could not express it.
+   *
+   * A name rather than an id, because every caller of this renders it. The
+   * write side takes an id, which is what the screen has to hand.
+   */
+  site: string | null;
 }
+
+const toHoliday = (r: Record<string, unknown>): Holiday => ({
+  d: r.observed_on as string,
+  n: r.name as string,
+  opt: r.optional as boolean,
+  site: (r.site as string | null) ?? null,
+});
 
 /** Codes that name a way of working rather than a building. */
 const REMOTE_MODES = new Set(['WFH', 'CLIENT']);
@@ -133,8 +157,11 @@ export async function listSites(caller: Caller): Promise<Site[]> {
 export async function listHolidays(caller: Caller): Promise<Holiday[]> {
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query(
-      `SELECT observed_on, name, optional FROM holiday ORDER BY observed_on`);
-    return rows.map((r) => ({ d: r.observed_on as string, n: r.name as string, opt: r.optional as boolean }));
+      `SELECT h.observed_on, h.name, h.optional, s.name AS site
+         FROM holiday h
+         LEFT JOIN site s ON s.id = h.site_id
+        ORDER BY h.observed_on, s.code NULLS FIRST`);
+    return rows.map(toHoliday);
   });
 }
 
@@ -459,31 +486,66 @@ export async function setLeaveQuota(
   });
 }
 
-/** Add a holiday. Two mandatory holidays cannot share a date. */
+/**
+ * Add a holiday, for one site or for every site.
+ *
+ * `siteId` is one of this tenant's sites, or null for "all locations". Two
+ * *mandatory* holidays cannot share a date at the same site —
+ * `holiday_one_per_day` keys on `(tenant_id, observed_on, COALESCE(site_id,
+ * …))` and skips optional rows — so the same date may legitimately carry
+ * Chennai's holiday, Bengaluru's, and a tenant-wide one, and the resolver in
+ * `calendar/service.ts` prefers the site row for a person who works there.
+ *
+ * The id is looked up before the insert rather than left to the foreign key,
+ * for two reasons: the lookup runs inside this tenant's transaction, so a site
+ * belonging to another tenant reads as absent rather than as a constraint
+ * violation; and the name it returns is what the duplicate message needs.
+ */
 export async function addHoliday(
   caller: Caller,
   date: string,
   name: string,
   optional: boolean,
+  siteId: string | null = null,
 ): Promise<Holiday[]> {
   if (!reaches(caller, 'settings', 'write', 'all')) throw new ConfigError('only an admin may add holidays', 'forbidden');
 
   return withTenant(caller, async (db) => {
+    let siteName: string | null = null;
+    if (siteId) {
+      const found = await db.query('SELECT name FROM site WHERE id = $1', [siteId]);
+      if (!found.rows[0]) throw new ConfigError('that location is not one of this tenant\'s', 'invalid');
+      siteName = found.rows[0].name as string;
+    }
+
     try {
       await db.query(
-        'INSERT INTO holiday (observed_on, name, optional) VALUES ($1, $2, $3)',
-        [date, name, optional]);
+        'INSERT INTO holiday (observed_on, name, optional, site_id) VALUES ($1, $2, $3, $4)',
+        [date, name, optional, siteId]);
     } catch (e) {
       // The partial unique index is the authority; this turns it into a
       // message rather than a 500.
       if ((e as { code?: string }).code === '23505') {
-        throw new ConfigError('that date already has a holiday', 'duplicate');
+        /*
+         * Naming the scope matters now that one is possible: "that date
+         * already has a holiday" sent somebody looking at the wrong calendar
+         * when the clash was with the tenant-wide row rather than their site's.
+         */
+        throw new ConfigError(
+          siteName
+            ? `${date} already has a holiday at ${siteName}`
+            : `${date} already has a holiday for all locations`,
+          'duplicate',
+        );
       }
       throw e;
     }
     const { rows } = await db.query(
-      'SELECT observed_on, name, optional FROM holiday ORDER BY observed_on');
-    return rows.map((r) => ({ d: r.observed_on as string, n: r.name as string, opt: r.optional as boolean }));
+      `SELECT h.observed_on, h.name, h.optional, s.name AS site
+         FROM holiday h
+         LEFT JOIN site s ON s.id = h.site_id
+        ORDER BY h.observed_on, s.code NULLS FIRST`);
+    return rows.map(toHoliday);
   });
 }
 
