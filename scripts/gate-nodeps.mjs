@@ -39,12 +39,45 @@
  * before doing anything else and says so.
  */
 
-import { existsSync, renameSync } from 'node:fs';
+import { existsSync, renameSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const QUICK = process.argv.includes('--quick');
+
+/**
+ * In quick mode, only the root checks that reach into the server.
+ *
+ * Derived from what each script actually runs rather than listed, because a
+ * list is a thing to forget: `check:servertypes` was added to the gate months
+ * after the other four and would not have been on it. Anything naming
+ * `--prefix server` or a path under `server/` is a candidate for this failure
+ * and nothing else can be.
+ *
+ * The full run is still the honest one — a root check could reach the server
+ * tree by some route this pattern does not see — which is why the full gate
+ * stays and this is the cheap one for every push.
+ */
+const delegating = () => {
+  const { scripts = {} } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  return Object.keys(scripts)
+    .filter((k) => k === 'check' || k.startsWith('check:'))
+    .filter((k) => !['check:all', 'check:chain'].includes(k))
+    /*
+     * Any mention of the word, not just `--prefix server` or a `server/` path.
+     * The first version of this matched those two and selected four checks —
+     * missing `check:servertypes`, whose command is `node
+     * checks/server-types.mjs`, which is the exact regression this gate exists
+     * to catch. A wrapper hides the dependency inside a file, so the script
+     * name is all there is to go on.
+     *
+     * Over-matching costs a second or two of gate time; under-matching costs a
+     * failed deploy, which is what happened three times.
+     */
+    .filter((k) => /server/i.test(scripts[k]));
+};
 const live = join(root, 'server', 'node_modules');
 const parked = join(root, 'server', 'node_modules.gate-hidden');
 
@@ -70,8 +103,18 @@ if (!existsSync(live)) {
   process.exit(2);
 }
 
+const only = QUICK ? delegating() : [];
+if (QUICK && !only.length) {
+  console.error('  REFUSED: no root check appears to reach the server, which cannot be right.');
+  console.error('  The pattern in `delegating()` has stopped matching; fix it rather than');
+  console.error('  trusting a gate that checks nothing.');
+  process.exit(2);
+}
+
 console.log('');
-console.log("  hiding server/node_modules and running check:all, as the Pages job sees it");
+console.log(QUICK
+  ? `  hiding server/node_modules and running the ${only.length} checks that reach it:\n    ${only.join(', ')}`
+  : '  hiding server/node_modules and running check:all, as the Pages job sees it');
 console.log('');
 
 renameSync(live, parked);
@@ -83,7 +126,9 @@ const finish = (status) => {
   console.log('');
   console.log(`  server/node_modules ${back ? 'restored' : 'was already in place'}`);
   if (status === 0) {
-    console.log('  the gate passes without the server tree — no root check depends on it');
+    console.log(only.length
+      ? `  the ${only.length} server-facing checks survive without the server tree`
+      : '  the gate passes without the server tree — no root check depends on it');
   } else {
     console.error('');
     console.error('  FAIL: a root check needs something only server/package.json installs.');
@@ -97,7 +142,8 @@ const finish = (status) => {
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => finish(130));
 
 try {
-  const r = spawnSync('npm run check:all', { shell: true, stdio: 'inherit', cwd: root });
+  const cmd = only.length ? `npm run check:all -- ${only.join(' ')}` : 'npm run check:all';
+  const r = spawnSync(cmd, { shell: true, stdio: 'inherit', cwd: root });
   code = r.status ?? 1;
 } finally {
   /* finish() exits, so this runs only if spawnSync threw. */
