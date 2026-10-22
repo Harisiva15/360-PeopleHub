@@ -530,6 +530,36 @@ is decision 21's separate project.
 
 ---
 
+## Not scheduled — leave policies are barely editable
+
+`Company Setup → Leave policies` can write exactly one field:
+`setLeaveQuota(typeId, quota)`. Everything else about a leave type is
+unreachable from the product — `paid`, `encashable`, `carry_forward_max`,
+`active` — and eligibility is not modelled at all.
+
+That was found the long way round. Production's `leave_type` held
+`code='LOP', name='Loss of Pay', paid=true`, and the only way to correct one
+boolean was `db/manual/fix-lop-unpaid.mjs`: a fresh dump, a guarded
+transaction and an explicit go, for a field a company_admin should be able to
+set themselves. The flag turned out to be read by nothing — loss of pay
+reaches payroll through `lopDays()`, which counts unapproved absences — so it
+was hygiene rather than a repair. The next such discrepancy may not be
+harmless.
+
+What the work is:
+
+| | |
+|---|---|
+| **Screens** | the Leave policies card becomes a form over the whole row, not a quota box |
+| **Fields** | `paid`, `encashable`, `carry_forward_max`, `active`, plus eligibility |
+| **Eligibility** | **new**: there is no column for it. Maternity and paternity are offered to everyone today, and a probation or grade restriction has nowhere to live. Needs a migration and a decision about what may gate a type — gender, probation, grade, location |
+| **Permissions** | `settings` write, so **company_admin only** |
+| **Audit** | every change, with the old and new value; a quota change already reprices balances, and the others change what somebody may take |
+| **Checks** | each field round-trips; a non-company_admin is refused; repricing still only touches the type that changed; `checks/e2e/data-integrity.sql` keeps asserting LOP is unpaid |
+
+Until then, assertion 8 of the data-integrity check is what stops this
+particular row drifting back.
+
 ## Standing rules for every phase
 
 Carried over from the role cutover, and unchanged.
