@@ -34,7 +34,16 @@ import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 
 interface Props {
-  children: ReactNode;
+  /*
+   * Optional, which is about `createElement` rather than about rendering.
+   * Passing children as the third argument — as a test does, and as any
+   * non-JSX caller would — does not satisfy a `children` that the props type
+   * declares required, so the call fails to compile while the component works
+   * perfectly. JSX hid it: `tsc` was run before the suite that calls it this
+   * way existed, and check:all does not typecheck, so the first thing to
+   * notice was CI.
+   */
+  children?: ReactNode;
   /** Named in the message, so a report says which page. */
   where?: string;
 }
@@ -65,7 +74,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     const { error } = this.state;
-    if (!error) return this.props.children;
+    if (!error) return this.props.children ?? null;
 
     return (
       <div className="stack" style={{ padding: 24, maxWidth: 680 }} role="alert">
