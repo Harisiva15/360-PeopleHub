@@ -13,11 +13,23 @@
  * read as empty — and an empty screen cannot be wrong.
  *
  * It is shaped on production rather than invented: five employees across CHN,
- * BLR and NJ, the four role situations that exist (company_admin, hr_admin, an
- * employee who has reports and is therefore a manager, and employees who are
- * not), and one person deliberately left without a schedule, because two
- * people in production have none and the Monday–Friday fallback is what then
- * decides their working days.
+ * BLR and NJ, and the four role situations that exist — company_admin,
+ * hr_admin, an employee who has reports and is therefore a manager, and
+ * employees who are not.
+ *
+ * ## It used to leave somebody without a work schedule
+ *
+ * Deliberately, to keep the Monday–Friday fallback case in the local database,
+ * because two people in production have no assignment. That did not survive
+ * contact with `work-schedule.test.mjs`, which backfills assignments across
+ * the live tenant and then asserts the count is unchanged: the backfill filled
+ * the hole and the census failed, for a reason with nothing to do with what
+ * the suite was testing.
+ *
+ * A deliberate gap cannot live in a tenant that other suites write to. The
+ * fallback is asserted in `scripts/schedule-fallback.test.mjs` instead, where
+ * the unassigned employee exists inside a scratch tenant for exactly as long
+ * as the assertion needs and nothing else can close the hole first.
  *
  * ## Local only, with no way to say otherwise
  *
@@ -129,10 +141,10 @@ try {
       [T, p.role, await idOf('employee', p.code)]);
   }
 
-  /* --- schedules, with one deliberate gap -------------------------------- */
+  /* --- schedules, for everybody ------------------------------------------ */
 
   const mf = await idOf('work_schedule', 'DEFAULT_MF');
-  for (const code of ['VHM001', 'VHM002', 'VHM003', 'VHM004']) {
+  for (const code of ['VHM001', 'VHM002', 'VHM003', 'VHM004', 'VHM005']) {
     const emp = await idOf('employee', code);
     if (!emp) continue;
     await db.query(
@@ -248,7 +260,7 @@ try {
   const noSched = await one(`SELECT string_agg(e.code, ' ') c FROM employee e
                               WHERE e.tenant_id = $1 AND NOT EXISTS (
                                 SELECT 1 FROM employee_schedule s WHERE s.employee_id = e.id)`);
-  check('exactly one person has no schedule', noSched.c === 'VHM005', String(noSched.c));
+  check('everybody has a work schedule', noSched.c === null, `without one: ${noSched.c}`);
 
   const lt = await one(`SELECT count(*)::int n,
                           bool_and(CASE WHEN code = 'LOP' THEN NOT paid ELSE paid END) ok
@@ -294,7 +306,7 @@ console.log('  code    site    role            mgr      reports  schedule');
 for (const r of roster) {
   console.log('  ' + r.code.padEnd(8) + String(r.site ?? '-').padEnd(8)
     + r.app_role.padEnd(16) + String(r.mgr ?? '-').padEnd(9)
-    + String(r.reports).padEnd(9) + (r.sched ? 'yes' : 'NONE (Mon-Fri fallback)'));
+    + String(r.reports).padEnd(9) + (r.sched ? 'yes' : 'NONE — unexpected, see the assertions'));
 }
 console.log('');
 await db.end();
