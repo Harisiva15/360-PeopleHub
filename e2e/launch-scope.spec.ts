@@ -97,21 +97,13 @@ test.describe('closed by URL, not only absent from the menu', () => {
 
 test.describe('a hidden tab is not rendered as a page default', () => {
   /*
-   * `Tabs` filters a hidden tab out of the strip, and `useTabFromUrl` refuses
-   * a hidden tab *that was asked for* — but never the fallback it hands back.
-   * Where a page's default is itself hidden, the tab button disappears and the
-   * screen behind it still renders, with nothing in the strip selected.
+   * `Tabs` filters a hidden tab out of the strip, and `useTabFromUrl` used to
+   * refuse a hidden tab *that was asked for* but never the fallback it handed
+   * back. Where a page's default was itself hidden the button disappeared and
+   * the screen behind it still rendered, with nothing in the strip selected:
+   * `/#/payroll` opened the draft payroll run, and `?v=inputs` fell back to it
+   * rather than away from it. The hook picks the first tab in scope now.
    *
-   *   payroll  `useTabFromUrl(tabs[0].v, …)`, and tabs[0] is `runs`
-   *   planner  `useTabFromUrl('board', …)`, and `planner:board` is hidden
-   *
-   * So `/#/payroll` opens the draft payroll run — the screen the launch scope
-   * exists to close — and `?v=inputs` falls back to it rather than away from
-   * it. Recorded as expected failures: three tests that go green on a fix.
-   */
-  test.fail();
-
-  /*
    * Each route is asserted against the screen it actually shows, because the
    * symptom differs: payroll keeps three visible tabs with none selected,
    * while planner has only one visible tab so the strip is suppressed

@@ -98,6 +98,53 @@ ok('9. ?v=runs likewise', tabAt('/payroll?v=runs') === 'me', `got ${tabAt('/payr
 ok('10. a tab in scope still opens', tabAt('/payroll?v=struct') === 'struct',
   `got ${tabAt('/payroll?v=struct')}`);
 
+/*
+ * The case 8-10 could not see. Their probe declares `'me'` as its default,
+ * which is in scope — so they proved that a visible fallback stays visible,
+ * and said nothing about the pages whose own default is hidden. Payroll's is:
+ * `useTabFromUrl(tabs[0].v, …)` and `tabs[0]` is `runs`. The probe below has
+ * the real shape, hidden default first, and 10a-10c fail on the old hook.
+ */
+const PARKED = ['runs', 'inputs', 'comply', 'struct', 'me'] as const;
+function ParkedDefault() {
+  const [tab] = useTabFromUrl<typeof PARKED[number]>('runs', PARKED);
+  return <span>{tab}</span>;
+}
+const parkedAt = (entry: string) => renderToStaticMarkup(
+  <MemoryRouter initialEntries={[entry]}><ParkedDefault /></MemoryRouter>,
+).replace(/<[^>]*>/g, '');
+
+ok('10a. a page whose own default is hidden opens the first tab in scope',
+  parkedAt('/payroll') === 'comply', `got ${parkedAt('/payroll')}`);
+ok('10b.  and asking for a hidden tab lands there too, not on the parked one',
+  parkedAt('/payroll?v=inputs') === 'comply', `got ${parkedAt('/payroll?v=inputs')}`);
+ok('10c.  while a tab in scope is still honoured',
+  parkedAt('/payroll?v=me') === 'me', `got ${parkedAt('/payroll?v=me')}`);
+
+/* Planner is the second instance: a literal default of `board`. */
+const PLAN = ['board', 'mine', 'actions', 'iterations'] as const;
+function PlannerDefault() {
+  const [tab] = useTabFromUrl<typeof PLAN[number]>('board', PLAN);
+  return <span>{tab}</span>;
+}
+const planAt = (entry: string) => renderToStaticMarkup(
+  <MemoryRouter initialEntries={[entry]}><PlannerDefault /></MemoryRouter>,
+).replace(/<[^>]*>/g, '');
+
+ok('10d. planner opens My Work rather than the board',
+  planAt('/planner') === 'mine', `got ${planAt('/planner')}`);
+
+/*
+ * There is deliberately no assertion that nobody *declares* a hidden default.
+ * Payroll's is `tabs[0]!.v`, computed from a role-dependent list, so no static
+ * read of the source can resolve it — and it no longer matters: the hook turns
+ * a hidden default into the first visible one, so declaring one is harmless.
+ * The behaviour above is the thing worth pinning.
+ */
+ok('10e. the hook consults the hidden set for the fallback, not only the ask',
+  /isHiddenTab\(route, fallback\)/.test(readFileSync('src/modules/tabParam.ts', 'utf8')),
+  'the fallback is unchecked again');
+
 const strip = (entry: string) => renderToStaticMarkup(
   <MemoryRouter initialEntries={[entry]}>
     <Tabs

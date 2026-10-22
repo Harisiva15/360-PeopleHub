@@ -31,18 +31,43 @@ export function useTabFromUrl<T extends string>(fallback: T, allowed: readonly T
   const { pathname, search } = useLocation();
   const [tab, setTab] = useState<T>(() => {
     try {
+      const route = pathname.replace(/^\//, '').split('?')[0] ?? '';
+
+      /*
+       * ## The fallback has to be in scope too
+       *
+       * Refusing a hidden tab that was *asked for* was only half of it. Where
+       * a page's own default is hidden, every path led straight back to it:
+       *
+       *   payroll  `useTabFromUrl(tabs[0].v, …)`, and tabs[0] is `runs`
+       *   planner  `useTabFromUrl('board', …)`, and `planner:board` is hidden
+       *
+       * So `/#/payroll` opened the draft payroll run — the screen the launch
+       * scope exists to close, with this month's gross and net on it — and
+       * `?v=inputs` "fell back" to it rather than away from it. `Tabs` had
+       * already dropped the button, so the strip showed three tabs with none
+       * selected and no way to leave.
+       *
+       * The fallback is now the first tab in scope, in the order the page
+       * lists them. If a page declares no visible tab at all the original
+       * stands, because there is nothing to prefer — and a route in that
+       * state belongs in `HIDDEN_ROUTES`, not here.
+       */
+      const safe = isHiddenTab(route, fallback)
+        ? (allowed.find((v) => !isHiddenTab(route, v)) ?? fallback)
+        : fallback;
+
       const asked = new URLSearchParams(search).get('v') as T | null;
-      if (!asked) return fallback;
+      if (!asked) return safe;
       /*
        * A tab that is out of scope for go-live is treated exactly like an
        * unknown one. Payroll keeps five of those — processing, inputs, the
        * register, disbursal, statutory — and `?v=inputs` in a bookmark lands
-       * on the page default rather than the parked screen.
+       * on the first tab in scope rather than the parked screen.
        */
-      const route = pathname.replace(/^\//, '').split('?')[0] ?? '';
-      if (isHiddenTab(route, asked)) return fallback;
+      if (isHiddenTab(route, asked)) return safe;
       /* An unknown tab in a stale bookmark falls back rather than blanking. */
-      return allowed.includes(asked) ? asked : fallback;
+      return allowed.includes(asked) ? asked : safe;
     } catch {
       return fallback;
     }
