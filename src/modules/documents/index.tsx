@@ -6,6 +6,7 @@ import { pct } from '../../lib/format';
 
 import { deptOf } from '../../data/org';
 import { LETTER_TYPES } from '../../data/letters';
+import { isHiddenLetter } from '../../nav';
 import { HBar, PAL } from '../../components/charts';
 import type { HBarRow } from '../../components/charts';
 import { Badge, Banner, Card, EmptyState, PersonCell, Table, TableWrap, Tabs, Tile, StatRow } from '../../components/ui';
@@ -68,7 +69,13 @@ function GenTab() {
       )}
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
-        {LETTER_TYPES.map((t) => (
+        {/*
+          * Filtered, not the whole catalogue: the three types that quote pay
+          * are out of scope until `letterContext` has a server. `letterName`
+          * above still reads the full list on purpose, so an existing request
+          * for one of them shows its name rather than a raw id.
+          */}
+        {LETTER_TYPES.filter((t) => !isHiddenLetter(t.id)).map((t) => (
           <Card key={t.id}>
             <div className="row" style={{ gap: 9, marginBottom: 8 }}>
               <div style={{ fontSize: 20 }}>📄</div>
@@ -100,7 +107,9 @@ function MineTab() {
   const layer = useLayer();
   const { data: docs = [] } = useDocuments([app.meId]);
   const { data: allReqs = [] } = useLetterRequests();
-  const { data: types = [] } = useLetterTypes();
+  const { data: allTypes = [] } = useLetterTypes();
+  /* The request form offers the same scope the catalogue above does. */
+  const types = allTypes.filter((t) => !isHiddenLetter(t.code));
   const reqs = allReqs.filter((l) => l.empId === app.meId);
 
   const askForLetter = () => layer.modal({

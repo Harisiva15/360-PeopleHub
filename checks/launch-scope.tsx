@@ -32,7 +32,9 @@ import { useTabFromUrl } from '../src/modules/tabParam';
 import {
   ALL_ROUTES, ALL_VIEWS, HIDDEN_ROUTES, HIDDEN_TABS, NAV, VISIBLE_NAV,
   VISIBLE_QUICK_ACTIONS, hrefOf, isHiddenItem, isHiddenRoute, isHiddenTab,
+  LAUNCH_LETTERS, PAY_LETTERS, isHiddenLetter,
 } from '../src/nav';
+import { LETTER_TYPES } from '../src/data/letters';
 import { loadAllRoutes } from '../src/modules';
 import { getModule } from '../src/modules/registry';
 
@@ -149,6 +151,47 @@ ok('18. every hidden route is a route that exists',
 ok('19. every hidden tab names a route that exists',
   [...HIDDEN_TABS].every((t) => ALL_ROUTES.includes(t.split(':')[0]!)),
   [...HIDDEN_TABS].filter((t) => !ALL_ROUTES.includes(t.split(':')[0]!)).join(', '));
+
+/* ===========================================================================
+ * Letters, which are an action rather than a route or a tab
+ *
+ * `LAUNCH_LETTERS` was declared and never read, so all eight types stayed on
+ * offer and the three that quote pay are `self: true` — "Generate now", not a
+ * request to HR. Both halves are asserted: that they are out of scope while
+ * the flag is false, and that the page consults the gate rather than the
+ * catalogue. The second is the one that matters, because the first was true
+ * of the old code too.
+ * ======================================================================== */
+
+const offered = LETTER_TYPES.filter((t) => !isHiddenLetter(t.id));
+
+ok('20. every pay letter names a type that exists',
+  [...PAY_LETTERS].every((id) => LETTER_TYPES.some((t) => t.id === id)),
+  [...PAY_LETTERS].filter((id) => !LETTER_TYPES.some((t) => t.id === id)).join(', '));
+
+ok(`21. no letter that quotes pay is offered (${offered.length} of ${LETTER_TYPES.length})`,
+  !LAUNCH_LETTERS && offered.every((t) => !PAY_LETTERS.has(t.id)),
+  offered.filter((t) => PAY_LETTERS.has(t.id)).map((t) => t.n).join(', '));
+
+ok('22.  and the five that do not are all still offered',
+  offered.length === LETTER_TYPES.length - PAY_LETTERS.size,
+  `${offered.length} offered, expected ${LETTER_TYPES.length - PAY_LETTERS.size}`);
+
+const docs = readFileSync('src/modules/documents/index.tsx', 'utf8');
+
+ok('23. the page consults the gate rather than the catalogue',
+  /isHiddenLetter/.test(docs));
+
+ok('24.  at every place it offers one',
+  !/LETTER_TYPES\.map\(/.test(docs) && !/\ballTypes\.map\(/.test(docs),
+  'an unfiltered map over the catalogue is back');
+
+const navSrc = readFileSync('src/nav.ts', 'utf8');
+const gateDef = navSrc.slice(navSrc.indexOf('export const isHiddenLetter'), navSrc.length);
+
+ok('25. the gate reads the flag, which is how this failed before',
+  /LAUNCH_LETTERS/.test(gateDef.slice(0, 220)),
+  'isHiddenLetter no longer consults LAUNCH_LETTERS');
 
 console.log('');
 if (failed) { console.error(`${failed} FAILED\n`); process.exit(1); }

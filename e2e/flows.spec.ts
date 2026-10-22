@@ -152,14 +152,13 @@ test.describe('Documents', () => {
 });
 
 test.describe('Documents — the pay letters', () => {
-  test.fail();
   test('no letter that quotes pay is offered', async ({ page }) => {
     /*
-     * `LAUNCH_LETTERS = false` in `src/nav.ts:605` has no reader anywhere in
-     * the repository, so `documents/index.tsx:71` still maps `LETTER_TYPES`
-     * unfiltered. All three pay letters are on the "Generate a Letter" tab,
-     * and `letterContext` is wrapped in `unbacked(…, null)`, so in a
-     * configured build they print with an empty pay line.
+     * `LAUNCH_LETTERS` had no reader, so the page offered all eight types —
+     * and the three that quote pay are `self: true`, which is "Generate now"
+     * rather than a request to HR, over a `letterContext` wrapped in
+     * `unbacked(…, null)`. `isHiddenLetter` is the gate now, and
+     * `checks/launch-scope.tsx` 20-25 holds the wiring in place.
      */
     await open(page, 'documents');
     for (const name of ['Salary Certificate', 'Increment / Revision Letter', 'Form 16']) {

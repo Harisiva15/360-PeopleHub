@@ -605,6 +605,34 @@ export const isHiddenTab = (route: string, tab: string): boolean =>
 export const LAUNCH_LETTERS = false;
 
 /**
+ * The three letters that quote pay, and are therefore the three this gate is
+ * about. Five of the eight types state facts the server already holds —
+ * designation, tenure, address, the appointment, clearance — and go live;
+ * these three cannot be printed truthfully until `letterContext` has a
+ * server behind it.
+ *
+ * Form 16 is here because it is hidden, not retired. It returns with payroll
+ * and TDS: Part A comes from TRACES and Part B is generated.
+ *
+ * ## It was declared and never read
+ *
+ * `LAUNCH_LETTERS` sat here with no reader anywhere in the repository, so
+ * `documents/index.tsx` went on offering all eight — and all three of these
+ * are `self: true`, which is "Generate now" rather than a request to HR, so
+ * any employee could print one with an empty pay line. The same shape as the
+ * `check:gate` problem: a flag nobody consumed and nothing asserted.
+ *
+ * `checks/launch-scope.tsx` now asserts both halves — that these are not
+ * offered while the flag is false, and that the offer sites consult this
+ * function rather than the catalogue.
+ */
+export const PAY_LETTERS: ReadonlySet<string> = new Set(['salcert', 'inc', 'form16']);
+
+/** Is this letter type out of scope for launch? */
+export const isHiddenLetter = (id: string): boolean =>
+  !LAUNCH_LETTERS && PAY_LETTERS.has(id);
+
+/**
  * Is this menu item out of scope?
  *
  * Both levels, because an item names either a route or a tab on one: five of
