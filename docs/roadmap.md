@@ -560,6 +560,28 @@ What the work is:
 Until then, assertion 8 of the data-integrity check is what stops this
 particular row drifting back.
 
+## After launch — accessibility of the shared primitives
+
+Two defects in components that nearly every screen uses, found by the
+end-to-end suite on 22 October 2026 and deliberately left until after launch.
+Both are in `src/components/ui.tsx`, so both are one fix in one file each,
+affecting every page at once.
+
+| | What is wrong |
+|---|---|
+| **Form controls have no accessible name** | `.field` renders `<label>Leave type</label>` beside `<select class="input">` with no `for`, no `id`, and no wrapping. Nothing associates the two, so a screen reader announces an unnamed combobox, and `getByLabel('Leave type')` finds nothing — which is how it was noticed. Every form in the product is built from this |
+| **The tab strip is not a tablist** | `Tabs` renders a `div.tabs` of plain buttons, the current one carrying `class="on"` and nothing else: no `role="tablist"`, no `role="tab"`, no `aria-selected`, no arrow-key movement between tabs. Assistive technology is handed a row of buttons with no indication of which is current |
+
+Both are recorded as `test.fail()` in `e2e/flows.spec.ts`, under
+"Accessibility of the pieces these flows touch". They run on every `npm run
+e2e`, the suite stays green while they fail, and each turns red the moment it
+starts passing — which is the signal to delete the marker.
+
+Worth doing together, with a keyboard pass over the tab strip and a sweep for
+any other control that takes its name from a neighbouring element. Not a
+launch blocker: nothing is unusable, and the two are invisible to a sighted
+mouse user.
+
 ## Standing rules for every phase
 
 Carried over from the role cutover, and unchanged.
