@@ -54,3 +54,7 @@ pgtest/
 /backup-*.sql.gz
 /*.dump
 /pg_dump-*.sql
+
+# Playwright writes these on a failing run; neither belongs in the repo.
+test-results
+playwright-report
