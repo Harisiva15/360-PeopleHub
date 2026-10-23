@@ -71,8 +71,10 @@ const ok = (label, cond, detail = '') => {
 const admin = new pg.Client({ connectionString: url });
 await admin.connect();
 
-const { readMigrationState, reportMigrationState, migrationSummary } =
-  await import('../src/db/migrationState.ts');
+const {
+  readMigrationState, reportMigrationState, migrationSummary,
+  migrationRefreshInFlight, migrationRefreshes, migrationStateTtlMs,
+} = await import('../src/db/migrationState.ts');
 const { closePool } = await import('../src/db/pool.ts');
 
 /** The ledger, so every perturbation below can be undone exactly. */
@@ -238,6 +240,94 @@ console.log('\nthe entry point\n');
   ok('29. and a failure in the check cannot take the process down',
     /reportMigrationState\(\)[\s\S]{0,120}\.catch\(/.test(index),
     'the diagnostic must not become the outage');
+}
+
+/* ------------------------------------------------------------------ *
+ * The snapshot keeps itself current
+ *
+ * 0060 was applied to production at 20:41 and `/health` went on saying
+ * `applied: 59, behind: true` with a `checkedAt` of 20:32, because the state
+ * was measured once at boot and nothing about applying a migration restarts
+ * the server. It only told the truth again when an unrelated deploy happened
+ * to restart the process.
+ *
+ * So: the answer must go stale on its own and come back right, in one
+ * process, without a restart — and the request path must still never wait on
+ * a query, which was the sound half of the original reasoning.
+ * ------------------------------------------------------------------ */
+
+console.log('\nthe snapshot refreshes itself, and nobody waits for it\n');
+
+{
+  delete process.env.MIGRATION_STATE_TTL_MS;
+  await reportMigrationState();
+  const fresh = migrationSummary();
+  ok('30. a fresh snapshot is served as it stands',
+    migrationSummary().checkedAt === fresh.checkedAt,
+    'a snapshot inside its TTL must not trigger a refresh');
+  ok('31.  and starts no refresh', migrationRefreshInFlight() === null);
+  ok('32. up to date to begin with', fresh.behind === false, JSON.stringify(fresh));
+
+  /* Stale from here on, so every call wants a refresh. */
+  process.env.MIGRATION_STATE_TTL_MS = '0';
+
+  /*
+   * The database falls behind the build *while the process is running* —
+   * the de4b462 case, except nobody restarts anything afterwards.
+   */
+  const last = original.at(-1).filename;
+  await admin.query('DELETE FROM schema_migration WHERE filename = $1', [last]);
+
+  const before = migrationRefreshes();
+  const served = migrationSummary();
+  ok('33. the stale answer is served immediately, without waiting',
+    served.checkedAt === fresh.checkedAt && migrationRefreshes() === before,
+    'the request path must not block on the query');
+
+  /* Several callers arriving together must not start several queries. */
+  migrationSummary();
+  migrationSummary();
+  migrationSummary();
+  await migrationRefreshInFlight();
+  ok('34. four callers started exactly one refresh',
+    migrationRefreshes() === before + 1,
+    `${migrationRefreshes() - before} refreshes`);
+
+  const now = migrationSummary();
+  ok('35. and the new state is reported without a restart',
+    now.behind === true && now.pending === 1,
+    JSON.stringify(now));
+  ok('36.  with a checkedAt from the refresh, not from boot',
+    Date.parse(now.checkedAt) > Date.parse(fresh.checkedAt),
+    `${fresh.checkedAt} -> ${now.checkedAt}`);
+
+  /*
+   * The half that was impossible before: the migration is applied, and the
+   * signal clears on its own. This is the assertion the whole change exists
+   * for.
+   */
+  await restore();
+  await migrationRefreshInFlight();
+  migrationSummary();
+  await migrationRefreshInFlight();
+  const cleared = migrationSummary();
+  /*
+   * The timestamp is part of the assertion, not decoration. Without it this
+   * passes on the old boot-only body too: that snapshot still said
+   * `behind: false` from startup, so "it is not behind" was true for the
+   * wrong reason. What has to be shown is that the answer was re-measured
+   * after the migration was restored.
+   */
+  ok('37. "behind" clears without a restart',
+    cleared.behind === false && cleared.pending === 0
+    && Date.parse(cleared.checkedAt) > Date.parse(now.checkedAt),
+    `${JSON.stringify(cleared)} (previous checkedAt ${now.checkedAt})`);
+
+  /* A broken TTL must not silently restore the old never-refresh behaviour. */
+  process.env.MIGRATION_STATE_TTL_MS = 'not-a-number';
+  ok('38. a malformed TTL falls back to the default rather than disabling it',
+    migrationStateTtlMs() === 60_000, `${migrationStateTtlMs()}`);
+  delete process.env.MIGRATION_STATE_TTL_MS;
 }
 
 } finally {

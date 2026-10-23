@@ -29,15 +29,30 @@
  * somebody needs in order to run the migrations. The honest response is to be
  * extremely visible, not to fall over.
  *
- * ## Why startup rather than per request
+ * ## Measured at startup, then kept fresh in the background
  *
- * `/health` is polled, and a health endpoint that queries the database on every
- * request is a denial-of-service lever pointed at your own database. Being
- * ahead of the schema is also a deploy-time condition, and a deploy restarts
- * the process, so a boot-time answer is the right granularity. The snapshot
- * carries `checkedAt` so nobody has to guess how old it is: after migrations
- * are applied to a running server, this keeps saying "behind" until the next
- * restart, and that is reported rather than hidden.
+ * It was measured once, at startup, and never again. The reasoning was that
+ * `/health` is polled and a health endpoint that queries the database on every
+ * request is a denial-of-service lever pointed at your own database — which is
+ * true, and is still the constraint this respects.
+ *
+ * What the reasoning missed is that applying a migration is the moment the
+ * answer changes, and nothing about applying one restarts the server. 0060 was
+ * applied to production on 22 October at 20:41; `/health` went on reporting
+ * `applied: 59, pending: 1, behind: true` with a `checkedAt` of 20:32, and
+ * only told the truth again when an unrelated deploy happened to restart the
+ * process. A signal that cannot clear itself is a signal nobody trusts, and
+ * `behind` is the one you most want to believe.
+ *
+ * So the snapshot is served from memory and refreshed in the background when
+ * it goes stale: a request gets the cached answer immediately and never waits
+ * for a query, and at most one query runs per `MIGRATION_STATE_TTL_MS`
+ * (default one minute) however hard the endpoint is polled. The poll rate and
+ * the query rate are decoupled, which is what the denial-of-service objection
+ * was actually about.
+ *
+ * `checkedAt` still says how old the answer is, and is now never more than the
+ * TTL plus one request old.
  *
  * ## Why the counts and not the names
  *
@@ -181,8 +196,93 @@ let snapshot: MigrationSummary = {
   readable: false, behind: true, checkedAt: new Date(0).toISOString(),
 };
 
-/** What `/health` includes. Never the filenames. */
-export const migrationSummary = (): MigrationSummary => snapshot;
+/**
+ * How long a snapshot is served before a refresh is started behind it.
+ *
+ * Read per call rather than captured at import, so a suite can shorten it
+ * without reloading the module. A missing, malformed or non-positive value
+ * falls back to the default rather than disabling the refresh — a typo in an
+ * environment variable must not quietly restore the old behaviour.
+ */
+const DEFAULT_TTL_MS = 60_000;
+const ttlMs = (): number => {
+  const raw = Number(process.env.MIGRATION_STATE_TTL_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_TTL_MS;
+};
+
+/**
+ * The TTL in force, resolved. Exported so the suite can assert that a
+ * malformed value falls back rather than disabling the refresh — which it
+ * cannot tell apart from a long TTL by observing behaviour alone, since both
+ * leave a fresh snapshot alone.
+ */
+export const migrationStateTtlMs = (): number => ttlMs();
+
+/** The refresh currently running, if any. One at a time, by construction. */
+let inFlight: Promise<void> | null = null;
+
+/** Completed refreshes. Exported for the suite, which counts them. */
+let refreshes = 0;
+
+/**
+ * Measure again and replace the snapshot. Never throws, never awaited by a
+ * request.
+ *
+ * The result is published whatever it says, including `readable: false`. A
+ * transient failure therefore shows as unreadable until the next refresh,
+ * which is the honest reading: the question could not be answered just now.
+ * Keeping the previous answer would be inventing continuity.
+ */
+function refreshSnapshot(): Promise<void> {
+  if (inFlight) return inFlight;
+  inFlight = (async () => {
+    try {
+      const state = await readMigrationState();
+      const { pendingNames, driftedNames, unknownNames, ...summary } = state;
+      const was = snapshot.behind;
+      snapshot = summary;
+      refreshes += 1;
+      /*
+       * Logged only when the verdict changes. A line a minute saying the same
+       * thing is how a log stops being read, and this one has to be read.
+       */
+      if (was !== summary.behind) {
+        console.log(summary.behind
+          ? `[server] schema state changed: now behind (pending ${summary.pending}, `
+            + `drifted ${summary.drifted}, unknown ${summary.unknown})`
+          : `[server] schema state changed: now up to date `
+            + `(${summary.applied} migrations applied)`);
+      }
+    } catch (e) {
+      /* readMigrationState does not throw; this is belt and braces. */
+      console.error('[server] migration state refresh failed: '
+        + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      inFlight = null;
+    }
+  })();
+  return inFlight;
+}
+
+/** The refresh in progress, or null. For the suite, which awaits it. */
+export const migrationRefreshInFlight = (): Promise<void> | null => inFlight;
+
+/** How many refreshes have completed. For the suite, which counts them. */
+export const migrationRefreshes = (): number => refreshes;
+
+/**
+ * What `/health` includes. Never the filenames.
+ *
+ * Returns the snapshot as it stands, always synchronously. When that snapshot
+ * has gone stale a refresh is started behind the answer, so the *next* caller
+ * sees the new state — nobody waits on a query, and the request path cannot
+ * be made slow or made to fail by the database.
+ */
+export const migrationSummary = (): MigrationSummary => {
+  const age = Date.now() - Date.parse(snapshot.checkedAt);
+  if (!Number.isFinite(age) || age >= ttlMs()) void refreshSnapshot();
+  return snapshot;
+};
 
 /**
  * Measure, store, and say so in the log.
