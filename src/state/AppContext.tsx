@@ -482,15 +482,26 @@ export function AppProvider({ children, initialRole = 'company_admin' }: { child
       hasReports,
       scopeOf: (module: string, verb: 'read' | 'write' | 'approve') => {
         const r = resolved.access?.rules?.[module];
-        /* Fail closed: a module the server did not mention grants nothing. */
-        if (!r) return apiMode ? 'none' : scopeOfDemo(role, hasReports, module);
+        /*
+         * Fail closed: a module the server did not mention grants nothing.
+         *
+         * `verb` is passed on. It was not, and `scopeOfDemo` defaults it to
+         * `'read'` — so in the demo build every question about writing or
+         * approving was answered with the *read* scope. An hr_admin holds
+         * `users` read all and write none, so asking whether they may edit an
+         * account came back `'all'`, and the control was offered. Silent, and
+         * in the widening direction.
+         */
+        if (!r) return apiMode ? 'none' : scopeOfDemo(role, hasReports, module, verb);
         return (r[verb] ?? 'none') as Scope;
       },
       reaches: (module: string, verb: 'read' | 'write' | 'approve', needed: Scope) => {
         const r = resolved.access?.rules?.[module];
+        /* Same omission as `scopeOf` above, same consequence: without `verb`
+           this asked the read scope for every write and approve question. */
         const granted = r
           ? ((r[verb] ?? 'none') as Scope)
-          : (apiMode ? 'none' : scopeOfDemo(role, hasReports, module));
+          : (apiMode ? 'none' : scopeOfDemo(role, hasReports, module, verb));
         return covers(granted, needed);
       },
       /*
