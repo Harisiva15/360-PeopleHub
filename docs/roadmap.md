@@ -560,6 +560,56 @@ What the work is:
 Until then, assertion 8 of the data-integrity check is what stops this
 particular row drifting back.
 
+## Blocker for the first real pay run — absences are never recorded
+
+**Nothing in this codebase ever writes `attendance.status = 'A'`.** The value
+appears exactly twice, and both are reads: the filter in
+`attendance/regularisableDays` and the filter in `payroll/lopDays`. There is
+no job, no materialiser and no service path that marks a day absent.
+
+So `lopDays()` returns 0 for everybody, always, and **a genuine absence is
+paid in full**. Found on 27 October 2026 while auditing night-shift
+attribution; recorded here rather than fixed, because it is payroll's problem
+and not the US-hours feature's.
+
+It cannot be fixed by writing `'A'` somewhere. An absence is the *absence* of
+things, so it has to be derived at read time, from five facts that already
+exist:
+
+| | |
+|---|---|
+| **a working day** | `classifyRange` already answers this — the employee's schedule, or the Monday–Friday fallback where they have none |
+| **not a holiday** | on *their* calendar, which after the holiday-calendar work is the named calendar rather than their site |
+| **no approved leave** | `leave_request` where `status = 'approved'` covers the date |
+| **no punch** | no `attendance` row for the date, or one with neither punch |
+| **no pending correction** | no `regularisation` awaiting a decision — a day somebody has already flagged is not an absence until it is refused |
+
+All five together, and only then absent. Each one left out is a different way
+to dock somebody's pay for a day they did not owe: the first three are the
+difference between a holiday and a no-show, the fourth is the night-shift bug
+this was found next to, and the fifth deducts pay from the one person who
+noticed and raised it.
+
+**Why it belongs in payroll and not attendance.** A derived absence is a pay
+input, and the place that reads it is `lopDays()`. Writing it into
+`attendance` would mean a nightly job whose output drifts the moment somebody
+back-dates a leave approval — and leave is approved after the fact all the
+time.
+
+**Go-live checklist for payroll, before the first real run:**
+
+- [ ] absences derived from the five facts above, with a test per fact
+- [ ] a reconciliation screen listing every derived absence for a cycle, so
+      somebody sees them before the run rather than after the payslips
+- [ ] a check that `lopDays()` is non-zero for a manufactured absence —
+      today's zero is indistinguishable from "nobody was absent"
+- [ ] the night-shift case: an employee on a shift measured in another zone
+      must not be absent for a day they worked across local midnight
+- [ ] no employee is absent for a date before `joined_on` or after `left_on`
+
+Until this lands, **a pay run will overpay anybody who was absent**, silently.
+That is the whole reason it is written down here.
+
 ## After launch — accessibility of the shared primitives
 
 Two defects in components that nearly every screen uses, found by the
