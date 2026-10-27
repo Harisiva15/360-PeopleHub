@@ -11,8 +11,48 @@ import { goHash, open, switchAccount } from './shell';
  * matters for it.
  */
 
+/*
+ * The widths a laptop actually has. The reported bug was invisible at the
+ * 1920-wide default Playwright runs at and present at every one of these.
+ */
+const LAPTOP = { width: 1366, height: 768 } as const;
+
+test.describe('the row actions are reachable, not merely rendered', () => {
+  for (const size of [{ width: 1280, height: 720 }, LAPTOP, { width: 1536, height: 864 }]) {
+    test(`Edit is inside the viewport at ${size.width}x${size.height}`, async ({ page }) => {
+      await page.setViewportSize(size);
+      await open(page);
+      await goHash(page, 'users');
+
+      const row = page.locator('table tbody tr').first();
+      await row.waitFor({ timeout: 15_000 });
+
+      /*
+       * Scrolled down to first, because the defect being tested is
+       * horizontal. The table sits below a filter bar and a stat row, so the
+       * first row is around y=1000 on a 768-high screen — vertical scrolling
+       * is what any reader does and is not the bug. What they cannot do is
+       * discover a column parked outside the table's scroll window.
+       */
+      await row.scrollIntoViewIfNeeded();
+
+      /*
+       * `toBeInViewport`, not `toBeVisible`. This is the whole point of the
+       * test: the button was rendered, enabled and permitted the entire time,
+       * and sat outside the table's scroll window on every screen narrower
+       * than about 1700px. `isVisible()` returned true at every width, which
+       * is why the first version of this suite passed while a company
+       * administrator could not edit anyone.
+       */
+      await expect(row.getByRole('button', { name: 'Edit' })).toBeInViewport({ ratio: 1 });
+      await expect(row.getByRole('button', { name: 'View' })).toBeInViewport({ ratio: 1 });
+    });
+  }
+});
+
 test.describe('editing a record from User management', () => {
   test('as Company Administrator: the list, the Edit control and a save', async ({ page }) => {
+    await page.setViewportSize(LAPTOP);
     await open(page);
     await goHash(page, 'users');
 

@@ -837,6 +837,43 @@ html[data-theme="dark"] .b-warn{color:#fab219}
 
 /* ---------- Tables ---------- */
 .tbl-wrap{overflow-x:auto}
+
+/*
+ * A row's actions, pinned to the right edge of the scroll container.
+ *
+ * ## Why this exists
+ *
+ * The User management table is 1309px of content in a container that is
+ * 1004px wide at 1280 and 1090px at 1366 — so its last column, the one
+ * holding View, Edit and the actions menu, sat outside the visible area on
+ * every screen narrower than about 1700px. A company administrator reported
+ * that he could not edit anybody: the control was rendered, enabled and
+ * permitted, and simply off-screen on every row, because it is the same
+ * column on every row.
+ *
+ * Nothing caught it. The permission checks all passed, because nothing was
+ * refused — and an end-to-end assertion on the button passed too, because
+ * Playwright's `isVisible()` means "has a box and is not hidden", not "inside
+ * the viewport". It returned true at every width.
+ *
+ * Opt-in by class rather than applied to every `.tbl-wrap`: most tables in
+ * the product end in an actions column and have the same latent problem, but
+ * pinning them all at once changes the look of a lot of screens and wants
+ * checking one at a time.
+ *
+ * The background is explicit on both the cell and the hovered cell. Without
+ * it the pinned column is transparent and the columns it is pinned over
+ * scroll underneath it, which looks like a rendering fault.
+ */
+.tbl-wrap.pin-actions table.tbl th:last-child,
+.tbl-wrap.pin-actions table.tbl td:last-child{
+  position:sticky;right:0;z-index:1;
+  background:var(--surface);
+  box-shadow:inset 1px 0 0 var(--line);
+}
+.tbl-wrap.pin-actions table.tbl thead th:last-child{background:var(--surface-2);z-index:2}
+.tbl-wrap.pin-actions table.tbl tbody tr:hover td:last-child{background:var(--surface-2)}
+
 table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 /*
  * The header is a label, not a heading. Uppercase at 700 competes with the

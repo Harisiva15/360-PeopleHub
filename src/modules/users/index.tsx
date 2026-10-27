@@ -394,8 +394,15 @@ function UsersView() {
         sub={`${rows.length} ${rows.length === 1 ? 'account' : 'accounts'}`}
         flush
       >
+        {/*
+          * `pin-actions` keeps View, Edit and the actions menu against the
+          * right edge of the scroll area. This table is wider than its
+          * container below about 1700px, and the actions column was simply
+          * off-screen — which read as "there is no Edit button" rather than
+          * as a table that needed scrolling.
+          */}
         {rows.length ? (
-          <div className="tbl-wrap">
+          <div className="tbl-wrap pin-actions">
             <table className="tbl">
               <thead>
                 <tr>
