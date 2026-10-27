@@ -8,6 +8,7 @@ import { deptOf, GRADES, siteOf } from '../../data/org';
 import type { EmployeeProfile } from '../../services';
 import { getServices } from '../../services';
 import { useProfile } from './data';
+import { usePhotoUrl } from '../../services/photos';
 import { Avatar, Badge, Banner, KV } from '../../components/ui';
 import { Chip, ListRow, StatusBadge } from '../../components/common';
 import { useLayer } from '../../components/Layer';
@@ -52,6 +53,9 @@ function ProfileBody({ id, jump }: { id: string; jump: (nextId: string) => void 
 }
 
 function ProfileView({ p, jump }: { p: EmployeeProfile; jump: (id: string) => void }) {
+  /* One person, one signed URL. It resolves to null when they have no
+     photo, which is the ordinary case, and `Avatar` draws initials. */
+  const photo = usePhotoUrl(p.employee.id);
   const app = useApp();
   const e = p.employee;
   const isSelf = e.id === app.meId;
@@ -87,7 +91,17 @@ function ProfileView({ p, jump }: { p: EmployeeProfile; jump: (id: string) => vo
   return (
     <>
       <div className="row" style={{ gap: 14, marginBottom: 16 }}>
-        <Avatar name={e.name} size="xl" />
+        {/*
+          * `src`, which was missing.
+          *
+          * Only the top bar ever passed a photo URL, so a photo somebody
+          * had uploaded showed there and nowhere else — this drawer drew
+          * initials for everybody regardless. One person means one signed
+          * URL, which is what `usePhotoUrl` is for; the directory list
+          * above keeps initials deliberately, because a list of photos
+          * needs a bulk signing endpoint that does not exist yet.
+          */}
+        <Avatar name={e.name} size="xl" src={photo.data ?? null} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 17, fontWeight: 750, letterSpacing: '-.4px' }}>{e.name}</div>
           <div className="muted" style={{ fontSize: 13 }}>{e.designation}</div>
