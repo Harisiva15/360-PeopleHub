@@ -24,6 +24,7 @@ import { useApp } from '../../state/AppContext';
 import type {
   BusinessUnit, Department, DepartmentDraft, LegalEntityDraft,
 } from '../../services';
+import { CompanyLogoCard, SignatoryCard } from './Branding';
 import { FenceForm } from './Fence';
 import {
   useAddHoliday, useAllEmployees, useAttendanceAll, useBusinessUnits, useCandidates,
@@ -1811,6 +1812,9 @@ function LegalEntityCard() {
 }
 
 export function CompanyTab() {
+  const { data: entities = [] } = useLegalEntities();
+  /* The default is the entity this screen is about; `legalEntities()` puts it first. */
+  const defaultEntityCode = (entities.find((e) => e.isDefault) ?? entities[0])?.code ?? null;
   const { data: everyone = [] } = useAllEmployees();
   /* "Live system counts" said Departments from a constant. It counts them now. */
   const { data: depts = [] } = useDepartments();
@@ -1827,6 +1831,14 @@ export function CompanyTab() {
       <div className="stack">
         <TenantProfileCard />
         <LegalEntityCard />
+        {/*
+          * Both are about the default entity, which is what this screen is
+          * about and what `legalEntities()` returns first. Null until the read
+          * lands, so the cards render their own empty state rather than the
+          * screen holding a spinner over a form that is otherwise ready.
+          */}
+        <CompanyLogoCard entityCode={defaultEntityCode} />
+        <SignatoryCard entityCode={defaultEntityCode} />
       </div>
 
       <div className="stack">

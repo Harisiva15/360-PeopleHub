@@ -4,9 +4,13 @@ import { fmtD, tenure, TODAY, ymd } from '../../lib/dates';
 import { inr } from '../../lib/format';
 import { ri } from '../../lib/rng';
 import type { Employee, LetterContext } from '../../services';
-import { useLetterContext, useVisiblePeople } from './data';
+import {
+  useDefaultEntityCode, useLetterContext, useSignatory, useVisiblePeople,
+} from './data';
 import { deptOf, GRADES, ORG, siteOf } from '../../data/org';
 import { LETTER_TYPES } from '../../data/letters';
+import { Banner } from '../../components/ui';
+import { mayIssueLetter } from './issue';
 import { useLayer } from '../../components/Layer';
 import { Icon } from '../../components/icons';
 import { notBacked } from '../../components/NotBacked';
@@ -322,11 +326,39 @@ function LetterDoc({ type, empId, docRef }: { type: string; empId: string; docRe
 export function useShowLetter() {
   const layer = useLayer();
   const dir = useVisiblePeople();
+  const entityCode = useDefaultEntityCode();
+  const { data: signatory } = useSignatory(entityCode);
 
   return (type: string, empId: string) => {
     const e = dir.byId(empId);
     if (!e) return;
     const t = letterType(type);
+
+    /*
+     * No signatory, no letter.
+     *
+     * Refused here rather than in the body, so there is no Print button to
+     * press: a letter that printed its own apology would still be a document
+     * somebody could hand over. The signature block is not decoration — a
+     * letter without a named signer is unsigned, and an unsigned letter to a
+     * bank is worse than no letter.
+     */
+    const verdict = mayIssueLetter(signatory);
+    if (!verdict.issue) {
+      layer.modal({
+        title: t?.n || 'Letter',
+        sub: e.name + ' · ' + e.code,
+        size: 'narrow',
+        body: (
+          <Banner kind="warn" title="This letter cannot be issued yet">
+            {verdict.message}
+          </Banner>
+        ),
+        /* Close alone: there is deliberately no Print here. */
+        footer: (close) => <button className="btn" onClick={close}>Close</button>,
+      });
+      return;
+    }
     /* Drawn once per open so the reference stays put while the letter is on screen. */
     const reference = `360T/HR/${ri(1000, 9999)}/${TODAY.getFullYear()}`;
 

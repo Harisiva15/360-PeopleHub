@@ -15,7 +15,7 @@
 
 import type { Services } from '../contracts';
 import { api, qs } from './client';
-import type { Employee, LeaveRequest } from '../contracts';
+import type { Employee, LeaveRequest, Signatory } from '../contracts';
 import type { AppRole } from '../../types/employee';
 
 export { apiConfigured, ApiError } from './client';
@@ -414,6 +414,25 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         api.put(`/config/legal-entities/${encodeURIComponent(code)}`, patch),
       setDefaultLegalEntity: (code) =>
         api.put(`/config/legal-entities/${encodeURIComponent(code)}/default`, {}),
+      /*
+       * The logo and the signatory. `logoUrl` unwraps `{ url }` for the same
+       * reason `photoUrl` does: the caller wants a URL or null, not an
+       * envelope, and absence is the ordinary case rather than an error.
+       */
+      logoUrl: async (code) => (await api.get<{ url: string | null }>(
+        `/config/legal-entities/${encodeURIComponent(code)}/logo`)).url,
+      /* A raw body: the bytes go as bytes, not base64 inside JSON. */
+      setLogo: (code, blob, mimeType) => api.put<{ url: string }>(
+        `/config/legal-entities/${encodeURIComponent(code)}/logo`, { blob, mimeType }),
+      removeLogo: async (code) => {
+        await api.del<{ ok: true }>(
+          `/config/legal-entities/${encodeURIComponent(code)}/logo`);
+      },
+      signatory: async (code) => (await api.get<{ signatory: Signatory | null }>(
+        `/config/legal-entities/${encodeURIComponent(code)}/signatory`)).signatory,
+      setSignatory: async (code, name, title) => (await api.put<{ signatory: Signatory | null }>(
+        `/config/legal-entities/${encodeURIComponent(code)}/signatory`,
+        { name, title })).signatory,
       departments: () => api.get('/config/departments'),
       grades: () => api.get('/config/grades'),
       createDepartment: (draft) => api.post('/config/departments', draft),

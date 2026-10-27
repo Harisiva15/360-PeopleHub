@@ -2409,3 +2409,20 @@ button.chip:hover{border-color:var(--line-2)}
 .ts-cal-meta{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-2)}
 .ts-cal-sub{font-size:11px;color:var(--ink-3)}
 .ts-dot{width:8px;height:8px;border-radius:var(--r-pill);display:inline-block;flex:none}
+
+/*
+ * The company logo on Company Profile.
+ *
+ * A plate rather than a bare image, because an uploaded logo may be any shape
+ * and any ground: `contain` keeps the artwork whole instead of cropping it,
+ * and the plate gives a white backing so a PNG with transparency is judged
+ * against the ground it will actually be drawn on. There is one upload and no
+ * reversed variant, which is the approved decision — see the card's own
+ * comment for what that costs on the dark rail.
+ */
+.logo-plate{
+  width:112px;height:112px;flex:none;display:grid;place-items:center;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--surface);
+  color:var(--ink-3);overflow:hidden;
+}
+.logo-plate-img{max-width:92px;max-height:92px;object-fit:contain}

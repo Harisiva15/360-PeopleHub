@@ -10,6 +10,26 @@ export { useCaller, usePeople, useVisiblePeople } from '../../services/people';
 export type { Directory } from '../../services/people';
 
 /*
+ * The signatory, read here because a letter cannot be issued without one.
+ *
+ * `legal_entity.signatory_name` and `signatory_title` are nullable with no
+ * default by decision: a letter that goes to a bank or a landlord carries a
+ * real name and a real title, and inventing one would put a plausible-looking
+ * lie on a legal document. So null is not a blank to render around — it is a
+ * refusal, and `useShowLetter` turns it into one.
+ *
+ * The default entity, which is the one the masthead is already drawn from.
+ */
+export const useDefaultEntityCode = (): string | null => {
+  const { data: entities = [] } = useQuery((s) => s.config.legalEntities(), []);
+  return (entities.find((e) => e.isDefault) ?? entities[0])?.code ?? null;
+};
+
+export const useSignatory = (entityCode: string | null) =>
+  useQuery((s) => (entityCode ? s.config.signatory(entityCode) : Promise.resolve(null)),
+    [entityCode]);
+
+/*
  * The repository reads the API. It did not always: both calls were wrapped in
  * `unbacked` when no server held documents, and the wrapper stayed after
  * `GET /documents` and `GET /documents/types` went live — so a configured

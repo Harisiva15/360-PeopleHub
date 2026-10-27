@@ -128,6 +128,30 @@ export const useUpdateLegalEntity = () =>
 export const useSetDefaultLegalEntity = () =>
   useMutation((s, code: string) => s.config.setDefaultLegalEntity(code));
 
+/*
+ * The logo and the signatory.
+ *
+ * `useLogoUrl` takes a nullable code so the card can render before the entity
+ * list has arrived, rather than the screen holding a spinner over a form that
+ * is otherwise ready. `unbacked` is deliberately not used: both of these are
+ * backed, by 0061 and `branding/service.ts`.
+ */
+export const useLogoUrl = (entityCode: string | null) =>
+  useQuery((s) => (entityCode ? s.config.logoUrl(entityCode) : Promise.resolve(null)),
+    [entityCode]);
+export const useSetLogo = () =>
+  useMutation((s, code: string, blob: Blob, mimeType: string) =>
+    s.config.setLogo(code, blob, mimeType));
+export const useRemoveLogo = () =>
+  useMutation((s, code: string) => s.config.removeLogo(code));
+
+export const useSignatory = (entityCode: string | null) =>
+  useQuery((s) => (entityCode ? s.config.signatory(entityCode) : Promise.resolve(null)),
+    [entityCode]);
+export const useSetSignatory = () =>
+  useMutation((s, code: string, name: string | null, title: string | null) =>
+    s.config.setSignatory(code, name, title));
+
 /* ---------- business units ---------- */
 
 export const useBusinessUnits = () => useQuery((s) => s.config.businessUnits(), []);

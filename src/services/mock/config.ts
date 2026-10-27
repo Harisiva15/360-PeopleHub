@@ -15,7 +15,7 @@ import { MANAGER_ADDS, PERMS, callerCovers } from '../../state/rbac';
 import type { GridRole } from '../contracts';
 import type {
   BusinessUnit, ConfigService, Department, GridPatch, LegalEntity, LegalEntityDraft,
-  ModuleGrid, PermScope, TenantProfile,
+  ModuleGrid, PermScope, Signatory, TenantProfile,
 } from '../contracts';
 import type { Site } from '../../types/org';
 import { ok } from './util';
@@ -260,6 +260,15 @@ const DEMO_TENANT: TenantProfile = {
  * true: this company operates one registered entity, and the second entity in
  * the list would have to be made up.
  */
+/*
+ * An uploaded logo and a named signatory, per entity code, for this session
+ * only. Both start empty, which is the honest demo state: the product shows
+ * its built-in mark, and a letter refuses to print rather than inventing a
+ * signature.
+ */
+const demoLogos = new Map<string, string>();
+const demoSignatories = new Map<string, Signatory>();
+
 const LEGAL_ENTITIES: LegalEntity[] = [
   {
     code: 'IN01',
@@ -460,6 +469,60 @@ export const configService: ConfigService = {
     for (const other of LEGAL_ENTITIES) other.isDefault = false;
     e.isDefault = true;
     return ok(asEntity(e));
+  },
+
+  /*
+   * The logo and the signatory, in memory.
+   *
+   * A data URL for the bytes, because the demo has nowhere to put them —
+   * `employeeService.setPhoto` does the same thing for the same reason, and
+   * revokes nothing because a session's worth of logos is one or two.
+   *
+   * No permission check here. The demo has no enforcement anywhere, by
+   * design: it is a demonstration, and inventing one in the mock would be
+   * asserting a rule the server holds rather than proving it. The real gates
+   * are in `branding/service.ts` and are proven by `check:branding`.
+   */
+  logoUrl(entityCode) {
+    return ok(demoLogos.get(entityCode.trim().toUpperCase()) ?? null);
+  },
+
+  async setLogo(entityCode, blob, mimeType) {
+    const url = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('That image could not be read'));
+      r.readAsDataURL(new Blob([blob], { type: mimeType }));
+    });
+    demoLogos.set(entityCode.trim().toUpperCase(), url);
+    return { url };
+  },
+
+  async removeLogo(entityCode) {
+    demoLogos.delete(entityCode.trim().toUpperCase());
+  },
+
+  signatory(entityCode) {
+    return ok(demoSignatories.get(entityCode.trim().toUpperCase()) ?? null);
+  },
+
+  setSignatory(entityCode, name, title) {
+    const key = entityCode.trim().toUpperCase();
+    const cleanName = name?.trim() ?? '';
+    const cleanTitle = title?.trim() ?? '';
+    /* The one rule the demo does keep, because it is about the shape of the
+       data rather than about permission: both or neither. */
+    if (Boolean(cleanName) !== Boolean(cleanTitle)) {
+      return Promise.reject(new Error(
+        'A signatory needs both a name and a title, or neither.'));
+    }
+    if (!cleanName) {
+      demoSignatories.delete(key);
+      return ok(null);
+    }
+    const next = { name: cleanName, title: cleanTitle };
+    demoSignatories.set(key, next);
+    return ok(next);
   },
 
   businessUnits() {

@@ -2181,6 +2181,20 @@ export interface TenantProfileDraft {
  * therefore whose statutory rules", and a business unit answers "which P&L".
  * They are siblings under the tenant.
  */
+/**
+ * The person who signs an entity's letters.
+ *
+ * A pair, never half of one: `signatory()` returns null unless both the name
+ * and the title are set, because a letter signed by a name with no title, or
+ * a title with no name, is not signed. Migration 0061 keeps both columns
+ * nullable with no default for the same reason — a default here would put a
+ * plausible-looking lie on a legal document.
+ */
+export interface Signatory {
+  name: string;
+  title: string;
+}
+
 export interface LegalEntity {
   code: string;
   legalName: string;
@@ -2305,6 +2319,44 @@ export interface ConfigService {
    * the same transaction. There is no way to leave a tenant with no default.
    */
   setDefaultLegalEntity(code: string): Promise<LegalEntity>;
+
+  /**
+   * The entity's logo as a short-lived signed URL, or null.
+   *
+   * Null rather than an error when there is none: that is the ordinary case,
+   * and the answer to it is the product's built-in mark rather than a broken
+   * image. **Any signed-in caller may read this** — the logo is drawn in the
+   * header of every page — while the three writers below are company_admin
+   * alone.
+   */
+  logoUrl(entityCode: string): Promise<string | null>;
+  /**
+   * Company admin only. PNG or JPG, 2 MB, checked against the file's own
+   * magic number rather than what the browser claimed. SVG is refused with
+   * its own reason: it is executable markup and reaches every signed-in
+   * person from the header.
+   */
+  setLogo(entityCode: string, blob: Blob, mimeType: string): Promise<{ url: string }>;
+  /** Company admin only. The built-in mark comes back. */
+  removeLogo(entityCode: string): Promise<void>;
+
+  /**
+   * Who signs this entity's letters, or null when nobody has been named.
+   *
+   * Null is not a gap to paper over: it is what makes a letter refuse to
+   * print. Readable by any signed-in caller, because the signature block is
+   * part of a letter rather than a setting.
+   */
+  signatory(entityCode: string): Promise<Signatory | null>;
+  /**
+   * Company admin only. Both fields together or both empty — a name with no
+   * title prints a blank line under a real person, and a title with no name
+   * is not a signatory.
+   */
+  setSignatory(
+    entityCode: string, name: string | null, title: string | null,
+  ): Promise<Signatory | null>;
+
   businessUnits(): Promise<BusinessUnit[]>;
   /** Admin only. The code is upper-cased and becomes the unit identity. */
   createBusinessUnit(draft: BusinessUnitDraft): Promise<BusinessUnit>;
