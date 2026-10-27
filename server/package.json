@@ -70,7 +70,8 @@
     "check:branding": "node --experimental-strip-types scripts/branding.test.mjs",
     "check:projectmember": "node --experimental-strip-types scripts/project-member.test.mjs",
     "check:migrateonly": "node --experimental-strip-types scripts/migrate-only.test.mjs",
-    "check:shiftinstance": "node --experimental-strip-types scripts/shift-instance.test.mjs"
+    "check:shiftinstance": "node --experimental-strip-types scripts/shift-instance.test.mjs",
+    "check:shiftwindow": "node --experimental-strip-types scripts/shift-window-fallback.test.mjs"
   },
   "dependencies": {
     "jose": "^6.2.12",

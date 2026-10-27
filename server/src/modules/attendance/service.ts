@@ -161,16 +161,98 @@ const WFH = 'WFH';
  * cheaper than a dependency, and at these distances it is far more accurate
  * than the phone that produced the fix.
  */
+/**
+ * The window to measure an employee's day against, with a default for every
+ * way of not having one.
+ *
+ * ## Why a default exists at all
+ *
+ * `employee.shift_id` is `NOT NULL` — 0015 backfilled it and then made it so,
+ * with the reasoning that "a person with no shift has no hours to be measured
+ * against, and the honest options are to reject their punch or silently pick a
+ * default. Neither is good, so the column stops being optional." That is still
+ * true and this does not weaken it: the column stays `NOT NULL`.
+ *
+ * What is *not* guaranteed is a usable window. `shift.starts_at` and
+ * `shift.ends_at` are both nullable — a flexible shift has no fixed hours —
+ * and a null in either makes every interval below null, so no window contains
+ * the punch and the person is refused. A refusal for a reason the employee
+ * cannot see or fix is a nightly correction for their manager, which is the
+ * cost this whole feature exists to remove. So there is always a window.
+ *
+ * ## Each level is a whole window, not a column
+ *
+ * Tempting to `COALESCE` per column. Wrong: it would take the start from one
+ * shift and the zone from another, and produce a window nobody defined —
+ * 09:00 New York against an India shift's zone, say. So each candidate must
+ * carry a complete window or it does not qualify, and the first that does
+ * wins outright.
+ *
+ * 1. the employee's own shift
+ * 2. their site's `default_shift_id`
+ * 3. any active shift whose `region` is the site's country, lowest code first
+ *    so the answer is the same on every call
+ * 4. 09:00–18:00 in the site's own zone (`site.timezone` is `NOT NULL`)
+ * 5. 09:00–18:00 IST, for an employee with no site — `site_id` is nullable
+ *
+ * Levels 2–5 are defensive today: every employee has a shift with a window.
+ * They are tested anyway, because "cannot happen" is how the first one got
+ * written.
+ */
+const EFFECTIVE_SHIFT = `
+  eff AS (
+    SELECT timezone, starts_at, ends_at, grace_minutes, break_minutes, site_id
+      FROM (
+        SELECT 1 AS pri, sh.timezone, sh.starts_at, sh.ends_at,
+               sh.grace_minutes, sh.break_minutes, e.site_id
+          FROM employee e JOIN shift sh ON sh.id = e.shift_id
+         WHERE e.id = $1 AND sh.starts_at IS NOT NULL AND sh.ends_at IS NOT NULL
+        UNION ALL
+        SELECT 2, dsh.timezone, dsh.starts_at, dsh.ends_at,
+               dsh.grace_minutes, dsh.break_minutes, e.site_id
+          FROM employee e
+          JOIN site s ON s.id = e.site_id
+          JOIN shift dsh ON dsh.id = s.default_shift_id
+         WHERE e.id = $1 AND dsh.starts_at IS NOT NULL AND dsh.ends_at IS NOT NULL
+        UNION ALL
+        SELECT 3, rsh.timezone, rsh.starts_at, rsh.ends_at,
+               rsh.grace_minutes, rsh.break_minutes, e.site_id
+          FROM employee e
+          JOIN site s ON s.id = e.site_id
+          JOIN LATERAL (
+            SELECT x.timezone, x.starts_at, x.ends_at, x.grace_minutes, x.break_minutes
+              FROM shift x
+             WHERE x.region = s.country AND x.active
+               AND x.starts_at IS NOT NULL AND x.ends_at IS NOT NULL
+             ORDER BY x.code
+             LIMIT 1
+          ) rsh ON true
+         WHERE e.id = $1
+        UNION ALL
+        SELECT 4, s.timezone, TIME '09:00', TIME '18:00', 10, 60, e.site_id
+          FROM employee e JOIN site s ON s.id = e.site_id
+         WHERE e.id = $1
+        UNION ALL
+        SELECT 5, 'Asia/Kolkata', TIME '09:00', TIME '18:00', 10, 60, e.site_id
+          FROM employee e
+         WHERE e.id = $1
+      ) candidates
+     ORDER BY pri
+     LIMIT 1
+  )`;
+
+/*
+ * `me` was `employee JOIN shift ON shift.id = employee.shift_id`, which gave
+ * this query a null `starts_at` for a flexible shift and so a null `is_late`.
+ * It reads the resolved window instead, which always has one.
+ */
 const DERIVE = `
-  WITH me AS (
-    SELECT e.id, e.site_id, sh.timezone, sh.starts_at, sh.grace_minutes, sh.break_minutes
-      FROM employee e JOIN shift sh ON sh.id = e.shift_id
-     WHERE e.id = $1
-  ), resolved AS (
-    SELECT me.*, COALESCE(
+  WITH ${EFFECTIVE_SHIFT},
+  resolved AS (
+    SELECT eff.*, COALESCE(
              (SELECT s.id FROM site s WHERE s.code = $3::text AND s.active),
-             me.site_id) AS punch_site_id
-      FROM me
+             eff.site_id) AS punch_site_id
+      FROM eff
   )
   SELECT resolved.punch_site_id AS site_id,
          resolved.timezone,
@@ -700,10 +782,9 @@ export async function actOnRegularisation(
  */
 
 const SHIFT_DATE = `
-  WITH sh AS (
-    SELECT sh.timezone AS tz, sh.starts_at, sh.ends_at
-      FROM employee e JOIN shift sh ON sh.id = e.shift_id
-     WHERE e.id = $1
+  WITH ${EFFECTIVE_SHIFT},
+  sh AS (
+    SELECT timezone AS tz, starts_at, ends_at FROM eff
   ), base AS (
     SELECT tz, starts_at, ends_at, (($2::timestamptz) AT TIME ZONE tz)::date AS d0
       FROM sh
