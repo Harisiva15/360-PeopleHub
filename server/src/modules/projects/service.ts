@@ -326,3 +326,252 @@ export async function setProjectStatus(
     return toProject(back.rows[0]!);
   });
 }
+
+/* ---------------- membership ----------------
+ *
+ * Step one of three. The table exists and the service fills it; nothing
+ * enforces membership yet, because production holds timesheet entries for
+ * projects nobody is formally on and a rule added today would reject the next
+ * edit to any of them. Step two backfills from those entries; step three
+ * refuses a booking without a live row, and that is where the refusal message
+ * lands.
+ *
+ * ## Who may change membership
+ *
+ * `planner` write at **team**, which is a manager through the layer, hr_admin
+ * and company_admin — not a plain employee and not finance_admin, both of
+ * whom hold `own`.
+ *
+ * Note what that means for `role = 'lead'`: it does **not** let somebody
+ * manage their own project's team. A lead who also has reports qualifies as a
+ * manager, and a lead who does not, does not. That is deliberate, and it is
+ * the migration's own words — a lead grants nothing — but it is narrower than
+ * the proposal's gloss, which said "a lead manages their own project's
+ * membership". Making `lead` grant anything would make it a role, and 0060
+ * has just spent a migration narrowing the vocabulary to four.
+ */
+
+export interface ProjectMember {
+  projectCode: string;
+  employeeId: string;
+  employeeCode: string;
+  name: string;
+  role: 'member' | 'lead';
+  allocationPct: number | null;
+  joinedOn: string;
+}
+
+/** A membership change, with anything the caller should see about it. */
+export interface MembershipResult {
+  member: ProjectMember;
+  /**
+   * Set when this person's live allocations now sum past 100%.
+   *
+   * A warning and not a refusal, by decision: somebody genuinely
+   * over-committed is a thing to see rather than a write to block, and a
+   * CHECK could not have expressed it anyway because it spans rows.
+   */
+  warning?: string;
+}
+
+const MEMBER_COLUMNS = `
+  SELECT p.code AS project_code, e.id AS employee_id, e.code AS employee_code,
+         e.full_name AS name, m.role, m.allocation_pct, m.joined_on::text AS joined_on
+    FROM project_member m
+    JOIN project p ON p.id = m.project_id
+    JOIN employee e ON e.id = m.employee_id
+   WHERE m.left_on IS NULL`;
+
+const toMember = (r: Record<string, unknown>): ProjectMember => ({
+  projectCode: r.project_code as string,
+  employeeId: r.employee_id as string,
+  employeeCode: r.employee_code as string,
+  name: r.name as string,
+  role: r.role as 'member' | 'lead',
+  allocationPct: r.allocation_pct === null ? null : Number(r.allocation_pct),
+  joinedOn: r.joined_on as string,
+});
+
+/** Only somebody who answers for a team puts people on projects. */
+function mayManageMembers(caller: Caller, what: string): void {
+  if (!reaches(caller, 'planner', 'write', 'team')) {
+    throw new ProjectError(`only a manager or an administrator may ${what}`, 'forbidden');
+  }
+}
+
+/**
+ * A project's live team, leads first.
+ *
+ * ## Why the gate is written out rather than shared
+ *
+ * Both listings here return person-level rows with no WHERE clause narrowing
+ * them to the caller, so each has to state the scope that makes unscoped rows
+ * safe. `role-gates.ts` rule 1 requires it, and the rule exists because
+ * `listOnboarding` once returned every joiner's offered salary with no WHERE
+ * clause at all.
+ *
+ * It was a shared `mayListPeople(caller, …)` helper first, and the detector
+ * could not see it: it accepts a gate in guard position — `if (!gate(…))` —
+ * or the call written out in the body, and a helper that throws from inside
+ * itself is neither. Which is the detector being right. A reader scanning
+ * this function for what it requires should find it here, not two hops away.
+ *
+ * `planner` read is `all` for every role, because the project board is
+ * tenant-public, so this refuses nobody today. That is not the inert guard
+ * removed from `projectsOf` — that one asked for a narrower scope than
+ * everyone already held and so could never fire. This asks for exactly what
+ * unscoped rows amount to, which makes it a tripwire: narrow `planner` read
+ * for any role and this listing refuses instead of handing that role the
+ * whole tenant.
+ */
+export async function listMembers(
+  caller: Caller, projectCode: string,
+): Promise<ProjectMember[]> {
+  if (!reaches(caller, 'planner', 'read', 'all')) {
+    throw new ProjectError("your role cannot read a project's team", 'forbidden');
+  }
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `${MEMBER_COLUMNS} AND p.code = $1
+        ORDER BY (m.role = 'lead') DESC, e.full_name`,
+      [projectCode.trim().toUpperCase()]);
+    return rows.map(toMember);
+  });
+}
+
+/**
+ * The projects somebody is on — theirs or anybody's.
+ *
+ * Which is the policy's answer rather than an omission: `planner` read is
+ * `all` for every role. The first draft refused unless the row was the
+ * caller's or they reached a narrower scope, and it could never fire, because
+ * every role already held more than it asked for — an inert guard reading as
+ * protection, the shape `hostOf()` and the unread `LAUNCH_LETTERS` had.
+ *
+ * The gate below asks for what unscoped rows actually amount to. If
+ * who-is-on-what should become private, the change belongs in
+ * `POLICY.planner`, where every module's answer is written down once and
+ * `checks/roles.ts` holds the client to it — and this listing then refuses on
+ * its own, without anybody remembering to come back here.
+ */
+export async function projectsOf(
+  caller: Caller, employeeId: string,
+): Promise<ProjectMember[]> {
+  if (!reaches(caller, 'planner', 'read', 'all')) {
+    throw new ProjectError("your role cannot read somebody's projects", 'forbidden');
+  }
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `${MEMBER_COLUMNS} AND m.employee_id = $1 ORDER BY p.name`, [employeeId]);
+    return rows.map(toMember);
+  });
+}
+
+/**
+ * How much of somebody's time is already planned, across live memberships.
+ *
+ * A null allocation counts as nothing: it means "on the project, nobody
+ * planned", not "zero per cent".
+ */
+async function plannedPct(db: TenantClient, employeeId: string): Promise<number> {
+  const { rows } = await db.query<{ total: string | null }>(
+    `SELECT sum(allocation_pct)::text AS total FROM project_member
+      WHERE employee_id = $1 AND left_on IS NULL`, [employeeId]);
+  return Number(rows[0]?.total ?? 0);
+}
+
+/**
+ * Put somebody on a project, or change what they are doing on it.
+ *
+ * One live row per person per project, which `project_member_live_once`
+ * enforces — so this updates the live row where there is one rather than
+ * racing the index and reporting a duplicate to somebody who asked a
+ * reasonable question.
+ */
+export async function addMember(
+  caller: Caller,
+  projectCode: string,
+  employeeCode: string,
+  role: 'member' | 'lead' = 'member',
+  allocationPct: number | null = null,
+): Promise<MembershipResult> {
+  mayManageMembers(caller, 'put somebody on a project');
+
+  if (role !== 'member' && role !== 'lead') {
+    throw new ProjectError("a project role is 'member' or 'lead'", 'invalid');
+  }
+  if (allocationPct !== null
+    && (!Number.isInteger(allocationPct) || allocationPct < 1 || allocationPct > 100)) {
+    throw new ProjectError(
+      'an allocation is a whole number from 1 to 100, or nothing', 'invalid');
+  }
+
+  return withTenant(caller, async (db) => {
+    const pKey = projectCode.trim().toUpperCase();
+    const eKey = employeeCode.trim().toUpperCase();
+
+    const { rows: found } = await db.query<{ pid: string; eid: string; active: boolean }>(
+      `SELECT p.id AS pid, e.id AS eid, p.active
+         FROM project p, employee e
+        WHERE p.code = $1 AND e.code = $2`, [pKey, eKey]);
+    const target = found[0];
+    if (!target) throw new ProjectError('no such project or employee', 'not_found');
+    if (!target.active) {
+      throw new ProjectError(
+        'that project is closed — reopen it before adding people', 'invalid');
+    }
+
+    await db.query(
+      `INSERT INTO project_member (project_id, employee_id, role, allocation_pct)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (tenant_id, project_id, employee_id) WHERE left_on IS NULL
+       DO UPDATE SET role = $3, allocation_pct = $4, updated_at = now()`,
+      [target.pid, target.eid, role, allocationPct]);
+
+    const planned = await plannedPct(db, target.eid);
+
+    await audit(db, caller, 'project_member_added', pKey,
+      { employee: eKey, role, allocationPct });
+
+    const { rows } = await db.query(
+      `${MEMBER_COLUMNS} AND p.code = $1 AND m.employee_id = $2`, [pKey, target.eid]);
+    const member = toMember(rows[0]!);
+
+    const result: MembershipResult = { member };
+    if (planned > 100) {
+      result.warning = `${member.name} is now planned at ${planned}% across their `
+        + 'live projects, which is more than their time.';
+    }
+    return result;
+  });
+}
+
+/**
+ * Take somebody off a project.
+ *
+ * `left_on`, not a delete: who was on a project last quarter is why a
+ * timesheet from last quarter looks the way it does.
+ */
+export async function removeMember(
+  caller: Caller, projectCode: string, employeeCode: string,
+): Promise<void> {
+  mayManageMembers(caller, 'take somebody off a project');
+
+  await withTenant(caller, async (db) => {
+    const pKey = projectCode.trim().toUpperCase();
+    const eKey = employeeCode.trim().toUpperCase();
+
+    const { rowCount } = await db.query(
+      `UPDATE project_member m SET left_on = CURRENT_DATE, updated_at = now()
+         WHERE m.left_on IS NULL
+           AND m.project_id = (SELECT id FROM project WHERE code = $1)
+           AND m.employee_id = (SELECT id FROM employee WHERE code = $2)`,
+      [pKey, eKey]);
+
+    if (rowCount === 0) {
+      throw new ProjectError('that person is not on that project', 'not_found');
+    }
+
+    await audit(db, caller, 'project_member_removed', pKey, { employee: eKey });
+  });
+}
