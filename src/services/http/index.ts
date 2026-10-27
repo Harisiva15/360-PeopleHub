@@ -419,6 +419,8 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
        * reason `photoUrl` does: the caller wants a URL or null, not an
        * envelope, and absence is the ordinary case rather than an error.
        */
+      tenantLogoUrl: async () =>
+        (await api.get<{ url: string | null }>('/config/logo')).url,
       logoUrl: async (code) => (await api.get<{ url: string | null }>(
         `/config/legal-entities/${encodeURIComponent(code)}/logo`)).url,
       /* A raw body: the bytes go as bytes, not base64 inside JSON. */

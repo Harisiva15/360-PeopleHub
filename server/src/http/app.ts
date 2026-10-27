@@ -1209,6 +1209,19 @@ const routes: Route[] = [
    * the profile photo gives: absence is the ordinary case and the screen's
    * answer is the built-in mark, not an error in every network log.
    */
+  /*
+   * The default entity's logo, for the shell.
+   *
+   * A path parameter cannot carry "whichever entity is the default", and the
+   * shell has no code in hand — it wants one answer for the mark in the
+   * sidebar. `logoUrl(caller, null)` is that answer, and `is_default` is what
+   * decides it.
+   */
+  {
+    method: 'GET',
+    pattern: '/config/logo',
+    handler: async (c) => ({ url: await logoUrl(c, null) }),
+  },
   {
     method: 'GET',
     pattern: '/config/legal-entities/:code/logo',

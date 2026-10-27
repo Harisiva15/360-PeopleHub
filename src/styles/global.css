@@ -2426,3 +2426,17 @@ button.chip:hover{border-color:var(--line-2)}
   color:var(--ink-3);overflow:hidden;
 }
 .logo-plate-img{max-width:92px;max-height:92px;object-fit:contain}
+
+/*
+ * A tenant's uploaded logo on the navy rail.
+ *
+ * One upload and no reversed variant was the approved decision, so artwork
+ * with dark ink in it would be hard to read here. The plate is the mitigation
+ * the roadmap named: a white ground behind the mark, CSS only, no second
+ * upload, and reversible by deleting this rule.
+ */
+.brand-plate{
+  display:inline-grid;place-items:center;padding:6px 8px;
+  background:#fff;border-radius:var(--r-sm);
+}
+.brand-plate img{max-height:26px;max-width:150px;object-fit:contain;display:block}
