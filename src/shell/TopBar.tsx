@@ -343,7 +343,18 @@ export function TopBar({ mobile, onMenu, actionRef }: {
                 </div>
               </div>
 
-              <Link to="/employees" role="menuitem" className="menu-row" onClick={close}>
+              {/*
+                * `/account`, not `/employees`.
+                *
+                * This said "My profile" and opened the employee directory,
+                * where your own record shows initials and no way to change
+                * them — the upload lives on the account screen and nowhere
+                * else. Somebody following this menu item to set their photo
+                * reached a dead end with no error to report, which is exactly
+                * what happened: the server had never been asked for a photo
+                * because nothing on that screen could ask.
+                */}
+              <Link to="/account" role="menuitem" className="menu-row" onClick={close}>
                 <span className="gs-ic" aria-hidden="true"><Icon n="profile" /></span> My profile
               </Link>
               <button type="button" role="menuitem" className="menu-row"

@@ -14,7 +14,9 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { open, openHref, goHash, readMenu, switchAccount, activeTab, CRASH } from './shell';
+import {
+  open, openHref, goHash, openUserMenu, readMenu, switchAccount, activeTab, CRASH,
+} from './shell';
 
 test.afterEach(async ({ page }) => {
   /* No flow may leave the error boundary on screen. */
@@ -273,6 +275,47 @@ test.describe('Accessibility of the pieces these flows touch', () => {
      */
     await open(page, 'leave');
     await expect(page.locator('[role="tablist"]')).toHaveCount(1);
+  });
+});
+
+test.describe('My account', () => {
+  /*
+   * The photo card, for the two ends of the role range. It is the only
+   * control in the product that can upload a photo, and it rendered only
+   * once a directory lookup for yourself had resolved — so in production the
+   * signed-in administrator had no way to set one.
+   *
+   * This proves the screen works. It does not prove the fix: the demo's
+   * directory always contains the demo people, so this test passed throughout
+   * the outage. `checks/account-photo.tsx` is the one that empties the
+   * directory and requires the card to survive it.
+   */
+  for (const account of ['Company Administrator', 'Employee (Self-service)'] as const) {
+    test(`the photo card and Upload are there as ${account}`, async ({ page }) => {
+      await open(page);
+      if (account !== 'Company Administrator') await switchAccount(page, account);
+
+      await goHash(page, 'account');
+      const card = page.locator('.card', { hasText: 'Your photo' });
+      await expect(card).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByRole('button', { name: /Upload|Replace/ })).toBeVisible();
+
+      /* And the tile names you, rather than showing a dash. */
+      await expect(page.getByText('Signed in as')).toBeVisible();
+      await expect(page.locator('.tile', { hasText: 'Signed in as' }))
+        .not.toContainText('—');
+    });
+  }
+
+  test('and "My profile" in the menu opens it', async ({ page }) => {
+    /* It linked to /employees, the directory, where nothing can change a
+       photo — which is how somebody looking for the upload found nothing. */
+    await open(page);
+    await openUserMenu(page);
+    await page.getByRole('menuitem', { name: 'My profile' }).click();
+    await expect(page).toHaveURL(/#\/account$/);
+    await expect(page.locator('.card', { hasText: 'Your photo' }))
+      .toBeVisible({ timeout: 15_000 });
   });
 });
 

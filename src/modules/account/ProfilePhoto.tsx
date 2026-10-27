@@ -62,8 +62,20 @@ export function ProfilePhoto({ empId, name }: { empId: string; name: string }) {
     if (!chosen) return;
     setErr('');
 
+    /*
+     * Name what was chosen.
+     *
+     * "That has to be a PNG or a JPEG" does not tell somebody holding a photo
+     * from their phone what is wrong with it — an iPhone hands over
+     * `image/heic` and the sentence reads like a contradiction. Saying the
+     * type makes the refusal actionable, and an empty type (which some
+     * browsers report for an unfamiliar extension) is worth saying out loud
+     * rather than rendering as a blank.
+     */
     if (!(PHOTO_TYPES as readonly string[]).includes(chosen.type)) {
-      setErr('That has to be a PNG or a JPEG.');
+      setErr(`That file is ${chosen.type || 'of a type this browser could not identify'}. `
+        + 'A photo has to be a PNG or a JPEG — on an iPhone, Settings → Camera → '
+        + 'Formats → Most Compatible, or export the picture first.');
       return;
     }
 

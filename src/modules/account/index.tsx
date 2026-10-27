@@ -56,8 +56,14 @@ function AccountView() {
   return (
     <div className="stack">
       <StatRow cols={4}>
+        {/*
+          * The server's identity first, the directory second. This read the
+          * directory alone and showed "—" for the signed-in administrator,
+          * whose name the server had already supplied from `/me`.
+          */}
         <Tile icon={<Icon n="person" size="lg" />} label="Signed in as"
-          value={me?.name ?? '—'} foot={me?.email ?? ''} />
+          value={app.identity?.name ?? me?.name ?? '—'}
+          foot={app.identity?.email ?? me?.email ?? ''} />
         <Tile icon={<Icon n="lock" size="lg" />} label="Previous sign-in"
           value={previous ? whenOf(previous) : '—'}
           foot="Before the session you are in now" />
@@ -73,11 +79,32 @@ function AccountView() {
         * Outside the tabs, because a photo is neither a sign-in record nor a
         * security setting — the two things the tabs divide this screen into.
         *
-        * Only rendered once the directory has resolved who you are: the card
-        * needs an employee id to ask for and to upload against, and passing an
-        * empty one would make its query a request for nobody's photo.
+        * ## Gated on `app.meId`, not on finding yourself in the directory
+        *
+        * This read `{me && …}`, where `me` is `useVisiblePeople().byId(meId)`
+        * — a lookup for yourself in the list of everyone. In production that
+        * list came back without the signed-in administrator, so the card did
+        * not render at all and there was no way to upload a photo anywhere in
+        * the product. The "Signed in as" tile went blank from the same cause,
+        * which is the tell: one missing lookup, two symptoms.
+        *
+        * `app.meId` is the right source and was available the whole time. It
+        * is the employee id the server returned from `/me`, and
+        * `AppContext` has already proved it resolves to a real row — it
+        * fetches that row with `employees.byIds([empId])` during sign-in and
+        * refuses to continue if it is missing. So by the time this renders,
+        * the id is known to be good.
+        *
+        * Identifying yourself should not depend on being able to list other
+        * people. The name falls back through the server's own identity before
+        * the directory, for the same reason.
         */}
-      {me && <ProfilePhoto empId={me.id} name={me.name} />}
+      {app.meId && (
+        <ProfilePhoto
+          empId={app.meId}
+          name={app.identity?.name ?? me?.name ?? 'You'}
+        />
+      )}
 
       <Tabs
         value={tab}
