@@ -540,6 +540,63 @@ export const effectiveActionScope = (
 export const may = (role: AppRole, hasReports: boolean, action: UserAction): boolean =>
   effectiveActionScope(role, hasReports, action) !== 'none';
 
+/**
+ * The module and verb each act is really asking about.
+ *
+ * ## Why this exists
+ *
+ * `ACTION_SCOPE` above is a second copy of the policy, kept in the frontend
+ * and keyed on a role the client holds locally. Every other gate on the user
+ * management screen — whether the section appears, whether the route answers,
+ * what the service will do — comes from the server's own grant, delivered in
+ * `/me/permissions`. Two sources for one question is how they drift, and a
+ * client-side copy drifts silently and fails closed, which looks exactly like
+ * a permissions bug with no error anywhere.
+ *
+ * So the guard asks the server instead, through this map. The table stays as
+ * the demo build's answer and as the thing the check compares against.
+ *
+ * ## It is deliberately not a widening
+ *
+ * Every cell produced through this map equals the cell `ACTION_SCOPE` already
+ * produced — `checks/user-action-gates.ts` asserts that for all 17 acts
+ * against every role, with and without reports, and fails if any moves. The
+ * mapping is exact rather than approximate because the server's rule for this
+ * module happens to line up:
+ *
+ *     users: rule(NO, ['team', 'none', 'none'], ALL_R, NO, ALL_RWA)
+ *
+ * read is "sees the list" (manager on their line, hr_admin all), write is
+ * "changes an account" (company_admin alone), and approve is the same set as
+ * write. So `user.view` and `user.request` are read, `user.approve` is
+ * approve, and the other fourteen are write.
+ *
+ * What it *does* change is that a tenant narrowing `users` in
+ * `role_permission` now reaches these controls, as it already reached the
+ * menu and the routes. That is the intended behaviour and the reason the
+ * override table exists.
+ */
+export const ACTION_GATE: Record<UserAction, { module: string; verb: Verb }> = {
+  'user.view': { module: 'users', verb: 'read' },
+  'user.request': { module: 'users', verb: 'read' },
+  'user.approve': { module: 'users', verb: 'approve' },
+
+  'user.create': { module: 'users', verb: 'write' },
+  'user.edit': { module: 'users', verb: 'write' },
+  'user.delete': { module: 'users', verb: 'write' },
+  'user.activate': { module: 'users', verb: 'write' },
+  'user.deactivate': { module: 'users', verb: 'write' },
+  'user.suspend': { module: 'users', verb: 'write' },
+  'user.reset_password': { module: 'users', verb: 'write' },
+  'user.resend_invite': { module: 'users', verb: 'write' },
+  'user.bulk_import': { module: 'users', verb: 'write' },
+  'user.bulk_update': { module: 'users', verb: 'write' },
+  'user.export': { module: 'users', verb: 'write' },
+  'role.assign': { module: 'users', verb: 'write' },
+  'role.assign_admin': { module: 'users', verb: 'write' },
+  'permission.manage': { module: 'users', verb: 'write' },
+};
+
 /** Whether this role may hand out that role. Only an admin makes an admin. */
 /** Whether this person may hand out that role. Mirrors the server exactly. */
 export const mayAssignRole = (

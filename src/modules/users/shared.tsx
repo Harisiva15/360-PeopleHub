@@ -11,7 +11,7 @@
 import type { ReactNode } from 'react';
 import { Badge } from '../../components/ui';
 import type { BadgeKind } from '../../components/ui';
-import { ROLE_LABEL, SCOPE, may } from '../../state/rbac';
+import { ACTION_GATE, ROLE_LABEL, SCOPE } from '../../state/rbac';
 import type { UserAction } from '../../state/rbac';
 import { useApp } from '../../state/AppContext';
 import type { AppRole } from '../../types/employee';
@@ -33,14 +33,32 @@ export function PermissionGuard({
   children: ReactNode;
   fallback?: ReactNode;
 }) {
-  const app = useApp();
-  return <>{may(app.role, app.hasReports, action) ? children : fallback}</>;
+  const mayDo = useMay();
+  return <>{mayDo(action) ? children : fallback}</>;
 }
 
-/** The same question, for code rather than markup. */
+/**
+ * The same question, for code rather than markup.
+ *
+ * Asks the server's grant — `app.scopeOf` reads the rules `/me/permissions`
+ * returned, which already carry the manager layer and this tenant's
+ * narrowing. It used to ask `may(app.role, …)`, a local copy of the policy
+ * keyed on the role the client happened to hold, while every other gate on
+ * these screens asked the server. `ACTION_GATE` carries the mapping and
+ * `checks/user-action-gates.ts` proves it grants exactly what the local table
+ * granted.
+ *
+ * In the demo build there is no server, and `scopeOf` falls back to the
+ * generated policy mirror — the same source the table was written from.
+ */
 export function useMay(): (action: UserAction) => boolean {
   const app = useApp();
-  return (action) => may(app.role, app.hasReports, action);
+  return (action) => {
+    const gate = ACTION_GATE[action];
+    /* An act nobody has classified grants nothing, rather than everything. */
+    if (!gate) return false;
+    return app.scopeOf(gate.module, gate.verb) !== 'none';
+  };
 }
 
 /* ---------------- status ---------------- */
