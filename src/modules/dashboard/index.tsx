@@ -49,6 +49,14 @@ const asDirectory = (list: { id: string; name: string }[]): Directory => ({
   byId: (id) => list.find((e) => e.id === id) as never,
   name: (id) => list.find((e) => e.id === id)?.name ?? '—',
   loading: false,
+  /*
+   * A view over rows this screen already holds, so there is no read of its
+   * own to fail or to retry. The roster it wraps was fetched by the caller,
+   * and that query reports its own failure.
+   */
+  failed: false,
+  error: null,
+  retry: () => {},
 });
 
 /* ---------------- admin ---------------- */

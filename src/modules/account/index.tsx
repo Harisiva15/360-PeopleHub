@@ -139,7 +139,12 @@ function AccountView() {
         <>
           <Card title="How you sign in" sub="What this account uses today">
             <KV rows={[
-              ['Signed in as', me?.email ?? '—'],
+              /* The server's identity first, same as the tile above. This was
+                 the last thing on this screen that could only answer from the
+                 directory, so a failed directory read no longer blanks
+                 anything here — which is why this screen shows no retry
+                 notice: there is nothing left on it to retry for. */
+              ['Signed in as', app.identity?.email ?? me?.email ?? '—'],
               ['Last sign-in', lastSignIn ? whenOf(lastSignIn) : '—'],
               ['Signed out automatically', 'After 30 minutes without activity'],
             ]} />

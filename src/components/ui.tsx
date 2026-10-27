@@ -312,6 +312,50 @@ export function EmptyState({ msg, icon }: { msg: ReactNode; icon?: ReactNode }) 
   );
 }
 
+/* ---------- A read that failed, as against one that found nothing ---------- */
+
+/**
+ * "This did not load", with a way to ask again.
+ *
+ * The counterpart to `EmptyState`, and the distinction between them is the
+ * point. `EmptyState` is a true statement about the data: there is nobody in
+ * this list. This one says the question was never answered. They looked
+ * identical for as long as a failed read produced an empty array, and the
+ * person reading the screen had no way to tell that anything was wrong — so
+ * nobody reported it, and the failure survived.
+ *
+ * `onRetry` is required rather than optional. A message that says a thing
+ * failed and offers nothing to do about it sends the reader to support, and
+ * every caller already has a `retry` to hand.
+ */
+export function RetryNotice({
+  title = 'This did not load',
+  detail,
+  onRetry,
+  busy,
+}: {
+  title?: ReactNode;
+  detail?: ReactNode;
+  onRetry: () => void;
+  busy?: boolean;
+}) {
+  return (
+    <Banner
+      kind="warn"
+      title={title}
+      actions={(
+        <button type="button" className="btn sm" onClick={onRetry} disabled={busy}>
+          {busy ? 'Retrying…' : 'Try again'}
+        </button>
+      )}
+    >
+      {detail && (
+        <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>{detail}</div>
+      )}
+    </Banner>
+  );
+}
+
 /* ---------- Table ---------- */
 
 export function TableWrap({ children }: { children: ReactNode }) {

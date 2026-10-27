@@ -9,7 +9,9 @@ import {
 import { AddJoinerForm, JoinerQueue } from './AddJoiner';
 import { useLayer } from '../../components/Layer';
 import { DEPTS, deptOf, GRADES, siteOf, SITES } from '../../data/org';
-import { Avatar, Badge, Card, EmptyState, pageOf, Pager, Tile, StatRow } from '../../components/ui';
+import {
+  Avatar, Badge, Card, EmptyState, pageOf, Pager, RetryNotice, Tile, StatRow,
+} from '../../components/ui';
 import { Chip, StatusBadge } from '../../components/common';
 import { useShowEmployee } from './Profile';
 import { registerModule } from '../registry';
@@ -208,7 +210,24 @@ function Employees() {
         </Card>
       )}
 
-      {!list.length && <Card><EmptyState msg="No employees match these filters" /></Card>}
+      {/*
+        * A failed read says so; only a successful one gets to claim there is
+        * nobody. "No employees match these filters" was shown for both, which
+        * on this screen is the most misleading sentence in the product — it
+        * reads as a working directory reporting an empty company.
+        */}
+      {dir.failed
+        ? (
+          <Card>
+            <RetryNotice
+              title="The employee list could not be loaded"
+              detail={dir.error?.message}
+              onRetry={dir.retry}
+              busy={dir.loading}
+            />
+          </Card>
+        )
+        : !list.length && <Card><EmptyState msg="No employees match these filters" /></Card>}
     </div>
   );
 }
