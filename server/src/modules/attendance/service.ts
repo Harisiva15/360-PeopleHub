@@ -644,3 +644,122 @@ export async function actOnRegularisation(
     return reload(db, empId, date);
   });
 }
+
+/* ---------------- which day a punch belongs to ----------------
+ *
+ * ## The bug this replaces
+ *
+ * `punchIn` and `punchOut` took the work date as a parameter and the client
+ * sent `ymd(TODAY)` — the browser's calendar day. For a shift measured in the
+ * same zone as the browser that is right by coincidence. For the US shift
+ * worked from Chennai it is wrong twice a day:
+ *
+ *   * punch in Mon 18:30 IST → the browser says Monday → a Monday row;
+ *   * punch out Tue 03:30 IST → the browser says Tuesday → `punchOut` ran
+ *     `WHERE work_date = 'Tuesday'`, found no punch_in, and threw
+ *     "you have not checked in today". The shift could not be closed at all.
+ *
+ * And the card read `useDay(empId, ymd(TODAY))`, so at 03:30 the employee saw
+ * an empty Tuesday offering "Punch In" — which would have opened a second
+ * row and left Monday's open for payroll to read as an absence.
+ *
+ * ## The rule
+ *
+ * A punch belongs to the shift *instance* whose window contains it, where the
+ * window is `start − 2h … end + 4h` measured in the shift's own zone, and the
+ * work date is that instance's start date in that zone.
+ *
+ * Two things follow for free, which is why the rule is shaped this way rather
+ * than special-casing "overnight":
+ *
+ *   * **A 09:00–18:00 America/New_York shift does not cross midnight in its
+ *     own zone.** "Overnight" exists only in IST. Deriving the date in the
+ *     shift's zone makes the India-worked US shift ordinary.
+ *   * **A shift that genuinely crosses midnight in its own zone** — 22:00 to
+ *     06:00, say — is handled by the same arithmetic, because the window's
+ *     close rolls to the next day when `ends_at <= starts_at`.
+ *
+ * ## Why in SQL
+ *
+ * The arithmetic is `AT TIME ZONE` against a named zone, which is where DST
+ * correctness comes from: Postgres knows that 09:00 New York is 13:00 UTC in
+ * October and 14:00 UTC in November. Doing it in JavaScript would mean a
+ * timezone library and a second source of truth for the same question.
+ * Nothing here stores an offset, which is the property that keeps it right
+ * across 1 November.
+ *
+ * ## Candidates
+ *
+ * Three: the punch's own date in the shift's zone, the day before, and the
+ * day after. The day before matters for a punch after midnight on an
+ * overnight shift; the day after for a punch in the two hours before a shift
+ * that starts just after midnight. A 9h shift's windows are 15h long, so they
+ * cannot overlap — but a very long shift's could, and `ORDER BY` the distance
+ * to the instance's start picks the nearest, which is the only answer that
+ * does not depend on row order.
+ */
+
+const SHIFT_DATE = `
+  WITH sh AS (
+    SELECT sh.timezone AS tz, sh.starts_at, sh.ends_at
+      FROM employee e JOIN shift sh ON sh.id = e.shift_id
+     WHERE e.id = $1
+  ), base AS (
+    SELECT tz, starts_at, ends_at, (($2::timestamptz) AT TIME ZONE tz)::date AS d0
+      FROM sh
+  ), cand AS (
+    SELECT (d0 + o.offs) AS shift_date, tz, starts_at, ends_at
+      FROM base, (VALUES (-1), (0), (1)) AS o(offs)
+  ), win AS (
+    SELECT shift_date,
+           ((shift_date + starts_at)::timestamp AT TIME ZONE tz) AS starts,
+           ((shift_date + starts_at)::timestamp AT TIME ZONE tz)
+             - interval '2 hours' AS opens,
+           ((shift_date
+              + CASE WHEN ends_at <= starts_at
+                     THEN interval '1 day' ELSE interval '0 day' END
+              + ends_at)::timestamp AT TIME ZONE tz)
+             + interval '4 hours' AS closes
+      FROM cand
+  )
+  SELECT to_char(shift_date, 'YYYY-MM-DD') AS work_date,
+         to_char(starts AT TIME ZONE tz, 'YYYY-MM-DD HH24:MI') AS shift_start_local,
+         tz
+    FROM win, base
+   WHERE $2::timestamptz >= opens AND $2::timestamptz <= closes
+   ORDER BY abs(EXTRACT(EPOCH FROM ($2::timestamptz - starts)))
+   LIMIT 1`;
+
+/** Which shift instance a punch falls in, and the zone it was measured in. */
+export interface ShiftInstance {
+  /** The instance's start date in the shift's own zone, `YYYY-MM-DD`. */
+  workDate: string;
+  /** When that instance starts, as wall-clock in the shift's zone. */
+  shiftStartLocal: string;
+  /** The shift's zone, so a caller can label what it is showing. */
+  timezone: string;
+}
+
+/**
+ * The shift instance a punch at `instant` belongs to, or null when the punch
+ * is outside every window.
+ *
+ * Null is not an error here — it is the answer to "may I punch now", and the
+ * callers turn it into one. Returning it rather than throwing keeps this
+ * function answerable in a read-only transaction, which is what the card
+ * needs in order to decide whether to offer the button at all.
+ */
+export async function shiftInstanceAt(
+  db: TenantClient, employeeId: string, instant: string,
+): Promise<ShiftInstance | null> {
+  const { rows } = await db.query<{
+    work_date: string; shift_start_local: string; tz: string;
+  }>(SHIFT_DATE, [employeeId, instant]);
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    workDate: r.work_date,
+    shiftStartLocal: r.shift_start_local,
+    timezone: r.tz,
+  };
+}
