@@ -190,6 +190,9 @@ import type { Role } from '../auth/policy.ts';
 import { overridesFor } from '../auth/overrides.ts';
 import { moduleForPath } from './route-modules.ts';
 import { photoUrl, setPhoto, removePhoto, PhotoError } from '../modules/photos/service.ts';
+import {
+  logoUrl, setLogo, removeLogo, signatoryOf, setSignatory, BrandingError,
+} from '../modules/branding/service.ts';
 import { StorageError } from '../storage/index.ts';
 import {
   permissionGrid, setPermissions, resetModule, PermissionError,
@@ -1194,6 +1197,57 @@ const routes: Route[] = [
     pattern: '/config/legal-entities/:code',
     handler: (c, _r, p, body) =>
       updateLegalEntity(c, p.code!, (body ?? {}) as LegalEntityDraft),
+  },
+  /*
+   * The entity's logo and its signatory.
+   *
+   * The logo reads for everybody and writes for company_admin alone, which
+   * the service enforces rather than the route — a permission expressed in a
+   * route table is a permission the services do not have.
+   *
+   * `{ url: null }` rather than a 404 when there is no logo, for the reason
+   * the profile photo gives: absence is the ordinary case and the screen's
+   * answer is the built-in mark, not an error in every network log.
+   */
+  {
+    method: 'GET',
+    pattern: '/config/legal-entities/:code/logo',
+    handler: async (c, _r, p) => ({ url: await logoUrl(c, p.code!) }),
+  },
+  /*
+   * `raw`, so the bytes arrive as bytes. The declared content type is the
+   * caller's claim, checked against the file's magic number in
+   * `storage/validate`; SVG is refused earlier still, with its own reason.
+   */
+  {
+    method: 'PUT',
+    pattern: '/config/legal-entities/:code/logo',
+    raw: true,
+    handler: (c, _r, p, body) => {
+      const { bytes, mimeType } = body as { bytes: Buffer; mimeType: string };
+      return setLogo(c, p.code!, bytes, mimeType);
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: '/config/legal-entities/:code/logo',
+    handler: async (c, _r, p) => {
+      await removeLogo(c, p.code!);
+      return { ok: true };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/config/legal-entities/:code/signatory',
+    handler: async (c, _r, p) => ({ signatory: await signatoryOf(c, p.code!) }),
+  },
+  {
+    method: 'PUT',
+    pattern: '/config/legal-entities/:code/signatory',
+    handler: async (c, _r, p, body) => {
+      const draft = (body ?? {}) as { name?: string | null; title?: string | null };
+      return { signatory: await setSignatory(c, p.code!, draft.name ?? null, draft.title ?? null) };
+    },
   },
   {
     method: 'PUT',
@@ -2421,6 +2475,17 @@ function statusFor(error: unknown): { status: number; message: string } {
     return { status, message: error.message };
   }
   if (error instanceof PhotoError) {
+    const status = error.code === 'forbidden' ? 403
+      : error.code === 'not_found' ? 404 : 400;
+    return { status, message: error.message };
+  }
+  /*
+   * `svg_refused` and `incomplete` are 400s: the request was understood and
+   * the file or the pair is not acceptable. The message carries the reason,
+   * which is the whole point of giving SVG its own code rather than letting
+   * it fall out of the type allow-list.
+   */
+  if (error instanceof BrandingError) {
     const status = error.code === 'forbidden' ? 403
       : error.code === 'not_found' ? 404 : 400;
     return { status, message: error.message };

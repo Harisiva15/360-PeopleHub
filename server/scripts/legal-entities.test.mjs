@@ -9,9 +9,14 @@
  * create an employee: three services refuse outright with 'no default legal
  * entity configured'.
  *
- * Phase 2e is CRUD over those existing columns. **No migration**, and the first
- * assertions below prove that by reading the catalogue: thirteen columns, the
+ * Phase 2e was CRUD over those existing columns. **It added no column**, and
+ * the first assertion below is what proved it, read from the catalogue: the
  * same thirteen 0002 created.
+ *
+ * `0061_legal_entity_logo.sql` later added three — `logo_document_id`,
+ * `signatory_name` and `signatory_title` — so the assertion now names
+ * sixteen, by column, and says which migration owns which. It compares the
+ * set rather than the count, so a rename fails it as well as an addition.
  *
  * ## What is worth holding
  *
@@ -111,21 +116,56 @@ try {
  * 1. the schema, read from the catalogue — no migration was written
  * ------------------------------------------------------------------ */
 
-console.log('\nthe table is exactly the one 0002 created\n');
+console.log('\nthe table is 0002\'s thirteen columns and 0061\'s three, exactly\n');
 
 {
   const cols = (await db.query(
     `SELECT column_name, data_type, is_nullable, column_default
        FROM information_schema.columns
       WHERE table_name = 'legal_entity' ORDER BY ordinal_position`)).rows;
-  ok('1. thirteen columns, unchanged', cols.length === 13,
-    `${cols.length}: ${cols.map((c) => c.column_name).join(', ')}`);
+  /*
+   * The column set, by name and exactly — not a count.
+   *
+   * Phase 2e added none of these: it was CRUD over what `0002_org_config.sql`
+   * already had, and this assertion is what proved it. 0061 added three, the
+   * logo pointer and the two signatory columns, so the set is thirteen plus
+   * three.
+   *
+   * Compared as a set rather than a length, because a length agrees with
+   * itself through a rename: drop `esi_code`, add `esic_code`, and a count of
+   * sixteen is still sixteen while three tables' worth of code is looking for
+   * a column that no longer exists. Naming them makes a rename show up as one
+   * missing and one unexpected.
+   */
+  const ORIGINAL_13 = ['id', 'tenant_id', 'code', 'legal_name', 'country', 'currency',
+    'registered_address', 'tax_id', 'registration_id', 'pf_code', 'esi_code',
+    'is_default', 'created_at'];
+  const ADDED_BY_0061 = ['logo_document_id', 'signatory_name', 'signatory_title'];
+
+  const found = cols.map((c) => c.column_name).sort();
+  const wanted = [...ORIGINAL_13, ...ADDED_BY_0061].sort();
+  const missing = wanted.filter((n) => !found.includes(n));
+  const unexpected = found.filter((n) => !wanted.includes(n));
+
+  ok(`1. exactly these ${wanted.length} columns: 0002's thirteen and 0061's three`,
+    missing.length === 0 && unexpected.length === 0,
+    `missing [${missing.join(', ')}], unexpected [${unexpected.join(', ')}]`);
 
   const by = Object.fromEntries(cols.map((c) => [c.column_name, c]));
-  for (const name of ['id', 'tenant_id', 'code', 'legal_name', 'country', 'currency',
-    'registered_address', 'tax_id', 'registration_id', 'pf_code', 'esi_code',
-    'is_default', 'created_at']) {
+  for (const name of ORIGINAL_13) {
     ok(`    ${name}`, Boolean(by[name]), 'missing');
+  }
+  /*
+   * Nullable, with no default, and that is the point rather than an incidental
+   * shape. An entity without a logo falls back to the built-in mark, and 0061's
+   * header says why a signatory may not be defaulted: inventing one would put
+   * a plausible-looking lie on a legal document.
+   */
+  for (const name of ADDED_BY_0061) {
+    ok(`    ${name} (0061, nullable, no default)`,
+      by[name] !== undefined && by[name].is_nullable === 'YES'
+      && by[name].column_default === null,
+      JSON.stringify(by[name] ?? null));
   }
   ok('2. no active column was added', by.active === undefined,
     'this phase identified no workflow that needed one');
