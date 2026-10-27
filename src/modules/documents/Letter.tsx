@@ -3,7 +3,7 @@ import { LOGO_LIGHT } from '../../assets/logo';
 import { fmtD, tenure, TODAY, ymd } from '../../lib/dates';
 import { inr } from '../../lib/format';
 import { ri } from '../../lib/rng';
-import type { Employee, LetterContext } from '../../services';
+import type { Employee, LetterContext, Signatory } from '../../services';
 import {
   useDefaultEntityCode, useLetterContext, useSignatory, useVisiblePeople,
 } from './data';
@@ -277,7 +277,10 @@ function LetterBody({ type, ctx }: { type: string; ctx: LetterContext }) {
  * A letter on company paper: the same masthead and signature block for every
  * type, with the body switched on the letter chosen.
  */
-function LetterDoc({ type, empId, docRef }: { type: string; empId: string; docRef: string }) {
+function LetterDoc(
+  { type, empId, docRef, signatory }:
+  { type: string; empId: string; docRef: string; signatory: Signatory },
+) {
   const { data: ctx } = useLetterContext(empId);
   const t = letterType(type);
 
@@ -305,10 +308,20 @@ function LetterDoc({ type, empId, docRef }: { type: string; empId: string; docRe
       <p style={{ fontSize: 13, marginTop: 26 }}>
         For <b>{ORG.legal}</b>
       </p>
+      {/*
+        * The signatory the entity configured, passed in — not
+        * `ctx.signatory`, which is the letter context's own and in a demo
+        * build comes from the dataset.
+        *
+        * They were two different sources, which meant the gate checked the
+        * entity's signatory and the page printed somebody else's. A letter
+        * refused for having no signer, then signed by a name nobody entered,
+        * is worse than either outcome on its own.
+        */}
       <p style={{ fontSize: 13, marginTop: 22 }}>
-        <b>{ctx.signatory.name}</b>
+        <b>{signatory.name}</b>
         <br />
-        {ctx.signatory.designation}
+        {signatory.title}
         <br />
         <span className="muted" style={{ fontSize: 11 }}>
           This is a digitally generated letter and is valid without a physical signature. Verify authenticity at
@@ -366,7 +379,14 @@ export function useShowLetter() {
       title: t?.n || 'Letter',
       sub: e.name + ' · ' + e.code,
       size: 'wide',
-      body: <LetterDoc type={type} empId={empId} docRef={reference} />,
+      body: (
+        <LetterDoc
+          type={type}
+          empId={empId}
+          docRef={reference}
+          signatory={verdict.signatory}
+        />
+      ),
       footer: (close) => (
         <>
           <button className="btn" onClick={close}>Close</button>

@@ -89,7 +89,24 @@ test.describe('Attendance', () => {
   test('my attendance offers a punch and shows the month', async ({ page }) => {
     await open(page, 'attendance?v=me');
     expect(await activeTab(page)).toBe('My Attendance');
-    await expect(page.getByRole('button', { name: /Punch (in|out)/i }).first()).toBeVisible();
+
+    /*
+     * The control has three legitimate states — `out` offers Punch In, `in`
+     * offers Punch Out, and a day already punched in and out shows "Day
+     * completed" with no button at all. Which one you get depends on what the
+     * demo generated for *today*, so asserting a button was asserting the
+     * date: this passed on 22 October and failed on the 27th with nothing in
+     * attendance changed. The same trap `scratch-tenant.mjs` records — a
+     * suite that can be made to fail by waiting.
+     *
+     * What is worth asserting is that the control is present and in one of
+     * its three states, not which.
+     */
+    const punch = page.getByRole('button', { name: /Punch (in|out)/i });
+    const completed = page.getByText(/Day completed/i);
+    const states = await punch.count() + await completed.count();
+    expect(states, 'the punch control must be in one of its three states').toBeGreaterThan(0);
+
     expect(await page.locator('table tbody tr').count()).toBeGreaterThan(3);
   });
 
@@ -136,23 +153,61 @@ test.describe('Assets', () => {
 });
 
 test.describe('Documents', () => {
-  test('a non-pay letter previews and offers print', async ({ page }) => {
-    await open(page, 'documents');
-    expect(await activeTab(page)).toBe('Generate a Letter');
-
+  test('a letter refuses to print until a signatory is named', async ({ page }) => {
     /*
-     * Address Proof is `self: true`, so it carries "Generate now" and opens
-     * straight away; the HR-issued ones ("Request") go to a queue instead.
-     * The letter opens in a modal through `layer.modal`, which is a portal
-     * outside `main` — so the assertions are page-wide.
+     * The demo starts with no signatory, which is the honest state: 0061
+     * keeps both columns nullable with no default, and `mayIssueLetter`
+     * refuses rather than printing an unsigned letter to a bank.
      */
+    await open(page, 'documents');
     const card = page.locator('.card', { hasText: 'Address Proof Letter' }).first();
     await card.getByRole('button', { name: 'Generate now' }).click();
 
+    await expect(page.getByText(/Set a signatory in Company profile first/i)).toBeVisible();
+    /* And no way to print the refusal, which would still be a document. */
+    await expect(page.getByRole('button', { name: /Print \/ Save PDF/i })).toHaveCount(0);
+  });
+
+  test('and prints once one is set', async ({ page }) => {
+    /*
+     * Driven through the screen rather than seeded, because the point is that
+     * the two halves meet: what Company Profile saves is what the letter
+     * reads.
+     *
+     * `goHash` for the second navigation, never `open` — the demo keeps the
+     * signatory in module memory, so a reload would throw it away and this
+     * test would prove the opposite of what it says.
+     */
+    await open(page, 'settings?v=company');
+    const sig = page.locator('.card', { hasText: 'Letter signatory' }).first();
+    await expect(sig.getByText(/letters will not print/i)).toBeVisible();
+
+    await sig.getByRole('button', { name: 'Edit' }).click();
+    await page.locator('#signatory-name').fill('Hari Sivakumar');
+    await page.locator('#signatory-title').fill('Director');
+    await sig.getByRole('button', { name: 'Save' }).click();
+    await expect(sig.getByText('Hari Sivakumar')).toBeVisible();
+
+    await goHash(page, 'documents');
+    const card = page.locator('.card', { hasText: 'Address Proof Letter' }).first();
+    await expect(card).toBeVisible({ timeout: 15_000 });
+    await card.getByRole('button', { name: 'Generate now' }).click();
+
     await expect(page.getByRole('button', { name: /Print \/ Save PDF/i })).toBeVisible();
-    /* The letter must carry the person it is about, not a placeholder. */
+    /* The signature block carries what was just saved, not a placeholder. */
+    await expect(page.getByText('Director').first()).toBeVisible();
+    /*
+     * And the letter is about the person it names. The superseded
+     * previews-and-prints test was the only one asserting that; it could not
+     * survive the refusal, so its one unique assertion moves here.
+     *
+     * Address Proof is `self: true`, so it carries "Generate now" and opens
+     * straight away — the HR-issued ones queue instead. The letter opens
+     * through `layer.modal`, a portal outside `main`, so these are page-wide.
+     */
     await expect(page.getByText(/Priya Raghavan/i).first()).toBeVisible();
   });
+
 });
 
 test.describe('Documents — the pay letters', () => {
