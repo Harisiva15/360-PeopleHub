@@ -632,6 +632,61 @@ any other control that takes its name from a neighbouring element. Not a
 launch blocker: nothing is unusable, and the two are invisible to a sighted
 mouse user.
 
+## After the punch path — a renewal must not look like a sign-out to the gate
+
+Its own small landing, scheduled after the punch path. The sibling of the
+transport fix that shipped on `fix/auth-refresh-retry`, and the half that
+deliberately was not done with it: that landing stopped a token renewal from
+silently emptying a *screen*, and this one stops it from throwing a signed-in
+person out to the *login page*.
+
+**What is wrong.** `identityFailure` in `src/state/identity.ts` maps every
+`401` to `session-lost`:
+
+```ts
+if (status === 401) return 'session-lost';
+```
+
+and `App.tsx` renders `<LoginPage>` for that state. The identity resolver in
+`AppContext` is one of the callers, so if it asks who you are during a refresh
+window it gets a 401, the gate concludes the session is gone, and somebody who
+is signed in is shown a login page. The rule it should follow is the one the
+transport now follows: **retry once after the renewal, and show the login page
+only when there is genuinely no session.**
+
+**Why it was not fixed in the same landing.** The 401 → login mapping is load
+bearing and was itself the fix for a reported bug — a signed-in person
+deep-linking to `/#/settings?v=company` used to land on "We could not tell who
+you are", because the resolver ran before `AuthProvider` had restored the
+session. The comment at `App.tsx:181` sets that out. Narrowing it is a change
+to the auth gate and wants its own branch and its own reasoning, not a rider
+on a transport change.
+
+**Not a regression, and not new.** Before the transport fix the same window
+threw `401 You are not signed in` and reached the same login page, so nothing
+got worse; the retry means it should now be rare rather than merely unlikely.
+That is why this is scheduled rather than urgent.
+
+**What to build.**
+
+- `identityFailure` distinguishes the two 401s. `ApiError.kind` already carries
+  it — `no_session` is genuinely signed out, `session_renewing` is not — so the
+  classification is available without inspecting prose. The existing
+  `/not signed in/i` fallback stays for an error that crossed a boundary and
+  lost its status.
+- The resolver retries once after the renewal settles, rather than latching a
+  failure. `AppContext` already re-asks when a token arrives and has a `retry`;
+  this is about not concluding `session-lost` in between.
+- A `session_renewing` failure that survives the retry is reported on the
+  identity screen with "Try again", not as a sign-out.
+
+**The test.** A check that stages a renewal mid-resolve, the way
+`checks/auth-refresh-retry.ts` stages one mid-request — `setSessionSourceForTests`
+is the seam and already exists. It must assert that the gate does **not** render
+the login page during a renewal, that it does render it on a real sign-out, and
+that the deep-link case the 401 mapping was introduced for still works. That
+last one is the regression this must not cause.
+
 ## Standing rules for every phase
 
 Carried over from the role cutover, and unchanged.
