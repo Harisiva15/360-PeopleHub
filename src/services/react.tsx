@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getServices } from './index';
+import { isNoSessionError } from './http/client';
 import type { Services } from './contracts';
 
 /**
@@ -91,11 +92,23 @@ export function onQueryFailure(fn: (f: QueryFailure) => void): () => void {
 
 function announceFailure(e: Error): void {
   /*
-   * "You are not signed in" is not a failure worth a toast: the auth layer is
+   * A genuine sign-out is not a failure worth a toast: the auth layer is
    * already signing the person out and showing the login page, and a toast
    * about it would arrive on top of that, once per in-flight query.
+   *
+   * This matched `/not signed in/i` on the message, which suppressed two
+   * different things because they shared a sentence. A token being *renewed*
+   * also produced "You are not signed in", so the read that failed during a
+   * refresh window was silenced along with the sign-out — and since almost no
+   * call site renders `error`, the screen showed an empty list and said
+   * nothing at all. That is how an administrator ended up on My account with
+   * no name in the identity tile and no photo card, with nothing to report.
+   *
+   * Now it asks the transport what kind of failure it was. `session_renewing`
+   * is reported like any other, because the person is signed in and trying
+   * again is a reasonable thing to ask of them.
    */
-  if (/not signed in/i.test(e.message)) return;
+  if (isNoSessionError(e)) return;
   for (const fn of failureListeners) {
     try { fn({ message: e.message }); } catch { /* a listener must not break a query */ }
   }

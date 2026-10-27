@@ -236,8 +236,17 @@ console.log('\na failed read is announced, not swallowed\n');
     'without this, a rejected query is indistinguishable from an empty result');
   ok('  from the rejection handler, not the success path',
     /setError\(err\);[\s\S]{0,260}announceFailure\(err\)/.test(reactSrc));
+  /*
+   * This asserted `/not signed in/`, which was the suppressor's own test
+   * against the error message. The message is no longer what decides: the
+   * transport tags the error with a `kind`, because the same sentence was
+   * being produced for a genuine sign-out *and* for a token being renewed,
+   * and suppressing both is what left a signed-in administrator on a screen
+   * with no data and no error. See `checks/auth-refresh-retry.ts`, which owns
+   * that distinction; this assertion only holds the suppression in place.
+   */
   ok('  and a signed-out error is not announced',
-    /not signed in/.test(reactSrc),
+    /isNoSessionError\(e\)/.test(reactSrc),
     'the auth layer already redirects; a toast per in-flight query on top of '
     + 'that is noise');
   ok('onQueryFailure is exported for a listener', /export function onQueryFailure/.test(reactSrc));

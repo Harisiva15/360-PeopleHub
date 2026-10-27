@@ -6,34 +6,97 @@
  * calls service methods and stays unaware there is a network at all.
  */
 
-import { supabase } from '../../auth/supabase';
+import { sessionSource } from './session';
 
 const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 
 /** True when this build has an API to talk to. Without one, screens use the mock. */
 export const apiConfigured = Boolean(BASE);
 
+/**
+ * What kind of failure this was, as something other code can branch on.
+ *
+ * It existed as prose in the message, and one caller — the toast suppressor in
+ * `services/react.tsx` — matched on that prose with `/not signed in/i`. Which
+ * meant the sentence was load-bearing: rewording it changed behaviour
+ * somewhere else, silently. Worse, it could not express the distinction that
+ * actually matters, because "not signed in" was the message for both a genuine
+ * sign-out and a token being renewed.
+ */
+export type ApiErrorKind =
+  /** There is no session. The auth layer is already handling it. */
+  | 'no_session'
+  /** Signed in, but the token was being renewed and the renewal did not land. */
+  | 'session_renewing'
+  /** Network or CORS. The browser will not say which. */
+  | 'unreachable'
+  /** Refused before sending — see `assertNoDemoIds`. */
+  | 'refused'
+  /** The server answered, with a status that is not ok. */
+  | 'http';
+
 export class ApiError extends Error {
   readonly status: number;
 
-  constructor(status: number, message: string) {
+  readonly kind: ApiErrorKind;
+
+  constructor(status: number, message: string, kind: ApiErrorKind = 'http') {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.kind = kind;
   }
 }
 
+/** Is this the one failure that must not be reported? See `announceFailure`. */
+export const isNoSessionError = (e: unknown): boolean =>
+  e instanceof ApiError && e.kind === 'no_session';
+
+export const SESSION_RENEWING_MESSAGE =
+  'Your session was being renewed and this did not go through. Try again.';
+
 /**
- * The current access token.
+ * The token to send, waiting out a renewal if one is in progress.
  *
  * Read per request rather than cached: supabase-js refreshes in the background,
  * and a token captured at startup is the one that expires mid-session and
  * produces a mystery 401 an hour in.
+ *
+ * ## The retry, and why it is safe for a write
+ *
+ * When there is no token and a session has been seen, this waits for the
+ * renewal and asks once more. That is a retry of the *whole request* and not
+ * only of the token, because nothing has been sent yet — the throw it replaces
+ * happened before `fetch`. So this cannot double-apply a PUT, and it needs no
+ * idempotency key to be correct.
+ *
+ * A 401 *from the server* is deliberately not retried here. By then the
+ * request has been sent and judged, and retrying on the server's own refusal
+ * is a different decision with different consequences.
  */
-async function bearerToken(): Promise<string | null> {
-  if (!supabase) return null;
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
+async function bearerToken(): Promise<string> {
+  const session = sessionSource();
+
+  const first = await session.token();
+  if (first) return first;
+
+  /*
+   * Nothing to wait for. Said plainly and kept quiet by `kind`, because the
+   * login page is already on its way up and a toast would land on top of it,
+   * once per in-flight query.
+   */
+  if (session.signedOut()) throw new ApiError(401, 'You are not signed in', 'no_session');
+
+  const renewed = await session.refresh();
+  if (renewed) return renewed;
+
+  /*
+   * Signed in, and the renewal still produced nothing. This is the case that
+   * used to be indistinguishable from a sign-out and is the one worth saying
+   * out loud: the person is signed in, the screen is missing data, and trying
+   * again is a reasonable thing to ask of them.
+   */
+  throw new ApiError(401, SESSION_RENEWING_MESSAGE, 'session_renewing');
 }
 
 /**
@@ -126,7 +189,7 @@ export function assertNoDemoIds(method: string, path: string, body?: unknown): v
       + 'That value looks like a demo id (E followed by three digits), which is '
       + 'how src/data numbers its people — so the screen that made this call may '
       + 'be reading the demo dataset. If it is not, something upstream is '
-      + 'generating ids in that shape.');
+      + 'generating ids in that shape.', 'refused');
   }
 }
 
@@ -151,8 +214,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   /* A Blob carries no ids to leak, and walking one is meaningless. */
   if (!isRaw(body)) assertNoDemoIds(method, path, body);
 
+  /* Throws for both session cases, each with the `kind` that decides whether
+     anybody is told about it. */
   const token = await bearerToken();
-  if (!token) throw new ApiError(401, 'You are not signed in');
 
   let response: Response;
   try {
@@ -171,7 +235,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   } catch {
     // fetch rejects for network failure and for CORS. The browser deliberately
     // does not say which, so neither can this message.
-    throw new ApiError(0, 'Could not reach the server');
+    throw new ApiError(0, 'Could not reach the server', 'unreachable');
   }
 
   if (response.status === 204) return undefined as T;
