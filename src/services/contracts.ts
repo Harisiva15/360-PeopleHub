@@ -2331,6 +2331,15 @@ export interface ConfigService {
    */
   logoUrl(entityCode: string): Promise<string | null>;
   /**
+   * The default entity's logo, for the shell.
+   *
+   * Its own method because the shell has no entity code in hand and wants
+   * one answer — the default's, which `is_default` exists to decide. A
+   * path parameter cannot carry "whichever is default", so this is a
+   * route rather than `logoUrl(null)`.
+   */
+  tenantLogoUrl(): Promise<string | null>;
+  /**
    * Company admin only. PNG or JPG, 2 MB, checked against the file's own
    * magic number rather than what the browser claimed. SVG is refused with
    * its own reason: it is executable markup and reaches every signed-in

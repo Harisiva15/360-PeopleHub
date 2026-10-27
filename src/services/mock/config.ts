@@ -483,6 +483,11 @@ export const configService: ConfigService = {
    * asserting a rule the server holds rather than proving it. The real gates
    * are in `branding/service.ts` and are proven by `check:branding`.
    */
+  tenantLogoUrl() {
+    /* The default entity is the only one the demo has. */
+    return ok(demoLogos.get('IN01') ?? null);
+  },
+
   logoUrl(entityCode) {
     return ok(demoLogos.get(entityCode.trim().toUpperCase()) ?? null);
   },

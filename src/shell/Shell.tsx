@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { LOGO_ON_RAIL } from '../assets/logo';
+import { useTenantLogo } from './logo';
 import { ALL_VIEWS, hrefOf, TABBAR, VISIBLE_NAV as NAV } from '../nav';
 import type { NavItem } from '../nav';
 import { useNavBadges } from './badges';
@@ -40,6 +41,9 @@ const HOVER_DELAY = 275;
  */
 export function Shell({ children }: { children: ReactNode }) {
   const app = useApp();
+  /* Null until it resolves, and null for a tenant that uploaded none, which
+     is most of them — the built-in mark is the fallback either way. */
+  const tenantLogo = useTenantLogo();
   const { pathname, search } = useLocation();
   const route = pathname.replace(/^\//, '') || 'dashboard';
   const here = pathname + search;
@@ -166,7 +170,27 @@ export function Shell({ children }: { children: ReactNode }) {
     <div id="app">
       <aside className={'sidebar' + (navOpen ? ' open' : '')}>
         <div className="brand">
-          <img src={LOGO_ON_RAIL} alt={ORG.name + ' — ' + ORG.tagline} />
+          {/*
+            * The tenant's own mark where they have uploaded one, and the
+            * built-in one otherwise.
+            *
+            * The upload, replace and remove were built and nothing consumed
+            * them, so a logo somebody had uploaded sat in storage and the
+            * sidebar went on drawing ours. `useTenantLogo` resolves to null
+            * when there is none, which is the ordinary case.
+            *
+            * An uploaded logo is drawn as supplied, including on this dark
+            * rail — one upload was the approved decision and there is no
+            * reversed variant for a file the server cannot decode. The plate
+            * behind it is the cheap mitigation, and it is CSS only.
+            */}
+          {tenantLogo
+            ? (
+              <span className="brand-plate">
+                <img src={tenantLogo} alt={ORG.name} />
+              </span>
+            )
+            : <img src={LOGO_ON_RAIL} alt={ORG.name + ' — ' + ORG.tagline} />}
           <span className="cap">{ORG.philosophy}</span>
         </div>
 
