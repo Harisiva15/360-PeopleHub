@@ -22,6 +22,8 @@
  */
 
 import type { Signatory } from '../../services';
+import { LETTER_CONTEXT_BACKED } from '../../nav';
+import { apiConfigured } from '../../services/http';
 
 /** What to do when somebody asks for a letter. */
 export type IssueVerdict =
@@ -37,6 +39,12 @@ export type IssueVerdict =
  * check — and a message that drifts between them is a message somebody will
  * search for and fail to find.
  */
+export const NO_CONTEXT_MESSAGE =
+  'Letters are not available on this deployment yet. The facts a letter is '
+  + 'printed from — your dates, your manager, the registered company — are '
+  + 'not served by this build, so it would print blank. Nothing is wrong with '
+  + 'your account.';
+
 export const NO_SIGNATORY_MESSAGE =
   'Set a signatory in Company profile first. Until somebody is named, every '
   + 'letter this entity issues would go out unsigned.';
@@ -50,6 +58,15 @@ export const NO_SIGNATORY_MESSAGE =
  * for a moment is recoverable, one issued unsigned is not.
  */
 export function mayIssueLetter(signatory: Signatory | null | undefined): IssueVerdict {
+  /*
+   * Before the signatory, because it is the more fundamental absence: a
+   * signatory on a letter that cannot fetch its own facts still prints
+   * nothing. Only in a configured build — the demo supplies the context from
+   * its dataset, and refusing there would break the one place letters work.
+   */
+  if (apiConfigured && !LETTER_CONTEXT_BACKED) {
+    return { issue: false, message: NO_CONTEXT_MESSAGE };
+  }
   if (!signatory) return { issue: false, message: NO_SIGNATORY_MESSAGE };
 
   /*

@@ -186,7 +186,10 @@ export const NAV: NavGroup[] = [
     k: 'employees',
     desc: 'Manage your people, organisation and employee records.',
     items: [
-      { k: 'account', n: 'My account', ic: 'lock', d: 'Your sign-in details and every session opened against your account.' },
+      /* The description names the photo, because this is the only screen that
+         can change it and somebody looking for it read "sign-in details" and
+         went elsewhere. */
+      { k: 'account', n: 'My account', ic: 'lock', d: 'Your photo, your sign-in details, and every session opened against your account.' },
       { k: 'employees', n: 'Employee directory', ic: 'people', d: 'Find and contact colleagues.' },
       { k: 'org', n: 'Organisation chart', ic: 'projects', d: 'See who reports to whom.' },
       { k: 'jobtitles', n: 'Job titles', ic: 'briefcase', d: 'Titles, levels and who holds them.' },
@@ -639,6 +642,33 @@ export const LAUNCH_LETTERS = false;
  * offered while the flag is false, and that the offer sites consult this
  * function rather than the catalogue.
  */
+/**
+ * Whether a configured build can fetch the facts a letter is printed from.
+ *
+ * `documents/data.ts` wraps `letterContext` in `unbacked(…, null)`, and
+ * `unbacked` resolves to its empty value *without calling* when an API is
+ * configured. So in production the context is never fetched, `LetterDoc` sees
+ * null, and every letter sat on "Preparing the letter…" for ever — including
+ * the five that quote no pay. There is no server route either:
+ * `/documents/letter-context/:id` answers 404 live.
+ *
+ * Until that endpoint exists, a letter is refused with a sentence rather than
+ * a spinner. A dead end that spins is worse than one that says so.
+ *
+ * `checks/unbacked-reads.ts` locks this to the wrapper: remove the
+ * `unbacked` and this must become true, and vice versa. Neither can be
+ * changed alone.
+ */
+/*
+ * Annotated `boolean` rather than left to infer.
+ *
+ * Without it the type is the literal `false`, and the half of the lock that
+ * reads `LETTER_CONTEXT_BACKED === true` becomes a type error — TypeScript
+ * saying, correctly, that the comparison can never hold. The annotation is
+ * what makes "and once it is not, the flag must say so" expressible at all.
+ */
+export const LETTER_CONTEXT_BACKED: boolean = false;
+
 export const PAY_LETTERS: ReadonlySet<string> = new Set(['salcert', 'inc', 'form16']);
 
 /** Is this letter type out of scope for launch? */
