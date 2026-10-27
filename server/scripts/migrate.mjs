@@ -34,6 +34,29 @@ loadEnv();
 
 const PRODUCTION = process.argv.includes('--production');
 
+/**
+ * `--only=<file>`, repeatable: apply these pending migrations and no others.
+ *
+ * ## Why this exists
+ *
+ * On 27 October a window authorised to apply `0061_legal_entity_logo.sql`
+ * applied `0062_project_member.sql` as well, to production. Nothing was
+ * wrong with the command — `npm run migrate` applies everything pending, and
+ * 0062 was pending because it had been committed locally the day before. The
+ * plan named one migration and the tool had no way to be told one.
+ *
+ * So `--production` now refuses unless every pending migration is named. Not
+ * "warns": a migration window is the one moment where the set of changes is
+ * supposed to be known in advance, and a tool that silently does more than
+ * the plan said is a tool that will do it again.
+ */
+const ONLY = new Set(
+  process.argv
+    .filter((a) => a.startsWith('--only='))
+    .map((a) => a.slice('--only='.length).trim())
+    .filter(Boolean),
+);
+
 if (PRODUCTION && !loadMigrateEnv()) {
   console.error('');
   console.error('  --production needs server/.env.migrate, and there is no such file.');
@@ -157,8 +180,58 @@ const applied = new Map(
     .map((r) => [r.filename, r.checksum]),
 );
 
+const onDisk = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort();
+const pending = onDisk.filter((f) => !applied.has(f));
+
+/*
+ * The gate. Computed here because it needs the ledger, and placed here
+ * because nothing has been applied yet — a refusal below leaves the database
+ * exactly as it was found.
+ */
+if (PRODUCTION) {
+  const unnamed = pending.filter((f) => !ONLY.has(f));
+  if (unnamed.length) {
+    console.error('');
+    console.error(`  REFUSED: ${unnamed.length} pending migration(s) this run did not name.`);
+    console.error('');
+    for (const f of unnamed) console.error(`    ${f}`);
+    console.error('');
+    console.error('  A production window names what it applies. Pass --only=<file> for');
+    console.error('  each one you intend, or stop and find out why the others are pending.');
+    console.error('');
+    console.error('  Nothing was applied.');
+    console.error('');
+    process.exit(1);
+  }
+
+  /*
+   * A typo in `--only` would otherwise read as "nothing to do" and look like
+   * success. Naming a file that is not pending is a mistake worth saying out
+   * loud, whether it is already applied or not on disk at all.
+   */
+  const notPending = [...ONLY].filter((f) => !pending.includes(f));
+  if (notPending.length) {
+    console.error('');
+    console.error('  REFUSED: --only named migration(s) that are not pending:');
+    console.error('');
+    for (const f of notPending) {
+      console.error(`    ${f}  ${applied.has(f) ? '(already applied)' : '(not on disk)'}`);
+    }
+    console.error('');
+    console.error('  Nothing was applied.');
+    console.error('');
+    process.exit(1);
+  }
+}
+
 let count = 0;
-for (const file of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()) {
+for (const file of onDisk) {
+  /*
+   * Outside a production run `--only` still narrows, so a local rehearsal can
+   * apply one migration at a time. Empty means "everything pending", which is
+   * what every local run wants.
+   */
+  if (ONLY.size && !ONLY.has(file) && !applied.has(file)) continue;
   const sql = readFileSync(join(MIGRATIONS, file), 'utf8');
   const checksum = createHash('sha256').update(sql).digest('hex');
 
