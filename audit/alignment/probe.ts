@@ -347,6 +347,21 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
         const hiddenX = s.overflowX === 'hidden' || s.overflowX === 'clip';
         const hiddenY = s.overflowY === 'hidden' || s.overflowY === 'clip';
         const ellipsis = s.textOverflow === 'ellipsis';
+        /*
+         * A line clamp is somebody saying "show two lines and hide the rest",
+         * which is the same measurement as text being clipped by accident and
+         * the opposite intention. `.ann-body` is `-webkit-line-clamp:2` with
+         * an `.open` class that lifts it, and the audit reported its 34
+         * announcements as text cut off — the one case where the clipping is
+         * the feature.
+         *
+         * Read from the computed style rather than from a class list, so it
+         * holds for any element that declares one, and only for the vertical
+         * check: a clamp says nothing about text being cut off sideways.
+         */
+        const clamped = s.webkitLineClamp !== undefined
+          && s.webkitLineClamp !== ''
+          && s.webkitLineClamp !== 'none';
         if (clippedX && hiddenX && !ellipsis) {
           add('text-clipped', el,
             'text is cut off: ' + el.scrollWidth + 'px of text in a '
@@ -354,7 +369,7 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
             + ' — "' + text.slice(0, 40) + '"',
             'high');
         }
-        if (clippedY && hiddenY) {
+        if (clippedY && hiddenY && !clamped) {
           add('text-clipped', el,
             'text is cut off vertically: ' + el.scrollHeight + 'px in a '
             + el.clientHeight + 'px box — "' + text.slice(0, 40) + '"',
@@ -397,8 +412,22 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
         }
       }
 
-      /* 11. a light box left behind in the dark theme --------------------- */
-      if (theme === 'dark' && r.width > 8 && r.height > 8) {
+      /*
+       * 11. a light box left behind in the dark theme ---------------------
+       *
+       * `.swatch-light` is exempt, and so is anything inside one. It is the
+       * class the stylesheet gives to a surface that stays light in both
+       * themes on purpose — the logo preview, which exists to show the mark on
+       * the white it will be printed on. Theming it would make the preview a
+       * picture of something that never happens.
+       *
+       * An opt-out the markup has to ask for, not a selector list kept here:
+       * this check cannot tell a decision from an oversight, and the only
+       * place that knows is the code that made it. Without one, a deliberate
+       * light surface is reported on every dark capture for ever, and a
+       * finding nobody can ever close is a finding everybody learns to skip.
+       */
+      if (theme === 'dark' && r.width > 8 && r.height > 8 && !el.closest('.swatch-light')) {
         const bgc = parseColour(s.backgroundColor);
         if (bgc && bgc[3] > 0.5 && lum([bgc[0], bgc[1], bgc[2]]) > 0.6) {
           add('light-box-in-dark', el,
@@ -451,12 +480,46 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
         if (ks.float !== 'none') continue;
         kids.push(k);
       }
+      /*
+       * Per line box, not the union of them.
+       *
+       * `getBoundingClientRect()` on an inline element that wraps returns one
+       * rectangle covering every line it occupies — so a sentence running over
+       * two lines reports a box the full width of its container and two lines
+       * tall, and every inline sibling sitting on the first line falls inside
+       * it. Nothing overlaps on screen; the union does.
+       *
+       * That was most of this check's output: a `.badge` next to a wrapping
+       * `.muted` in a narrow `dd` "overlapped" it by 66×21px on six pages, and
+       * the same shape produced the `td > b` and `td > span.dot` findings.
+       * `getClientRects()` gives the boxes a reader actually sees, one per
+       * line, and two elements overlap only when some pair of those meets.
+       *
+       * Falls back to the bounding rect when there are no client rects, which
+       * is what a replaced or empty element returns.
+       */
+      const boxesOf = (el: Element): DOMRect[] => {
+        const list = el.getClientRects();
+        const out: DOMRect[] = [];
+        for (let r = 0; r < list.length; r += 1) out.push(list[r]!);
+        return out.length ? out : [el.getBoundingClientRect()];
+      };
+
       for (let a = 0; a < kids.length; a += 1) {
         for (let b = a + 1; b < kids.length; b += 1) {
-          const ra = kids[a]!.getBoundingClientRect();
-          const rb = kids[b]!.getBoundingClientRect();
-          const ox = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
-          const oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+          const as = boxesOf(kids[a]!);
+          const bs = boxesOf(kids[b]!);
+          let ox = 0;
+          let oy = 0;
+          for (let m = 0; m < as.length; m += 1) {
+            for (let n = 0; n < bs.length; n += 1) {
+              const ra = as[m]!;
+              const rb = bs[n]!;
+              const x = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+              const y = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+              if (x > 2 && y > 2 && x * y > ox * oy) { ox = x; oy = y; }
+            }
+          }
           if (ox > 2 && oy > 2) {
             add('overlap', kids[a]!,
               'overlaps its sibling ' + label(kids[b]!) + ' by '

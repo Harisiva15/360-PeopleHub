@@ -104,6 +104,16 @@ const PAIRS: Pair[] = [
   ['rail: selected pill against the well', '--rail-on', '--rail-sunk', 3.0],
   ['rail: selected pill label', '#ffffff', '--rail-on', 4.5],
   ['rail: against the page', '--rail', '--plane', 1.1],
+  /*
+   * The world clock's date marker in the header.
+   *
+   * Here because the element it styles is conditional on the time: `.cl-day`
+   * renders only when that zone is on a different calendar date from the
+   * viewer, so the screenshot audit saw it on one run and not the next, two
+   * hours apart. A pair read out of the stylesheet does not have that problem,
+   * and this is the kind of defect that only a deterministic check will hold.
+   */
+  ['top bar: a clock showing another date', '--brand-ink', '--surface', 4.5],
 
   /* The page. A card is separated by its border, so the border is load-bearing. */
   ['page: body text', '--ink', '--plane', 4.5],

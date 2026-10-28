@@ -4,6 +4,7 @@ import { sortBy } from '../../lib/collections';
 import { addDays, fmtD, TODAY } from '../../lib/dates';
 
 
+import { AVCOL } from '../../lib/format';
 import { deptOf } from '../../data/org';
 import type { Employee } from '../../types/employee';
 import type { AppRole } from '../../types/employee';
@@ -33,11 +34,29 @@ export const ROLES: AppRole[] = ['company_admin', 'hr_admin', 'finance_admin', '
  * and users/shared.tsx each had their own copy, and both still said "admin". */
 export { ROLE_LABEL };
 
+/*
+ * From `AVCOL`, the avatar palette, and not from `--s1`…`--s8`.
+ *
+ * These colours sit behind white initials in an `.av`, and the series tokens
+ * are chart colours: they are chosen to be told apart as *marks*, with nothing
+ * written on them. Against white text `--s3` is 2.8:1 and `--s5` is 2.7:1,
+ * well under the 4.5:1 that text size needs, and the audit found all four on
+ * every RBAC screen in both themes.
+ *
+ * `AVCOL` is the palette that already answers "what goes behind white
+ * initials", and every one of its ten entries is a pair in `check:contrast` —
+ * so these four are covered by a check that runs on every commit, rather than
+ * by a screenshot sweep that happens to look. Hues kept close to what was
+ * there so nobody has to relearn the screen.
+ *
+ * Indices rather than a second literal list: a copy would be a second palette
+ * to darken next time, which is exactly how the series tokens ended up here.
+ */
 const ROLE_COLOR: Record<AppRole, string> = {
-  company_admin: 'var(--s8)',
-  hr_admin: 'var(--s1)',
-  finance_admin: 'var(--s5)',
-  employee: 'var(--s3)',
+  company_admin: AVCOL[6]!,
+  hr_admin: AVCOL[0]!,
+  finance_admin: AVCOL[4]!,
+  employee: AVCOL[2]!,
 };
 const ROLE_SCOPE: Record<AppRole, string> = {
   company_admin: SCOPE.company_admin.label,

@@ -1796,10 +1796,10 @@ function LegalEntityCard() {
 
           <div className="field">
             <label>Logo</label>
-            <div className="banner" style={{ background: '#fff', borderColor: '#e1e0d9' }}>
+            <div className="banner swatch-light">
               <img src={LOGO_LIGHT} alt={ORG.name} style={{ height: 66, width: 'auto' }} />
-              <div style={{ color: '#45443f' }}>
-                <div className="t" style={{ color: '#101010' }}>Primary logo</div>
+              <div>
+                <div className="t">Primary logo</div>
                 Used on payslips, offer letters, certificates and the app header. A light
                 variant is applied automatically in dark mode.
               </div>

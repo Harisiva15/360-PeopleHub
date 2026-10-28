@@ -868,7 +868,22 @@ textarea.input{min-height:80px;resize:vertical}
   color:var(--ink-3);white-space:nowrap;
 }
 .clock-cell.awake .cl-city{color:var(--ink-2)}
-.cl-day{color:var(--brand);font-weight:700}
+/*
+ * `--brand-ink`, the text blue, not `--brand`, the fill blue — the token
+ * comment thirty lines into this file says exactly that about the pair.
+ * `--brand` is 4.3:1 against the header's surface, under the 4.5:1 this size
+ * needs, and `--brand-ink` is 7.2:1.
+ *
+ * It took two audits to see, because this element is conditional on the clock:
+ * `.cl-day` renders only when that zone is on a different calendar date from
+ * the viewer, which for New York against India is true for part of every day.
+ * The first capture ran when no zone differed and reported nothing; the second
+ * ran two hours later and reported it on 282 screenshots. A screenshot audit
+ * cannot be relied on for a defect that comes and goes with the wall clock,
+ * which is why the pair is now in `check:contrast` as well — that one reads
+ * the tokens and runs the same every time.
+ */
+.cl-day{color:var(--brand-ink);font-weight:700}
 .cl-time{
   font-size:14px;font-weight:650;letter-spacing:-.2px;line-height:1.2;margin-top:1px;
   font-variant-numeric:tabular-nums;color:var(--ink-3);
@@ -1313,6 +1328,27 @@ html[data-theme="dark"] .cal .day.L{color:#fab219}
 .banner.good{background:var(--good-wash);border-color:color-mix(in srgb,var(--good) 25%,transparent)}
 .banner.warn{background:var(--warn-wash);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
 .banner .t{font-weight:700;margin-bottom:2px}
+
+/*
+ * A surface that stays light in both themes, on purpose.
+ *
+ * Artwork previews are the only use: the logo is a dark mark on a light
+ * ground, and it is shown here to say what it will look like on a payslip, an
+ * offer letter and a certificate — all of which are printed on white. Theming
+ * this swatch would make the preview a picture of something that never
+ * happens.
+ *
+ * It was three inline literals — `background:'#fff'`, `borderColor:'#e1e0d9'`
+ * and two text colours — which is indistinguishable, to anything reading the
+ * page, from a box somebody forgot to theme. The audit reported it on six
+ * screens as "a light surface left in the dark theme", correctly, because
+ * nothing said otherwise. This is what says otherwise, and `probe.ts` reads
+ * the class so the finding stops being raised against a decision.
+ */
+.swatch-light{
+  background:#fff;border-color:#e1e0d9;color:#45443f;
+}
+.swatch-light .t{color:#101010}
 
 .punch-card{background:linear-gradient(135deg,var(--brand),var(--s7));color:#fff;border-radius:var(--r-lg);padding:18px;box-shadow:var(--shadow-md)}
 .punch-card .clock{font-size:34px;font-weight:750;letter-spacing:-1.4px;font-variant-numeric:tabular-nums;line-height:1}
