@@ -7,6 +7,7 @@ import { siteOf } from '../../data/org';
 import { shiftCodeForSite, shiftOf } from '../../data/shifts';
 import { distM } from '../../lib/format';
 import type { AttendanceService, PunchAt } from '../contracts';
+import { classifyDemoDays } from './calendar';
 import { ok } from './util';
 
 /** A regularised day is credited a standard 8h15m of work. */
@@ -118,6 +119,20 @@ export const attendanceService: AttendanceService = {
     return ok(attOf(empId, date) ?? null);
   },
 
+  /*
+   * Days worth correcting: the rows that need fixing, and the working days
+   * with no row at all.
+   *
+   * The second half used to be missing here as it was on the server, and the
+   * screen builds its date list from this — so the commonest correction of
+   * all, a day somebody forgot entirely, could not be chosen.
+   *
+   * Through `classifyDemoDays`, which is the demo's own answer to "was this
+   * person expected in", holidays, weekly offs and employment dates included.
+   * A weekend test written here would be a second answer to that question and
+   * the two would drift, which is the mistake the roster screen already made
+   * once with `getUTCDay()`.
+   */
   regularisable(empId, since) {
     const rows = Object.values(ATT_IDX[empId] || {}).filter(
       (r) =>
@@ -125,7 +140,27 @@ export const attendanceService: AttendanceService = {
         (r.status === 'A' || (!r.inT && (r.status === 'P' || r.status === 'W'))
           || r.geoOk === false),
     );
-    return ok(rows);
+
+    /* Today is excluded: a working day is not missing attendance until it is
+       over, and offering it invites a request that contradicts the punch the
+       person is about to make. */
+    const today = ymd(TODAY);
+    const have = new Set(Object.values(ATT_IDX[empId] || {}).map((r) => r.date));
+    const e = EMAP[empId];
+    const profile = e ? shiftOf(shiftCodeForSite(e.site)) : undefined;
+
+    const missing: AttRecord[] = classifyDemoDays(empId, since, today)
+      .filter((d) => d.workingDay && d.date < today && !have.has(d.date))
+      .map((d) => ({
+        /* No row, so no id. The screens key on the date, which is one per
+           person per day on the server by the table's own constraint. */
+        id: '', empId, date: d.date, status: 'A',
+        inT: null, outT: null, mins: 0, site: '', lat: null, lng: null,
+        dist: null, geoOk: null, src: 'system', late: false, reg: null,
+        notes: '', missingPunchOut: false, tz: profile?.tz ?? 'Asia/Kolkata',
+      } as AttRecord));
+
+    return ok([...rows, ...missing].sort((a, b) => b.date.localeCompare(a.date)));
   },
 
   /*

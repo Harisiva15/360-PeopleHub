@@ -24,6 +24,7 @@
  */
 
 import { reaches } from '../../auth/can.ts';
+import { classifyMany } from '../calendar/service.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -812,7 +813,47 @@ export async function regularisableDays(
                OR a.geo_ok = false)
           AND (r.id IS NULL OR r.status = 'rejected')
         ORDER BY a.work_date DESC`, [empId, since]);
-    return rows.map(toRecord);
+    const withRows = rows.map(toRecord);
+
+    /*
+     * And the days with no row at all, which is the commonest case and was
+     * the one missing.
+     *
+     * This read `FROM attendance`, so "days worth regularising" meant "rows
+     * worth regularising" — a day somebody forgot entirely, or whose punch was
+     * refused outside the shift window, leaves no row and so was not offered.
+     * The screen's date list is built from this, so those days could not be
+     * chosen, and the service refused them if they were. Between them that
+     * made the most ordinary correction in the product unreachable.
+     *
+     * `classifyMany` decides which of them count: it is the one thing that
+     * knows the person's working pattern, the tenant's holidays and their
+     * employment dates, and re-deriving any of that here would be a second
+     * answer to the same question. A weekly off and a holiday are not days
+     * with attendance missing; `NOT_EMPLOYED` is not either.
+     *
+     * Today is excluded. A working day is not missing attendance until it is
+     * over — offering to correct the day somebody is still in the middle of
+     * invites a request that contradicts the punch they are about to make.
+     */
+    const today = (await db.query<{ d: string }>(
+      'SELECT current_date::text AS d')).rows[0]!.d;
+    const verdicts = (await classifyMany(db, [empId], since, today))[empId] ?? [];
+    const have = new Set(withRows.map((r) => r.date));
+    const tz = withRows[0]?.tz ?? '';
+
+    const missing: AttRecord[] = verdicts
+      .filter((v) => v.workingDay && v.date < today && !have.has(v.date))
+      .map((v) => ({
+        /* No row, so no id. The screens key on the date, which is unique per
+           person per day by the table's own constraint. */
+        id: '', empId, date: v.date, status: 'A',
+        inT: null, outT: null, mins: 0, site: '', lat: null, lng: null,
+        dist: null, geoOk: null, src: 'system', late: false, reg: null,
+        notes: '', missingPunchOut: false, tz,
+      }));
+
+    return [...withRows, ...missing].sort((a, b) => b.date.localeCompare(a.date));
   });
 }
 
@@ -836,13 +877,50 @@ export async function raiseRegularisation(
   }
 
   return withTenant(caller, async (db) => {
-    const att = await db.query(
+    const att = await db.query<{ id: string; manager_id: string | null }>(
       `SELECT a.id, e.manager_id FROM attendance a
          JOIN employee e ON e.id = a.employee_id
         WHERE a.employee_id = $1 AND a.work_date = $2`, [empId, date]);
-    if (!att.rows[0]) throw new AttendanceError('no attendance record for that day', 'not_found');
 
-    // Times arrive as HH:MM in the shift's timezone and are stored as instants.
+    /*
+     * A day with no attendance row at all is the commonest correction there
+     * is, and it was the one case this refused.
+     *
+     * "no attendance record for that day" is true and useless: the whole point
+     * of the request is that nothing was recorded. Somebody who was away from
+     * their desk, or whose punch was refused outside the window, or who simply
+     * forgot the day entirely has nothing to correct and no way to say so. The
+     * demo has always created the row — `ensure(empId, date, 'A')` — so the
+     * screen let you raise one and the server refused it, which is how this
+     * survived: the divergence hid it.
+     *
+     * The row is created as it would have looked if the day had been noticed
+     * and nothing recorded: `A`, no punches, no minutes, `source = 'system'`
+     * because no device produced it. Approving the request is what turns it
+     * into a present day, exactly as it does for a row that already existed.
+     *
+     * **The shift is the employee's current one, and it has to be.** Every
+     * other row carries the shift it was *measured* against, stamped at punch
+     * time. A day with no row was measured against nothing, so there is no
+     * historical answer to preserve and the present assignment is the only one
+     * available. That is also the right answer in the case this was found in:
+     * somebody moved onto US hours raising corrections for the days they had
+     * already been working them.
+     */
+    const row = att.rows[0] ?? await createDayFor(db, empId, date);
+
+    /*
+     * Times arrive as HH:MM in the *day's* timezone and are stored as
+     * instants.
+     *
+     * `COALESCE(a.shift_id, e.shift_id)`, the same rule `PROJECTION` uses, and
+     * not `e.shift_id` as this read before. The two differ exactly when
+     * somebody has been moved since the day in question — and then the old
+     * reading took the hours a person typed while looking at a day rendered in
+     * its own zone and stored them in the zone of a shift they are on now. For
+     * a move from India to New York that is a 10½ hour error, silently, on the
+     * correction meant to fix the day.
+     */
     await db.query(
       `INSERT INTO regularisation
          (attendance_id, employee_id, requested_in, requested_out, reason, approver_id)
@@ -850,11 +928,58 @@ export async function raiseRegularisation(
               ($3::date + $4::time) AT TIME ZONE sh.timezone,
               ($3::date + $5::time) AT TIME ZONE sh.timezone,
               $6, $7
-         FROM employee e JOIN shift sh ON sh.id = e.shift_id WHERE e.id = $2`,
-      [att.rows[0].id, empId, date, inT, outT, reason, att.rows[0].manager_id]);
+         FROM attendance a
+         JOIN employee e ON e.id = a.employee_id
+         JOIN shift sh ON sh.id = COALESCE(a.shift_id, e.shift_id)
+        WHERE a.id = $1`,
+      [row.id, empId, date, inT, outT, reason, row.manager_id]);
 
     return reload(db, empId, date);
   });
+}
+
+/**
+ * Open an attendance row for a day that has none, so it can be corrected.
+ *
+ * Refused for a date in the future and for one outside this person's
+ * employment. Neither is a correction: a day that has not happened cannot have
+ * been worked, and a day before somebody joined or after they left is not
+ * theirs to account for. Without these, a typo in a date field writes a row
+ * that every report and every pay run then has to reckon with — and the
+ * `UNIQUE (tenant_id, employee_id, work_date)` constraint means it is one row
+ * per mistake, quietly, for ever.
+ */
+async function createDayFor(
+  db: TenantClient, empId: string, date: string,
+): Promise<{ id: string; manager_id: string | null }> {
+  const { rows: emp } = await db.query<{
+    manager_id: string | null; too_early: boolean; too_late: boolean; future: boolean;
+  }>(
+    `SELECT e.manager_id,
+            ($2::date < e.joined_on) AS too_early,
+            (e.left_on IS NOT NULL AND $2::date > e.left_on) AS too_late,
+            ($2::date > (now() AT TIME ZONE COALESCE(sh.timezone, 'UTC'))::date) AS future
+       FROM employee e
+       LEFT JOIN shift sh ON sh.id = e.shift_id
+      WHERE e.id = $1`, [empId, date]);
+  const e = emp[0];
+  if (!e) throw new AttendanceError('no such employee', 'not_found');
+  if (e.future) {
+    throw new AttendanceError(
+      'That day has not happened yet, so there is nothing to correct.', 'invalid');
+  }
+  if (e.too_early || e.too_late) {
+    throw new AttendanceError(
+      'That day falls outside this person\'s employment.', 'invalid');
+  }
+
+  const { rows } = await db.query<{ id: string }>(
+    `INSERT INTO attendance
+       (employee_id, work_date, status, site_id, shift_id, source, worked_minutes, late)
+     SELECT $1, $2::date, 'A', e.site_id, e.shift_id, 'system', 0, false
+       FROM employee e WHERE e.id = $1
+     RETURNING id`, [empId, date]);
+  return { id: rows[0]!.id, manager_id: e.manager_id };
 }
 
 /**
