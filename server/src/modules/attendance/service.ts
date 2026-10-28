@@ -589,7 +589,13 @@ export async function punchOut(
   const when = instantOf(at.at);
 
   return withTenant(caller, async (db) => {
-    const date = await workDateFor(db, empId, when);
+    /*
+     * The open day first, because closing one is a different question from
+     * opening one: this punch belongs to the day it was opened against, not to
+     * whatever the employee's shift says now. See `OPEN_DAY`.
+     */
+    const open = await openDayFor(db, empId, when);
+    const date = open ? open.workDate : await workDateFor(db, empId, when);
     /*
      * No notice, no position. The punch itself goes through either way — an
      * employee who has not read a dialog still worked the day, and refusing it
@@ -617,6 +623,13 @@ export async function punchOut(
      * Worked minutes exclude the shift's break. Computed in SQL from the two
      * stored instants rather than from a client-supplied duration, so a slow
      * phone clock cannot lengthen anyone's day.
+     *
+     * The break comes from the day's *own* shift where one was resolved, and
+     * only otherwise from `DERIVE`, which reads the employee's current one.
+     * They are the same number on every ordinary day and differ exactly when
+     * somebody was moved mid-shift — and deducting the new roster's hour from
+     * a day worked on the old one's is the kind of error nobody finds, because
+     * the total still looks plausible.
      */
     await db.query(
       `UPDATE attendance
@@ -625,7 +638,7 @@ export async function punchOut(
                 EXTRACT(EPOCH FROM ($3::timestamptz - punch_in))::int / 60 - $4::int),
               updated_at = now()
         WHERE employee_id = $1 AND work_date = $2`,
-      [empId, date, when, d.break_minutes ?? 0]);
+      [empId, date, when, open?.breakMinutes ?? d.break_minutes ?? 0]);
 
     return reload(db, empId, date);
   });
@@ -1046,6 +1059,79 @@ export async function punchLocalDate(
  * than two hours before one starts, or more than four after one ends. That is
  * a correction, not a punch, so the message names the day to raise it for.
  */
+/**
+ * The day an *open* punch belongs to, measured against the shift that day was
+ * opened on rather than the one the employee is on now.
+ *
+ * ## Why a punch out cannot ask the same question a punch in does
+ *
+ * `workDateFor` resolves the window from `employee.shift_id` — what the person
+ * is on at this moment. For a punch in that is the only sensible answer. For a
+ * punch out it is the wrong one as soon as anything moved underneath it:
+ *
+ *   * **Somebody was moved onto different hours during their shift.** Prem
+ *     punches in at 18:00 IST on the India roster, an administrator moves him
+ *     to the US one at 20:00, and at 03:30 his punch out is resolved against
+ *     New York, lands on a different work date, finds no `punch_in` there and
+ *     is refused with "you have not checked in today". The row stays open for
+ *     ever and payroll reads an unclosed day.
+ *   * **A shift's own hours were corrected mid-day**, which `updateShift`
+ *     allows and which has exactly the same effect.
+ *
+ * The row already records what it was measured against — `attendance.shift_id`
+ * is stamped at punch in — so the answer is there and does not need deriving
+ * twice. This reads it back.
+ *
+ * ## Why it is still bounded by a window
+ *
+ * An open row from last Tuesday that nobody closed must not swallow today's
+ * punch out: that would silently assign tonight's hours to a day eight days
+ * ago and produce a 190-hour shift. So the row's own window still has to
+ * contain the instant, computed from the row's own shift in the row's own
+ * zone, which is the same arithmetic `SHIFT_DATE` uses. A stale open day falls
+ * outside it, stays open, and is reported by `unclosedDays` — which is what it
+ * is for.
+ *
+ * Null when there is no open row whose window contains this instant, in which
+ * case the caller falls back to `workDateFor` and nothing has changed.
+ */
+const OPEN_DAY = `
+  WITH open AS (
+    SELECT a.work_date,
+           sh.timezone AS tz, sh.starts_at, sh.ends_at, sh.break_minutes
+      FROM attendance a
+      JOIN employee e ON e.id = a.employee_id
+      JOIN shift sh ON sh.id = COALESCE(a.shift_id, e.shift_id)
+     WHERE a.employee_id = $1
+       AND a.punch_in IS NOT NULL AND a.punch_out IS NULL
+       AND sh.starts_at IS NOT NULL AND sh.ends_at IS NOT NULL
+  ), win AS (
+    SELECT work_date, break_minutes,
+           ((work_date + starts_at)::timestamp AT TIME ZONE tz)
+             - interval '2 hours' AS opens,
+           ((work_date
+              + CASE WHEN ends_at <= starts_at
+                     THEN interval '1 day' ELSE interval '0 day' END
+              + ends_at)::timestamp AT TIME ZONE tz)
+             + interval '4 hours' AS closes
+      FROM open
+  )
+  SELECT to_char(work_date, 'YYYY-MM-DD') AS work_date, break_minutes
+    FROM win
+   WHERE $2::timestamptz >= opens AND $2::timestamptz <= closes
+   ORDER BY work_date DESC
+   LIMIT 1`;
+
+async function openDayFor(
+  db: TenantClient, empId: string, instant: string,
+): Promise<{ workDate: string; breakMinutes: number | null } | null> {
+  const { rows } = await db.query<{ work_date: string; break_minutes: number | null }>(
+    OPEN_DAY, [empId, instant]);
+  const r = rows[0];
+  if (!r) return null;
+  return { workDate: r.work_date, breakMinutes: r.break_minutes };
+}
+
 async function workDateFor(
   db: TenantClient, empId: string, instant: string,
 ): Promise<string> {
