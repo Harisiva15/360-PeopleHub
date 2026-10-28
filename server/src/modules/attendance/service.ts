@@ -65,6 +65,13 @@ export interface AttRecord {
   late: boolean;
   reg: Regularisation | null;
   notes: string;
+  /**
+   * Punched in, never out, and the shift window has closed. The hours on this
+   * day are unknown rather than zero — see `MISSING_PUNCH_OUT`.
+   */
+  missingPunchOut: boolean;
+  /** The zone the times above are rendered in, so a screen can label them. */
+  tz: string;
 }
 
 const REG_STATUS: Record<string, Regularisation['status']> = {
@@ -72,8 +79,66 @@ const REG_STATUS: Record<string, Regularisation['status']> = {
 };
 
 /**
+ * How far either side of a shift a punch still counts.
+ *
+ * Named here because two places need the same answer and they must not drift:
+ * `SHIFT_DATE` decides which instance a punch belongs to, and `WINDOW_CLOSE`
+ * below decides when an instance has stopped accepting one — so if these
+ * differed, there would be an interval in which a punch out was refused as
+ * late and the row was not yet considered unclosed.
+ */
+const OPENS_BEFORE = "interval '2 hours'";
+const CLOSES_AFTER = "interval '4 hours'";
+
+/**
+ * When a row's own shift instance stops accepting punches.
+ *
+ * `COALESCE` covers the flexible shift, which has no hours at all: there is no
+ * window to measure, so the day itself is the window and it closes at the end
+ * of it. Without that, a flexible shift's `ends_at` is null, the comparison is
+ * null, and a forgotten punch out would never be reported as one.
+ */
+const WINDOW_CLOSE = `
+  (((a.work_date
+      + CASE WHEN COALESCE(sh.ends_at, TIME '23:59') <= COALESCE(sh.starts_at, TIME '00:00')
+             THEN interval '1 day' ELSE interval '0 day' END
+      + COALESCE(sh.ends_at, TIME '23:59'))::timestamp AT TIME ZONE sh.timezone)
+    + ${CLOSES_AFTER})`;
+
+/**
+ * A day somebody punched into and never out of, whose window has since
+ * closed.
+ *
+ * Derived, not stored. There is no `missing_punch_out` column and there should
+ * not be one: the condition is entirely a function of the row and its shift,
+ * so a column would be a second copy of it that could disagree — and would,
+ * the first time a shift's hours were edited. Nothing has to run on a
+ * schedule to keep this true either.
+ *
+ * It matters because the alternative readings are both wrong. The row says
+ * status `P` with `worked_minutes` 0, so payroll reads a present day that
+ * earned nothing; mark it absent instead and it is a false `A` against
+ * somebody who came to work. It is neither — it is a day whose hours are
+ * unknown, and this is what says so.
+ */
+const MISSING_PUNCH_OUT = `
+  (a.punch_in IS NOT NULL AND a.punch_out IS NULL AND now() > ${WINDOW_CLOSE})`;
+
+/**
  * Punch times are rendered in the shift's timezone, not the server's or the
  * reader's. A 09:30 start means 09:30 where the shift is measured.
+ *
+ * ## The row's shift, not the employee's
+ *
+ * The join is on `COALESCE(a.shift_id, e.shift_id)`. It was `e.shift_id`, the
+ * employee's *current* shift, which meant moving somebody from the IST shift
+ * to the US shift silently re-rendered every punch they had ever made in New
+ * York time — a 09:30 IST start would read as 23:00 the previous day, and the
+ * history would change under them with no edit to it.
+ *
+ * `attendance.shift_id` is written at punch time precisely so the row can say
+ * which shift it was measured against. The `COALESCE` is for rows imported or
+ * created before it was set.
  */
 const PROJECTION = `
   SELECT a.id, a.employee_id, a.work_date, a.status,
@@ -81,12 +146,14 @@ const PROJECTION = `
          to_char(a.punch_out AT TIME ZONE sh.timezone, 'HH24:MI') AS out_t,
          a.worked_minutes, s.code AS site_code, a.source, a.late, a.notes,
          a.latitude, a.longitude, a.distance_m, a.geo_ok,
+         sh.timezone AS shift_tz,
+         ${MISSING_PUNCH_OUT} AS missing_punch_out,
          r.status AS reg_status, r.reason AS reg_reason, r.raised_on AS reg_raised,
          to_char(r.requested_in  AT TIME ZONE sh.timezone, 'HH24:MI') AS reg_in,
          to_char(r.requested_out AT TIME ZONE sh.timezone, 'HH24:MI') AS reg_out
     FROM attendance a
     JOIN employee e ON e.id = a.employee_id
-    JOIN shift sh ON sh.id = e.shift_id
+    JOIN shift sh ON sh.id = COALESCE(a.shift_id, e.shift_id)
     LEFT JOIN site s ON s.id = a.site_id
     LEFT JOIN regularisation r ON r.attendance_id = a.id`;
 
@@ -115,6 +182,8 @@ const toRecord = (r: Record<string, unknown>): AttRecord => ({
       }
     : null,
   notes: (r.notes as string) ?? '',
+  missingPunchOut: Boolean(r.missing_punch_out),
+  tz: (r.shift_tz as string) ?? '',
 });
 
 /** Who the caller may see attendance for. */
@@ -572,6 +641,80 @@ export async function attendanceForDay(
     const { rows } = await db.query(
       `${PROJECTION} WHERE a.employee_id = $1 AND a.work_date = $2`, [empId, date]);
     return rows[0] ? toRecord(rows[0]) : null;
+  });
+}
+
+/** A day somebody punched into and never out of. */
+export interface UnclosedDay {
+  empId: string;
+  empCode: string;
+  empName: string;
+  date: string;
+  /** The punch in, in the row's own shift zone. */
+  inT: string;
+  tz: string;
+  /** Whole days since the window closed, so the stalest sorts first. */
+  daysOpen: number;
+}
+
+const UNCLOSED = `
+  SELECT a.employee_id, e.code AS emp_code, e.full_name AS emp_name,
+         to_char(a.work_date, 'YYYY-MM-DD') AS work_date,
+         to_char(a.punch_in AT TIME ZONE sh.timezone, 'HH24:MI') AS in_t,
+         sh.timezone AS tz,
+         GREATEST(0, (EXTRACT(EPOCH FROM (now() - ${WINDOW_CLOSE})) / 86400)::int)
+           AS days_open
+    FROM attendance a
+    JOIN employee e ON e.id = a.employee_id
+    JOIN shift sh ON sh.id = COALESCE(a.shift_id, e.shift_id)`;
+
+/**
+ * Every day still open: the employee's own banner, and the manager's queue.
+ *
+ * One function for both, because the two differ only in what the caller is
+ * allowed to see and that is already decided by the grant — the same scoping
+ * `listAttendance` uses, in the same order, so that `empId` narrows what the
+ * caller can see and can never widen it.
+ *
+ * Shaped as a read so nothing has to run on a schedule: there is no job that
+ * sweeps for forgotten punches and no state for it to get wrong. A day stops
+ * appearing here the moment somebody closes it or a correction is approved.
+ */
+export async function unclosedDays(
+  caller: Caller,
+  opts: { empId?: string } = {},
+): Promise<UnclosedDay[]> {
+  const where: string[] = [MISSING_PUNCH_OUT];
+  const params: unknown[] = [];
+
+  if (!reaches(caller, 'attendance', 'read', 'team')) {
+    params.push(caller.employeeId);
+    where.push(`a.employee_id = $${params.length}`);
+  } else if (caller.hasReports) {
+    params.push(caller.employeeId);
+    where.push(`(a.employee_id = $${params.length} OR a.employee_id IN (
+       WITH RECURSIVE t AS (
+         SELECT id FROM employee WHERE manager_id = $${params.length}
+         UNION ALL SELECT c.id FROM employee c JOIN t ON c.manager_id = t.id
+       ) SELECT id FROM t))`);
+  }
+  if (opts.empId) {
+    params.push(opts.empId);
+    where.push(`a.employee_id = $${params.length}`);
+  }
+
+  return withTenantReadOnly(caller, async (db) => {
+    const { rows } = await db.query(
+      `${UNCLOSED} WHERE ${where.join(' AND ')} ORDER BY a.work_date DESC`, params);
+    return rows.map((r) => ({
+      empId: r.employee_id as string,
+      empCode: (r.emp_code as string) ?? '',
+      empName: (r.emp_name as string) ?? '',
+      date: r.work_date as string,
+      inT: (r.in_t as string) ?? '',
+      tz: (r.tz as string) ?? '',
+      daysOpen: Number(r.days_open ?? 0),
+    }));
   });
 }
 

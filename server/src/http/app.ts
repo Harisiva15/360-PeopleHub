@@ -60,7 +60,7 @@ import {
 import {
   acknowledgeLocationNotice, actOnRegularisation, AttendanceError, attendanceForDay,
   listAttendance, locationNotice, punchIn, punchOut, raiseRegularisation,
-  regularisableDays,
+  regularisableDays, unclosedDays,
 } from '../modules/attendance/service.ts';
 import {
   actOnTimesheet, addEntry, copyPreviousWeek, listTimesheets, recallTimesheet,
@@ -405,6 +405,21 @@ const routes: Route[] = [
       const since = new URL(req.url ?? '/', 'http://x').searchParams.get('since');
       return regularisableDays(c, p.empId!, since ?? '1970-01-01');
     },
+  },
+  /*
+   * Before `/:empId/:date`, which would otherwise match `unclosed` as a date.
+   * Two shapes on purpose: the bare one is the manager's queue, scoped to
+   * whoever the caller may see, and the `:empId` one is a person's own banner.
+   */
+  {
+    method: 'GET',
+    pattern: '/attendance/unclosed',
+    handler: (c) => unclosedDays(c),
+  },
+  {
+    method: 'GET',
+    pattern: '/attendance/:empId/unclosed',
+    handler: (c, _r, p) => unclosedDays(c, { empId: p.empId! }),
   },
   {
     method: 'GET',
