@@ -22,8 +22,12 @@ import { siteOf } from '../../data/org';
 import { KV } from '../../components/ui';
 import { useLayer } from '../../components/Layer';
 import { useApp } from '../../state/AppContext';
-import { useDay, useLocationNotice, usePeople, usePunchIn, usePunchOut } from './data';
+import {
+  useDay, useLocationNotice, usePeople, usePunchIn, usePunchOut, useUnclosedDays,
+} from './data';
 import { LocationNoticeBody } from './LocationNotice';
+import { useOpenRegularisation } from './RegForm';
+import { errorCode, errorDetail } from '../../services';
 import { Icon } from '../../components/icons';
 
 /** Where the device thinks it is, or null if it will not say. */
@@ -90,6 +94,13 @@ export function PunchWidget({ empId }: { empId: string }) {
   }, []);
 
   const { data: rec } = useDay(empId, ymd(TODAY));
+  /*
+   * Their own open days, oldest last in the list the server sends (newest
+   * first), so the one to act on is the final element rather than the first.
+   */
+  const { data: unclosed = [] } = useUnclosedDays(empId);
+  const oldest = unclosed.length ? unclosed[unclosed.length - 1] : null;
+  const openReg = useOpenRegularisation();
   const punchIn = usePunchIn();
   const punchOut = usePunchOut();
   const inT = rec?.inT ?? null;
@@ -205,6 +216,41 @@ export function PunchWidget({ empId }: { empId: string }) {
     try {
       await doPunch(kind);
     } catch (e) {
+      /*
+       * One refusal has a next step, and it is the one most likely to arrive:
+       * a punch more than two hours before a shift starts or four hours after
+       * one ends belongs to no shift instance, so there is no day to record it
+       * against. The honest answer is that it is a correction rather than a
+       * punch — and a toast saying so is still a dead end. This offers the
+       * correction, on the right day.
+       *
+       * Branched on the code, not on the message. The server sends
+       * `outside_window` beside the sentence precisely so that a screen does
+       * not have to read English to decide what to do; matching the text would
+       * stop working the day somebody rewords it, and would stop working
+       * silently, which is worse.
+       *
+       * The day comes from `detail.localDate` — the date in the *shift's* own
+       * timezone. Using `TODAY` here would be the same mistake the server side
+       * of this spent three commits removing: for somebody in Chennai on New
+       * York hours, the browser's calendar day and the shift's differ for
+       * several hours every day, and a correction raised for the wrong one is
+       * a second request for payroll to reject.
+       */
+      if (errorCode(e) === 'outside_window') {
+        const d = errorDetail(e);
+        const localDate = typeof d?.localDate === 'string' ? d.localDate : undefined;
+        app.toast(
+          e instanceof Error ? e.message : 'That punch is outside your shift window',
+          'err');
+        openReg({
+          date: localDate,
+          reason: 'Worked outside my shift window',
+          note: `Tried to punch ${kind === 'in' ? 'in' : 'out'} at `
+            + `${fmtTime(nowHMS().slice(0, 5))}, outside the shift window.`,
+        });
+        return;
+      }
       const why = e instanceof Error && e.message ? e.message : 'The server did not say why.';
       app.toast(`Could not ${kind === 'in' ? 'punch in' : 'punch out'} — ${why}`, 'err');
     }
@@ -272,6 +318,49 @@ export function PunchWidget({ empId }: { empId: string }) {
       {rec?.late && rec?.geoOk !== false && (
         <div style={{ marginTop: 11, background: 'rgba(255,255,255,.16)', padding: '8px 11px', borderRadius: 9, fontSize: 12.5 }}>
           <Icon n="warn" size="lg" /> Today&rsquo;s punch was after the shift grace period.
+        </div>
+      )}
+
+      {/*
+        * Days punched into and never out of.
+        *
+        * Here rather than only on the Regularisation tab because this card is
+        * what somebody looks at the next morning, and a day whose hours are
+        * unknown is worth exactly one morning's attention — after that it is a
+        * payroll question. The row reads `P` with `worked_minutes = 0`, so
+        * payroll sees a present day that earned nothing and nobody is told.
+        *
+        * The oldest first, with the count beside it, because the stale one is
+        * the one about to be read by a pay run. One action, prefilled for that
+        * day: the alternative is "go to the Regularisation tab and work out
+        * which day it was", which is how these stay open.
+        */}
+      {unclosed.length > 0 && (
+        <div style={{ marginTop: 11, background: 'rgba(255,255,255,.16)', padding: '8px 11px', borderRadius: 9, fontSize: 12.5 }}>
+          <Icon n="warn" size="lg" />{' '}
+          {unclosed.length === 1
+            ? <>You never punched out on {fmtD(oldest!.date)}.</>
+            : (
+              <>
+                You never punched out on {unclosed.length} days, the oldest
+                being {fmtD(oldest!.date)}.
+              </>
+            )}{' '}
+          Its hours are unknown, not zero — payroll cannot read it until it is
+          corrected.
+          <div style={{ marginTop: 7 }}>
+            <button
+              className="btn sm"
+              style={{ background: 'rgba(255,255,255,.22)', color: '#fff', borderColor: 'rgba(255,255,255,.35)' }}
+              onClick={() => openReg({
+                date: oldest!.date,
+                reason: 'Forgot to punch out',
+                note: `Punched in at ${oldest!.inT} (${oldest!.tz}) and never out.`,
+              })}
+            >
+              Correct {fmtD(oldest!.date)}
+            </button>
+          </div>
         </div>
       )}
     </div>

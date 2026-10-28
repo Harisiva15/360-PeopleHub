@@ -70,6 +70,15 @@ function liveMethods(): { [K in keyof Services]?: Partial<Services[K]> } {
         regularisedOnly: q.regularisedOnly ? 'true' : undefined,
       })}`),
       forDay: (empId, date) => api.get(`/attendance/${empId}/${date}`),
+      /*
+       * Two routes rather than a query parameter, because `/attendance/:empId`
+       * already owns that shape and `/attendance/unclosed` would otherwise be
+       * read as an employee called "unclosed". Both are declared above the
+       * `:empId/:date` pattern in `app.ts` for the same reason.
+       */
+      unclosed: (empId) => (empId
+        ? api.get(`/attendance/${empId}/unclosed`)
+        : api.get('/attendance/unclosed')),
       locationNotice: () => api.get('/attendance/location-notice'),
       acknowledgeLocationNotice: () => api.post('/attendance/location-notice'),
       regularisable: (empId, since) =>

@@ -39,6 +39,22 @@ export function useRegularisableDays(empId: string, since: string) {
   return useQuery((s) => s.attendance.regularisable(empId, since), [empId, since]);
 }
 
+/**
+ * Days punched into and never out of — one person's, or the caller's line.
+ *
+ * Pass an id for somebody's own banner; omit it for a manager's queue. The
+ * service scopes either way: an id narrows what the caller may already see and
+ * cannot widen it, because the predicate is ANDed onto their own scope.
+ *
+ * Deliberately not filtered here. A hook that dropped, say, anything older
+ * than a fortnight would be deciding policy quietly, and the oldest open day
+ * is the one most worth seeing — it is the one payroll is about to read as a
+ * present day that earned nothing.
+ */
+export function useUnclosedDays(empId?: string) {
+  return useQuery((s) => s.attendance.unclosed(empId), [empId ?? '']);
+}
+
 /* ---------- writes ---------- */
 
 export const useLocationNotice = () =>

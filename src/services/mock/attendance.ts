@@ -1,9 +1,10 @@
-import { TODAY, ymd } from '../../lib/dates';
+import { parseYmd, TODAY, ymd } from '../../lib/dates';
 import { ATT, ATT_IDX, attOf } from '../../data/attendance';
 import type { AttRecord } from '../../data/attendance';
 import { clearPayrollCache } from '../../data/payroll';
 import { EMAP } from '../../data/employees';
 import { siteOf } from '../../data/org';
+import { shiftCodeForSite, shiftOf } from '../../data/shifts';
 import { distM } from '../../lib/format';
 import type { AttendanceService, PunchAt } from '../contracts';
 import { ok } from './util';
@@ -125,6 +126,54 @@ export const attendanceService: AttendanceService = {
           || r.geoOk === false),
     );
     return ok(rows);
+  },
+
+  /*
+   * Days punched into and never out of.
+   *
+   * Derived here as it is on the server — a row with a punch in, no punch out,
+   * and a work date before today — so there is no flag to go stale and the day
+   * leaves the list the moment it is closed or regularised.
+   *
+   * **The scope is not mirrored, and cannot be.** The server answers "mine,
+   * plus my line" from the caller; these contract methods carry no caller, as
+   * the note on the shift profiles in `misc.ts` sets out. So an explicit
+   * `empId` behaves exactly as the server does, and omitting it returns
+   * everybody rather than one reporting line. The screens always pass their
+   * own id for the banner; the manager queue is the one place the demo is
+   * broader than the product, and the server narrows it.
+   *
+   * `tz` comes from the profile the employee's location implies, which is the
+   * same rule `shiftCodeForSite` states — the demo's attendance fixtures carry
+   * no shift reference of their own, and inventing one per row would be
+   * inventing the thing the server reads back.
+   */
+  unclosed(empId) {
+    const today = ymd(TODAY);
+    const rows = empId
+      ? Object.values(ATT_IDX[empId] || {}).map((r) => [empId, r])
+      : Object.entries(ATT_IDX).flatMap(
+        ([id, byDate]) => Object.values(byDate).map((r) => [id, r] as const));
+
+    const open = (rows as [string, AttRecord][])
+      .filter(([, r]) => r.inT && !r.outT && r.date < today)
+      .map(([id, r]) => {
+        const e = EMAP[id];
+        const profile = e ? shiftOf(shiftCodeForSite(e.site)) : undefined;
+        return {
+          empId: id,
+          empCode: e?.code ?? '',
+          empName: e?.name ?? '',
+          date: r.date,
+          inT: r.inT ?? '',
+          tz: profile?.tz ?? 'Asia/Kolkata',
+          daysOpen: Math.max(0, Math.round(
+            (parseYmd(today).getTime() - parseYmd(r.date).getTime()) / 86_400_000)),
+        };
+      });
+
+    /* Newest first, as the server orders them. */
+    return ok(open.sort((a, b) => b.date.localeCompare(a.date)));
   },
 
   locationNotice() {

@@ -14,11 +14,12 @@ import { useApp } from '../../state/AppContext';
 import { SCOPE } from '../../state/rbac';
 import { useShowEmployee } from '../employees/Profile';
 import { PunchWidget } from './Punch';
+import { useOpenRegularisation } from './RegForm';
 import {
   useActOnRegularisation, useApprovedLeave, useAttendance, useMonthCalendar,
   useMyAttendance, usePeople,
   useWorkSchedules,
-  usePayRuns, useRaiseRegularisation, useRegularisableDays, useRegularisations, useVisiblePeople,
+  usePayRuns, useRegularisations, useUnclosedDays, useVisiblePeople,
 } from './data';
 import type { Directory } from './data';
 import { MonthCalendar } from '../dashboard/shared';
@@ -260,6 +261,14 @@ function AttLive() {
 
   const pendingRegs = recs.filter((r) => r.reg && r.reg.status === 'Pending').length;
 
+  /*
+   * Open days across this caller's scope: their own plus their line, decided by
+   * the service rather than by passing an id. Newest first, so the stalest —
+   * the one the subtitle names — is the last element.
+   */
+  const { data: unclosed = [] } = useUnclosedDays();
+  const staleDays = unclosed.length ? unclosed[unclosed.length - 1]!.daysOpen : 0;
+
   return (
     <div className="stack">
       <StatRow cols={5}>
@@ -331,6 +340,52 @@ function AttLive() {
                   <Badge kind="warn"><span className="mono">{fmtTime(r.inT)}</span></Badge>
                 </ListRow>
               )) : <EmptyState msg="Everyone on time 🎉" />}
+            </div>
+          </Card>
+
+          {/*
+            * Days on this line that were punched into and never out of.
+            *
+            * Beside the late arrivals rather than inside the board, because the
+            * board is today and these are not: the window has to have closed
+            * before a missing punch out is a fact rather than somebody still at
+            * work. The board shows those as "Active", which is correct for
+            * today and becomes wrong overnight with nothing to say so.
+            *
+            * These are the rows payroll reads as a present day that earned
+            * nothing, so they are the manager's queue — and the count is the
+            * number they have to chase, not a figure to admire. The subtitle
+            * says how stale the worst one is, because a day open for a week is
+            * a different problem from one open since last night.
+            */}
+          <Card
+            title="Days left open"
+            sub={unclosed.length
+              ? `${unclosed.length} to chase · oldest ${staleDays} day${staleDays === 1 ? '' : 's'}`
+              : 'Nothing outstanding'}
+            flush
+          >
+            <div style={{ maxHeight: 230, overflow: 'auto' }}>
+              {unclosed.length ? unclosed.map((u) => (
+                <ListRow key={`${u.empId}-${u.date}`} onClick={() => showEmp(u.empId)}>
+                  <Avatar name={u.empName} size="sm" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 650, fontSize: 12.5 }}>{u.empName}</div>
+                    <div className="muted" style={{ fontSize: 11.5 }}>
+                      {fmtD(u.date)} · in at {u.inT} ({u.tz})
+                    </div>
+                  </div>
+                  {/*
+                    * `crit` past a week. A day whose hours are unknown stops
+                    * being a reminder and becomes a pay run's problem, and the
+                    * boundary somebody actually feels is the next payroll
+                    * cut-off rather than a number of hours.
+                    */}
+                  <Badge kind={u.daysOpen >= 7 ? 'crit' : 'warn'}>
+                    {u.daysOpen === 0 ? 'Overnight' : `${u.daysOpen}d open`}
+                  </Badge>
+                </ListRow>
+              )) : <EmptyState msg="Every day accounted for" />}
             </div>
           </Card>
         </div>
@@ -651,72 +706,12 @@ function AttCal() {
   );
 }
 
-/* ---------------- regularisation request modal ---------------- */
-
-function RegForm({ close }: { close: () => void }) {
-  const app = useApp();
-  const me = app.me;
-  const { data: missing = [] } = useRegularisableDays(me.id, ymd(addDays(TODAY, -30)));
-  const raise = useRaiseRegularisation();
-
-  const [picked, setPicked] = useState('');
-  const [inT, setInT] = useState('09:30');
-  const [outT, setOutT] = useState('18:30');
-  const [reason, setReason] = useState('Forgot to punch in');
-  const [note, setNote] = useState('');
-
-  /* The candidate days arrive asynchronously, so default once they are in. */
-  const date = picked || missing[0]?.date || ymd(addDays(TODAY, -1));
-  const setDate = setPicked;
-
-  const submit = async () => {
-    await raise.mutate(me.id, date, inT, outT, reason + (note ? ' — ' + note : ''));
-    close();
-    app.toast('Regularisation request submitted', 'ok');
-  };
-
-  return (
-    <>
-      <div className="field">
-        <label>Date</label>
-        <select className="input" value={date} onChange={(e) => setDate(e.target.value)}>
-          {missing.length ? missing.map((r) => (
-            <option key={r.date} value={r.date}>
-              {fmtD(r.date)} — {r.status === 'A' ? 'Absent' : 'Missing punch'}
-            </option>
-          )) : <option value={ymd(addDays(TODAY, -1))}>{fmtD(addDays(TODAY, -1))}</option>}
-        </select>
-      </div>
-      <div className="grid g2">
-        <div className="field"><label>Punch in</label><input type="time" className="input" value={inT} onChange={(e) => setInT(e.target.value)} /></div>
-        <div className="field"><label>Punch out</label><input type="time" className="input" value={outT} onChange={(e) => setOutT(e.target.value)} /></div>
-      </div>
-      <div className="field">
-        <label>Reason</label>
-        <select className="input" value={reason} onChange={(e) => setReason(e.target.value)}>
-          {['Forgot to punch in', 'Forgot to punch out', 'Biometric device down', 'Working from client location',
-            'Network / app issue', 'On official travel', 'Other'].map((r) => <option key={r}>{r}</option>)}
-        </select>
-      </div>
-      <div className="field">
-        <label>Additional notes</label>
-        <textarea className="input" placeholder="Give your manager context…" value={note} onChange={(e) => setNote(e.target.value)} />
-      </div>
-      <div className="row" style={{ justifyContent: 'flex-end', gap: 9 }}>
-        <button className="btn" onClick={close}>Cancel</button>
-        <button className="btn primary" onClick={submit}>Submit request</button>
-      </div>
-    </>
-  );
-}
-
 /* ---------------- entry ---------------- */
 
 type Tab = 'me' | 'live' | 'log' | 'reg' | 'cal';
 
 function Attendance() {
   const app = useApp();
-  const layer = useLayer();
 
   const tabs: { v: Tab; label: string }[] = app.role === 'employee'
     ? [{ v: 'me', label: 'My Attendance' }, { v: 'reg', label: 'Regularisation' }, { v: 'cal', label: 'Holiday Calendar' }]
@@ -727,15 +722,8 @@ function Attendance() {
 
   const [tab, setTab] = useTabFromUrl<Tab>(tabs[0]!.v, tabs.map((t) => t.v));
   const active = tabs.some((t) => t.v === tab) ? tab : tabs[0].v;
-  const approver = usePeople([app.me.managerId]);
 
-  const openReg = () =>
-    layer.modal({
-      title: 'Request attendance regularisation',
-      sub: 'Goes to ' + approver.name(app.me.managerId) + ' for approval',
-      body: (close) => <RegForm close={close} />,
-      footer: null,
-    });
+  const openReg = useOpenRegularisation();
 
   return (
     <>
