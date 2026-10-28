@@ -58,3 +58,14 @@ pgtest/
 # Playwright writes these on a failing run; neither belongs in the repo.
 test-results
 playwright-report
+
+# The alignment audit's screenshots and findings. Hundreds of PNGs, regenerated
+# by `npm run audit:align` whenever they are wanted, and the repo lives in
+# OneDrive — so they stay out of git and out of anyone's clone.
+/alignment-audit/
+
+# `gate:nodeps` parks the server tree here while it proves the root checks
+# survive without it, and puts it back. If it is interrupted — or the rename
+# back loses to OneDrive, which it has — this is left behind, and it must not
+# then appear as hundreds of untracked files.
+/server/node_modules.gate-hidden/

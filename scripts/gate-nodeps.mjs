@@ -37,9 +37,38 @@
  * anything expects it. Do not run a server suite alongside it. If the process
  * is killed mid-run the directory stays renamed, so the next run restores it
  * before doing anything else and says so.
+ *
+ * ## Why it still renames
+ *
+ * The obvious improvement is not to move anything — run the checks with a
+ * module resolver that cannot see `server/node_modules` — and it does not
+ * work here. A `module.register()` resolve hook covers Node's own ESM
+ * resolution and nothing else: most of these checks run under `vite-node`,
+ * which resolves through Vite and reads the filesystem directly, and a CJS
+ * `require('pg')` from server source goes through `Module._resolveFilename`,
+ * which the hook never sees. Either gap lets through the exact regression
+ * this gate exists to catch, which is worse than renaming, because the gate
+ * would then be green and wrong.
+ *
+ * The approach that would work is a throwaway copy of the working tree with
+ * the root `node_modules` linked in and no `server/node_modules` at all.
+ * That is a bigger change than this one and it is not written yet.
+ *
+ * ## Restoring, which is the part that bit
+ *
+ * `renameSync` back failed twice on an OneDrive-synced checkout: the parked
+ * directory comes back carrying `ReadOnly` and a reparse point, and the
+ * rename loses to whatever OneDrive is doing to it, with EPERM. The gate then
+ * exited on an uncaught exception and left the server tree named
+ * `node_modules.gate-hidden` — which breaks every server command until
+ * somebody notices, and is not what a gate should do to a working tree.
+ *
+ * So: clear the attribute, retry with a pause, say exactly how to recover if
+ * it still cannot, and treat a failed restore as a failure of the run however
+ * well the checks went.
  */
 
-import { existsSync, renameSync, readFileSync } from 'node:fs';
+import { existsSync, renameSync, readFileSync, chmodSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -81,17 +110,82 @@ const delegating = () => {
 const live = join(root, 'server', 'node_modules');
 const parked = join(root, 'server', 'node_modules.gate-hidden');
 
+/** How to put it back by hand, printed whenever this script cannot. */
+const recovery = () => [
+  '',
+  '  Recover it by hand before running anything else in server/:',
+  '',
+  process.platform === 'win32'
+    ? `    powershell -Command "$p='${parked}'; $i=Get-Item $p -Force;`
+      + ' $i.Attributes = $i.Attributes -band (-bnot [IO.FileAttributes]::ReadOnly);'
+      + ` [IO.Directory]::Move('${parked}', '${live}')"`
+    : `    mv "${parked}" "${live}"`,
+  '',
+  '  If that still refuses, the directory is intact and can be copied instead:',
+  '',
+  process.platform === 'win32'
+    ? `    robocopy "${parked}" "${live}" /E /NFL /NDL /NJH /NJS & rmdir /s /q "${parked}"`
+    : `    cp -a "${parked}/." "${live}/" && rm -rf "${parked}"`,
+  '',
+  '  Or, if you would rather not care which copy is which:',
+  '',
+  process.platform === 'win32'
+    ? `    rmdir /s /q "${parked}" & npm ci --prefix "${join(root, 'server')}"`
+    : `    rm -rf "${parked}" && npm ci --prefix "${join(root, 'server')}"`,
+  '',
+].join('\n');
+
+/**
+ * Put the parked tree back, with retries.
+ *
+ * Returns `'restored'`, `'nothing'` (there was nothing parked) or `'failed'`.
+ *
+ * The retries are not superstition. On this checkout the parked directory
+ * comes back with `ReadOnly` set and a reparse point attached, and a rename
+ * that fails with EPERM succeeds a second or two later once OneDrive has
+ * finished with it — so the loop clears the attribute, then waits and tries
+ * again, for about twenty seconds in total.
+ */
 const restore = () => {
-  if (existsSync(parked) && !existsSync(live)) {
-    renameSync(parked, live);
-    return true;
+  if (!existsSync(parked)) return 'nothing';
+  if (existsSync(live)) return 'failed';
+
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    try {
+      /* Windows carries the read-only bit on the directory itself, and it is
+         enough on its own to refuse the rename. */
+      try { chmodSync(parked, statSync(parked).mode | 0o200); } catch { /* best effort */ }
+      renameSync(parked, live);
+      return 'restored';
+    } catch {
+      /* Busy-wait rather than async: this runs from `finish()` and from a
+         signal handler, neither of which can await. */
+      const until = Date.now() + 1800;
+      while (Date.now() < until) { /* wait for whatever holds it to let go */ }
+    }
   }
-  return false;
+  return 'failed';
 };
 
 /* Self-heal first: a previous run may have been interrupted. */
-if (restore()) {
+const healed = restore();
+if (healed === 'restored') {
   console.log("  note: a previous run left the server's dependencies parked; restored.");
+}
+if (healed === 'failed') {
+  console.error('');
+  console.error('  REFUSED: both server/node_modules and server/node_modules.gate-hidden');
+  console.error('  exist, so a previous run was interrupted and this cannot tell which');
+  console.error('  tree is the real one. Renaming either would be a guess.');
+  console.error('');
+  console.error('  Look at both and keep the complete one — the parked copy is almost');
+  console.error('  always it, and a stub left behind by a half-finished restore holds');
+  console.error('  little more than `.bin`:');
+  console.error('');
+  console.error(`    ${parked}`);
+  console.error(`    ${live}`);
+  console.error(recovery());
+  process.exit(2);
 }
 
 if (!existsSync(live)) {
@@ -124,7 +218,22 @@ let code = 1;
 const finish = (status) => {
   const back = restore();
   console.log('');
-  console.log(`  server/node_modules ${back ? 'restored' : 'was already in place'}`);
+  console.log(`  server/node_modules ${
+    back === 'restored' ? 'restored' : back === 'nothing' ? 'was already in place' : 'COULD NOT BE RESTORED'}`);
+
+  /*
+   * A run that leaves the working tree broken is a failed run, however well
+   * the checks went. Reporting "the gate passes" over a server tree that is
+   * no longer called `node_modules` is how this went unnoticed twice.
+   */
+  if (back === 'failed') {
+    console.error('');
+    console.error('  FAIL: the checks finished but server/node_modules is still parked.');
+    console.error('  Nothing in server/ will run until it is back.');
+    console.error(recovery());
+    process.exit(status === 0 ? 3 : status);
+  }
+
   if (status === 0) {
     console.log(only.length
       ? `  the ${only.length} server-facing checks survive without the server tree`
