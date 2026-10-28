@@ -8,6 +8,7 @@
  * written that takes a tenant id from the request.
  */
 
+import { codeOf, detailOf } from './refusal.ts';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { callerFromToken, AuthError } from '../auth/session.ts';
@@ -2893,7 +2894,18 @@ export function createApp() {
             + `
       ${dbErr.message ?? ''}`);
         }
-        send(res, status, { error: message });
+        /*
+         * `code` and `detail` only below 500. A 500 means we do not know what
+         * happened, and whatever the thrown object happened to carry is not an
+         * answer — it is as likely to be a driver's internals as ours.
+         */
+        const code = status < 500 ? codeOf(error) : undefined;
+        const detail = status < 500 ? detailOf(error) : undefined;
+        send(res, status, {
+          error: message,
+          ...(code ? { code } : {}),
+          ...(detail ? { detail } : {}),
+        });
       }
     })();
   });

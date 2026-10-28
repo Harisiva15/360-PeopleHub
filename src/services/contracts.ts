@@ -215,8 +215,42 @@ export interface LocationNotice {
   acknowledgedAt: string | null;
 }
 
+/**
+ * A day somebody punched into and never out of.
+ *
+ * Derived, not stored. There is no column and no sweep: `MISSING_PUNCH_OUT`
+ * asks the row and its shift whether the window has closed with no punch out,
+ * so there is nothing to go stale when a shift's hours are corrected, and the
+ * day stops being reported the moment it is closed or regularised.
+ *
+ * Both readings of such a row are wrong, which is why it needs a name of its
+ * own: payroll sees a present day that earned nothing, and anything that
+ * "tidies" it by marking the day absent puts a false `A` against somebody who
+ * came to work. It is neither — it is a day whose hours are unknown.
+ */
+export interface UnclosedDay {
+  empId: string;
+  empCode: string;
+  empName: string;
+  /** The work date, `YYYY-MM-DD`, in the row's own shift zone. */
+  date: string;
+  /** The punch in, in that zone — so 09:00 and not 18:30. */
+  inT: string;
+  tz: string;
+  /** Whole days since the window closed. The stalest sorts first. */
+  daysOpen: number;
+}
+
 export interface AttendanceService {
   list(q: AttendanceQuery): Promise<AttRecord[]>;
+  /**
+   * Days still open: the caller's own, plus their line where they have one.
+   *
+   * Scoped in the service, not by the argument. `empId` narrows what the
+   * caller may already see and never widens it — an employee asking for
+   * somebody else's gets their own, because the predicate is ANDed.
+   */
+  unclosed(empId?: string): Promise<UnclosedDay[]>;
   /** The location notice and whether this caller has seen it. */
   locationNotice(): Promise<LocationNotice>;
   /** Record that they have. Idempotent; keeps the original date. */
@@ -3578,3 +3612,45 @@ export interface IntegrationService {
   /** Revoked, never deleted — the key is part of the access record. */
   revokeApiKey(c: Caller, id: string): Promise<ApiKey>;
 }
+
+/* ---------------- what a refusal carries ---------------- */
+
+/**
+ * The service's own refusal code, read off whatever was thrown.
+ *
+ * Part of the contract rather than of either implementation, because both have
+ * to agree on it: the HTTP client puts the server's `code` on `ApiError`, and
+ * the demo's services carry a `code` on their own refusals. A screen that
+ * branches on `outside_window` then behaves the same against both, which is
+ * the point of the seam.
+ *
+ * Reading the shape rather than asking `instanceof` is deliberate. The error
+ * crossing a screen's `catch` may be an `ApiError`, a demo refusal, or — on a
+ * bad day — something React rethrew, and a screen should answer "do I know
+ * what this refusal is" without needing to know which of those it got.
+ *
+ * Why a code at all: the status puts every conflict in one bucket, and before
+ * this the punch card had to match the message text to decide whether to offer
+ * an attendance correction. That works until somebody rewords a sentence, and
+ * then it fails silently — the button simply stops appearing.
+ */
+export const errorCode = (e: unknown): string | undefined => {
+  const c = (e as { code?: unknown } | null)?.code;
+  return typeof c === 'string' ? c : undefined;
+};
+
+/**
+ * The structured context a refusal is *about*, read the same way.
+ *
+ * `outside_window` is the one this exists for: its message names the day to
+ * raise a correction for, which is enough to read and not enough to fill a
+ * form in with. The date travels beside the sentence as `detail.localDate`,
+ * in the shift's own timezone — not the browser's, which for anybody on hours
+ * measured in another zone is a different day for several hours of every one.
+ */
+export const errorDetail = (e: unknown): Record<string, unknown> | undefined => {
+  const d = (e as { detail?: unknown } | null)?.detail;
+  return d && typeof d === 'object' && !Array.isArray(d)
+    ? d as Record<string, unknown>
+    : undefined;
+};

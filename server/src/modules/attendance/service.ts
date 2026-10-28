@@ -30,10 +30,27 @@ import type { Caller, TenantClient } from '../../tenancy/context.ts';
 export class AttendanceError extends Error {
   readonly code: string;
 
-  constructor(message: string, code: string) {
+  /**
+   * What the screen needs in order to do something about it, structured.
+   *
+   * `outside_window` is the refusal this exists for. Its message already names
+   * the day to raise a correction for, which is enough for a person to read
+   * and not enough for a form to fill in — a screen that wanted to open the
+   * correction dialog on the right date had to parse the sentence, and a
+   * sentence is not an interface. So the date travels beside the message
+   * rather than inside it, and the message keeps saying it because the
+   * refusal still has to make sense on its own.
+   *
+   * Reaches the client as `detail` on the error body. Never anything a caller
+   * is not already entitled to: this is data the refusal is *about*.
+   */
+  readonly detail: Record<string, unknown> | undefined;
+
+  constructor(message: string, code: string, detail?: Record<string, unknown>) {
     super(message);
     this.name = 'AttendanceError';
     this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -1143,5 +1160,12 @@ async function workDateFor(
   throw new AttendanceError(
     `This is outside your shift window, so there is no shift to attach it to. `
     + `Request an attendance correction for ${local.localDate}.`,
-    'outside_window');
+    'outside_window',
+    /*
+     * The day in the *shift's* own zone, not the browser's. That is the whole
+     * point of `punchLocalDate`: the correction has to be raised for the day
+     * the person worked, and for anybody on hours measured in another zone the
+     * browser's calendar day is the wrong one twice a day.
+     */
+    { localDate: local.localDate, tz: local.timezone });
 }

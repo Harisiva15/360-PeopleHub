@@ -262,6 +262,27 @@ try {
       ok('    for the day the shift\'s own zone was on, not the browser\'s',
         /2026-10-20/.test(err?.message ?? ''), String(err?.message));
 
+      /*
+       * And the same day beside the sentence, structured.
+       *
+       * The message has to name it, because a refusal has to make sense on its
+       * own. But a screen cannot fill a form in from a sentence: the punch card
+       * offers the attendance correction at the moment of this refusal, on this
+       * day, and the only alternative to a field was parsing English — which
+       * breaks silently the first time somebody rewords the message.
+       *
+       * The zone matters as much as the date. `2026-10-20` here is what New
+       * York was on at `08:00Z`; the browser making the request was already on
+       * the 20th too, but at `2026-10-21T02:00Z` it would be on the 21st and
+       * New York still on the 20th. That is the whole class of bug this
+       * section exists to close, and it would walk straight back in through a
+       * screen that used its own clock to prefill the form.
+       */
+      ok('    and carries that day as a field, not only inside the sentence',
+        err?.detail?.localDate === '2026-10-20', JSON.stringify(err?.detail));
+      ok('    naming the zone it was measured in',
+        err?.detail?.tz === 'America/New_York', JSON.stringify(err?.detail?.tz));
+
       const rows = await rowsFor(emp);
       ok('10. and wrote nothing at all', rows.length === 0, JSON.stringify(rows));
     }

@@ -40,13 +40,52 @@ export class ApiError extends Error {
 
   readonly kind: ApiErrorKind;
 
-  constructor(status: number, message: string, kind: ApiErrorKind = 'http') {
+  /**
+   * The service's own refusal code, where the server sent one.
+   *
+   * `kind` above is about the transport — no session, unreachable, a renewal
+   * that did not land. This is about the refusal: `outside_window`,
+   * `already_in`, `no_punch_in`, `forbidden`. They are different questions and
+   * a screen usually wants the second one.
+   *
+   * Before this existed the only machine-readable thing a refusal carried was
+   * the status, which puts every 409 in one bucket, so the punch card had to
+   * match the message text to decide whether to offer an attendance
+   * correction. That works until somebody rewords a sentence, and then it
+   * fails silently — the button simply stops appearing.
+   *
+   * Undefined for a transport failure and for a 500, both of which have no
+   * service refusal behind them.
+   */
+  readonly code: string | undefined;
+
+  /** Structured context the refusal is about — see the server's `detailOf`. */
+  readonly detail: Record<string, unknown> | undefined;
+
+  constructor(
+    status: number,
+    message: string,
+    kind: ApiErrorKind = 'http',
+    code?: string,
+    detail?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.kind = kind;
+    this.code = code;
+    this.detail = detail;
   }
 }
+
+
+/** The structured context on an error, whatever threw it. */
+export const errorDetail = (e: unknown): Record<string, unknown> | undefined => {
+  const d = (e as { detail?: unknown } | null)?.detail;
+  return d && typeof d === 'object' && !Array.isArray(d)
+    ? d as Record<string, unknown>
+    : undefined;
+};
 
 /** Is this the one failure that must not be reported? See `announceFailure`. */
 export const isNoSessionError = (e: unknown): boolean =>
@@ -244,9 +283,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const payload: unknown = text ? JSON.parse(text) : undefined;
 
   if (!response.ok) {
-    const message = (payload as { error?: string } | undefined)?.error
-      ?? `Request failed (${response.status})`;
-    throw new ApiError(response.status, message);
+    const body = payload as {
+      error?: string; code?: string; detail?: Record<string, unknown>;
+    } | undefined;
+    const message = body?.error ?? `Request failed (${response.status})`;
+    throw new ApiError(response.status, message, 'http', body?.code, body?.detail);
   }
   return payload as T;
 }
