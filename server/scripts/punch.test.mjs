@@ -92,7 +92,7 @@ await withScratchTenant(db, async (ctx) => {
   };
   await acknowledgeLocationNotice(me);
 
-  const r = await punchIn(me, ctx.adminEmployeeId, today, {
+  const r = await punchIn(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at8,
   });
 
@@ -132,7 +132,7 @@ for (const [sent, want] of [
     const me = {
       role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
     };
-    const err = await refused(() => punchIn(me, ctx.adminEmployeeId, today, {
+    const err = await refused(() => punchIn(me, ctx.adminEmployeeId, {
       site: ctx.site, lat: null, lng: null, src: sent, at: at8,
     }));
     const [stored] = await row(ctx.tenant);
@@ -153,7 +153,7 @@ await withScratchTenant(db, async (ctx) => {
     role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
   /* Deliberately no acknowledgement. */
-  await punchIn(me, ctx.adminEmployeeId, today, {
+  await punchIn(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: 12.9911, lng: 80.2503, src: 'web', at: at8,
   });
   const [stored] = await row(ctx.tenant);
@@ -174,7 +174,7 @@ await withScratchTenant(db, async (ctx) => {
     `UPDATE site SET latitude = 12.9911, longitude = 80.2503, fence_radius_m = 250
       WHERE tenant_id = $1 AND code = $2`, [ctx.tenant, ctx.site]);
 
-  const inside = await punchIn(me, ctx.adminEmployeeId, today, {
+  const inside = await punchIn(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: 12.9912, lng: 80.2504, src: 'web', at: at8,
   });
   const [stored] = await row(ctx.tenant);
@@ -197,7 +197,7 @@ await withScratchTenant(db, async (ctx) => {
     `UPDATE site SET latitude = 12.9911, longitude = 80.2503, fence_radius_m = 250
       WHERE tenant_id = $1 AND code = $2`, [ctx.tenant, ctx.site]);
   /* Roughly 5 km away. */
-  await punchIn(me, ctx.adminEmployeeId, today, {
+  await punchIn(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: 13.0400, lng: 80.2503, src: 'web', at: at8,
   });
   const [stored] = await row(ctx.tenant);
@@ -217,10 +217,10 @@ await withScratchTenant(db, async (ctx) => {
   const me = {
     role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
-  await punchIn(me, ctx.adminEmployeeId, today, {
+  await punchIn(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at8,
   });
-  const out = await punchOut(me, ctx.adminEmployeeId, today, {
+  const out = await punchOut(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at18,
   });
   ok('8. punchOut sets the time', Boolean(out.outT), String(out.outT));
@@ -246,10 +246,10 @@ await withScratchTenant(db, async (ctx) => {
   const me = {
     role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
-  await punchIn(me, ctx.adminEmployeeId, today, {
+  await punchIn(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at8,
   });
-  const twice = await refused(() => punchIn(me, ctx.adminEmployeeId, today, {
+  const twice = await refused(() => punchIn(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at18,
   }));
   ok('11. punching in twice is refused', twice instanceof AttendanceError
@@ -262,14 +262,14 @@ await withScratchTenant(db, async (ctx) => {
   const me = {
     role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
-  const early = await refused(() => punchOut(me, ctx.adminEmployeeId, today, {
+  const early = await refused(() => punchOut(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at18,
   }));
   ok('12. punching out without punching in is refused',
     early instanceof AttendanceError && early.code === 'no_punch_in',
     `${early?.code}: ${early?.message}`);
 
-  const bad = await refused(() => punchIn(me, ctx.adminEmployeeId, today, {
+  const bad = await refused(() => punchIn(me, ctx.adminEmployeeId, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: '09:30',
   }));
   ok('13. a wall-clock time is refused as invalid, not as a 500',
@@ -295,7 +295,7 @@ await withScratchTenant(db, async (ctx) => {
   const employee = {
     role: 'employee', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
-  const notMine = await refused(() => punchIn(employee, other, today, {
+  const notMine = await refused(() => punchIn(employee, other, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at8,
   }));
   ok('14. an employee cannot punch somebody else in',
@@ -305,7 +305,7 @@ await withScratchTenant(db, async (ctx) => {
   const admin = {
     role: 'company_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
   };
-  const byAdmin = await refused(() => punchIn(admin, other, today, {
+  const byAdmin = await refused(() => punchIn(admin, other, {
     site: ctx.site, lat: null, lng: null, src: 'web', at: at8,
   }));
   ok('    while an admin can, which is what the exception is for',

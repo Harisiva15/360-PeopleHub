@@ -426,10 +426,17 @@ async function reload(db: TenantClient, empId: string, date: string): Promise<At
   return toRecord(rows[0]);
 }
 
+/**
+ * Punch in.
+ *
+ * Takes no date. The day a punch belongs to is `shiftInstanceAt`'s answer,
+ * derived from the instant in the shift's own zone — see "which day a punch
+ * belongs to" below for why the client's calendar day was wrong twice a day
+ * for anyone working a shift measured in another zone.
+ */
 export async function punchIn(
   caller: Caller,
   empId: string,
-  date: string,
   at: PunchAt,
 ): Promise<AttRecord> {
   if (empId !== caller.employeeId && !reaches(caller, 'attendance', 'read', 'all')) {
@@ -439,6 +446,7 @@ export async function punchIn(
   const when = instantOf(at.at);
 
   return withTenant(caller, async (db) => {
+    const date = await workDateFor(db, empId, when);
     /*
      * No notice, no position. The punch itself goes through either way — an
      * employee who has not read a dialog still worked the day, and refusing it
@@ -491,10 +499,18 @@ export async function punchIn(
   });
 }
 
+/**
+ * Punch out.
+ *
+ * Takes no date, for the same reason as `punchIn` — and this is the direction
+ * that was actually broken: a punch out at 03:30 IST on a US shift arrived
+ * with the browser's "tomorrow", found no `punch_in` under that date, and
+ * refused with "you have not checked in today". The shift could not be closed
+ * at all.
+ */
 export async function punchOut(
   caller: Caller,
   empId: string,
-  date: string,
   at: PunchAt,
 ): Promise<AttRecord> {
   if (empId !== caller.employeeId && !reaches(caller, 'attendance', 'read', 'all')) {
@@ -504,6 +520,7 @@ export async function punchOut(
   const when = instantOf(at.at);
 
   return withTenant(caller, async (db) => {
+    const date = await workDateFor(db, empId, when);
     /*
      * No notice, no position. The punch itself goes through either way — an
      * employee who has not read a dialog still worked the day, and refusing it
@@ -843,4 +860,59 @@ export async function shiftInstanceAt(
     shiftStartLocal: r.shift_start_local,
     timezone: r.tz,
   };
+}
+
+/**
+ * The punch's own calendar day in the shift's zone, whether or not any shift
+ * instance contains it.
+ *
+ * This is the date an attendance correction should be raised for when a punch
+ * falls outside every window: the employee worked on *some* day, and it is the
+ * day the shift's own zone was on at that moment — not the day the browser
+ * happened to be on, which is the mistake this whole section exists to undo.
+ *
+ * It cannot reuse `SHIFT_DATE`, whose `WHERE` discards exactly the rows this
+ * needs; `EFFECTIVE_SHIFT` always resolves to a window, so the zone is always
+ * available even when nothing matched.
+ */
+const PUNCH_LOCAL_DATE = `
+  WITH ${EFFECTIVE_SHIFT}
+  SELECT to_char((($2::timestamptz) AT TIME ZONE timezone)::date, 'YYYY-MM-DD') AS local_date,
+         timezone AS tz
+    FROM eff`;
+
+export async function punchLocalDate(
+  db: TenantClient, employeeId: string, instant: string,
+): Promise<{ localDate: string; timezone: string } | null> {
+  const { rows } = await db.query<{ local_date: string; tz: string }>(
+    PUNCH_LOCAL_DATE, [employeeId, instant]);
+  const r = rows[0];
+  return r ? { localDate: r.local_date, timezone: r.tz } : null;
+}
+
+/**
+ * Which day to file a punch under, or a refusal that says what to do instead.
+ *
+ * The one place `punchIn` and `punchOut` decide a work date, so the two cannot
+ * disagree — and they did disagree before, which is how a shift could be
+ * opened under one date and then not be closable under another.
+ *
+ * The refusal is deliberate and narrow. `EFFECTIVE_SHIFT` always resolves to
+ * a window, so "no shift" and "no schedule" can no longer refuse a punch; the
+ * only thing left that can is a punch genuinely nowhere near a shift — more
+ * than two hours before one starts, or more than four after one ends. That is
+ * a correction, not a punch, so the message names the day to raise it for.
+ */
+async function workDateFor(
+  db: TenantClient, empId: string, instant: string,
+): Promise<string> {
+  const inst = await shiftInstanceAt(db, empId, instant);
+  if (inst) return inst.workDate;
+
+  const local = await punchLocalDate(db, empId, instant);
+  if (!local) throw new AttendanceError('no such employee', 'not_found');
+  throw new AttendanceError(
+    `This is outside your shift window, so there is no shift to attach it to. `
+    + `Request an attendance correction for ${local.localDate}.`,
+    'outside_window');
 }

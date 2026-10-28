@@ -411,15 +411,25 @@ const routes: Route[] = [
     pattern: '/attendance/:empId/:date',
     handler: (c, _r, p) => attendanceForDay(c, p.empId!, p.date!),
   },
+  /*
+   * `:date` stays in the pattern and is ignored.
+   *
+   * The day a punch belongs to is the server's to decide — see
+   * `shiftInstanceAt` — and the client sent the browser's calendar day, which
+   * is a different day from the shift's twice a day for anyone on a shift
+   * measured in another zone. Keeping the segment means every client already
+   * in the field keeps working and starts being right; removing it would have
+   * been a breaking change to fix a bug those clients cannot see.
+   */
   {
     method: 'POST',
     pattern: '/attendance/:empId/:date/punch-in',
-    handler: (c, _r, p, body) => punchIn(c, p.empId!, p.date!, (body ?? {}) as never),
+    handler: (c, _r, p, body) => punchIn(c, p.empId!, (body ?? {}) as never),
   },
   {
     method: 'POST',
     pattern: '/attendance/:empId/:date/punch-out',
-    handler: (c, _r, p, body) => punchOut(c, p.empId!, p.date!, (body ?? {}) as never),
+    handler: (c, _r, p, body) => punchOut(c, p.empId!, (body ?? {}) as never),
   },
   {
     method: 'POST',
