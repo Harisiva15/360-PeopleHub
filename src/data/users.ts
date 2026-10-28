@@ -11,6 +11,7 @@ import './security';
 import { addDays, TODAY, ymd } from '../lib/dates';
 import { chance, pick, ri, uid } from '../lib/rng';
 import { ACTIVE, EMAP, EMP } from './employees';
+import { shiftCodeForSite } from './shifts';
 import type { AppRole } from '../types/employee';
 
 /**
@@ -54,6 +55,8 @@ export interface UserAccount {
   joinedOn: string;
   role: AppRole;
   status: UserStatus;
+  /** The hours their attendance is measured against, by code. */
+  shift: string;
 
   /* ---- the account's own history ---- */
   createdOn: string;
@@ -115,6 +118,7 @@ export const USERS: UserAccount[] = [];
       dept: e.dept,
       designation: e.designation,
       site: e.site,
+      shift: shiftCodeForSite(e.site),
       managerId: e.managerId,
       empType: e.empType,
       joinedOn: e.doj,
@@ -222,6 +226,7 @@ export const USERS: UserAccount[] = [];
       dept: e.dept,
       designation: e.designation,
       site: e.site,
+      shift: shiftCodeForSite(e.site),
       managerId: e.managerId,
       empType: e.empType,
       joinedOn: e.doj,

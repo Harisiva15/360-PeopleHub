@@ -132,3 +132,18 @@ export function useTenantLoginHistory(enabled = true) {
  * effective-dated and lives on their own record.
  */
 export const useWorkSchedules = () => useQuery((s) => s.schedules.workSchedules(), []);
+
+/**
+ * The shift profiles an account can be put on.
+ *
+ * A separate read from the working patterns above, because they answer
+ * different questions: the pattern says which *days* somebody is expected, the
+ * shift says which *hours* those days are measured against. Somebody in
+ * Chennai on US hours is on a Monday-to-Friday pattern and a New York shift.
+ *
+ * Offered on an edit as well as at creation, unlike the pattern — a shift is a
+ * single current assignment on the employee row, with no history table to
+ * rewrite, and the history that matters is already on the attendance rows,
+ * each stamped with what it was measured against at punch time.
+ */
+export const useShiftProfiles = () => useQuery((s) => s.shifts.profiles(), []);

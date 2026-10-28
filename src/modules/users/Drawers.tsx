@@ -24,8 +24,8 @@ import type { AppRole } from '../../types/employee';
 import { SignInTable } from './SignIns';
 import type { UserAccount, UserDraft } from '../../services';
 import {
-  useCreateUser, useLoginHistory, useNextCode, useUpdateUser, useVisiblePeople,
-  useWorkSchedules,
+  useCreateUser, useLoginHistory, useNextCode, useShiftProfiles, useUpdateUser,
+  useVisiblePeople, useWorkSchedules,
 } from './data';
 import { ROLE_BLURB, ROLE_LABEL, RoleBadge, UserStatusBadge, whenOf } from './shared';
 
@@ -75,6 +75,7 @@ export function UserForm({
   const sites = useSites();
   const create = useCreateUser();
   const schedules = useWorkSchedules();
+  const profiles = useShiftProfiles();
   const update = useUpdateUser();
   const nextCode = useNextCode();
   const depts = useDepartments();
@@ -96,6 +97,7 @@ export function UserForm({
   const [role, setRole] = useState<AppRole>(existing?.role ?? 'employee');
   const [invite, setInvite] = useState(true);
   const [workScheduleCode, setWorkScheduleCode] = useState('');
+  const [shiftCode, setShiftCode] = useState(existing?.shift ?? '');
 
   /*
    * Only patterns the server would accept for a new assignment. An inactive one
@@ -103,6 +105,45 @@ export function UserForm({
    * failure — and the service remains the authority either way.
    */
   const patterns = (schedules.data ?? []).filter((w) => w.active);
+
+  /*
+   * The shift profiles on offer, and which one the server would pick.
+   *
+   * Active only, for the same reason the patterns are: an inactive profile is
+   * refused by `assignShift`, so offering it would be offering a failure.
+   * Whoever is already on a withdrawn one keeps it, and the select shows it —
+   * see `current` below — because a field that silently drops the value it was
+   * given is worse than one that shows an awkward truth.
+   */
+  const shifts = (profiles.data ?? []).filter((p) => p.active);
+  const current = (profiles.data ?? []).find((p) => p.code === existing?.shift);
+
+  /*
+   * What the server defaults to when the form names no shift: the profile whose
+   * *code* matches the site's country. `region` is the second try, because the
+   * two do not always agree — the United Kingdom's ISO country is `GB` and its
+   * profile is coded `UK` — and the point of showing this at all is that the
+   * administrator sees the answer before saving rather than discovering it in
+   * somebody's attendance a fortnight later.
+   */
+  const country = sites.byId(site)?.country;
+  const byCountry = country
+    ? shifts.find((p) => p.code === country) ?? shifts.find((p) => p.region === country)
+    : undefined;
+
+  /*
+   * Changing somebody's hours is its own permission and its own refusal, and
+   * neither is this form's to invent — `assignShift` decides. What the form
+   * does is not offer a control whose only outcome is a refusal:
+   *
+   *   `shifts write team` is the gate, so an employee never sees the field;
+   *   nobody moves their own shift, so it is not offered on your own account.
+   *
+   * On creation it is always offered: there is no "own account" yet, and
+   * anybody who may raise an account may say which hours the person works.
+   */
+  const mayMove = !existing
+    || (app.reaches('shifts', 'write', 'team') && existing.empId !== app.meId);
 
   /*
    * The roles this caller may hand out. An admin is the only one who makes one.
@@ -136,6 +177,18 @@ export function UserForm({
        * change is effective-dated through the employee's own record.
        */
       ...(existing ? {} : { workScheduleCode: workScheduleCode || null }),
+      /*
+       * Sent on both paths, unlike the work schedule — a shift is one current
+       * assignment on the employee row, not an effective-dated period, so there
+       * is no history for a second editor to quietly rewrite.
+       *
+       * Omitted entirely when the field was not offered, so a form that could
+       * not show the control cannot send a value for it either. The server
+       * drops an unchanged one before it reaches the shift guard, which is what
+       * lets an administrator edit their own phone number without being told
+       * they may not change their own shift.
+       */
+      ...(mayMove && shiftCode ? { shiftCode } : {}),
     };
     try {
       if (existing) {
@@ -281,6 +334,68 @@ export function UserForm({
             <input className="input" type="date" value={joinedOn}
               onChange={(e) => setJoinedOn(e.target.value)} />
           </div>
+
+          {/*
+            * Which hours their attendance is measured against.
+            *
+            * Beside the location rather than beside the joining date, because
+            * the two are read together: the default comes from the site's
+            * country, and the whole reason this field exists is the person for
+            * whom that default is wrong — somebody at an Indian site working
+            * New York hours, whose every punch read as most of a day late
+            * while the only way to say otherwise was a screen on the other side
+            * of the menu.
+            */}
+          {mayMove && (
+            <div className="field">
+              <label htmlFor="user-shift">Shift</label>
+              {shifts.length || current ? (
+                <>
+                  <select id="user-shift" className="input" value={shiftCode}
+                    aria-describedby="user-shift-hint"
+                    onChange={(e) => setShiftCode(e.target.value)}>
+                    <option value="">
+                      {byCountry
+                        ? `From the location — ${byCountry.name}`
+                        : 'From the location'}
+                    </option>
+                    {/*
+                      * The profile they are on, even when it has been withdrawn
+                      * from use. `assignShift` refuses a withdrawn one for a
+                      * *new* assignment and keeps whoever is already on it, so
+                      * leaving it out of the list would make the select render
+                      * blank for them and a save would then move them off it by
+                      * accident.
+                      */}
+                    {(current && !current.active ? [current, ...shifts] : shifts).map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.name} ({p.start}–{p.end}
+                        {p.active ? '' : ', withdrawn'})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="hint" id="user-shift-hint">
+                    {shiftCode
+                      ? (
+                        <>
+                          Their attendance is measured against these hours, in the
+                          shift&rsquo;s own timezone. Days they have already worked
+                          keep the hours they were measured against at the time.
+                        </>
+                      )
+                      : byCountry
+                        ? <>Left to the location, {sites.name(site)} gives them {byCountry.name}.</>
+                        : <>Left to the location, the server picks the profile matching its country.</>}
+                  </div>
+                </>
+              ) : (
+                <div className="hint">
+                  No shift has been set up yet. Add one under Shifts &amp; work
+                  schedules — attendance has to have hours to measure against.
+                </div>
+              )}
+            </div>
+          )}
 
           {/*
             * Which days they work, chosen here because this is where the joining
@@ -440,6 +555,12 @@ export function UserProfile({ u }: { u: UserAccount }) {
           ['Department', u.dept],
           ['Designation', u.designation],
           ['Location', u.site],
+          /*
+           * Beside the location, because the question somebody opens this to
+           * answer is "is this person on the right hours for where they sit" —
+           * which is precisely the pairing that goes wrong.
+           */
+          ['Shift', u.shift || '—'],
           ['Manager', u.managerId ? dir.name(u.managerId) : '—'],
           ['Employment type', u.empType],
           ['Joining date', fmtD(u.joinedOn)],

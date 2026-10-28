@@ -2655,6 +2655,20 @@ export interface UserDraft {
    * assignment from the joining date, not from now.
    */
   workScheduleCode?: string | null;
+  /**
+   * The hours their attendance is measured against, by code.
+   *
+   * Omitted leaves the server's default alone: the profile whose code
+   * matches the site's country, which is right for everybody who works
+   * where they sit. It is here for the people who do not — somebody in Chennai
+   * on US hours is on a US shift at an Indian site, and measured against IST
+   * every shift of theirs reads as most of a day late.
+   *
+   * On an edit this goes through the same writer the roster screen uses, so
+   * the rules are one set: an active profile only, the caller's own line only
+   * for a manager, and never your own shift.
+   */
+  shiftCode?: string | null;
 }
 
 export type UserPatch = Partial<Omit<UserDraft, 'sendInvitation'>>;

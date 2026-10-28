@@ -171,6 +171,34 @@ await withScratchTenant(db, async (ctx) => {
   const find = async (code) => (await shifts.listShifts(A)).find((s) => s.code === code);
 
   /*
+   * Somebody other than the caller to move around.
+   *
+   * Every assertion below used `ctx.adminEmployeeId` as both the caller and the
+   * subject, because it was to hand — not because an administrator moving their
+   * own shift was the behaviour being asserted. `assignShift` now refuses that
+   * outright (your own hours decide what your own attendance is measured
+   * against, and the audit entry would name you as actor and subject both), so
+   * the convenience had to go. This is the subject; assertion 84 is the rule.
+   *
+   * `manager_id` is null deliberately: it puts this person outside every
+   * manager's line, which is what assertion 82 needs.
+   */
+  const subjectId = (await db.query(
+    `INSERT INTO employee (tenant_id, code, full_name, work_email, status, app_role,
+                           department_id, site_id, legal_entity_id, shift_id,
+                           manager_id, joined_on)
+     SELECT $1, $2, 'ZZ Shift Subject', $3, 'active', 'employee',
+            (SELECT id FROM department WHERE tenant_id = $1 LIMIT 1),
+            (SELECT id FROM site WHERE tenant_id = $1 LIMIT 1),
+            (SELECT id FROM legal_entity WHERE tenant_id = $1 LIMIT 1),
+            (SELECT id FROM shift WHERE tenant_id = $1 AND code = 'IN'),
+            NULL, CURRENT_DATE
+     RETURNING id`,
+    [ctx.tenant, `ZS${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+      `zz-subject-${Math.random().toString(36).slice(2, 9)}@360.technology`]))
+    .rows[0].id;
+
+  /*
    * Values chosen so the assertion cannot pass against a hard-coded default: 37
    * and 3 are neither the schema's 60/10 nor the old constant's 45/20.
    */
@@ -317,12 +345,12 @@ await withScratchTenant(db, async (ctx) => {
     typeof (await shifts.shiftCoverage(A))['IN'] === 'number');
 
   /* setEmployeeShift is untouched by this phase; asserted so a regression shows. */
-  const movedEmp = await shifts.setEmployeeShift(A, ctx.adminEmployeeId, 'IN');
+  const movedEmp = await shifts.setEmployeeShift(A, subjectId, 'IN');
   ok('30. an admin may still move somebody onto a profile', movedEmp.shift === 'IN');
   ok('    and an employee still may not',
-    (await attempt(() => shifts.setEmployeeShift(EMP, ctx.adminEmployeeId, 'IN'))) !== null);
+    (await attempt(() => shifts.setEmployeeShift(EMP, subjectId, 'IN'))) !== null);
   ok('    and an unknown code is still refused',
-    (await attempt(() => shifts.setEmployeeShift(A, ctx.adminEmployeeId, 'NOPE'))) !== null);
+    (await attempt(() => shifts.setEmployeeShift(A, subjectId, 'NOPE'))) !== null);
 
   await withScratchTenant(db, async (other) => {
     const B = {
@@ -571,9 +599,9 @@ console.log('\nan admin may register a profile\n');
 
   console.log('\nwithdrawing a profile keeps the people on it\n');
 
-  await shifts.setEmployeeShift(A, ctx.adminEmployeeId, 'ZZNEW');
+  await shifts.setEmployeeShift(A, subjectId, 'ZZNEW');
   const before = (await db.query(
-    'SELECT shift_id FROM employee WHERE id = $1', [ctx.adminEmployeeId])).rows[0].shift_id;
+    'SELECT shift_id FROM employee WHERE id = $1', [subjectId])).rows[0].shift_id;
 
   const off = await shifts.setShiftActive(A, 'ZZNEW', false);
   ok('65. an admin may withdraw a profile', off.active === false);
@@ -581,20 +609,20 @@ console.log('\nan admin may register a profile\n');
     (await find('ZZNEW')) !== undefined,
     'an assigned employee and a historical punch both still have to resolve');
   ok('67. the employee still points at it',
-    (await db.query('SELECT shift_id FROM employee WHERE id = $1', [ctx.adminEmployeeId]))
+    (await db.query('SELECT shift_id FROM employee WHERE id = $1', [subjectId]))
       .rows[0].shift_id === before,
     'deactivating must not move anybody');
   ok('68. and the row was not deleted',
     (await db.query("SELECT count(*)::int n FROM shift WHERE code = 'ZZNEW'")).rows[0].n === 1);
 
   await refusedShift('69. a withdrawn profile cannot be newly assigned',
-    () => shifts.setEmployeeShift(A, ctx.adminEmployeeId, 'ZZNEW'),
+    () => shifts.setEmployeeShift(A, subjectId, 'ZZNEW'),
     /not in use and cannot be assigned/);
 
   const on = await shifts.setShiftActive(A, 'ZZNEW', true);
   ok('70. and it can be reinstated', on.active === true);
   ok('    after which it can be assigned again',
-    (await shifts.setEmployeeShift(A, ctx.adminEmployeeId, 'ZZNEW')).shift === 'ZZNEW');
+    (await shifts.setEmployeeShift(A, subjectId, 'ZZNEW')).shift === 'ZZNEW');
   ok('71. setting the state it already has is a no-op, not a refusal',
     (await shifts.setShiftActive(A, 'ZZNEW', true)).active === true);
   await refusedShift('72. a profile that does not exist cannot be withdrawn',
@@ -621,8 +649,8 @@ console.log('\nan admin may register a profile\n');
 
   console.log('\nmoving somebody between profiles is recorded\n');
 
-  await shifts.setEmployeeShift(A, ctx.adminEmployeeId, 'IN');
-  const movedTo = await shifts.setEmployeeShift(A, ctx.adminEmployeeId, 'ZZNEW');
+  await shifts.setEmployeeShift(A, subjectId, 'IN');
+  const movedTo = await shifts.setEmployeeShift(A, subjectId, 'ZZNEW');
   ok('75. an admin may move somebody', movedTo.shift === 'ZZNEW');
 
   const moveRow = (await db.query(
@@ -640,10 +668,10 @@ console.log('\nan admin may register a profile\n');
     JSON.stringify(moveRow?.detail?.to));
 
   await refusedShift('79. an employee still cannot move anybody',
-    () => shifts.setEmployeeShift(EMP, ctx.adminEmployeeId, 'IN'),
+    () => shifts.setEmployeeShift(EMP, subjectId, 'IN'),
     /only a manager or admin/);
   await refusedShift('80. an unknown profile is still refused',
-    () => shifts.setEmployeeShift(A, ctx.adminEmployeeId, 'ZZGONE'), /no such shift/);
+    () => shifts.setEmployeeShift(A, subjectId, 'ZZGONE'), /no such shift/);
 
   /* A manager may move their own line and nobody else's. */
   const reportId = (await db.query(
@@ -667,7 +695,7 @@ console.log('\nan admin may register a profile\n');
   ok('81. a manager may move somebody in their own line',
     (await shifts.setEmployeeShift(MGR2, reportId, 'ZZNEW')).shift === 'ZZNEW');
   await refusedShift('82. and not somebody outside it',
-    () => shifts.setEmployeeShift(MGR2, ctx.adminEmployeeId, 'IN'),
+    () => shifts.setEmployeeShift(MGR2, subjectId, 'IN'),
     /not in your team/);
   await refusedShift('83. a withdrawn profile is refused for a manager too',
     () => (async () => {
@@ -675,6 +703,73 @@ console.log('\nan admin may register a profile\n');
       return shifts.setEmployeeShift(MGR2, reportId, 'ZZDEF');
     })(), /not in use/);
   await shifts.setShiftActive(A, 'ZZDEF', true);
+
+  /* ---------------------------------------------------------------- *
+   * Nobody moves their own shift, and the gate asks about writing
+   * ---------------------------------------------------------------- */
+
+  console.log('\nand nobody moves their own hours\n');
+
+  /*
+   * The one rule here that does not come out of the scopes.
+   *
+   * Your shift decides the late threshold your own punches are judged by, the
+   * window they have to fall inside and the hours payroll expects of you. A
+   * company administrator who can move their own has no second pair of eyes on
+   * it, because the audit entry names them as both actor and subject — so this
+   * is refused for every role, including the one that may do everything else.
+   */
+  await refusedShift('84. a company administrator cannot move their own shift',
+    () => shifts.setEmployeeShift(A, ctx.adminEmployeeId, 'ZZNEW'),
+    /cannot change your own shift/);
+  await refusedShift('    nor can a manager',
+    () => shifts.setEmployeeShift(MGR2, ctx.adminEmployeeId, 'ZZNEW'),
+    /cannot change your own shift/);
+  ok('    and the refusal left the shift alone',
+    (await db.query('SELECT sh.code FROM employee e JOIN shift sh ON sh.id = e.shift_id WHERE e.id = $1',
+      [ctx.adminEmployeeId])).rows[0].code !== 'ZZNEW');
+
+  /*
+   * The gate asks `shifts write team`, not `shifts read team`.
+   *
+   * For this module the two admit the same people — the policy grants the
+   * manager layer `['team', 'team', 'team']` — so this assertion is not
+   * protecting against today's scopes. It fixes which question is being asked,
+   * so that narrowing `shifts read` later cannot widen who may move somebody
+   * onto different hours. finance_admin is the discriminator: `shifts` is `NO`
+   * for that layer on both verbs, so it is refused either way, while hr_admin
+   * holds write all and must still be able to.
+   */
+  const HR = {
+    role: 'hr_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+  };
+  const FIN = {
+    role: 'finance_admin', hasReports: false, tenantId: ctx.tenant, employeeId: ctx.adminEmployeeId, userId: null,
+  };
+  ok('85. an HR administrator may move somebody',
+    (await shifts.setEmployeeShift(HR, subjectId, 'IN')).shift === 'IN');
+  await refusedShift('    and a finance administrator may not',
+    () => shifts.setEmployeeShift(FIN, subjectId, 'ZZNEW'),
+    /only a manager or admin/);
+
+  /*
+   * The move carries the day it took effect.
+   *
+   * Immediate, so the date is the server's today — there is no scheduler that
+   * would promote a future-dated move, and a record naming a date nothing acts
+   * on would be worse than no record. What each individual day was *measured*
+   * against is a different fact and lives on the attendance row, which is
+   * stamped with its shift at punch time.
+   */
+  await shifts.setEmployeeShift(A, subjectId, 'ZZNEW');
+  const effRow = (await db.query(
+    `SELECT detail FROM audit_log
+      WHERE tenant_id = $1 AND action = 'employee_shift_changed'
+      ORDER BY occurred_at DESC, id DESC LIMIT 1`, [ctx.tenant])).rows[0];
+  const today = (await db.query('SELECT current_date::text AS d')).rows[0].d;
+  ok('86. the entry records the day the move took effect',
+    effRow?.detail?.effective === today,
+    `${effRow?.detail?.effective} vs ${today}`);
 
   /* ---------------------------------------------------------------- *
    * Audit for the configuration changes

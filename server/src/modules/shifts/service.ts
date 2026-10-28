@@ -544,64 +544,143 @@ export async function shiftCoverage(caller: Caller): Promise<Record<string, numb
  * now. Assigning a shift for one day is what `roster_entry` was for before
  * 0015 dropped it, and there is nowhere to put such a row.
  */
+/**
+ * The id of a shift somebody may be put on, by code.
+ *
+ * Active only. A withdrawn profile keeps the people already on it — that is
+ * what `setShiftActive` promises — but it is not offered for a new assignment,
+ * which is the convention locations and business units already follow.
+ *
+ * Extracted so that the two doors onto `employee.shift_id` cannot disagree
+ * about which profiles are assignable: this one, and the Shift field on the
+ * account form, which reaches it through `createUser` before there is an
+ * employee row to move.
+ */
+export async function assignableShiftId(
+  db: TenantClient,
+  code: string,
+): Promise<string> {
+  const wanted = code.trim().toUpperCase();
+  const { rows } = await db.query<{ id: string; active: boolean }>(
+    'SELECT id, active FROM shift WHERE code = $1', [wanted]);
+  if (!rows[0]) throw new ShiftError(`no such shift: ${wanted}`, 'not_found');
+  if (!rows[0].active) {
+    throw new ShiftError(
+      `${wanted} is not in use and cannot be assigned — activate it first`, 'invalid');
+  }
+  return rows[0].id;
+}
+
+/**
+ * Move one employee onto a different shift, inside the caller's transaction.
+ *
+ * The one writer for `employee.shift_id`. `setEmployeeShift` is this with a
+ * transaction around it, and `updateUser` calls it when the Shift field on the
+ * account form changed — so the rules below are the same rules whichever screen
+ * you arrived by, and a move leaves one audit entry rather than two spellings
+ * of one.
+ *
+ * ## The gate asks about writing
+ *
+ * It asked `shifts read team`: a read scope standing in front of a write. For
+ * this module the two admit the same set — the policy grants the manager layer
+ * `['team', 'team', 'team']`, so read-team and write-team are the same people —
+ * which is why it went unnoticed, and is exactly the shape that was an open
+ * door in `users`. Asking the write question costs nothing here and stops a
+ * future widening of `shifts read` from quietly widening who may move somebody
+ * onto different hours.
+ *
+ * ## Nobody moves themselves
+ *
+ * Your own shift decides what your own attendance is measured against: the
+ * late threshold, the window a punch has to fall inside, the hours payroll
+ * expects. Somebody who can move their own shift can excuse their own lateness
+ * after the fact, and there is no second pair of eyes on it, because the audit
+ * entry names them as both the actor and the subject. So this is refused for
+ * everybody including a company administrator — it costs them one message to a
+ * colleague, and it is the only rule here that cannot be reconstructed from
+ * the scopes.
+ */
+export async function assignShift(
+  db: TenantClient,
+  caller: Caller,
+  empId: string,
+  shiftCode: string,
+): Promise<{ from: string | null; to: string }> {
+  if (!reaches(caller, 'shifts', 'write', 'team')) {
+    throw new ShiftError('only a manager or admin may change a shift', 'forbidden');
+  }
+  if (empId === caller.employeeId) {
+    throw new ShiftError(
+      'You cannot change your own shift — your hours decide what your own '
+      + 'attendance is measured against. Ask another administrator.',
+      'forbidden');
+  }
+
+  const wanted = shiftCode.trim().toUpperCase();
+
+  const shiftId = await assignableShiftId(db, wanted);
+
+  if (caller.hasReports) {
+    const mine = await db.query(LINE_SQL, [caller.employeeId, empId]);
+    if (!mine.rowCount) throw new ShiftError('that person is not in your team', 'forbidden');
+  }
+
+  /*
+   * The profile they are leaving, read before the write so the audit row can say
+   * what changed rather than only what it became. Doubles as the existence check.
+   */
+  const { rows: [was] } = await db.query<{
+    employee_code: string; shift_code: string | null; today: string;
+  }>(
+    `SELECT e.code AS employee_code, sh.code AS shift_code,
+            current_date::text AS today
+       FROM employee e LEFT JOIN shift sh ON sh.id = e.shift_id
+      WHERE e.id = $1`, [empId]);
+  if (!was) throw new ShiftError('no such employee', 'not_found');
+
+  await db.query('UPDATE employee SET shift_id = $2 WHERE id = $1', [empId, shiftId]);
+
+  /*
+   * Recorded against the shift, because that is the subject this module shapes,
+   * with the employee named in the detail. Moving somebody between working hours
+   * decides what they are measured against, and the screen already claims it is
+   * recorded — until now it was not.
+   */
+  if (was.shift_code !== wanted) {
+    await shiftAudit(db, caller, 'employee_shift_changed', wanted, {
+      employee: was.employee_code,
+      employeeId: empId,
+      from: was.shift_code ?? null,
+      to: wanted,
+      /*
+       * The day the move takes effect, which is the server's today because
+       * the move is immediate — there is no scheduler that would promote a
+       * future-dated one, and a record claiming a date nothing acts on is
+       * worse than no record.
+       *
+       * What each individual day was *measured* against is not this: it is
+       * `attendance.shift_id`, stamped on the row at punch time. So moving
+       * somebody never reinterprets a day they already worked, and this
+       * entry is the answer to "when did they move", not to "which hours was
+       * Tuesday judged by".
+       */
+      effective: was.today,
+    });
+  }
+
+  return { from: was.shift_code ?? null, to: wanted };
+}
+
+/** `assignShift` with a transaction around it, for the roster screen's PUT. */
 export async function setEmployeeShift(
   caller: Caller,
   empId: string,
   shiftCode: string,
 ): Promise<{ empId: string; shift: string }> {
-  if (!reaches(caller, 'shifts', 'read', 'team')) {
-    throw new ShiftError('only a manager or admin may change a shift', 'forbidden');
-  }
-
-  const wanted = shiftCode.trim().toUpperCase();
-
   return withTenant(caller, async (db) => {
-    /*
-     * Active only. A withdrawn profile keeps the people already on it — that is
-     * what `setShiftActive` promises — but it is not offered for a new assignment,
-     * which is the convention locations and business units already follow.
-     */
-    const s = await db.query(
-      'SELECT id, active FROM shift WHERE code = $1', [wanted]);
-    if (!s.rows[0]) throw new ShiftError(`no such shift: ${wanted}`, 'not_found');
-    if (!s.rows[0].active) {
-      throw new ShiftError(
-        `${wanted} is not in use and cannot be assigned — activate it first`, 'invalid');
-    }
-
-    if (caller.hasReports) {
-      const mine = await db.query(LINE_SQL, [caller.employeeId, empId]);
-      if (!mine.rowCount) throw new ShiftError('that person is not in your team', 'forbidden');
-    }
-
-    /*
-     * The profile they are leaving, read before the write so the audit row can say
-     * what changed rather than only what it became. Doubles as the existence check.
-     */
-    const { rows: [was] } = await db.query(
-      `SELECT e.code AS employee_code, sh.code AS shift_code
-         FROM employee e LEFT JOIN shift sh ON sh.id = e.shift_id
-        WHERE e.id = $1`, [empId]);
-    if (!was) throw new ShiftError('no such employee', 'not_found');
-
-    await db.query('UPDATE employee SET shift_id = $2 WHERE id = $1', [empId, s.rows[0].id]);
-
-    /*
-     * Recorded against the shift, because that is the subject this module shapes,
-     * with the employee named in the detail. Moving somebody between working hours
-     * decides what they are measured against, and the screen already claims it is
-     * recorded — until now it was not.
-     */
-    if (was.shift_code !== wanted) {
-      await shiftAudit(db, caller, 'employee_shift_changed', wanted, {
-        employee: was.employee_code,
-        employeeId: empId,
-        from: was.shift_code ?? null,
-        to: wanted,
-      });
-    }
-
-    return { empId, shift: wanted };
+    const moved = await assignShift(db, caller, empId, shiftCode);
+    return { empId, shift: moved.to };
   });
 }
 

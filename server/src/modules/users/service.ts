@@ -31,6 +31,7 @@ import { openLeaveBalances } from '../people/provision.ts';
 /* One employment-history writer, shared with provisioning and exits. */
 import { recordEmployment, reasonForChange, termsOf } from '../people/employment.ts';
 import { assignInitialSchedule } from '../schedules/service.ts';
+import { assignShift, assignableShiftId } from '../shifts/service.ts';
 import { authAdmin, inviteRedirect } from '../../auth/adminApi.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { ROLES, grantNeedsAuthority, mayAssignRole } from '../../auth/policy.ts';
@@ -81,6 +82,8 @@ export interface UserAccount {
   code: string; dept: string; designation: string; site: string;
   managerId: string | null; empType: string; joinedOn: string;
   role: Role; status: string;
+  /** The hours their attendance is measured against, by code. */
+  shift: string;
   createdOn: string; createdById: string | null;
   modifiedOn: string | null; modifiedById: string | null;
   lastLoginAt: string | null; invitedCount: number; inviteSentAt: string | null;
@@ -111,6 +114,23 @@ export interface UserDraft {
    * them unassigned rather than defaulted. Validated against this tenant.
    */
   workScheduleCode?: string | null | undefined;
+  /**
+   * The hours their attendance is measured against, by code.
+   *
+   * Omitted leaves `createUser`'s country default alone — the shift whose code
+   * matches the site's country, which is the right answer for everybody who
+   * works where they sit. It is there for the people who do not: somebody in
+   * Chennai on US hours is on a US shift at an Indian site, and until this
+   * field existed the only way to say so was the roster screen, which an
+   * administrator setting up an account has no reason to visit.
+   *
+   * On an edit it goes through `assignShift`, the roster screen's own writer,
+   * so the rules and the audit entry are the same by either door. Unchanged
+   * values are dropped before that call rather than passed through it: the
+   * form posts every field, and a manager editing a report's phone number
+   * must not be refused by a shift guard they never touched.
+   */
+  shiftCode?: string | null | undefined;
 }
 
 export type UserPatch = Partial<Omit<UserDraft, 'sendInvitation'>>;
@@ -128,7 +148,7 @@ interface Row {
   id: string; employee_id: string | null; role: Role; status: string;
   full_name: string | null; work_email: string | null; phone: string | null;
   code: string | null; dept_code: string | null; designation: string | null;
-  site_code: string | null; manager_id: string | null;
+  site_code: string | null; manager_id: string | null; shift_code: string | null;
   employment_type: string | null; joined_on: string | null;
   invited_at: string | null; last_login_at: string | null;
   invited_count: number; invite_sent_at: string | null;
@@ -151,6 +171,7 @@ const PROJECTION = `
   SELECT m.id, m.employee_id, m.role, m.status,
          e.full_name, e.work_email, e.phone, e.code,
          d.code AS dept_code, e.designation, s.code AS site_code, e.manager_id,
+         sh.code AS shift_code,
          e.employment_type, e.joined_on::text,
          m.invited_at::text, m.last_login_at::text, m.invited_count,
          m.invite_sent_at::text, m.must_change_password, m.mfa_required,
@@ -165,6 +186,7 @@ const PROJECTION = `
     LEFT JOIN employee e ON e.id = m.employee_id
     LEFT JOIN department d ON d.id = e.department_id
     LEFT JOIN site s ON s.id = e.site_id
+    LEFT JOIN shift sh ON sh.id = e.shift_id
 `;
 
 const toAccount = (r: Row): UserAccount => ({
@@ -182,6 +204,7 @@ const toAccount = (r: Row): UserAccount => ({
   joinedOn: r.joined_on ?? '',
   role: r.role,
   status: FROM_DB[r.status] ?? r.status,
+  shift: r.shift_code ?? '',
   createdOn: r.invited_at?.slice(0, 10) ?? '',
   createdById: r.requested_by,
   modifiedOn: null,
@@ -606,6 +629,25 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
     }
 
     /*
+     * Unless the form said otherwise.
+     *
+     * The country default above is right for everybody who works where they
+     * sit and wrong for everybody who does not, and the people who do not are
+     * exactly the ones whose attendance goes wrong quietly — a Chennai-based
+     * employee on US hours was measured against IST, so every shift of theirs
+     * read as a day and a half late.
+     *
+     * Through `assignableShiftId` rather than a second lookup here, so "which
+     * profiles may somebody be put on" is answered in one place: active ones.
+     * There is no `assignShift` call on this path because there is no employee
+     * row yet and so nothing to move — no previous shift, no `from`, nothing an
+     * `employee_shift_changed` entry could describe. The hire is the record.
+     */
+    const shiftId = typeof d.shiftCode === 'string' && d.shiftCode.trim()
+      ? await assignableShiftId(db, d.shiftCode)
+      : shift[0].id;
+
+    /*
      * Currency comes from the employing entity, as `provisionEmployee` derives
      * it. This path left the column null, so two people at the same entity
      * carried different currencies depending on which screen created them —
@@ -627,7 +669,7 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
        RETURNING id`,
       [code, d.name.trim(), d.email.trim(), d.phone ?? '', dept[0].id, site[0].id,
         d.designation, d.managerId ?? null, d.empType ?? 'permanent',
-        d.joinedOn ?? null, d.role, entity[0].id, shift[0].id, entity[0].country]);
+        d.joinedOn ?? null, d.role, entity[0].id, shiftId, entity[0].country]);
 
     /*
      * Open this leave year's balances.
@@ -887,6 +929,36 @@ export async function updateUser(
       if (sets.length) {
         params.push(row.employee_id);
         await db.query(`UPDATE employee SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+      }
+
+      /*
+       * The shift, through the roster screen's own writer.
+       *
+       * Not a `set('shift_id', …)` line above, because moving somebody onto
+       * different hours is not the same kind of edit as correcting their phone
+       * number. It has its own gate (`shifts write`, which `mayAdminister`
+       * does not imply), its own refusal (nobody moves themselves), its own
+       * rule about which profiles are assignable, and its own audit entry. All
+       * four live in `assignShift`, and a second copy here would be a second
+       * answer waiting to drift from the first.
+       *
+       * **Compared before it is called.** The drawer posts every field it
+       * holds, so a caller who never touched the Shift select still sends one;
+       * passing that through would refuse a manager editing their own report's
+       * designation with "you cannot change your own shift" or "only a manager
+       * or admin may change a shift" — a guard firing on a field nobody
+       * touched. Same reasoning as the email audit below: resubmitting what is
+       * already there is not a change.
+       */
+      if (typeof patch.shiftCode === 'string' && patch.shiftCode.trim()) {
+        const wanted = patch.shiftCode.trim().toUpperCase();
+        const { rows: cur } = await db.query<{ code: string | null }>(
+          `SELECT sh.code FROM employee e
+             LEFT JOIN shift sh ON sh.id = e.shift_id
+            WHERE e.id = $1`, [row.employee_id]);
+        if ((cur[0]?.code ?? null) !== wanted) {
+          await assignShift(db, caller, row.employee_id, wanted);
+        }
       }
     }
 

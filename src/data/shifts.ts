@@ -4,6 +4,7 @@ import './learning';
 import { addDays, isWeekend, TODAY, ymd } from '../lib/dates';
 import { chance, pick, ri, uid } from '../lib/rng';
 import { ACTIVE } from './employees';
+import { siteOf } from './org';
 
 /**
  * A shift is a region's working hours, tagged on the person.
@@ -67,6 +68,21 @@ export const SHIFTS: Shift[] = [
 ];
 
 export const shiftOf = (id: string): Shift => SHIFTS.find((s) => s.id === id) || SHIFTS[0];
+
+/**
+ * Which profile somebody at this location starts on, by the site's country.
+ *
+ * The same rule the server applies when the account form names no shift: the
+ * profile whose code matches `site.country`. Written out here because the two
+ * vocabularies do not quite line up — the United Kingdom's ISO country is `GB`
+ * and its shift is coded `UK` — and a lookup that misses falls back to the
+ * first profile rather than to nothing, which would silently put somebody in
+ * London on Indian hours.
+ */
+const SHIFT_BY_COUNTRY: Record<string, string> = { IN: 'IN', US: 'US', GB: 'UK', AE: 'AE' };
+
+export const shiftCodeForSite = (siteId: string): string =>
+  SHIFT_BY_COUNTRY[siteOf(siteId).country] ?? SHIFTS[0]!.id;
 
 /**
  * empId -> date -> shift id, or 'OFF'.

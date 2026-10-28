@@ -17,6 +17,7 @@ import { sortBy } from '../../lib/collections';
 import { TODAY, ymd } from '../../lib/dates';
 import { EMAP, teamOf } from '../../data/employees';
 import { ORG } from '../../data/org';
+import { SHIFTS, shiftCodeForSite } from '../../data/shifts';
 import { LOGIN_HISTORY, USERS, loginHistoryFor, userOf } from '../../data/users';
 import type { LoginEvent, LoginMethod, UserAccount, UserStatus } from '../../data/users';
 import { ASSIGNMENTS, SCHEDULES } from './schedules';
@@ -275,6 +276,8 @@ export const userService: UserService = {
       dept: draft.dept,
       designation: draft.designation,
       site: draft.site,
+      /* The country default the server would pick, unless the form named one. */
+      shift: draft.shiftCode ?? shiftCodeForSite(draft.site),
       managerId: draft.managerId ?? null,
       empType: draft.empType ?? 'Full-time',
       joinedOn: draft.joinedOn ?? ymd(TODAY),
@@ -339,7 +342,37 @@ export const userService: UserService = {
     const bad = validate(patch as Partial<UserDraft>, c, u);
     if (bad) return refuse(bad);
 
-    Object.assign(u, patch);
+    /*
+     * The shift, which is `shiftCode` on the way in and `shift` on the way out.
+     *
+     * `Object.assign` below would otherwise hang a stray `shiftCode` on the
+     * account and leave `shift` reading whatever it read before — the drawer
+     * would say the move had worked and the list would disagree.
+     *
+     * The two refusals mirror the server's, as the rest of this file mirrors
+     * its validation: a withdrawn profile is not assignable, and nobody moves
+     * their own shift. An unchanged value is neither, which is the ordinary
+     * case — the drawer posts every field it holds.
+     */
+    if (typeof patch.shiftCode === 'string' && patch.shiftCode.trim()) {
+      const wanted = patch.shiftCode.trim().toUpperCase();
+      if (wanted !== u.shift) {
+        const profile = SHIFTS.find((s) => s.id === wanted);
+        if (!profile) return refuse(`no such shift: ${wanted}`);
+        if (!profile.active) {
+          return refuse(`${wanted} is not in use and cannot be assigned — activate it first`);
+        }
+        if (u.empId && u.empId === c.meId) {
+          return refuse(
+            'You cannot change your own shift — your hours decide what your own '
+            + 'attendance is measured against. Ask another administrator.');
+        }
+        u.shift = wanted;
+      }
+    }
+
+    Object.assign(u, patch, { shift: u.shift, shiftCode: undefined });
+    delete (u as Partial<Record<'shiftCode', unknown>>).shiftCode;
     stamp(u, c);
     return ok(u);
   },
