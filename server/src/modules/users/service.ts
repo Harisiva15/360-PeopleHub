@@ -208,15 +208,64 @@ const toAccount = (r: Row): UserAccount => ({
  * is not self-service. A manager reaches their own line. The predicate is in
  * SQL, so a crafted id cannot walk past it.
  */
-function scopeFor(caller: Caller, params: unknown[]): string {
-  if (reaches(caller, 'users', 'write', 'all')) return 'TRUE';
+function scopeFor(
+  caller: Caller,
+  params: unknown[],
+  /*
+   * Which reach decides visibility. `write` by default, because every caller
+   * that loads a row in order to change it has already passed `mayWrite` and
+   * should only reach rows it may actually change.
+   *
+   * The two read paths pass `read`, and they have to. This asked the *write*
+   * scope for everybody, so an HR administrator — `users: ALL_R`, read all,
+   * write none by the declared policy — fell to `FALSE` and saw User
+   * management as an empty list, with `getUser` answering "that account is
+   * outside the people you can manage" about an account they are entitled to
+   * read. A visibility predicate that asks about writing cannot answer a
+   * read, and silently returning no rows is the worst way to get it wrong.
+   */
+  verb: 'read' | 'write' = 'write',
+): string {
+  if (reaches(caller, 'users', verb, 'all')) return 'TRUE';
   if (!caller.hasReports || !caller.employeeId) return 'FALSE';
   return employeeScope(caller, 'm.employee_id', params, 'users');
 }
 
+/**
+ * Who may *see* accounts. A read gate, and only ever used as one.
+ *
+ * It was the gate on the writes as well, which is how a *read* scope came to
+ * guard creating an account and changing somebody's name, email, designation,
+ * department and manager. The declared policy
+ * (`users: rule(NO, ['team','none','none'], ALL_R, NO, ALL_RWA)`) gives write
+ * to the company administrator and to nobody else; what the code enforced was
+ * `users read ≥ team`, which hr_admin holds as `read all` and any manager with
+ * reports holds as `read team`.
+ */
 const mayAdminister = (caller: Caller) => {
   if (!reaches(caller, 'users', 'read', 'team')) {
     throw new UserError('Your role cannot manage accounts', 'forbidden');
+  }
+};
+
+/**
+ * Who may *change* accounts.
+ *
+ * `inviteUser` already asked this question itself, with a comment explaining
+ * that `mayAdminister` "admits a manager" and that sending an invitation is
+ * not something a manager may do. That was right, and the answer was a local
+ * workaround at one call site while every other write kept the read gate.
+ * This is the same rule, applied where it belongs.
+ *
+ * Asked at `team` rather than `all` so the gate follows the policy instead of
+ * restating today's version of it: no role currently holds `users write team`,
+ * and if one is ever granted, `scopeFor` already narrows it to its own line.
+ * `inviteUser` keeps its stricter `all` check, because an invitation creates a
+ * sign-in for the whole tenant rather than editing a row inside a line.
+ */
+const mayWrite = (caller: Caller) => {
+  if (!reaches(caller, 'users', 'write', 'team')) {
+    throw new UserError('Your role cannot change accounts', 'forbidden');
   }
 };
 
@@ -227,9 +276,14 @@ const mayAdminister = (caller: Caller) => {
  * the shape that leaks — one branch forgets, and a manager edits an
  * administrator.
  */
-async function load(db: TenantClient, caller: Caller, id: string): Promise<Row> {
+async function load(
+  db: TenantClient, caller: Caller, id: string,
+  /* Defaults to the write reach: all but one caller loads a row to change
+     it, and the exception says so. */
+  verb: 'read' | 'write' = 'write',
+): Promise<Row> {
   const params: unknown[] = [id];
-  const scope = scopeFor(caller, params);
+  const scope = scopeFor(caller, params, verb);
   const { rows } = await db.query<Row>(
     `${PROJECTION} WHERE m.id = $1 AND (${scope})`, params);
   if (!rows[0]) {
@@ -244,7 +298,8 @@ async function load(db: TenantClient, caller: Caller, id: string): Promise<Row> 
 export async function listUsers(caller: Caller, f: UserFilter = {}): Promise<UserAccount[]> {
   mayAdminister(caller);
   const params: unknown[] = [];
-  const where: string[] = [scopeFor(caller, params)];
+  /* A read: an HR administrator reads every account, a manager their line. */
+  const where: string[] = [scopeFor(caller, params, 'read')];
   const bind = (v: unknown) => { params.push(v); return `$${params.length}`; };
 
   if (f.status) where.push(`m.status = ${bind(TO_DB[f.status] ?? f.status)}`);
@@ -270,7 +325,7 @@ export async function listUsers(caller: Caller, f: UserFilter = {}): Promise<Use
 export async function getUser(caller: Caller, id: string): Promise<UserAccount | null> {
   mayAdminister(caller);
   return withTenantReadOnly(caller, async (db) => {
-    try { return toAccount(await load(db, caller, id)); }
+    try { return toAccount(await load(db, caller, id, 'read')); }
     catch (e) {
       if (e instanceof UserError && e.code === 'not_found') return null;
       throw e;
@@ -291,7 +346,9 @@ export async function userStats(caller: Caller) {
 
 /** The next free employee code, so two administrators cannot mint the same one. */
 export async function nextEmployeeCode(caller: Caller): Promise<string> {
-  mayAdminister(caller);
+  /* The next free code is only useful to somebody who can create an account,
+     and it discloses the sequence, so it follows the write gate. */
+  mayWrite(caller);
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query<{ code: string }>(
       "SELECT code FROM employee WHERE code IS NOT NULL AND btrim(code) <> ''");
@@ -429,7 +486,7 @@ const validate = (d: Partial<UserDraft>) => {
 };
 
 export async function createUser(caller: Caller, d: UserDraft): Promise<UserAccount> {
-  mayAdminister(caller);
+  mayWrite(caller);
   validate(d);
   mayGrant(caller, d.role);
   if (!d.dept) throw new UserError('Choose a department', 'invalid');
@@ -702,7 +759,7 @@ export async function updateUser(
   id: string,
   patch: UserPatch,
 ): Promise<UserAccount> {
-  mayAdminister(caller);
+  mayWrite(caller);
   validate(patch);
   if (patch.role) mayGrant(caller, patch.role);
 
@@ -810,6 +867,29 @@ export async function updateUser(
       }
     }
 
+    /*
+     * A changed work email gets its own audit entry, carrying both addresses.
+     *
+     * `user.updated` records the field *names* that were touched, which for
+     * every other field is enough to go and look. It is not enough for this
+     * one, because the work email is where an invitation is sent: `inviteUser`
+     * reads `work_email` inside its own transaction and posts it to Supabase's
+     * invite endpoint, so changing the address and then resending an
+     * invitation points a set-password link somewhere new. Both halves are
+     * administrator-only now, and the question an auditor asks afterwards is
+     * "from what, to what, by whom" — which `user.updated` could not answer
+     * and this can.
+     *
+     * Written in the same transaction as the change, so a recorded change
+     * always happened and a change is always recorded.
+     */
+    const emailBefore = (row.work_email ?? '').trim();
+    const emailAfter = patch.email === undefined ? emailBefore : patch.email.trim();
+    if (emailAfter.toLowerCase() !== emailBefore.toLowerCase()) {
+      await audit(db, caller, 'user.email_changed', id,
+        `${emailBefore || '(none)'} → ${emailAfter || '(none)'}`);
+    }
+
     await audit(db, caller, 'user.updated', id, Object.keys(patch).join(', '));
     const after = await getUser(caller, id);
     if (!after) throw new UserError('No such account', 'not_found');
@@ -829,7 +909,7 @@ export async function setUserStatus(
   status: string,
   reason?: string,
 ): Promise<UserAccount> {
-  mayAdminister(caller);
+  mayWrite(caller);
   const db_status = TO_DB[status];
   if (!db_status) throw new UserError('Not a status', 'invalid');
   /*
@@ -1100,7 +1180,7 @@ export async function bulkUpdateUsers(
   ids: string[],
   patch: UserPatch,
 ): Promise<UserAccount[]> {
-  mayAdminister(caller);
+  mayWrite(caller);
   /*
    * One at a time, through the same path a single edit takes. A bulk UPDATE
    * would be one query and would skip every rule above — which is exactly how

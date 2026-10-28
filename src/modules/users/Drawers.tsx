@@ -184,6 +184,29 @@ export function UserForm({
             <label>Email <Req /></label>
             <input className="input" type="email" value={email} placeholder="priya@360vhm.com"
               onChange={(e) => setEmail(e.target.value)} />
+            {/*
+              * Only when editing, and only once it differs from what was
+              * there. An address typed into a new account is not a change,
+              * and a notice shown on every save stops being read.
+              *
+              * It says what the change does rather than warning in the
+              * abstract: `inviteUser` sends the set-password link to this
+              * address, so changing it moves where that link goes. The
+              * server records the change on its own audit line with both
+              * addresses.
+              */}
+            {existing && email.trim().toLowerCase() !== (existing.email ?? '').trim().toLowerCase()
+              && email.trim() !== '' && (
+              <div className="banner warn" style={{ marginTop: 8 }}>
+                <div>
+                  <div className="t">This changes where sign-in email goes</div>
+                  Invitations and password links for this account will be sent to
+                  {' '}<strong>{email.trim()}</strong> instead of
+                  {' '}<strong>{existing.email}</strong>. The change is recorded
+                  against your name.
+                </div>
+              </div>
+            )}
           </div>
           <div className="field">
             <label>Phone</label>
