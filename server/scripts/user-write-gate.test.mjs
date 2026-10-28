@@ -98,20 +98,33 @@ try {
      * Creating
      * ---------------------------------------------------------------- */
 
+    /*
+     * Creating is a read gate, and the write scope decides what the create
+     * *means*: `createUser` sets `status` to `pending_approval` for anybody
+     * without `users write all`. A manager raising a joiner makes a request;
+     * an administrator makes an account.
+     *
+     * The first version of this suite asserted that an HR administrator and a
+     * manager were refused outright, which is what the code did after I put
+     * `mayWrite` here — and it deleted a workflow `provisioning.test.mjs`
+     * asserts on. The boundary is the status, not the refusal.
+     */
     console.log('\ncreating an account\n');
 
-    const byHr = await refused(() => createUser(hrAdmin, draft('hr')));
-    ok('1. an HR administrator cannot create an account',
-      forbidden(byHr), `${byHr?.code}: ${byHr?.message}`);
+    const hrMade = await createUser(hrAdmin, draft('hr'));
+    ok('1. an HR administrator raises a request, not a live account',
+      hrMade.status === 'Pending Approval', String(hrMade.status));
 
-    const byMgr = await refused(() => createUser(manager, draft('mgr')));
-    ok('2. nor can a manager with reports',
-      forbidden(byMgr), `${byMgr?.code}: ${byMgr?.message}`);
+    const mgrMade = await createUser(manager,
+      { ...draft('mgr'), managerId: ctx.adminEmployeeId });
+    ok('2. so does a manager raising a joiner on their own line',
+      mgrMade.status === 'Pending Approval', String(mgrMade.status));
 
     let made = null;
     const byAdmin = await refused(async () => { made = await createUser(companyAdmin, draft('adm')); });
-    ok('3. the company administrator can, which is what the policy says',
-      byAdmin === null && Boolean(made?.id), `${byAdmin?.code}: ${byAdmin?.message}`);
+    ok('3. and the company administrator creates the account itself',
+      byAdmin === null && made?.status !== 'Pending Approval',
+      `${byAdmin?.code ?? ''} ${made?.status ?? byAdmin?.message}`);
 
     /* ---------------------------------------------------------------- *
      * Changing
@@ -132,9 +145,11 @@ try {
     const bulkHr = await refused(() => bulkUpdateUsers(hrAdmin, [made.id], { role: 'employee' }));
     ok('7. nor change a batch of them', forbidden(bulkHr), `${bulkHr?.code}: ${bulkHr?.message}`);
 
+    /* And the next free code stays open, because the form that raises a
+       joiner needs it and raising one is allowed. */
     const codeHr = await refused(() => nextEmployeeCode(hrAdmin));
-    ok('8. nor read the next free employee code',
-      forbidden(codeHr), `${codeHr?.code}: ${codeHr?.message}`);
+    ok('8. while the next free employee code stays readable',
+      codeHr === null, `${codeHr?.code}: ${codeHr?.message}`);
 
     /* ---------------------------------------------------------------- *
      * And the reads are untouched

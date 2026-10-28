@@ -346,9 +346,9 @@ export async function userStats(caller: Caller) {
 
 /** The next free employee code, so two administrators cannot mint the same one. */
 export async function nextEmployeeCode(caller: Caller): Promise<string> {
-  /* The next free code is only useful to somebody who can create an account,
-     and it discloses the sequence, so it follows the write gate. */
-  mayWrite(caller);
+  /* A read gate, because raising a joiner is open to a manager and the form
+     that does it needs the next code. */
+  mayAdminister(caller);
   return withTenantReadOnly(caller, async (db) => {
     const { rows } = await db.query<{ code: string }>(
       "SELECT code FROM employee WHERE code IS NOT NULL AND btrim(code) <> ''");
@@ -486,7 +486,21 @@ const validate = (d: Partial<UserDraft>) => {
 };
 
 export async function createUser(caller: Caller, d: UserDraft): Promise<UserAccount> {
-  mayWrite(caller);
+  /*
+   * A read gate, deliberately. The write scope decides what a create *means*
+   * rather than whether it is allowed: `status` below is `invited` or
+   * `active` for a caller holding `users write all`, and `pending_approval`
+   * for everybody else. A manager raising a joiner creates a request; an
+   * administrator creates an account. The approval is a separate verb, which
+   * is why `users` has one.
+   *
+   * `mayWrite` was here briefly and removed that workflow — and the suite
+   * said so: `provisioning.test.mjs` asserts "a manager may create an
+   * employee on a pattern, as before". The hole worth closing was never this
+   * one. It is `updateUser`, `setUserStatus` and `bulkUpdateUsers`, which
+   * change accounts that already exist and have no such split.
+   */
+  mayAdminister(caller);
   validate(d);
   mayGrant(caller, d.role);
   if (!d.dept) throw new UserError('Choose a department', 'invalid');
