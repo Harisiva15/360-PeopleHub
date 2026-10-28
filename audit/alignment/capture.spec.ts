@@ -44,7 +44,20 @@ import type { Finding } from './probe';
 /** Where the screenshots land. Gitignored, and meant to be browsed in Explorer. */
 const OUT = join(process.cwd(), 'alignment-audit');
 
-const WIDTHS = [1440, 1024, 768, 390] as const;
+/*
+ * `AUDIT_WIDTHS=390` re-walks one width, which is what a fix aimed at one
+ * width needs: a batch that only touched the phone layout does not need the
+ * other three re-shot to be compared, and a quarter of the walk is the
+ * difference between minutes and most of an hour. Unset, it is all four.
+ *
+ * Writes into the same tree, so a narrowed re-run replaces exactly the
+ * screenshots it re-took and leaves the rest as the "before" they already
+ * are — which is the comparison, rather than a second tree to diff.
+ */
+const ALL_WIDTHS = [1440, 1024, 768, 390] as const;
+const picked = (process.env.AUDIT_WIDTHS ?? '')
+  .split(',').map((w) => Number(w.trim())).filter((w) => ALL_WIDTHS.includes(w as never));
+const WIDTHS = (picked.length ? picked : ALL_WIDTHS) as readonly number[];
 const THEMES = ['light', 'dark'] as const;
 
 /**

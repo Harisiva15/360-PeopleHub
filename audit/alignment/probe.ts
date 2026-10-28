@@ -235,11 +235,31 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
    * thousand findings of it, and would have put a fabricated contrast crisis
    * at the top of the report.
    */
-  function behind(el: Element): [number, number, number] {
+  function behind(el: Element): [number, number, number] | null {
     const layers: [number, number, number, number][] = [];
     let cur: Element | null = el;
     while (cur) {
-      const c = parseColour(cs(cur).backgroundColor);
+      const style = cs(cur);
+      /*
+       * A painted image — a gradient, a photograph — and the composite stops
+       * being arithmetic this can do. `background-color` on such an element is
+       * `transparent`, so without this the walk goes straight past it to the
+       * page and reports the text against a canvas it is nowhere near.
+       *
+       * That is not hypothetical and it is not rare: `.punch-card` is
+       * `linear-gradient(135deg, var(--brand), var(--s7))` with white text, and
+       * the first audit reported its clock, its labels, its buttons and its
+       * badges at **1.1:1** — white on white — on every page the card appears
+       * on. White on the brand gradient is fine; the finding was the probe's.
+       *
+       * Null rather than a guess, and the caller skips the element. A sampled
+       * midpoint would be a number, and a number is what somebody acts on: it
+       * would send them to change a colour that is correct. "I cannot tell"
+       * is the honest answer, and these are a handful of components that a
+       * person can check by eye.
+       */
+      if (style.backgroundImage && style.backgroundImage !== 'none') return null;
+      const c = parseColour(style.backgroundColor);
       if (c && c[3] > 0) {
         layers.push(c);
         if (c[3] >= 0.999) break;
@@ -352,8 +372,10 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
 
         /* 10. contrast ---------------------------------------------------- */
         const fgc = parseColour(s.color);
-        if (fgc && fgc[3] > 0.1 && r.height > 2) {
-          const bg = behind(el);
+        /* `behind` returns null when something in the stack is painted with an
+           image, which this cannot composite. Skipped rather than guessed. */
+        const bg = fgc && fgc[3] > 0.1 && r.height > 2 ? behind(el) : null;
+        if (fgc && bg) {
           const fg: [number, number, number] = fgc[3] >= 0.999 ? [fgc[0], fgc[1], fgc[2]] : [
             fgc[0] * fgc[3] + bg[0] * (1 - fgc[3]),
             fgc[1] * fgc[3] + bg[1] * (1 - fgc[3]),

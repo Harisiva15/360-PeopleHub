@@ -483,18 +483,34 @@ export function RosterView() {
         </div>
       </Card>
 
+      {/*
+        * A `Banner`, not a `Badge`.
+        *
+        * `.badge` is a pill: `display:inline-flex` and `white-space:nowrap`,
+        * sized to a word or two. This paragraph was inside one, so it laid out
+        * as a single unbroken line 2097px wide in a 1164px column — and
+        * because a badge absorbs nothing, that width was handed up through
+        * every ancestor to the document. Both roster views scrolled sideways
+        * at **every** width, 1440px included, which is how it was clear this
+        * was not a phone-layout problem: the page was 2350px wide whatever the
+        * viewport was.
+        *
+        * No CSS could fix it without changing every pill in the product.
+        * `Banner` is the component for a paragraph of guidance, it wraps, and
+        * it is what the rest of these screens already use.
+        */}
       {mayEdit
         ? (
-          <Badge kind="info">
+          <Banner kind="info">
             A work schedule says which days; a shift says which hours. Changing the
             shift applies from now on, every working day — the days themselves come
             from the schedule. Each cell shows what was expected, whether approved
             leave covers it, and what attendance actually recorded — three separate
             facts. A working day with nothing recorded is exactly that, and not an
             absence.
-          </Badge>
+          </Banner>
         )
-        : <Badge kind="info">Your manager sets the shift; this is a read-only view</Badge>}
+        : <Banner kind="info">Your manager sets the shift; this is a read-only view</Banner>}
     </div>
   );
 }

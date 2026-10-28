@@ -5,7 +5,7 @@ import { lakh, pct } from '../../lib/format';
 import { downloadCSV } from '../../lib/csv';
 import { BANKABLE, LEAVE_TYPES, ltOf, ORG } from '../../data/org';
 import type { DayVerdict, LeaveRequest } from '../../services';
-import { Badge, Banner, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
+import { Badge, Banner, Bar, Card, EmptyState, PersonCell, Tabs, Tile, StatRow } from '../../components/ui';
 import { Divide, Dot, ListRow, StatusBadge } from '../../components/common';
 import { Donut, HBar, Legend } from '../../components/charts';
 import { useLayer } from '../../components/Layer';
@@ -209,8 +209,18 @@ function LvMe() {
               </span>
             </>}
             foot={`${b.used} used${b.carry ? ` · ${b.carry} carried forward` : ''}`}>
-            <div className="bar" style={{ marginTop: 8 }}>
-              <i style={{ width: pct(b.used, b.quota + b.carry) + '%', background: ltOf(b.type).color }} />
+            {/*
+              * Through `Bar`, which clamps, rather than the markup by hand.
+              *
+              * `pct(b.used, b.quota + b.carry)` is over 100 for anybody who
+              * has taken more than their entitlement — which is an ordinary
+              * state, not a corrupt one — and the hand-written fill had no
+              * upper bound. `.bar` has `overflow:hidden` so it still *looked*
+              * full, but the element genuinely ran 14% past its box, which is
+              * why this showed up at every width rather than only at 390px.
+              */}
+            <div style={{ marginTop: 8 }}>
+              <Bar value={pct(b.used, b.quota + b.carry)} color={ltOf(b.type).color} />
             </div>
           </Tile>
         ))}

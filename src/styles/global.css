@@ -428,7 +428,24 @@ a{color:var(--brand);text-decoration:none}
   content:'';align-self:center;width:1px;height:26px;
   background:var(--line);margin-right:6px;
 }
-.topbar-t{min-width:0}
+/*
+ * Only the page title gives up width. Everything else in the header is a
+ * control at a size somebody has to be able to hit.
+ *
+ * Flex shrinks every item by default, and an item whose contents have their
+ * own minimum does not reflow when it is shrunk — it overflows. At 390px that
+ * took the header's own menus 10px past the viewport, where the phone rule's
+ * `overflow:hidden` clipped them; and once that was pinned, the same default
+ * squeezed the hamburger from 44px to 31px, which is under the touch target
+ * the phone block sets deliberately two rules below.
+ *
+ * So the default is inverted here and granted back to the one item that can
+ * honestly take it: `.topbar-t` has `min-width:0` and its `h1` ellipsis at
+ * phone width, so it truncates rather than overflowing. `.spacer` keeps its
+ * own `flex:1` from further down the sheet and still does the pushing.
+ */
+.topbar>*{flex-shrink:0}
+.topbar-t{min-width:0;flex-shrink:1}
 /* The open page's primary action. Empty on pages that declare none. */
 .topbar-cta{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 .topbar-cta:empty{display:none}
@@ -482,7 +499,26 @@ a{color:var(--brand);text-decoration:none}
 .gs-t i{font-size:11.5px;font-style:normal;color:var(--ink-3)}
 
 /* ---------- header menus ---------- */
-.topbar-acts{display:flex;align-items:center;gap:4px}
+/*
+ * `flex:0 0 auto` — the header's own controls never give up width.
+ *
+ * This was the default `0 1 auto`, so at 390px the row shrank it to 180px
+ * while its four buttons still needed 202: a flex container shrunk below its
+ * content's minimum does not reflow, it overflows, and its children have
+ * `min-width:auto` so they cannot shrink either. The account menu ended up
+ * 22px past its own parent and 10px past the viewport, where `.topbar`'s
+ * `overflow:hidden` on a phone clipped it — the avatar was cut in half and the
+ * menu behind it, which holds My profile, the theme and signing out, was
+ * unreachable on every page at that width. Silently: nothing scrolled, so
+ * there was nothing to suggest anything was missing.
+ *
+ * The title yields instead, which is the right order. `.topbar-t` already has
+ * `min-width:0` and `.topbar h1` ellipsis at this width, so it truncates and
+ * the page name is still readable from the first few characters — a truncated
+ * heading is a smaller loss than a control nobody can reach, and the heading
+ * is the one thing on the screen the page itself repeats.
+ */
+.topbar-acts{display:flex;align-items:center;gap:4px;flex:0 0 auto}
 .menu-wrap{position:relative}
 .menu-btn{
   display:inline-flex;align-items:center;justify-content:center;position:relative;
@@ -643,16 +679,58 @@ textarea.input{min-height:80px;resize:vertical}
   .sidebar.open{left:0}
   .nav-scrim{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:110;animation:fade .16s}
   .content{padding:14px 13px calc(84px + env(safe-area-inset-bottom))}
-  .topbar{padding:9px 12px;padding-top:calc(9px + env(safe-area-inset-top));gap:8px;overflow:hidden}
+  /*
+   * The page's own actions take a second row, and the header wraps to hold it.
+   *
+   * At 390px the first row is already spoken for: a 44px menu button, a 44px
+   * search, and 155px of header menus that have nowhere else to be. A page
+   * that declares actions adds to that — Job titles declares two, "Export"
+   * and "Add Job Title", which together measure 259px. The header needed 566px
+   * of a 390px viewport, the title was crushed to nothing, and `overflow:hidden`
+   * below clipped the rest: on that page the account menu, the notifications
+   * and half the actions were simply not on the screen.
+   *
+   * Wrapping is the one answer that loses nothing. Hiding the actions takes
+   * away the only way to perform them on a phone — `PageActions` portals them
+   * here and they exist nowhere else. Collapsing them to icons makes "Export"
+   * and "Add" guesses, and several pages declare actions with no icon at all.
+   * Scrolling them sideways hides them behind a gesture nothing advertises.
+   *
+   * So: `order:1` and a full-width basis put the actions last and on their own
+   * line, the rest of the row keeps its order, and `.topbar-cta:empty` already
+   * collapses the row away on the pages that declare nothing — which is most
+   * of them, and they stay exactly one row tall.
+   */
+  .topbar{
+    padding:9px 12px;padding-top:calc(9px + env(safe-area-inset-top));
+    gap:8px;overflow:hidden;flex-wrap:wrap;
+  }
+  .topbar-cta{order:1;flex-basis:100%}
   .topbar>div{min-width:0}
+  /* See `.ts-weekbar-mid`: the reserved label width is a desktop affordance. */
+  .ts-weekbar-range{min-width:0}
   .topbar h1{font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .topbar .sub,.crumbs{display:none}
   /*
-   * A phone header keeps the title and the four menus, and drops what it has
-   * no room for. Search is the exception: it stays, because it is how people
-   * get anywhere on a small screen — it just gives up its width and opens from
-   * the icon instead.
+   * A phone header keeps the title, the search and three of the four menus,
+   * and drops what it has no room for. Search is the exception among the
+   * drops: it stays, because it is how people get anywhere on a small screen
+   * — it just gives up its width and opens from the icon instead.
+   *
+   * **All modules goes, and it used to stay.** That decision was made while
+   * the header's overflow was invisible: it ran 10px past the viewport and
+   * `overflow:hidden` above clipped it, so "we keep all four" looked free and
+   * was in fact costing the account menu. With the shrink rule fixed, the
+   * cost is visible and it is the page title, which fell to 43px — about four
+   * characters before the ellipsis.
+   *
+   * This is the one of the four that the phone already has a second route to:
+   * the hamburger two rules up opens the whole navigation, which is a
+   * superset of the module grid. Quick actions, notifications and the account
+   * menu have no other door at this width. Dropping it returns 48px to the
+   * title.
    */
+  .topbar .appgrid-wrap{display:none}
   .topbar .demo-tag{display:none}
   .gsearch{width:var(--h-ctl-lg);flex:0 0 auto}
   .gsearch:focus-within{position:absolute;left:12px;right:12px;width:auto;z-index:70}
@@ -1517,7 +1595,17 @@ select.rost:hover{border-color:var(--line-2);box-shadow:var(--shadow-sm)}
   display:flex;align-items:center;gap:9px;flex-wrap:wrap;
   padding:11px 14px;border-top:1px solid var(--line);font-size:12.5px;
 }
-.pager-n{display:flex;align-items:center;gap:4px}
+/*
+ * The number buttons wrap, like the pager around them.
+ *
+ * `.pager` has wrapped since it was written; `.pager-n` did not, so the row of
+ * page numbers inside it stayed one line however many pages there were. At
+ * 390px a directory with enough pages put it 18px past the viewport, and
+ * because nothing between it and the document scrolls, that became a sideways
+ * scroll of the whole page — the `page-h-scroll` finding on the employee
+ * directory, the asset register and the issue-and-return screens is this.
+ */
+.pager-n{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 /* Square, so a row of numbers reads as a row of numbers. */
 .pager-n .btn.icon{min-width:29px;height:29px;padding:0;font-size:12px;font-weight:600}
 
@@ -2385,7 +2473,21 @@ button.chip:hover{border-color:var(--line-2)}
 
 /* The week stepper above the grid. */
 .ts-weekbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.ts-weekbar-mid{display:flex;align-items:center;gap:10px}
+/*
+ * The week stepper wraps too, and its label stops reserving 200px below the
+ * phone breakpoint.
+ *
+ * `min-width:200px` is there so the date range does not jiggle the two arrows
+ * sideways as the week changes — worth having on a desktop and unaffordable
+ * at 390px, where 200px of label plus two buttons plus the card's own padding
+ * measured 435px against a 390px viewport. The arrows were off the screen on
+ * all four timesheet views, which is the only way to change week.
+ *
+ * Wrapping keeps the label centred between the arrows when it fits and lets it
+ * take its own line when it does not, so the stepper stays usable either way
+ * and nothing is hidden.
+ */
+.ts-weekbar-mid{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center}
 .ts-weekbar-range{font-size:15px;font-weight:600;color:var(--ink);min-width:200px;text-align:center}
 
 /* ---------------------------------------------------------------------------
