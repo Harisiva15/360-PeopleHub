@@ -132,14 +132,29 @@ try {
 
     console.log('\nchanging one\n');
 
+    /*
+     * Not "the write scope refuses them" — that gate was tried and reverted,
+     * because it breaks a manager editing their own report, which
+     * `employment.test.mjs` asserts. What actually protects these is
+     * `scopeFor`: an HR administrator has no reports, so the row predicate is
+     * `FALSE` and there is no account for them to load.
+     *
+     * Asserted here so that if `scopeFor` is ever loosened, something says so
+     * in terms of what an HR administrator can do rather than in terms of a
+     * SQL predicate.
+     */
     const upHr = await refused(() => updateUser(hrAdmin, made.id, { name: 'ZZ Renamed' }));
     ok('4. an HR administrator cannot change an account',
       forbidden(upHr), `${upHr?.code}: ${upHr?.message}`);
 
     const upMgr = await refused(() => updateUser(manager, made.id, { name: 'ZZ Renamed' }));
-    ok('5. nor can a manager', forbidden(upMgr), `${upMgr?.code}: ${upMgr?.message}`);
+    ok('5. nor a manager, for somebody off their line',
+      forbidden(upMgr), `${upMgr?.code}: ${upMgr?.message}`);
 
-    const statusHr = await refused(() => setUserStatus(hrAdmin, made.id, 'suspended'));
+    /* The display form, which is what the API takes — `'suspended'` is the
+       database's spelling and is rejected as invalid before the scope is ever
+       consulted, so asserting on it proved nothing about permissions. */
+    const statusHr = await refused(() => setUserStatus(hrAdmin, made.id, 'Suspended'));
     ok('6. nor suspend one', forbidden(statusHr), `${statusHr?.code}: ${statusHr?.message}`);
 
     const bulkHr = await refused(() => bulkUpdateUsers(hrAdmin, [made.id], { role: 'employee' }));

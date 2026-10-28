@@ -228,6 +228,27 @@ function scopeFor(
 ): string {
   if (reaches(caller, 'users', verb, 'all')) return 'TRUE';
   if (!caller.hasReports || !caller.employeeId) return 'FALSE';
+  /*
+   * OPEN: this call omits the verb, so `employeeScope` defaults to `read` and
+   * builds the *write* predicate out of the *read* scope.
+   *
+   * For a manager that happens to give the right answer — `users read` is
+   * `team`, so they get their line, which is the behaviour
+   * `employment.test.mjs` asserts. For anybody holding `users read all` *and*
+   * having reports it returns `TRUE`: write reach over every account in the
+   * tenant. hr_admin holds `users read all`, so an HR administrator who also
+   * manages somebody is an administrator of everything.
+   *
+   * Passing `verb` through closes it and also stops a manager editing their
+   * report, because the policy says `users write: none` for the manager
+   * layer — so the one-line fix changes a tested workflow, and which of the
+   * policy and the product is wrong is not a question to answer inside a
+   * guard. Left as it is, named here, and raised.
+   *
+   * It is the same shape as the frontend bug in 402c1b6, where both
+   * `scopeOfDemo` call sites dropped the verb and every write question got
+   * the read scope back.
+   */
   return employeeScope(caller, 'm.employee_id', params, 'users');
 }
 
@@ -248,26 +269,25 @@ const mayAdminister = (caller: Caller) => {
   }
 };
 
-/**
- * Who may *change* accounts.
+/*
+ * There is no `mayWrite`, and that is a decision rather than an omission.
  *
- * `inviteUser` already asked this question itself, with a comment explaining
- * that `mayAdminister` "admits a manager" and that sending an invitation is
- * not something a manager may do. That was right, and the answer was a local
- * workaround at one call site while every other write kept the read gate.
- * This is the same rule, applied where it belongs.
+ * One was added here and reverted. Gating the writes on `users write` looks
+ * obviously right against the declared policy — which gives `users` write to
+ * the company administrator and nobody else — and it breaks two workflows the
+ * suites assert deliberately:
  *
- * Asked at `team` rather than `all` so the gate follows the policy instead of
- * restating today's version of it: no role currently holds `users write team`,
- * and if one is ever granted, `scopeFor` already narrows it to its own line.
- * `inviteUser` keeps its stricter `all` check, because an invitation creates a
- * sign-in for the whole tenant rather than editing a row inside a line.
+ *   * `provisioning.test.mjs`: a manager may raise a joiner. `createUser`
+ *     already handles that by what it produces, not by refusing — a caller
+ *     without `users write all` creates `pending_approval`.
+ *   * `employment.test.mjs`: a manager may change their own report's
+ *     designation, recorded in employment history against the manager.
+ *
+ * So the model is "may you manage accounts" at the gate and "whose" in
+ * `scopeFor`, and the policy's `write: none` for a manager describes a scope
+ * the product does not consult on this path. Which of the two is wrong is a
+ * product decision, not one to settle inside a guard.
  */
-const mayWrite = (caller: Caller) => {
-  if (!reaches(caller, 'users', 'write', 'team')) {
-    throw new UserError('Your role cannot change accounts', 'forbidden');
-  }
-};
 
 /**
  * Load an account and prove this caller may act on it.
@@ -773,7 +793,18 @@ export async function updateUser(
   id: string,
   patch: UserPatch,
 ): Promise<UserAccount> {
-  mayWrite(caller);
+  /*
+   * The gate is "may you manage accounts at all"; `load` below decides *which*
+   * accounts, through `scopeFor`. That division is the model, and it is the
+   * one `employment.test.mjs` asserts: an employee cannot change their own
+   * designation, a manager may change their own report's — recorded in
+   * employment history against the manager — and may not touch anybody
+   * outside their line.
+   *
+   * `mayWrite` was here briefly and broke all three. See `scopeFor` for the
+   * escalation that is still open and is not mine to close unasked.
+   */
+  mayAdminister(caller);
   validate(patch);
   if (patch.role) mayGrant(caller, patch.role);
 
@@ -923,7 +954,7 @@ export async function setUserStatus(
   status: string,
   reason?: string,
 ): Promise<UserAccount> {
-  mayWrite(caller);
+  mayAdminister(caller);
   const db_status = TO_DB[status];
   if (!db_status) throw new UserError('Not a status', 'invalid');
   /*
@@ -1194,7 +1225,7 @@ export async function bulkUpdateUsers(
   ids: string[],
   patch: UserPatch,
 ): Promise<UserAccount[]> {
-  mayWrite(caller);
+  mayAdminister(caller);
   /*
    * One at a time, through the same path a single edit takes. A bulk UPDATE
    * would be one query and would skip every rule above — which is exactly how
