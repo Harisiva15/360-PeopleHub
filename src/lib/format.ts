@@ -23,7 +23,27 @@ export const clamp = (v: number, a: number, b: number): number => Math.max(a, Ma
 export const initials = (n: string): string =>
   n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
-export const AVCOL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#4a3aa7', '#e34948', '#008300', '#1c5cab', '#d55181'];
+/**
+ * The avatar backgrounds, behind white initials.
+ *
+ * Every one of these carries `.av { color: #fff }`, so each is really a
+ * contrast pair and has to be read as one. Seven of the ten were not: white on
+ * `#eda100` was 2.2:1 and on `#1baf7a` 2.8:1, against the 4.5:1 that 11.5px
+ * text needs. They are darkened here to clear it — hue kept, lightness taken
+ * down until white reads.
+ *
+ * It survived because `check:contrast` validates *token* pairs read out of the
+ * stylesheet, and this is a JavaScript array of literals applied as an inline
+ * `background`, so there was no token for it to check. `checks/contrast.ts`
+ * now imports this array and checks every entry, which is why adding a colour
+ * here cannot reintroduce the problem.
+ *
+ * One palette for both themes, deliberately. The initials sit on the avatar's
+ * own fill, not on the page, so the ratio does not move when the surface
+ * behind it does — what the theme changes is the edge against the card, not
+ * the legibility of the letters.
+ */
+export const AVCOL = ['#2975d1', '#c0552a', '#15855d', '#9e6b00', '#ad5c7a', '#4a3aa7', '#d04342', '#008300', '#1c5cab', '#c34a76'];
 
 /** Stable avatar colour — same name always gets the same swatch. */
 /**

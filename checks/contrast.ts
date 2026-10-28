@@ -17,6 +17,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { AVCOL } from '../src/lib/format.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -136,6 +137,26 @@ const PAIRS: Pair[] = [
   ['tile: rose', '--t-rose-ink', '--t-rose', 4.5],
   ['tile: violet', '--t-violet-ink', '--t-violet', 4.5],
 ];
+
+/**
+ * Every avatar background, against the white initials that sit on it.
+ *
+ * Derived from `AVCOL` rather than transcribed, because a list copied into a
+ * check is a list that stops matching. This one is the reason the rule is
+ * worth stating: `AVCOL` is a JavaScript array of literals applied as an
+ * inline `background`, with `.av { color: #fff }` on top. It is a contrast
+ * pair in every way that matters and it was in no stylesheet, so a check that
+ * reads token pairs out of the CSS could never see it — and seven of the ten
+ * failed, down to 2.2:1 on the amber.
+ *
+ * Appended to `PAIRS` so it runs in both themes like everything else. The
+ * ratio is the same in both, because the initials sit on the avatar's own
+ * fill rather than on the page; running it twice costs nothing and means
+ * nobody has to remember that it is the exception.
+ */
+for (const colour of AVCOL) {
+  PAIRS.push([`avatar: white initials on ${colour}`, '#ffffff', colour, 4.5]);
+}
 
 let failed = 0;
 let checked = 0;
