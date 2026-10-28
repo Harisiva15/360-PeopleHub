@@ -3,19 +3,40 @@
  *
  * ## What was wrong
  *
- * `createUser`, `updateUser`, `setUserStatus` and `bulkUpdateUsers` all gated
- * on `mayAdminister`, which asks for `users read ≥ team`. The declared policy
+ * Not the gate. `updateUser` asks `mayAdminister` — `users read ≥ team` — and
+ * that is the model: the gate says whether you manage accounts at all, and the
+ * row predicate says whose. The fault was in the predicate. `scopeFor` called
+ * `employeeScope` without a verb, which defaults to `read`, so the *write*
+ * predicate was built out of the *read* scope. Against
  *
  *     users: rule(NO, ['team','none','none'], ALL_R, NO, ALL_RWA)
  *
- * gives write to the company administrator and to nobody else — but hr_admin
- * holds `users read all` and any manager with reports holds `users read team`,
- * so both satisfied a read gate standing in front of a write.
+ * that read as: a manager writes their line, because `users read` is `team`
+ * there; and anybody holding `users read all` *and* reports gets `TRUE`, full
+ * write reach over every account in the tenant. hr_admin holds `users read
+ * all`, so an HR administrator who managed one person administered everything.
  *
- * `inviteUser` already knew. It asks `users write all` itself, with a comment
- * saying `mayAdminister` "admits a manager" and that an invitation is not a
- * manager's to send. That was a workaround at one call site; `mayWrite` is the
- * same rule everywhere it belongs.
+ * `inviteUser` already knew the gate alone was not enough — it asks `users
+ * write all` itself, with a comment saying `mayAdminister` "admits a manager"
+ * and that an invitation is not a manager's to send. That was a workaround at
+ * one call site. Passing the verb is the rule in the one place that decides.
+ *
+ * **Why not `mayWrite` on the gate.** That was tried and reverted twice. It
+ * refuses `createUser` for a manager and an HR administrator, which deletes
+ * the raise-a-joiner workflow `provisioning.test.mjs` asserts — there, the
+ * write scope is meant to decide what the create *means* (`pending_approval`
+ * against a live account), not whether it happens. Assertions 1 to 3 are that
+ * distinction, and they are why the fix belongs in the predicate.
+ *
+ * ## What it took away
+ *
+ * One assertion, in `employment.test.mjs`: a manager changing their own
+ * report's designation. It was never reachable — `ACTION_GATE` puts
+ * `user.edit` behind `users write` and `ACTION_SCOPE` gives the manager layer
+ * `none`, so no screen has ever rendered Edit for a manager, and the drawer is
+ * the only path to `updateUser`. And because the row is the unit — there is no
+ * per-field gate inside `updateUser` — "a manager may fix a designation" was
+ * in fact "a manager may change their report's name and work email too".
  *
  * ## Why the email change is audited by itself
  *
@@ -29,7 +50,7 @@
  * ## What this does not assert
  *
  * The reads. `listUsers` and `getUser` keep `mayAdminister` on purpose — a
- * manager reading their own line is the policy — and assertions 9 and 10
+ * manager reading their own line is the policy — and assertions 32 and 33
  * require that the tightening did not take that away.
  */
 
@@ -127,43 +148,135 @@ try {
       `${byAdmin?.code ?? ''} ${made?.status ?? byAdmin?.message}`);
 
     /* ---------------------------------------------------------------- *
+     * Who may change whose name, work email and role
+     * ---------------------------------------------------------------- *
+     *
+     * The whole table, asserted rather than described, because the answer used
+     * to depend on a scope the question was not about.
+     *
+     *                      own account   own report   anybody else
+     *   employee               no            —             no
+     *   manager                no            no            no
+     *   hr_admin               no            —             no
+     *   finance_admin          no            —             no
+     *   company_admin         yes*          yes           yes
+     *
+     *   * subject to the two role guards: an administrator cannot remove their
+     *     own administrator role, and the last administrator cannot be demoted
+     *     by anybody. Both are asserted in `last-admin.test.mjs`.
+     *
+     * So: only company_admin, for anybody in the tenant. The row is the unit,
+     * not the field — there is no per-field gate inside `updateUser`, which is
+     * why "a manager may fix their report's designation" was in fact "a manager
+     * may change their report's name and work email", and why the work email
+     * matters most: `inviteUser` reads it inside its own transaction and posts
+     * it to Supabase, so whoever can change the address can redirect a
+     * set-password link.
+     *
+     * The manager row is the one worth reading twice. The refusal is not
+     * because the line is empty — `boss` really does manage `report`, and the
+     * recursive scope really does find them — it is because `users write` is
+     * `none` for the manager layer and the predicate now asks about writing.
+     */
+
+    console.log('\nwho may change whose name, email and role\n');
+
+    const bossAcct = await createUser(companyAdmin, draft('boss'));
+    const reportAcct = await createUser(companyAdmin,
+      { ...draft('rep'), managerId: bossAcct.empId });
+    const boss = {
+      role: 'employee', hasReports: true, tenantId: ctx.tenant,
+      employeeId: bossAcct.empId, userId: null,
+    };
+    const plain = {
+      role: 'employee', hasReports: false, tenantId: ctx.tenant,
+      employeeId: reportAcct.empId, userId: null,
+    };
+    const finance = {
+      role: 'finance_admin', hasReports: false, tenantId: ctx.tenant,
+      employeeId: ctx.adminEmployeeId, userId: null,
+    };
+
+    /* The line really exists, so the refusals below are about the verb. */
+    const lineExists = (await admin.query(
+      'SELECT manager_id FROM employee WHERE id = $1', [reportAcct.empId]))
+      .rows[0]?.manager_id === bossAcct.empId;
+    ok('4. the manager really does manage the report', lineExists,
+      'otherwise the refusals below would prove nothing about the verb');
+
+    const FIELDS = [
+      ['their name', { name: 'ZZ Renamed By Test' }],
+      ['their work email', { email: `zz-redirect-${Date.now().toString(36)}@360.technology` }],
+      ['their role', { role: 'hr_admin' }],
+    ];
+
+    const ROWS = [
+      ['an employee', plain, [['their own account', reportAcct], ['somebody else', bossAcct]]],
+      ['a manager', boss, [
+        ['their own account', bossAcct],
+        ['their own report', reportAcct],
+        ['somebody else', made],
+      ]],
+      ['an HR administrator', hrAdmin, [['any account', reportAcct]]],
+      ['a finance administrator', finance, [['any account', reportAcct]]],
+    ];
+
+    let row = 4;
+    for (const [who, caller_, subjects] of ROWS) {
+      for (const [whose, subject] of subjects) {
+        for (const [what, patch] of FIELDS) {
+          row += 1;
+          const e = await refused(() => updateUser(caller_, subject.id, patch));
+          ok(`${row}. ${who} cannot change ${what} on ${whose}`,
+            forbidden(e), e ? `${e.code}: ${e.message}` : 'it was allowed');
+        }
+      }
+    }
+
+    /* And the one role that can, on somebody who is not itself. */
+    const admName = await updateUser(companyAdmin, reportAcct.id, { name: 'ZZ Renamed By Admin' });
+    ok(`${row + 1}. the company administrator changes a name`,
+      admName.name === 'ZZ Renamed By Admin', admName.name);
+    const admRole = await updateUser(companyAdmin, reportAcct.id, { role: 'hr_admin' });
+    ok('    and a role', admRole.role === 'hr_admin', String(admRole.role));
+    const admEmail = `zz-admin-set-${Date.now().toString(36)}@360.technology`;
+    const admMail = await updateUser(companyAdmin, reportAcct.id, { email: admEmail });
+    ok('    and a work email', admMail.email === admEmail, admMail.email);
+
+    /* ---------------------------------------------------------------- *
      * Changing
      * ---------------------------------------------------------------- */
 
-    console.log('\nchanging one\n');
+    console.log('\nand the rest of the account surface goes the same way\n');
 
     /*
-     * Not "the write scope refuses them" — that gate was tried and reverted,
-     * because it breaks a manager editing their own report, which
-     * `employment.test.mjs` asserts. What actually protects these is
-     * `scopeFor`: an HR administrator has no reports, so the row predicate is
-     * `FALSE` and there is no account for them to load.
-     *
-     * Asserted here so that if `scopeFor` is ever loosened, something says so
-     * in terms of what an HR administrator can do rather than in terms of a
-     * SQL predicate.
+     * `scopeFor` passes the verb through, so `users write` — company_admin's
+     * alone by the declared policy — is what these ask. An HR administrator
+     * reaches none of them whether or not they manage somebody, which is the
+     * half the old read-derived predicate got wrong: hr_admin plus one report
+     * came out as `TRUE`, write reach over every account in the tenant.
      */
     const upHr = await refused(() => updateUser(hrAdmin, made.id, { name: 'ZZ Renamed' }));
-    ok('4. an HR administrator cannot change an account',
+    ok('27. an HR administrator cannot change an account',
       forbidden(upHr), `${upHr?.code}: ${upHr?.message}`);
 
     const upMgr = await refused(() => updateUser(manager, made.id, { name: 'ZZ Renamed' }));
-    ok('5. nor a manager, for somebody off their line',
+    ok('28. nor a manager, for anybody at all',
       forbidden(upMgr), `${upMgr?.code}: ${upMgr?.message}`);
 
     /* The display form, which is what the API takes — `'suspended'` is the
        database's spelling and is rejected as invalid before the scope is ever
        consulted, so asserting on it proved nothing about permissions. */
     const statusHr = await refused(() => setUserStatus(hrAdmin, made.id, 'Suspended'));
-    ok('6. nor suspend one', forbidden(statusHr), `${statusHr?.code}: ${statusHr?.message}`);
+    ok('29. nor suspend one', forbidden(statusHr), `${statusHr?.code}: ${statusHr?.message}`);
 
     const bulkHr = await refused(() => bulkUpdateUsers(hrAdmin, [made.id], { role: 'employee' }));
-    ok('7. nor change a batch of them', forbidden(bulkHr), `${bulkHr?.code}: ${bulkHr?.message}`);
+    ok('30. nor change a batch of them', forbidden(bulkHr), `${bulkHr?.code}: ${bulkHr?.message}`);
 
     /* And the next free code stays open, because the form that raises a
        joiner needs it and raising one is allowed. */
     const codeHr = await refused(() => nextEmployeeCode(hrAdmin));
-    ok('8. while the next free employee code stays readable',
+    ok('31. while the next free employee code stays readable',
       codeHr === null, `${codeHr?.code}: ${codeHr?.message}`);
 
     /* ---------------------------------------------------------------- *
@@ -182,7 +295,7 @@ try {
      * neither call threw, and an empty list passes that.
      */
     const hrRows = await listUsers(hrAdmin);
-    ok('9. an HR administrator reads every account, not an empty list',
+    ok('32. an HR administrator reads every account, not an empty list',
       hrRows.length > 0 && hrRows.some((u) => u.id === made.id),
       `${hrRows.length} rows`);
 
@@ -190,7 +303,7 @@ try {
     ok('    and opens one', Boolean(hrOne?.id), JSON.stringify(hrOne?.id ?? null));
 
     const mgrList = await refused(() => listUsers(manager));
-    ok('10. and a manager still reads their line',
+    ok('33. and a manager still reads their line',
       mgrList === null, `${mgrList?.code}: ${mgrList?.message}`);
 
     /* ---------------------------------------------------------------- *
@@ -210,7 +323,7 @@ try {
     await updateUser(companyAdmin, made.id, { email: after });
 
     const changed = await entries('user.email_changed');
-    ok('11. the change is recorded on its own',
+    ok('34. the change is recorded on its own',
       changed.length === 1, JSON.stringify(changed));
     ok('    carrying the address it was',
       (changed[0]?.summary ?? '').includes(before), String(changed[0]?.summary));
@@ -218,7 +331,7 @@ try {
       (changed[0]?.summary ?? '').includes(after), String(changed[0]?.summary));
 
     await updateUser(companyAdmin, made.id, { name: 'ZZ Gate Renamed' });
-    ok('12. an edit that leaves the email alone records nothing',
+    ok('35. an edit that leaves the email alone records nothing',
       (await entries('user.email_changed')).length === 1,
       JSON.stringify(await entries('user.email_changed')));
 

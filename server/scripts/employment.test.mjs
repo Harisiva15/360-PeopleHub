@@ -399,14 +399,39 @@ await withScratchTenant(db, async (ctx) => {
   ok('a manager cannot change somebody outside their line', byManager !== null,
     'the manager scope is a SQL predicate, not a screen');
 
-  const okByManager = await attempt(() => users.updateUser(
+  /*
+   * Nor their own report, which is a change from what this suite used to
+   * require.
+   *
+   * It asserted that a manager may change their own report's designation and
+   * that the employment record names the manager as the recorder. That passed
+   * because `scopeFor` built the *write* predicate out of the *read* scope,
+   * and `users read` is `team` for the manager layer. The declared policy is
+   * `users: rule(NO, ['team', 'none', 'none'], ALL_R, NO, ALL_RWA)` — write
+   * belongs to company_admin and to nobody else — and the same leak gave full
+   * write reach over every account in the tenant to anybody holding `users
+   * read all` *and* reports, which hr_admin plus one report is.
+   *
+   * It was never a workflow. `ACTION_GATE` puts `user.edit` behind `users
+   * write` and `ACTION_SCOPE` gives the manager layer `none`, so no screen has
+   * ever rendered the Edit control for a manager, and the drawer is the only
+   * path to `updateUser`. So this assertion was testing the gap between the
+   * service and the policy, which is now closed, rather than anything a person
+   * could do.
+   *
+   * A promotion is HR's act in this product — the same division the `people`
+   * policy states for lifecycle records — and a manager who wants one asks for
+   * it. There is no request flow for that yet, here or there, and both need
+   * the same pending state the schema does not have.
+   */
+  const byManagerOwn = await attempt(() => users.updateUser(
     MGR, acct.id, { designation: 'ZZ Lead Engineer' }));
-  ok('but may change their own report', okByManager === null,
-    okByManager?.message);
+  ok('and not their own report either, because a promotion is not theirs to make',
+    byManagerOwn !== null, 'the write predicate must come from the write grant');
+  ok('  refused as forbidden', byManagerOwn?.code === 'forbidden', byManagerOwn?.code);
   const h5 = await history(empId);
-  ok('  and that is recorded against them',
-    h5.at(-1)?.designation === 'ZZ Lead Engineer', h5.at(-1)?.designation);
-  ok('  naming the manager as the recorder', h5.at(-1)?.recorded_by === bossId);
+  ok('  and the refusal wrote no employment record',
+    h5.at(-1)?.designation !== 'ZZ Lead Engineer', h5.at(-1)?.designation);
 
   ok('nothing was written for the stranger',
     (await history(strangerId)).length === 1,

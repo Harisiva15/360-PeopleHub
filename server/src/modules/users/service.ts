@@ -252,27 +252,47 @@ function scopeFor(
   if (reaches(caller, 'users', verb, 'all')) return 'TRUE';
   if (!caller.hasReports || !caller.employeeId) return 'FALSE';
   /*
-   * OPEN: this call omits the verb, so `employeeScope` defaults to `read` and
-   * builds the *write* predicate out of the *read* scope.
+   * **The verb goes through.** Write reach is built from the write grant and
+   * never from the read scope.
    *
-   * For a manager that happens to give the right answer — `users read` is
-   * `team`, so they get their line, which is the behaviour
-   * `employment.test.mjs` asserts. For anybody holding `users read all` *and*
-   * having reports it returns `TRUE`: write reach over every account in the
-   * tenant. hr_admin holds `users read all`, so an HR administrator who also
-   * manages somebody is an administrator of everything.
+   * This call used to omit it, so `employeeScope` defaulted to `read` and the
+   * *write* predicate came out of the *read* scope. For a manager that gave
+   * the right-looking answer — `users read` is `team`, so they got their line.
+   * For anybody holding `users read all` *and* having reports it returned
+   * `TRUE`: write reach over every account in the tenant. hr_admin holds
+   * `users read all`, so an HR administrator who also managed somebody was an
+   * administrator of everything, including the ability to change anybody's
+   * work email and then resend their invitation to it.
    *
-   * Passing `verb` through closes it and also stops a manager editing their
-   * report, because the policy says `users write: none` for the manager
-   * layer — so the one-line fix changes a tested workflow, and which of the
-   * policy and the product is wrong is not a question to answer inside a
-   * guard. Left as it is, named here, and raised.
+   * It was the same shape as the frontend bug in 402c1b6, where both
+   * `scopeOfDemo` call sites dropped the verb and every write question got the
+   * read scope back.
    *
-   * It is the same shape as the frontend bug in 402c1b6, where both
-   * `scopeOfDemo` call sites dropped the verb and every write question got
-   * the read scope back.
+   * ## What this took away, and why nothing asked for it back
+   *
+   * `users write` is company_admin's alone, so a manager now loads no row for
+   * writing and `updateUser`, `setUserStatus` and `bulkUpdateUsers` are
+   * company_admin's. One assertion in `employment.test.mjs` required a manager
+   * to change their own report's designation; it was testing this leak rather
+   * than a workflow, because no screen has ever offered it — `ACTION_GATE`
+   * puts `user.edit` behind `users write` and `ACTION_SCOPE` gives the manager
+   * layer `none`, so the Edit control is not rendered for a manager and the
+   * drawer is the only path to `updateUser`. The three assertions now state
+   * the refusal.
+   *
+   * Creating is untouched and does not come through here: `createUser` gates
+   * on `mayAdminister` and decides from the *write* scope what the create
+   * *means* — `pending_approval` for a manager or an HR administrator, a live
+   * account for company_admin. Raising a joiner was never an account edit.
+   *
+   * A manager who needs their report's department, manager or location changed
+   * asks HR, which is what the `people` policy already says about lifecycle
+   * records: "This leaves a manager with no way to ask for one either. The
+   * request flow that would replace it needs a pending state neither this
+   * record nor the exit record has, so it is a schema change." The same is
+   * true here, and it is a feature rather than a guard.
    */
-  return employeeScope(caller, 'm.employee_id', params, 'users');
+  return employeeScope(caller, 'm.employee_id', params, 'users', verb);
 }
 
 /**
@@ -837,14 +857,15 @@ export async function updateUser(
 ): Promise<UserAccount> {
   /*
    * The gate is "may you manage accounts at all"; `load` below decides *which*
-   * accounts, through `scopeFor`. That division is the model, and it is the
-   * one `employment.test.mjs` asserts: an employee cannot change their own
-   * designation, a manager may change their own report's — recorded in
-   * employment history against the manager — and may not touch anybody
-   * outside their line.
+   * accounts, through `scopeFor`. That division is the model, and keeping it
+   * is why there is no `mayWrite` here: a gate asking `users write` would also
+   * refuse `createUser`'s manager path, where the write scope is supposed to
+   * decide what the create *means* rather than whether it happens.
    *
-   * `mayWrite` was here briefly and broke all three. See `scopeFor` for the
-   * escalation that is still open and is not mine to close unasked.
+   * The row predicate is the half that carries the write question, and it now
+   * asks it — `scopeFor` passes the verb through, so `users write` being
+   * company_admin's makes this company_admin's. See `scopeFor` for what that
+   * took away and why nothing reachable asked for it back.
    */
   mayAdminister(caller);
   validate(patch);
