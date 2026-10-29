@@ -77,7 +77,7 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!error) return this.props.children ?? null;
 
     return (
-      <div className="stack" style={{ padding: 24, maxWidth: 680 }} role="alert">
+      <div className="stack" style={{ padding: 'var(--sp-4)', maxWidth: 680 }} role="alert">
         <h2 style={{ margin: 0, fontSize: 18 }}>This page could not be displayed</h2>
         <p className="muted" style={{ margin: 0 }}>
           Something on
@@ -93,13 +93,13 @@ export class ErrorBoundary extends Component<Props, State> {
         <pre
           className="mono"
           style={{
-            margin: 0, padding: 12, fontSize: 12, whiteSpace: 'pre-wrap',
+            margin: 0, padding: 'var(--sp-2)', fontSize: 12, whiteSpace: 'pre-wrap',
             background: 'var(--surface-2)', borderRadius: 8, overflowX: 'auto',
           }}
         >
           {error.message || String(error)}
         </pre>
-        <div className="row" style={{ gap: 8 }}>
+        <div className="row" style={{ gap: 'var(--sp-2)' }}>
           <button className="btn primary" onClick={() => window.location.reload()}>
             Reload the page
           </button>

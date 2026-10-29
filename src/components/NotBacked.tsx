@@ -41,7 +41,8 @@ export function NotBackedNote({ children }: { children: ReactNode }) {
   return (
     <div
       className="muted"
-      style={{ fontSize: 12, lineHeight: 1.55, padding: '8px 11px', borderRadius: 7,
+      style={{ fontSize: 12, lineHeight: 1.55,
+        padding: 'var(--sp-1) var(--sp-2)', borderRadius: 7,
         background: 'var(--surface-2, rgba(127,127,127,.07))' }}
     >
       {children}

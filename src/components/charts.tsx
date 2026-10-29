@@ -203,7 +203,7 @@ export function HBar({ rows, fmt }: { rows: HBarRow[]; fmt?: Fmt }) {
   const max = Math.max(1, ...rows.map((r) => r.v));
   const fmtV: Fmt = fmt || ((v) => v);
   return (
-    <div className="stack" style={{ gap: 9 }}>
+    <div className="stack" style={{ gap: 'var(--sp-2)' }}>
       {rows.map((r, i) => (
         <div key={i} data-tip={`${r.k}: ${fmtV(r.v)}`}>
           <div className="row" style={{ justifyContent: 'space-between', fontSize: 12.5, marginBottom: 4 }}>
