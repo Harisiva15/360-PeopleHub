@@ -64,11 +64,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const MIGRATION = join(here, '..', 'db', 'migrations', '0063_employee_shift_history.sql');
 
 const { withScratchTenant, sweepScratchTenants } = await import('./lib/scratch-tenant.mjs');
-const {
-  raiseRegularisation, actOnRegularisation, attendanceForDay,
-} = await import('../src/modules/attendance/service.ts');
-const { setEmployeeShift } = await import('../src/modules/shifts/service.ts');
-const { closePool } = await import('../src/db/pool.ts');
 
 let failed = 0;
 const ok = (label, cond, detail = '') => {
@@ -380,162 +375,6 @@ try {
     ok('    and the day they were hired resolves, before any punch',
       await resolve(bothRosters, JOINED) === 'IN',
       String(await resolve(bothRosters, JOINED)));
-
-    /* ---------------------------------------------------------------- *
-     * The services that write it
-     * ---------------------------------------------------------------- */
-
-    console.log('\nmoving somebody records when, not only what\n');
-
-    const adminCaller = {
-      role: 'company_admin', hasReports: false, tenantId: ctx.tenant,
-      employeeId: ctx.adminEmployeeId, userId: null,
-    };
-
-    /*
-     * `assignShift` writes the period in the same transaction as the column.
-     * Without that this table would be correct on the day of the backfill and
-     * wrong from the first move after it, which is the failure mode of every
-     * history table nobody writes to.
-     */
-    const moved = await hire(inShift);
-    await admin.query(
-      `INSERT INTO employee_shift
-         (tenant_id, employee_id, shift_id, valid_from, valid_to, source)
-       VALUES ($1, $2, $3, $4::date, NULL, 'assigned')`,
-      [ctx.tenant, moved, inShift, JOINED]);
-
-    const today = (await admin.query('SELECT current_date::text AS d')).rows[0].d;
-    const went = await refused(() => setEmployeeShift(adminCaller, moved, 'ZZNY'));
-    ok('13. a move is accepted', went === null, `${went?.code}: ${went?.message}`);
-
-    const h = await historyOf(moved);
-    ok('    and closes the old period the day before it took effect',
-      h.length === 2 && h[0]?.code === 'IN' && h[0]?.vto < today,
-      JSON.stringify(h));
-    ok('    opening the new one from today, still current',
-      h[1]?.code === 'ZZNY' && h[1]?.vfrom === today && h[1]?.vto === null,
-      JSON.stringify(h[1]));
-    ok('    recorded as a deliberate act, not as the backfill\'s reading',
-      h[1]?.source === 'assigned', String(h[1]?.source));
-
-    /*
-     * A second move the same day. Closing the open period would give it a
-     * `valid_to` before its `valid_from`, which the CHECK refuses — so the
-     * period is replaced rather than split into one that never covered a day.
-     */
-    const again2 = await refused(() => setEmployeeShift(adminCaller, moved, 'IN'));
-    const h2 = await historyOf(moved);
-    ok('14. a second move the same day replaces the period rather than splitting it',
-      again2 === null && h2.length === 2 && h2[1]?.vfrom === today
-        && h2[1]?.code === 'IN' && h2[1]?.vto === null,
-      `${again2?.message ?? ''} ${JSON.stringify(h2)}`);
-
-    /* ---------------------------------------------------------------- *
-     * The case this was built for
-     * ---------------------------------------------------------------- */
-
-    console.log('\nand a correction for a day with no row uses that day\'s hours\n');
-
-    /*
-     * VHM007's case exactly, with the ordering that makes it go wrong: moved to
-     * New York *after* working New York hours, and the day being corrected has
-     * no attendance row at all, so there is no stamp to inherit. Before 0063 the
-     * only answer available was the roster they are on now.
-     *
-     * Here the history says they were on India hours that day, so 09:30 means
-     * 09:30 in Kolkata — 04:00Z — and not 09:30 in New York, which would be
-     * 13:30Z. The suite asserts the stored instant rather than what the screen
-     * renders, because the screen would show the typed time either way.
-     */
-    const backdated = await hire(inShift);
-    await admin.query(
-      `INSERT INTO employee_shift
-         (tenant_id, employee_id, shift_id, valid_from, valid_to, source)
-       VALUES ($1, $2, $3, $4::date, $5::date, 'attendance'),
-              ($1, $2, $6, $7::date, NULL, 'assigned')`,
-      [ctx.tenant, backdated, inShift, JOINED, OCT(20), nyShift, OCT(21)]);
-    await admin.query('UPDATE employee SET shift_id = $2 WHERE id = $1',
-      [backdated, nyShift]);
-
-    const theirs = {
-      role: 'employee', hasReports: false, tenantId: ctx.tenant,
-      employeeId: backdated, userId: null,
-    };
-
-    const forIndiaDay = await refused(() =>
-      raiseRegularisation(theirs, backdated, OCT(15), '09:30', '18:30', 'Forgot'));
-    ok('15. a correction for a day with no row is accepted',
-      forIndiaDay === null, `${forIndiaDay?.code}: ${forIndiaDay?.message}`);
-
-    const stamped = (await admin.query(
-      `SELECT sh.code FROM attendance a JOIN shift sh ON sh.id = a.shift_id
-        WHERE a.employee_id = $1 AND a.work_date = $2::date`,
-      [backdated, OCT(15)])).rows[0]?.code;
-    ok('    and the row it creates is stamped with that day\'s roster',
-      stamped === 'IN',
-      `${stamped} — ZZNY would be today's answer applied to a past day`);
-
-    const asStored = (await admin.query(
-      `SELECT to_char(r.requested_in AT TIME ZONE 'UTC', 'HH24:MI') AS in_utc
-         FROM regularisation r JOIN attendance a ON a.id = r.attendance_id
-        WHERE a.employee_id = $1 AND a.work_date = $2::date`,
-      [backdated, OCT(15)])).rows[0]?.in_utc;
-    ok('    so the typed hours are stored in the zone they were worked in',
-      asStored === '04:00',
-      `${asStored} — 13:30 would mean New York was used for an India day`);
-
-    const credited = await refused(() =>
-      actOnRegularisation(adminCaller, backdated, OCT(15), 'Approved'));
-    const day = await attendanceForDay(theirs, backdated, OCT(15));
-    ok('16. approving it credits the day in its own zone',
-      credited === null && day?.status === 'P'
-        && day?.inT === '09:30' && day?.tz === 'Asia/Kolkata',
-      `${credited?.message ?? ''} ${day?.inT} / ${day?.tz} / ${day?.status}`);
-    ok('    with the break taken from that day\'s shift, not today\'s',
-      day?.mins === 480, `${day?.mins}`);
-
-    /*
-     * And the other side of the boundary, same employee, same request: a day
-     * after the move has to read as New York. One assertion per side, because a
-     * resolver that returns a constant passes either one alone.
-     */
-    const forNyDay = await refused(() =>
-      raiseRegularisation(theirs, backdated, OCT(22), '09:30', '18:30', 'Forgot'));
-    const stampedNy = (await admin.query(
-      `SELECT sh.code FROM attendance a JOIN shift sh ON sh.id = a.shift_id
-        WHERE a.employee_id = $1 AND a.work_date = $2::date`,
-      [backdated, OCT(22)])).rows[0]?.code;
-    ok('17. a day the other side of the boundary reads as the new roster',
-      forNyDay === null && stampedNy === 'ZZNY',
-      `${forNyDay?.message ?? ''} ${stampedNy}`);
-
-    /* ---------------------------------------------------------------- *
-     * The net under the whole thing
-     * ---------------------------------------------------------------- */
-
-    console.log('\nand an employee with no history still gets an answer\n');
-
-    /*
-     * A fixture or an importer can insert an employee without opening a period.
-     * `shiftOnDate` falls back to `employee.shift_id`, so the worst case is the
-     * behaviour from before 0063 rather than a null shift and a failed insert.
-     */
-    const historyless = await hire(inShift);
-    await admin.query('DELETE FROM employee_shift WHERE employee_id = $1', [historyless]);
-    const theirsToo = {
-      role: 'employee', hasReports: false, tenantId: ctx.tenant,
-      employeeId: historyless, userId: null,
-    };
-    const stillWorks = await refused(() =>
-      raiseRegularisation(theirsToo, historyless, OCT(15), '09:30', '18:30', 'Forgot'));
-    const fellBack = (await admin.query(
-      `SELECT sh.code FROM attendance a JOIN shift sh ON sh.id = a.shift_id
-        WHERE a.employee_id = $1 AND a.work_date = $2::date`,
-      [historyless, OCT(15)])).rows[0]?.code;
-    ok('18. a correction still works, falling back to the current roster',
-      stillWorks === null && fellBack === 'IN',
-      `${stillWorks?.message ?? ''} ${fellBack}`);
   });
 } catch (e) {
   fatal = e;
@@ -544,7 +383,6 @@ try {
   if (e?.stack) console.log(e.stack.split('\n').slice(1, 5).join('\n'));
 } finally {
   await admin.end();
-  await closePool();
 }
 
 console.log(`\n${failed

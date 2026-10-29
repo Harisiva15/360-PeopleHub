@@ -31,7 +31,7 @@ import { openLeaveBalances } from '../people/provision.ts';
 /* One employment-history writer, shared with provisioning and exits. */
 import { recordEmployment, reasonForChange, termsOf } from '../people/employment.ts';
 import { assignInitialSchedule } from '../schedules/service.ts';
-import { assignShift, assignableShiftId, openFirstShiftPeriod } from '../shifts/service.ts';
+import { assignShift, assignableShiftId } from '../shifts/service.ts';
 import { authAdmin, inviteRedirect } from '../../auth/adminApi.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 import { ROLES, grantNeedsAuthority, mayAssignRole } from '../../auth/policy.ts';
@@ -706,18 +706,6 @@ export async function createUser(caller: Caller, d: UserDraft): Promise<UserAcco
      * second and third real account to see it.
      */
     await openLeaveBalances(db, emp[0]!.id);
-
-    /*
-     * And the first shift period, dated from the joining date.
-     *
-     * `employee.shift_id` says which hours they are on; `employee_shift` (0063)
-     * says since when, which is the only thing that can answer a correction for
-     * a day in the past. Opened here because a new joiner has no attendance for
-     * the backfill to read, and without it every date before their first move
-     * would resolve through `shiftOnDate`'s fallback — today's roster, which is
-     * the answer 0063 exists to stop giving.
-     */
-    await openFirstShiftPeriod(db, emp[0]!.id);
 
     /*
      * And the first employment record, dated from the joining date. Without it

@@ -19,7 +19,6 @@
  */
 
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
-import { openFirstShiftPeriod } from '../shifts/service.ts';
 import { assignInitialSchedule } from '../schedules/service.ts';
 import { recordEmployment } from './employment.ts';
 
@@ -119,18 +118,6 @@ export async function provisionEmployee(
   }
 
   await openLeaveBalances(db, id);
-
-  /*
-   * And the first shift period, dated from the joining date.
-   *
-   * `employee.shift_id` says which hours they are on; `employee_shift` (0063)
-   * says since when, which is the only thing that can answer a correction for
-   * a day in the past. Opened here because a new joiner has no attendance for
-   * the backfill to read, and without it every date before their first move
-   * would resolve through `shiftOnDate`'s fallback — today's roster, which is
-   * the answer 0063 exists to stop giving.
-   */
-  await openFirstShiftPeriod(db, id);
 
   /*
    * The first employment record, dated from the joining date rather than
