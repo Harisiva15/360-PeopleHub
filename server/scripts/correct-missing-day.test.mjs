@@ -29,7 +29,7 @@
  * and then the correction takes the times a person typed while looking at a day
  * rendered in its own zone and stores them in the zone of a roster they are on
  * now. India to New York is a 10½ hour error, on the request meant to fix the
- * day. Assertions 9 to 11 are that case.
+ * day. Assertions 11 to 13 are that case.
  */
 
 import pg from 'pg';
@@ -51,6 +51,7 @@ if (!process.env.MIGRATE_DATABASE_URL || !process.env.DATABASE_URL) {
 const { withScratchTenant, sweepScratchTenants } = await import('./lib/scratch-tenant.mjs');
 const {
   raiseRegularisation, regularisableDays, attendanceForDay, punchIn, punchOut,
+  actOnRegularisation,
   AttendanceError,
 } = await import('../src/modules/attendance/service.ts');
 const { setEmployeeShift } = await import('../src/modules/shifts/service.ts');
@@ -151,6 +152,42 @@ try {
       day?.reg?.status === 'Pending' && day?.reg?.inT === '09:30',
       JSON.stringify(day?.reg));
 
+    /* ---------------------------------------------------------------- *
+     * And approved, which is the half that actually credits the day
+     * ---------------------------------------------------------------- */
+
+    console.log('\nand approving it credits the day it created\n');
+
+    /*
+     * Raising is half the question. A request that lands pending on a row the
+     * correction itself created is worth nothing until somebody approves it,
+     * and approval runs a different statement against that row — one that had
+     * never been exercised on a row with no punches in it.
+     */
+    const decided = await refused(() =>
+      actOnRegularisation(adminCaller, forgot, GONE, 'Approved'));
+    ok('5. a manager can approve a correction on a row it created',
+      decided === null, `${decided?.code}: ${decided?.message}`);
+
+    const credited = await attendanceForDay(me, forgot, GONE);
+    ok('    and the day becomes present, not absent',
+      credited?.status === 'P', String(credited?.status));
+    ok('    carrying the hours that were asked for',
+      credited?.inT === '09:30' && credited?.outT === '18:30',
+      `${credited?.inT} → ${credited?.outT}`);
+    /*
+     * 09:30 to 18:30 is 540 minutes, less the India shift's 60-minute break.
+     * The break comes from the row's own shift, which for a row this created
+     * is the one the employee was on when it was created.
+     */
+    ok('    and worked minutes net of the break',
+      credited?.mins === 480, `${credited?.mins} — 540 would mean no break was taken off`);
+    ok('    marked as a correction rather than a punch',
+      credited?.notes === 'Regularised', String(credited?.notes));
+    ok('6. and it is no longer offered for correction',
+      !(await regularisableDays(me, forgot, '2026-10-12')).some((r) => r.date === GONE),
+      JSON.stringify((await regularisableDays(me, forgot, '2026-10-12')).map((r) => r.date)));
+
     /*
      * The guards. A date in the future is not a correction, and neither is one
      * outside the person's employment — and without these, a typo writes a row
@@ -159,7 +196,7 @@ try {
      */
     const ahead = await refused(() => raiseRegularisation(
       me, forgot, '2099-01-04', '09:30', '18:30', 'Forgot'));
-    ok('5. a day that has not happened is refused',
+    ok('7. a day that has not happened is refused',
       ahead instanceof AttendanceError && /has not happened/.test(ahead.message),
       `${ahead?.code}: ${ahead?.message}`);
     const before = await refused(() => raiseRegularisation(
@@ -183,13 +220,13 @@ try {
     const offered = await regularisableDays(them, other, '2026-10-12');
     const dates = offered.map((r) => r.date);
 
-    ok('6. a working day with no row is offered for correction',
+    ok('8. a working day with no row is offered for correction',
       dates.includes(GONE) && dates.includes(ALSO_GONE),
       JSON.stringify(dates.slice(0, 8)));
     ok('    newest first, as the screen renders them',
       dates.join(',') === [...dates].sort((a, b) => b.localeCompare(a)).join(','),
       JSON.stringify(dates.slice(0, 5)));
-    ok('7. today is not offered, because it is not over',
+    ok('9. today is not offered, because it is not over',
       !dates.includes((await admin.query('SELECT current_date::text AS d')).rows[0].d),
       JSON.stringify(dates.slice(0, 3)));
 
@@ -198,7 +235,7 @@ try {
      * `classifyMany` is what knows that, which is why it decides rather than a
      * weekday test written here for the second time.
      */
-    ok('8. a weekly off is not offered as a day needing correction',
+    ok('10. a weekly off is not offered as a day needing correction',
       !dates.includes('2026-10-18'), JSON.stringify(dates));
 
     /* ---------------------------------------------------------------- *
@@ -220,7 +257,7 @@ try {
 
     /* Then moved to New York hours, as somebody would be after the fact. */
     await setEmployeeShift(adminCaller, moved, 'ZZNY');
-    ok('9. the employee is now on the New York roster',
+    ok('11. the employee is now on the New York roster',
       (await admin.query(
         'SELECT sh.code FROM employee e JOIN shift sh ON sh.id = e.shift_id WHERE e.id = $1',
         [moved])).rows[0].code === 'ZZNY');
@@ -236,12 +273,12 @@ try {
     const stored = (await admin.query(
       `SELECT to_char(requested_in AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS in_utc
          FROM regularisation WHERE employee_id = $1`, [moved])).rows[0];
-    ok('10. the typed hours are stored in the day\'s own zone, not the new one',
+    ok('12. the typed hours are stored in the day\'s own zone, not the new one',
       stored?.in_utc === '2026-10-21 04:30',
       `${stored?.in_utc} — 14:00 would mean New York was used for an India day`);
 
     const back = await attendanceForDay(theirs, moved, '2026-10-21');
-    ok('11. and the day still reads in the zone it was worked in',
+    ok('13. and the day still reads in the zone it was worked in',
       back?.inT === '10:00' && back?.tz === 'Asia/Kolkata',
       `${back?.inT} / ${back?.tz}`);
   });

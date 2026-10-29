@@ -702,6 +702,31 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
       const heads = table.querySelectorAll('thead tr:last-child th');
       const firstRow = table.querySelector('tbody tr');
       const cells = firstRow ? firstRow.querySelectorAll('td') : null;
+      /*
+       * Sampled across the first few rows rather than from the first alone,
+       * and only where there is text to align.
+       *
+       * The team leave calendar is twenty-eight day columns of empty cells
+       * carrying nothing but a background — a leave block, a holiday, a weekly
+       * off. Their computed `text-align` is the inherited default, which does
+       * not match a centred header, and the audit reported every one of them.
+       * An empty cell has no visible alignment, so there is nothing there to
+       * disagree with.
+       *
+       * Five rows because the first can be empty in a column that is not: a
+       * register whose top row happens to have no note would otherwise take
+       * the whole column out of the check.
+       */
+      const bodyRows = table.querySelectorAll('tbody tr');
+      const textCell = (c: number): Element | null => {
+        for (let r = 0; r < Math.min(bodyRows.length, 5); r += 1) {
+          const tds = bodyRows[r]!.querySelectorAll('td');
+          if (tds.length !== heads.length) continue;
+          const td = tds[c];
+          if (td && (td.textContent ?? '').trim()) return td;
+        }
+        return null;
+      };
       if (heads.length && cells && cells.length === heads.length) {
         for (let c = 0; c < heads.length; c += 1) {
           const hr = heads[c]!.getBoundingClientRect();
@@ -713,8 +738,11 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
               + 'px but its cells at ' + r1(dr.left) + 'px',
               'med');
           }
+          /* Both ends need text, or there is no alignment to disagree about. */
+          const sample = textCell(c);
+          if (!sample || !(heads[c]!.textContent ?? '').trim()) continue;
           const ha = cs(heads[c]!).textAlign;
-          const da = cs(cells[c]!).textAlign;
+          const da = cs(sample).textAlign;
           const norm = (v: string) => (v === 'start' ? 'left' : v === 'end' ? 'right' : v);
           if (norm(ha) !== norm(da)) {
             add('column-align-mismatch', heads[c]!,

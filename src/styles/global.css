@@ -988,6 +988,22 @@ table.tbl tbody tr{transition:background .12s ease}
 table.tbl tbody tr:hover{background:var(--surface-2)}
 table.tbl tbody tr:last-child td{border-bottom:0}
 table.tbl td.num,table.tbl th.num{text-align:right;font-variant-numeric:tabular-nums}
+/*
+ * `.right` has to be qualified here for the same reason `.num` is, and it was
+ * not.
+ *
+ * `table.tbl th` sets `text-align:left` at (0,1,2); the bare `.right` utility
+ * is (0,1,0) and loses. `table.tbl td` sets no alignment, so `.right` wins on
+ * a cell unopposed — which means `<th className="right">` renders its header
+ * left while its own column renders right, silently, on every table that
+ * right-aligns a column this way. The audit found it on 36 screens: the
+ * Actions column of nearly every register.
+ *
+ * Qualified at the same specificity rather than with `!important`, and beside
+ * `.num` rather than next to the utility, so the two table-alignment rules sit
+ * together and the next one is written here too.
+ */
+table.tbl td.right,table.tbl th.right{text-align:right}
 .clickable{cursor:pointer}
 .empty{padding:40px 20px;text-align:center;color:var(--ink-3);font-size:13px}
 .empty .big{font-size:30px;display:block;margin-bottom:6px;opacity:.5}

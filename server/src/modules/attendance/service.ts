@@ -839,7 +839,21 @@ export async function regularisableDays(
     const today = (await db.query<{ d: string }>(
       'SELECT current_date::text AS d')).rows[0]!.d;
     const verdicts = (await classifyMany(db, [empId], since, today))[empId] ?? [];
-    const have = new Set(withRows.map((r) => r.date));
+
+    /*
+     * Every date that has a row at all, asked for separately.
+     *
+     * Not `withRows.map(r => r.date)`, which is what this was: that is the
+     * list *after* the filter above has dropped the days needing nothing. So a
+     * day whose correction had been approved fell out of it, the synthetic
+     * half below saw no row for that date, and offered it again — a day
+     * already corrected, back in the list, for ever. The suite's assertion 6
+     * is that case, and it caught this.
+     */
+    const { rows: existing } = await db.query<{ d: string }>(
+      `SELECT to_char(work_date, 'YYYY-MM-DD') AS d FROM attendance
+        WHERE employee_id = $1 AND work_date >= $2`, [empId, since]);
+    const have = new Set(existing.map((r) => r.d));
     const tz = withRows[0]?.tz ?? '';
 
     const missing: AttRecord[] = verdicts
@@ -1025,16 +1039,33 @@ export async function actOnRegularisation(
       [decision.toLowerCase(), caller.employeeId, r.rows[0].id]);
 
     if (decision === 'Approved') {
+      /*
+       * The break comes from the row's own shift — the same
+       * `COALESCE(a.shift_id, e.shift_id)` every other read uses — and not from
+       * the employee's current one, which is what this was: the third place
+       * that mistake was made. The break is subtracted from the approved
+       * hours, so after a shift move it deducted the new roster's break from a
+       * day worked on the old one's. That still yields a plausible total,
+       * which is why it needs an assertion rather than an eye.
+       *
+       * As a scalar subquery rather than a join, because an UPDATE's FROM
+       * clause may not reference the update target — `COALESCE(a.shift_id, …)`
+       * does, and Postgres answers 42P01.
+       */
       await db.query(
         `UPDATE attendance a
             SET punch_in = $2, punch_out = $3, status = 'P', late = false,
                 geo_ok = NULL,
                 worked_minutes = GREATEST(0,
                   EXTRACT(EPOCH FROM ($3::timestamptz - $2::timestamptz))::int / 60
-                  - COALESCE(sh.break_minutes, 0)),
+                  - COALESCE((
+                      SELECT sh.break_minutes FROM shift sh
+                       WHERE sh.id = COALESCE(
+                         a.shift_id,
+                         (SELECT e.shift_id FROM employee e WHERE e.id = a.employee_id))
+                    ), 0)),
                 notes = 'Regularised', updated_at = now()
-           FROM employee e JOIN shift sh ON sh.id = e.shift_id
-          WHERE a.id = $1 AND e.id = a.employee_id`,
+          WHERE a.id = $1`,
         [r.rows[0].attendance_id, r.rows[0].requested_in, r.rows[0].requested_out]);
     }
 
