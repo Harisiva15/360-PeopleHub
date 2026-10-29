@@ -25,6 +25,7 @@
 
 import { reaches } from '../../auth/can.ts';
 import { classifyMany } from '../calendar/service.ts';
+import { shiftOnDate } from '../shifts/service.ts';
 import { withTenant, withTenantReadOnly } from '../../tenancy/context.ts';
 import type { Caller, TenantClient } from '../../tenancy/context.ts';
 
@@ -927,7 +928,7 @@ export async function raiseRegularisation(
      * Times arrive as HH:MM in the *day's* timezone and are stored as
      * instants.
      *
-     * `COALESCE(a.shift_id, e.shift_id)`, the same rule `PROJECTION` uses, and
+     * `COALESCE(a.shift_id, shiftOnDate(...))` — the row's own stamp first, and
      * not `e.shift_id` as this read before. The two differ exactly when
      * somebody has been moved since the day in question — and then the old
      * reading took the hours a person typed while looking at a day rendered in
@@ -944,7 +945,8 @@ export async function raiseRegularisation(
               $6, $7
          FROM attendance a
          JOIN employee e ON e.id = a.employee_id
-         JOIN shift sh ON sh.id = COALESCE(a.shift_id, e.shift_id)
+         JOIN shift sh ON sh.id
+           = COALESCE(a.shift_id, ${shiftOnDate('a.employee_id', 'a.work_date')})
         WHERE a.id = $1`,
       [row.id, empId, date, inT, outT, reason, row.manager_id]);
 
@@ -987,10 +989,21 @@ async function createDayFor(
       'That day falls outside this person\'s employment.', 'invalid');
   }
 
+  /*
+   * Stamped with the shift in force *on that date*, not the one the employee is
+   * on now — `employee_shift` (0063) is what can tell the two apart, and this
+   * is the row every later read of the day will COALESCE to.
+   *
+   * It matters most for exactly the case this function exists for. A day with
+   * no row is a day nobody measured, so there is no stamp to inherit; before
+   * 0063 the only available answer was today's roster, which after a move is
+   * the wrong clock for the hours somebody types. VHM007's 23rd to 27th of
+   * October were that case, ten and a half hours wide.
+   */
   const { rows } = await db.query<{ id: string }>(
     `INSERT INTO attendance
        (employee_id, work_date, status, site_id, shift_id, source, worked_minutes, late)
-     SELECT $1, $2::date, 'A', e.site_id, e.shift_id, 'system', 0, false
+     SELECT $1, $2::date, 'A', e.site_id, ${shiftOnDate('$1', '$2')}, 'system', 0, false
        FROM employee e WHERE e.id = $1
      RETURNING id`, [empId, date]);
   return { id: rows[0]!.id, manager_id: e.manager_id };
@@ -1062,7 +1075,7 @@ export async function actOnRegularisation(
                       SELECT sh.break_minutes FROM shift sh
                        WHERE sh.id = COALESCE(
                          a.shift_id,
-                         (SELECT e.shift_id FROM employee e WHERE e.id = a.employee_id))
+                         ${shiftOnDate('a.employee_id', 'a.work_date')})
                     ), 0)),
                 notes = 'Regularised', updated_at = now()
           WHERE a.id = $1`,
