@@ -206,7 +206,7 @@ export function HBar({ rows, fmt }: { rows: HBarRow[]; fmt?: Fmt }) {
     <div className="stack" style={{ gap: 'var(--sp-2)' }}>
       {rows.map((r, i) => (
         <div key={i} data-tip={`${r.k}: ${fmtV(r.v)}`}>
-          <div className="row" style={{ justifyContent: 'space-between', fontSize: 12.5, marginBottom: 4 }}>
+          <div className="row" style={{ justifyContent: 'space-between', fontSize: 12.5, marginBottom: 'var(--sp-xs)' }}>
             <span style={{ fontWeight: 600 }}>{r.k}</span>
             <span className="mono muted">{fmtV(r.v)}</span>
           </div>
@@ -271,7 +271,7 @@ export function Donut({
           <div>
             <div style={{ fontSize: 23, fontWeight: 750, letterSpacing: '-.8px', lineHeight: 1 }}>{center}</div>
             {centerSub && (
-              <div style={{ fontSize: 10.5, color: 'var(--ink-3)', fontWeight: 600, marginTop: 2 }}>{centerSub}</div>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-3)', fontWeight: 600, marginTop: 'var(--sp-xxs)' }}>{centerSub}</div>
             )}
           </div>
         </div>

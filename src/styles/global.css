@@ -183,7 +183,18 @@
    * things comes from here, which is most of what makes a layout feel settled
    * rather than assembled.
    */
+  --sp-xxs:2px; --sp-xs:4px;
   --sp-1:6px; --sp-2:10px; --sp-3:16px; --sp-4:22px; --sp-5:32px;
+  /*
+   * The two below `--sp-1` are not layout spacing and should not be reached
+   * for to separate one block from another — 6px is still the floor for that.
+   * They exist because the scale had no honest answer for an optical nudge: a
+   * chart label lifted off its bar, a caption set under a figure. Sixty-seven
+   * inline values sat below the 6px floor, forty-two of them exactly 2px or
+   * 4px, written as bare numbers because the alternative was to round a 2px
+   * offset up to 6px and make the drawing worse. Named, they are on the scale
+   * and countable; unnamed, they were neither.
+   */
 
   /*
    * The system stack, in the order each platform's best face appears. No web

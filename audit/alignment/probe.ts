@@ -48,12 +48,17 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
    * loop and a long way from the line that looks wrong. Everything this
    * function needs is therefore local to it, including the constants.
    *
-   * `TOKENS` is the spacing scale from `global.css` (`--sp-1`..`--sp-5`) plus
-   * the values a layout legitimately needs outside it: zero, and the 1–2px
-   * hairlines and optical nudges that are not spacing decisions.
+   * `TOKENS` is the spacing scale from `global.css` — `--sp-xxs` and `--sp-xs`
+   * (2px, 4px) and `--sp-1`..`--sp-5` (6px to 32px) — plus zero and the 1px
+   * hairline, which is a border's width rather than a spacing decision.
    * `CTRL_H` is `--h-ctl-sm`, `--h-ctl`, `--h-in` and `--h-ctl-lg`.
+   *
+   * This list is a copy of the stylesheet's and cannot read it, for the reason
+   * above. `checks/spacing.ts` asserts the two agree, so adding a step to the
+   * scale without adding it here fails rather than quietly making the audit
+   * report findings the stylesheet does not consider faults.
    */
-  const TOKENS = [0, 1, 2, 6, 10, 16, 22, 32];
+  const TOKENS = [0, 1, 2, 4, 6, 10, 16, 22, 32];
   const CTRL_H = [32, 38, 40, 44];
 
   const add = (

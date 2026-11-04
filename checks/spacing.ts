@@ -24,14 +24,21 @@
  * style attribute, which never appears in a stylesheet and so was unmeasured.
  * That is where all 451 live — the stylesheet itself is on-scale.
  *
- * ## The scale's own limits, which this check does not pretend to settle
+ * ## The scale's own limit, which has now been settled
  *
- * 6px is the smallest step, and 67 of the 451 are 2, 3 or 4px — a chart's label
- * offset, a badge's optical nudge. Those are not layout spacing and snapping
- * them to 6 would make the design worse, not more consistent. So the ratchet
- * counts them without claiming they are wrong; whether the scale needs a fine
- * step below 6 is a design decision and is recorded as one in the report this
- * prints, not decided here.
+ * This check used to end by refusing to answer a question it had surfaced: 67
+ * of the then 451 values were 2, 3 or 4px — a chart's label offset, a badge's
+ * optical nudge — and 6px was the smallest step, so the only way to be "on the
+ * scale" was to triple a 2px gap and make the drawing worse. The ratchet
+ * counted them without claiming they were wrong, and said the scale itself was
+ * the thing to decide.
+ *
+ * It was decided: `--sp-xxs` (2px) and `--sp-xs` (4px) now exist, named by size
+ * rank so they read as the same scale extended downward rather than a second
+ * vocabulary. 42 declarations became on-scale the moment they were added, which
+ * is the point — those were never off the scale by intent, only off it by the
+ * scale's omission. 6px remains the floor for separating one block from
+ * another; the two below it are for optical work and `global.css` says so.
  */
 
 import { execSync } from 'node:child_process';
@@ -61,6 +68,37 @@ ok('the spacing scale is defined in global.css', scale.size > 1,
 
 const steps = [...scale].sort((a, b) => a - b);
 console.log(`  note  scale: ${steps.join('/')}`);
+
+/*
+ * The alignment probe carries its own copy of this list. It has to: its
+ * function source is shipped to the browser by `page.evaluate` and evaluated
+ * with no module around it, so a reference to anything outside the function is
+ * a ReferenceError deep inside a loop. A copy that can drift is still a copy
+ * that will, and the drift is silent in the worst direction — the audit goes on
+ * reporting a value as off-token after the stylesheet has adopted it, so
+ * thousands of findings describe a fault that no longer exists.
+ *
+ * The probe's list is the scale plus 1, the hairline, which is a border width
+ * rather than a spacing decision and has no token.
+ */
+const probeSrc = readFileSync('audit/alignment/probe.ts', 'utf8');
+const probeLine = /const TOKENS = \[([^\]]*)\]/.exec(probeSrc);
+ok("the alignment probe's token list was found", probeLine !== null,
+  'no `const TOKENS = [...]` in audit/alignment/probe.ts — if it moved or was '
+  + 'renamed, point this assertion at it rather than deleting it');
+
+if (probeLine) {
+  const probeTokens = probeLine[1].split(',').map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  const want = [...new Set([...steps, 1])].sort((a, b) => a - b);
+  const same = probeTokens.length === want.length
+    && probeTokens.every((n, i) => n === want[i]);
+  ok("the probe's token list matches the scale", same,
+    `the stylesheet's scale plus the hairline is [${want.join(', ')}]; `
+    + `audit/alignment/probe.ts has [${probeTokens.join(', ')}]. A step was `
+    + 'added or changed in one place only — update TOKENS in probe.ts, or the '
+    + 'audit will keep reporting a value the stylesheet now considers correct.');
+}
 
 /* ---------------- the files, including ones not yet committed ---------------- */
 
@@ -133,16 +171,23 @@ const shared = hits.filter((h) => SHARED.test(h.file));
 const byValue = new Map<number, number>();
 for (const h of hits) for (const n of h.off) byValue.set(n, (byValue.get(n) ?? 0) + 1);
 
-const fine = [...byValue.entries()]
-  .filter(([n]) => n > 0 && n < steps[1]!)
-  .reduce((a, [, c]) => a + c, 0);
+/*
+ * The commonest values, which is the useful shape of the remainder now that
+ * the fine steps exist. One value appearing eighty times is a pattern somebody
+ * copied; eighty values appearing once each is a long tail. They want different
+ * responses, and the count alone cannot tell them apart.
+ */
+const common = [...byValue.entries()]
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, 6)
+  .map(([n, c]) => `${n}px×${c}`)
+  .join(' ');
 
 console.log(`  note  ${hits.length} off-scale declaration(s) in ${
   new Set(hits.map((h) => h.file)).size} file(s)`);
 console.log(`  note  ${shared.length} in src/components, ${
   hits.length - shared.length} in module screens`);
-console.log(`  note  ${fine} are finer than the scale's smallest step (${
-  steps[1]}px) — optical, not layout`);
+console.log(`  note  commonest: ${common}`);
 
 /* ---------------- the ratchets ---------------- */
 
@@ -153,15 +198,15 @@ console.log(`  note  ${fine} are finer than the scale's smallest step (${
  * touched. One combined cap would let a new one in a shared component hide
  * behind a fix in a screen.
  */
-const TOTAL_CAP = 446;
+const TOTAL_CAP = 404;
 /*
- * Two, and both deliberate: a 4px gap between an HBar's label and its bar, and
- * a 2px offset under a donut's centre figure. Neither is layout spacing and the
- * scale's smallest step is 6px, so snapping them would change the drawing to
- * satisfy a rule about boxes. They are counted, not excused — if a fine step is
- * ever added to the scale they stop being off it.
+ * Zero, and it should stay zero. The two that used to sit here were the HBar's
+ * 4px label gap and the 2px offset under a donut's centre figure — the exact
+ * pair the fine steps were added for, and they now read `var(--sp-xs)` and
+ * `var(--sp-xxs)`. A shared component reaches every screen, so there is no
+ * longer any value it could need that the scale cannot name.
  */
-const SHARED_CAP = 2;
+const SHARED_CAP = 0;
 
 const ratchet = (label: string, got: number, cap: number) => {
   ok(`${label} stays within ${cap}`, got <= cap,

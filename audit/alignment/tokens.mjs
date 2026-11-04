@@ -21,11 +21,28 @@
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const SCALE = { 6: '--sp-1', 10: '--sp-2', 16: '--sp-3', 22: '--sp-4', 32: '--sp-5' };
-/** Allowed off-scale: nothing, and hairlines. */
-const FREE = [0, 1, 2];
-
 const STYLES = 'src/styles';
+
+/*
+ * Read out of the stylesheet, not restated. This file used to hardcode the
+ * five steps, and when `--sp-xxs` and `--sp-xs` were added it went on calling
+ * 4px a fault — a report disagreeing with the scale it claims to measure.
+ * Unlike `probe.ts`, nothing here is shipped to a browser, so there is no
+ * reason to keep a copy.
+ */
+const SCALE = (() => {
+  const css = readFileSync(join(STYLES, 'global.css'), 'utf8');
+  const out = {};
+  for (const m of css.matchAll(/(--sp-[\w-]+)\s*:\s*([0-9]+(?:\.[0-9]+)?)px/g)) {
+    out[Number(m[2])] = m[1];
+  }
+  if (!Object.keys(out).length) {
+    throw new Error('no --sp-* steps found in global.css — nothing to measure against');
+  }
+  return out;
+})();
+/** Allowed off-scale: nothing, and the 1px hairline. 2px is `--sp-xxs` now. */
+const FREE = [0, 1];
 const PROP = /(^|[;{\s])(margin|padding|gap|row-gap|column-gap)(-top|-right|-bottom|-left|-block|-inline)?\s*:\s*([^;}]+)/g;
 
 /** Which shared component a selector belongs to, so findings group by owner. */
