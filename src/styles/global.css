@@ -347,7 +347,13 @@ a{color:var(--brand);text-decoration:none}
  * tall, which is a header block rather than a strip, and that is what a
  * stacked mark is.
  */
-.brand{position:relative;padding:16px var(--sp-3) 14px;border-bottom:1px solid var(--rail-line)}
+/*
+ * The side inset is the search box's, so the brand plate, the search field
+ * and the menu items all start and end on the same two vertical lines. It was
+ * `--sp-3` (16px) against the search box's 11px, which is why a full-width
+ * plate would have looked inset from everything under it.
+ */
+.brand{position:relative;padding:16px 11px 14px;border-bottom:1px solid var(--rail-line)}
 
 /* ---------- the collapsed rail ---------- */
 
@@ -404,7 +410,8 @@ a{color:var(--brand);text-decoration:none}
 /* A ghost button on the rail is transparent, so it inherits the rail's ink. */
 .sidebar .btn.ghost{color:var(--rail-ink);border-color:transparent;background:transparent}
 .sidebar .btn.ghost:hover{background:var(--rail-2);color:var(--rail-ink-hi)}
-.nav{flex:1;overflow-y:auto;padding:10px 10px 20px}
+/* 11px sides, matching .brand and .nav-find, so the rail has one edge. */
+.nav{flex:1;overflow-y:auto;padding:10px 11px 20px}
 /*
  * The sidebar's rules live with .nav-top and .nav-sub, further down.
  *
@@ -1685,6 +1692,12 @@ kbd{font-family:var(--font)}
   .login-head{font-size:1.75rem}
 }
 
+/*
+ * A chart with nothing to plot. It keeps the height the chart would have
+ * had, so a card does not jump when data starts arriving.
+ */
+.chart-empty{display:grid;place-items:center}
+
 /* ---------- Roster grid ---------- */
 /*
  * A cell is a coloured left edge plus the shift's name — never colour alone,
@@ -2709,8 +2722,28 @@ button.chip:hover{border-color:var(--line-2)}
  * the roadmap named: a white ground behind the mark, CSS only, no second
  * upload, and reversible by deleting this rule.
  */
+/*
+ * The plate an uploaded logo sits on.
+ *
+ * It was `inline-grid`, so it shrink-wrapped its image and sat at the start
+ * of the line box: a small white tab hard against the left edge, under a
+ * tagline that is a centred block. The two halves of one brand block were
+ * aligned differently, and a square upload made it obvious — a 26px stamp in
+ * the corner.
+ *
+ * Block-level now, so the plate spans the rail's content width, which is the
+ * same inset as the search box and the menu below it. The image centres in it
+ * and is bounded on both axes, so a 4:1 lockup is limited by width and a
+ * square mark by height, and neither is ever stretched: `max-width` and
+ * `max-height` with `height:auto` preserve the ratio on their own, and
+ * `object-fit:contain` is the belt to that braces for any image whose
+ * intrinsic size the browser has not worked out yet.
+ */
 .brand-plate{
-  display:inline-grid;place-items:center;padding:6px 8px;
+  display:grid;place-items:center;padding:var(--sp-2);
   background:#fff;border-radius:var(--r-sm);
 }
-.brand-plate img{max-height:26px;max-width:150px;object-fit:contain;display:block}
+.brand-plate img{
+  max-height:46px;max-width:100%;width:auto;height:auto;
+  object-fit:contain;display:block;
+}

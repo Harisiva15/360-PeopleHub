@@ -177,8 +177,14 @@ export function StatRow({
   cols = 4,
   children,
 }: {
-  /** Columns at desktop width; matches the `.grid.gN` classes. */
-  cols?: 3 | 4 | 5;
+  /**
+   * Columns at desktop width; matches the `.grid.gN` classes.
+   *
+   * Two is allowed because a row is no longer a fixed set: the dashboard
+   * drops tiles whose module is closed for launch, so a row of five can
+   * legitimately come out as two.
+   */
+  cols?: 2 | 3 | 4 | 5;
   children: ReactNode;
 }) {
   let next = 0;

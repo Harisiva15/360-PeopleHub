@@ -22,7 +22,17 @@ import { Avatar, PersonCell } from '../../components/ui';
 import { Chip, Dot, Divide, ListRow, StatusBadge } from '../../components/common';
 import { BarChart, Donut, HBar, Legend, LineChart, PAL, Ring, Spark } from '../../components/charts';
 import { PunchWidget } from '../attendance/Punch';
+import { isHiddenTab, isReady } from '../../nav';
 import { registerModule } from '../registry';
+
+/**
+ * A stat row's column count, from however many tiles survived the launch
+ * scope. Clamped to the `.grid.gN` classes that exist; a single survivor
+ * takes half the row rather than all of it, because one tile stretched across
+ * a dashboard reads as a mistake.
+ */
+const statCols = (n: number): 2 | 3 | 4 | 5 =>
+  (Math.min(5, Math.max(2, n)) as 2 | 3 | 4 | 5);
 import { TITLES } from '../titles';
 import { useApp } from '../../state/AppContext';
 import {
@@ -128,6 +138,33 @@ function DashAdmin() {
 
   const mandatory = courses.filter((c) => c.mandatory);
 
+  /*
+   * Which tiles the launch scope allows, asked of the same set the menu and
+   * the router use.
+   *
+   * The dashboard is the first screen after signing in and it was the last
+   * one told about the launch scope: it offered "Open positions" and
+   * "Attrition" with recruitment and exits closed, "Goal achievement" and
+   * "eNPS" with performance and engagement closed, and "Expenses pending"
+   * with expenses closed — five tiles whose modules the menu will not open.
+   * The figures behind them come from datasets nobody is filling, so they
+   * were confident numbers about nothing.
+   *
+   * Net payable is a tab rather than a route: `payroll` itself is open —
+   * payslips and structures are real — and only processing is parked, which
+   * is exactly what this tile reports. So it asks `isHiddenTab`, and the
+   * answer differs from its module's.
+   */
+  const showRun = !isHiddenTab('payroll', 'runs');
+  const showHiring = isReady('hiring');
+  const showExits = isReady('exit');
+  const showGoals = isReady('performance');
+  const showEnps = isReady('engagement');
+  const showTickets = isReady('helpdesk');
+  const showExpenses = isReady('expenses');
+  const secondRow = Number(showGoals) + Number(showEnps)
+    + Number(showTickets) + Number(showExpenses);
+
   return (
     <div className="stack">
       <Greeting name={app.me.name} notes={<>
@@ -136,18 +173,32 @@ function DashAdmin() {
         {pend > 0 && <Badge kind="warn">{pend} awaiting you</Badge>}
       </>} />
 
-      <StatRow cols={5}>
+      <StatRow cols={statCols(2 + Number(showRun) + Number(showHiring) + Number(showExits))}>
         <Tile tone="blue" icon={<Icon n="people" size="lg" />} label="Headcount" value={act.length} trend="up"
           foot={<>▲ {ht.data[7] - ht.data[4]} vs 3 months ago</>}
           spark={<Spark data={ht.data} color="var(--s1)" />} />
         <Tile tone="green" icon={<Icon n="calendar" size="lg" />} label="Present today"
           value={<>{present} <span style={{ fontSize: 14, color: 'var(--ink-3)', fontWeight: 600 }}>/ {working}</span></>}
           foot={`${at.c.W} WFH · ${at.c.L} on leave · ${at.c.A} absent`} />
-        <Tile tone="violet" icon={<Icon n="rupee" size="lg" />} label={'Net payable · ' + monthLabel(CUR_RUN.mk)} value={lakh(run.net)}
-          foot={<><StatusBadge status={CUR_RUN.status} /> <span className="muted">{run.count} employees</span></>} />
-        <Tile tone="amber" icon={<Icon n="target" size="lg" />} label="Open positions" value={openings}
-          foot={`${openReq.length} live requisitions · ${cands.filter((c) => c.stage === 'offer').length} in offer`} />
-        <Tile tone="rose" icon={<Icon n="down" size="lg" />} label="Attrition (12 mo)" value={attrition + '%'} foot={`${exitsYear.length} exits · industry avg 18%`} />
+        {showRun && (
+          <Tile tone="violet" icon={<Icon n="rupee" size="lg" />} label={'Net payable · ' + monthLabel(CUR_RUN.mk)} value={lakh(run.net)}
+            foot={<><StatusBadge status={CUR_RUN.status} /> <span className="muted">{run.count} employees</span></>} />
+        )}
+        {showHiring && (
+          <Tile tone="amber" icon={<Icon n="target" size="lg" />} label="Open positions" value={openings}
+            foot={`${openReq.length} live requisitions · ${cands.filter((c) => c.stage === 'offer').length} in offer`} />
+        )}
+        {showExits && (
+          /*
+           * No "industry avg 18%". It was a constant typed into a template,
+           * not a figure this product holds or can source, and it sat beside
+           * a real number in the same sentence — which is how an invention
+           * gets read as a measurement. The exit count is ours; the benchmark
+           * was not.
+           */
+          <Tile tone="rose" icon={<Icon n="down" size="lg" />} label="Attrition (12 mo)" value={attrition + '%'}
+            foot={`${exitsYear.length} exits in the last 12 months`} />
+        )}
       </StatRow>
 
       <div className="grid g-2-1">
@@ -207,17 +258,25 @@ function DashAdmin() {
         </Card>
       </div>
 
-      <StatRow cols={4}>
-        <Tile label="Goal achievement"
-          value={Math.round(sum(goals, (g) => g.progress * g.weight) / Math.max(1, sum(goals, (g) => g.weight))) + '%'}
-          foot={`${goals.filter((g) => ['At Risk', 'Behind'].includes(g.status)).length} goals at risk · ${(cycle?.name ?? '').split(' Appraisal')[0]}`} />
-        <Tile label="eNPS" value={'+' + enps} trend="up" foot="▲ 9 vs last quarter" />
-        <Tile label="Open tickets" value={tickets.filter((t) => ['Open', 'In Progress'].includes(t.status)).length}
-          foot={`${tickets.filter((t) => t.breached && ['Open', 'In Progress'].includes(t.status)).length} past SLA`} />
-        <Tile label="Expenses pending"
-          value={inr(sum(claims.filter((c) => ['Submitted', 'Approved'].includes(c.status)), (c) => c.total))}
-          foot={`${claims.filter((c) => c.status === 'Submitted').length} claims awaiting approval`} />
-      </StatRow>
+      {secondRow > 0 && (
+        <StatRow cols={statCols(secondRow)}>
+          {showGoals && (
+            <Tile label="Goal achievement"
+              value={Math.round(sum(goals, (g) => g.progress * g.weight) / Math.max(1, sum(goals, (g) => g.weight))) + '%'}
+              foot={`${goals.filter((g) => ['At Risk', 'Behind'].includes(g.status)).length} goals at risk · ${(cycle?.name ?? '').split(' Appraisal')[0]}`} />
+          )}
+          {showEnps && <Tile label="eNPS" value={'+' + enps} trend="up" foot="▲ 9 vs last quarter" />}
+          {showTickets && (
+            <Tile label="Open tickets" value={tickets.filter((t) => ['Open', 'In Progress'].includes(t.status)).length}
+              foot={`${tickets.filter((t) => t.breached && ['Open', 'In Progress'].includes(t.status)).length} past SLA`} />
+          )}
+          {showExpenses && (
+            <Tile label="Expenses pending"
+              value={inr(sum(claims.filter((c) => ['Submitted', 'Approved'].includes(c.status)), (c) => c.total))}
+              foot={`${claims.filter((c) => c.status === 'Submitted').length} claims awaiting approval`} />
+          )}
+        </StatRow>
+      )}
 
       <div className="grid g3">
         <Card title="Compliance training" sub="Mandatory courses" actions={<GoLink to="learning">Tracker</GoLink>}>

@@ -8,6 +8,7 @@ import { useNavBadges } from './badges';
 import { ORG } from '../data/org';
 import { useApp } from '../state/AppContext';
 import { Avatar } from '../components/ui';
+import { usePhotoUrl } from '../services/photos';
 import { Icon } from '../components/icons';
 import { TopBar } from './TopBar';
 import { PageActionsTarget } from './PageActions';
@@ -44,6 +45,15 @@ export function Shell({ children }: { children: ReactNode }) {
   /* Null until it resolves, and null for a tenant that uploaded none, which
      is most of them — the built-in mark is the fallback either way. */
   const tenantLogo = useTenantLogo();
+  /*
+   * Your own photo on the rail, the same one the top bar shows.
+   *
+   * The rail drew initials while the header two inches away drew the
+   * photograph, so the same person appeared twice on one screen as two
+   * different things. One person is one signed URL and the query is
+   * shared, so this costs no extra request.
+   */
+  const { data: myPhoto } = usePhotoUrl(app.meId);
   const { pathname, search } = useLocation();
   const route = pathname.replace(/^\//, '') || 'dashboard';
   const here = pathname + search;
@@ -322,7 +332,7 @@ export function Shell({ children }: { children: ReactNode }) {
             className="rail-acct-menu"
             trigger={(
               <div className="rail-acct">
-                <Avatar name={app.me.name} />
+                <Avatar name={app.me.name} src={myPhoto} />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="nm">{app.me.name}</div>
                   <div className="mt">{ROLE_LABEL[app.role]}</div>

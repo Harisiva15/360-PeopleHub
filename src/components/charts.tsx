@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { sum } from '../lib/collections';
 import { clamp } from '../lib/format';
+/* One empty state for the product; `ui.tsx` imports nothing from here. */
+import { EmptyState } from './ui';
 
 /**
  * Categorical hues, assigned in this fixed order and never cycled. Validated
@@ -136,6 +138,29 @@ export function LineChart({
   const PT = 12;
   const PR = 10;
   const fmtV: Fmt = fmt || ((v) => Math.round(v));
+
+  /*
+   * Nothing to plot is its own state, not a chart of nothing.
+   *
+   * `attendanceTrend` drops months with no attendance, so a tenant that has
+   * not started recording gives empty arrays. The arithmetic below then ran
+   * on them: `Math.max()` of nothing is -Infinity, the x scale divided by
+   * `labels.length - 1` of -1, and the area path came out as `M46,188 L L…` —
+   * a malformed `d` the browser partly draws. One month of data was worse,
+   * because it is a single marker with no line through it: a dot floating in
+   * an empty box, which reads as a rendering fault rather than as one data
+   * point. Both are the "stray points".
+   */
+  const plotted = series.reduce(
+    (n, s) => n + s.data.filter((v) => Number.isFinite(v)).length, 0);
+  if (!labels.length || !series.length || plotted === 0) {
+    return (
+      <div className="chart-empty" style={{ height }}>
+        <EmptyState msg="Nothing recorded for this period yet" />
+      </div>
+    );
+  }
+
   const max = niceMax(Math.max(...series.map((s) => Math.max(...s.data)))) || 1;
 
   const iw = width - padLeft - PR;
@@ -182,9 +207,23 @@ export function LineChart({
         )),
       )}
 
+      {/*
+        * The end labels anchor inwards so they cannot be clipped.
+        *
+        * Every label was `middle`, and the last one is centred on
+        * `width - PR` — ten units from the viewBox edge — so half of it fell
+        * outside and the SVG cut it off. "Nov" lost its tail; a longer label
+        * loses more. Anchoring the first to its start and the last to its end
+        * keeps both inside whatever their width turns out to be, which is the
+        * part a fixed padding cannot know.
+        */}
       {labels.map((lb, i) =>
         i % step === 0 ? (
-          <text key={i} x={+x(i).toFixed(1)} y={height - 9} textAnchor="middle" fontSize={10} fill="var(--ink-3)">{lb}</text>
+          <text
+            key={i} x={+x(i).toFixed(1)} y={height - 9}
+            textAnchor={i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle'}
+            fontSize={10} fill="var(--ink-3)"
+          >{lb}</text>
         ) : null,
       )}
     </svg>

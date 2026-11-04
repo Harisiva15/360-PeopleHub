@@ -610,6 +610,21 @@ export const isHiddenTab = (route: string, tab: string): boolean =>
   HIDDEN_TABS.has(`${route.replace(/^\//, '').split('?')[0]}:${tab}`);
 
 /**
+ * Whether a module is open at launch — the READY set, stated as a question.
+ *
+ * `HIDDEN_ROUTES` closes a module for the menu and the router. A dashboard
+ * tile is neither, and that gap had a visible cost: the dashboard went on
+ * showing "Open positions", "Attrition", "Goal achievement" and "eNPS" after
+ * recruitment, exits, performance and engagement were all closed, so the first
+ * screen after signing in advertised four areas the menu would not take you
+ * to, with figures drawn from datasets nobody is filling.
+ *
+ * It is the negation of `isHiddenRoute` and not a second list, because two
+ * lists are how the menu and the dashboard come to disagree again.
+ */
+export const isReady = (route: string): boolean => !isHiddenRoute(route);
+
+/**
  * Letter generation, which is neither a route nor a tab but an action.
  *
  * `documents/data.ts` wraps `letterContext` in `unbacked(…, null)`, so a
