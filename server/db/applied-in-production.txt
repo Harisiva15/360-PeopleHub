@@ -1,0 +1,78 @@
+# Migrations applied to production
+#
+# One filename per line. `#` starts a comment. Order does not matter.
+#
+# This is the list `scripts/table-readiness.test.mjs` checks deployed code
+# against: no file in src/ may read a table whose migration is not on this
+# list. That is what makes the push order enforceable instead of remembered.
+#
+# UPDATE IT IN THE COMMIT THAT FOLLOWS THE RUN, not before. The check also
+# compares the number of lines here against what /health reports applied, so
+# a line added ahead of its migration fails rather than passing quietly.
+#
+# Initial contents, 4 November 2026: /health reported applied 62 of 62
+# expected on 29 October, immediately before b36a81b added 0063 to the build.
+# Nothing has been applied since — /health still reports applied 62, pending
+# 1 — so 0001 to 0062 are applied and 0063 is the one outstanding.
+0001_tenancy.sql
+0002_org_config.sql
+0003_people.sql
+0004_time_and_absence.sql
+0005_pay_and_money.sql
+0006_talent.sql
+0007_workplace.sql
+0008_staffing.sql
+0009_security_and_notifications.sql
+0010_row_level_security.sql
+0011_auth_membership_lookup.sql
+0012_invitations.sql
+0013_claim_membership.sql
+0014_isolation_helper.sql
+0015_regional_shifts.sql
+0016_drop_geo_tracking.sql
+0017_asset_movement_order.sql
+0018_restore_geo_tracking.sql
+0019_planner.sql
+0020_document_collection.sql
+0021_document_request_uniqueness.sql
+0022_timesheet_entry_note.sql
+0023_retire_prototype_shifts.sql
+0024_letter_body.sql
+0025_location_notice.sql
+0026_message_rules.sql
+0027_role_scopes.sql
+0028_timesheet_rejected.sql
+0029_job_order.sql
+0030_user_accounts.sql
+0031_export_register.sql
+0032_job_title.sql
+0033_lifecycle_task.sql
+0034_software_estate.sql
+0035_development_plan.sql
+0036_company_event.sql
+0037_reports_and_integrations.sql
+0038_login_history.sql
+0039_verified_factor.sql
+0040_mfa_required.sql
+0041_export_run_grant.sql
+0042_auth_users_email_grant.sql
+0043_membership_write_policy.sql
+0044_site_location_fields.sql
+0045_indian_locations.sql
+0046_pending_membership.sql
+0047_revoke_pending_invitation.sql
+0048_compensation.sql
+0049_claim_only_an_invitation.sql
+0050_survey_participation.sql
+0051_business_unit.sql
+0052_department_business_unit.sql
+0053_tenant_display_name_grant.sql
+0054_work_schedule.sql
+0055_public_role_exposure.sql
+0056_role_vocabulary_expand.sql
+0057_auth_has_reports.sql
+0058_role_vocabulary_migrate.sql
+0059_employee_photo.sql
+0060_role_vocabulary_contract.sql
+0061_legal_entity_logo.sql
+0062_project_member.sql
