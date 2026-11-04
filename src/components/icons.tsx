@@ -31,7 +31,7 @@ import {
   Trash2, TrendingDown, TrendingUp, Trophy, Undo2, UserCheck, UserPlus, UserRound,
   Users, Vote, Wallet, Wrench, X, Ban, Bed, Globe, Puzzle, PartyPopper as Celebrate,
   Download, Printer, ThumbsUp, ThumbsDown, MoreHorizontal, Eye, StopCircle, LayoutGrid,
-  Car, UtensilsCrossed, Stethoscope, Hotel, Smartphone,
+  Car, UtensilsCrossed, Stethoscope, Hotel, Smartphone, Lock, EyeOff,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -144,6 +144,13 @@ export const ICONS = {
   info: Info,
   flag: Flag,
   lock: ShieldCheck,
+  /*
+   * A padlock, and deliberately not `lock` above. That one is a shield and
+   * reads as "restricted" — it labels roles and permissions, API keys, and the
+   * rows somebody is not allowed to see. This one is the thing you type into a
+   * password field, which is a different idea wearing a similar picture.
+   */
+  password: Lock,
   share: Share2,
   menu: Menu,
   grid: Grid3x3,
@@ -159,6 +166,8 @@ export const ICONS = {
   thumbsDown: ThumbsDown,
   more: MoreHorizontal,
   view: Eye,
+  /* The struck-through eye, for a reveal control that is currently revealing. */
+  viewOff: EyeOff,
   stop: StopCircle,
   tiles: LayoutGrid,
 

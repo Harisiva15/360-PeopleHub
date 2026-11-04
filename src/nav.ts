@@ -771,3 +771,40 @@ export const ALL_VIEWS: NavHit[] = VISIBLE_NAV.flatMap((g) =>
     href: hrefOf(i),
   })),
 );
+
+/**
+ * What the sign-in page promises, which is the launch scope and not the menu.
+ *
+ * The sign-in page used to carry its own list of six capabilities, written as
+ * prose beside a Material Symbols ligature name. Two things were wrong with
+ * it. The names rendered as the words "people", "schedule" and "document",
+ * because no icon font was ever loaded and a ligature with no font is just
+ * text. And the list promised Payroll, Performance and Engagement, which are
+ * the three areas a visitor cannot reach yet -- the first thing the product
+ * says about itself was a list of what it does not do.
+ *
+ * So it lives here, next to NAV, and names the modules it covers rather than
+ * repeating their labels. `checks/icons.ts` asserts every key below is a real
+ * module in NAV, so deleting or renaming one fails the build instead of
+ * leaving the front door advertising a module that no longer exists.
+ *
+ * The labels are the customer's words rather than the module names, and the
+ * line break is deliberate: two short lines read better under a 52px tile than
+ * one long one wrapping unpredictably.
+ */
+export const LAUNCH_SCOPE: readonly {
+  /** The label, with `\n` where it should break. */
+  k: string;
+  /** Name in `src/components/icons.tsx`, not a glyph and not a ligature. */
+  ic: IconName;
+  /** Which plate colour, from the tones in `global.css`. */
+  tone: string;
+  /** The NAV module keys this covers. Asserted to exist. */
+  modules: readonly string[];
+}[] = [
+  { k: 'Employee\nmanagement', ic: 'employees', tone: 'blue', modules: ['employees'] },
+  { k: 'Leave &\nattendance', ic: 'attendance', tone: 'green', modules: ['attendance', 'leave'] },
+  { k: 'Timesheets\n& projects', ic: 'timesheet', tone: 'teal', modules: ['timesheet', 'planner'] },
+  { k: 'Assets', ic: 'assets', tone: 'amber', modules: ['assets'] },
+  { k: 'Documents', ic: 'document', tone: 'rose', modules: ['documents'] },
+];

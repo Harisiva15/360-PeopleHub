@@ -28,24 +28,21 @@ import { LOGO_LIGHT } from '../assets/logo';
 import { ORG } from '../data/org';
 import { useAuth } from './AuthContext';
 import { Icon } from '../components/icons';
-
-/** Drawn rather than fetched — a sign-in page should not wait on a CDN. */
+import { LAUNCH_SCOPE } from '../nav';
 
 /**
- * What the product does, in the customer's words rather than the module names.
+ * Every icon here is drawn, not fetched.
  *
- * Six because that is what fits on one line at desktop and two at tablet
- * without a row of one. Each maps to a real area of the app; nothing here
- * promises something that is not behind the login.
+ * This list used to be six hard-coded entries whose `ic` was a Material
+ * Symbols ligature name — `people`, `schedule`, `document`. No icon font was
+ * ever loaded, so each tile rendered the word itself, and "document" and
+ * "chart" overlapped. A ligature with no font is just text, and the first
+ * thing the product said about itself was six misspelt nouns.
+ *
+ * It now comes from `LAUNCH_SCOPE` in `nav.ts`, which names module keys rather
+ * than repeating labels, so the promise on the front door cannot drift from
+ * what is behind it.
  */
-const CAPABILITIES: { k: string; ic: string; tone: string }[] = [
-  { k: 'Employee\nManagement', ic: 'people', tone: 'blue' },
-  { k: 'Leave &\nAttendance', ic: 'schedule', tone: 'green' },
-  { k: 'Payroll &\nBenefits', ic: 'document', tone: 'violet' },
-  { k: 'Performance\n& Growth', ic: 'chart', tone: 'teal' },
-  { k: 'Engagement\n& Recognition', ic: 'star', tone: 'amber' },
-  { k: 'IT Assets\n& Support', ic: 'laptop', tone: 'rose' },
-];
 
 export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
   const auth = useAuth();
@@ -110,9 +107,9 @@ export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
           </p>
 
           <ul className="login-caps">
-            {CAPABILITIES.map((c) => (
+            {LAUNCH_SCOPE.map((c) => (
               <li key={c.k} data-tone={c.tone}>
-                <span className="cap-ic" aria-hidden="true">{c.ic}</span>
+                <span className="cap-ic"><Icon n={c.ic} size="xl" /></span>
                 <span className="cap-k">{c.k}</span>
               </li>
             ))}
@@ -123,47 +120,68 @@ export function LoginPage({ theme: _theme }: { theme: 'light' | 'dark' }) {
 
         <section className="login-panel">
           <div className="login-card">
-            <img className="login-logo" src={LOGO_LIGHT} alt="" />
+            {/*
+              * A window over the mark, cropping the tagline the stylesheet
+              * explains. `alt=""` because the heading below already names the
+              * product — the mark is decoration here, not information.
+              */}
+            <span className="login-logo-wrap">
+              <img className="login-logo" src={LOGO_LIGHT} alt="" />
+            </span>
             <h2>Welcome back</h2>
             <p className="login-lede">Sign in to access your {ORG.product}</p>
 
             <form onSubmit={onSubmit}>
+              {/*
+                * A real <label> rather than a placeholder standing in for one.
+                * A placeholder disappears the moment somebody types, so the
+                * field loses its name exactly when a half-filled form is being
+                * checked over — and `autofill` fills both of these at once,
+                * which is the case where you most want to see which is which.
+                * `htmlFor` ties each to its input, so a password manager and a
+                * screen reader read the same name, and the autocomplete tokens
+                * below are untouched.
+                */}
               <div className="login-field">
-                <span className="login-ic" aria-hidden="true"><Icon n="mail" size="lg" /> </span>
-                <input
-                  id="login-email"
-                  className="input"
-                  type="email"
-                  autoComplete="username"
-                  autoFocus
-                  placeholder="Email address"
-                  aria-label="Email address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
+                <label className="login-lbl" htmlFor="login-email">Email address</label>
+                <div className="login-input">
+                  <span className="login-ic"><Icon n="mail" size="lg" /></span>
+                  <input
+                    id="login-email"
+                    className="input"
+                    type="email"
+                    autoComplete="username"
+                    autoFocus
+                    placeholder="you@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
               </div>
 
               <div className="login-field">
-                <span className="login-ic" aria-hidden="true">🔒</span>
-                <input
-                  id="login-password"
-                  className="input"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  placeholder="Password"
-                  aria-label="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="login-peek"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  aria-pressed={showPassword}
-                >
-                  {showPassword ? '🙈' : '👁'}
-                </button>
+                <label className="login-lbl" htmlFor="login-password">Password</label>
+                <div className="login-input">
+                  <span className="login-ic"><Icon n="password" size="lg" /></span>
+                  <input
+                    id="login-password"
+                    className="input"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    placeholder="Your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="login-peek"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
+                  >
+                    <Icon n={showPassword ? 'viewOff' : 'view'} size="lg" />
+                  </button>
+                </div>
               </div>
 
               {error && <div className="login-msg err" role="alert">{error}</div>}

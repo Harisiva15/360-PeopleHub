@@ -1472,12 +1472,19 @@ kbd{font-family:var(--font)}
 
 .login-caps{
   list-style:none;margin:30px 0 0;padding:0;
-  display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px;
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;
 }
 .login-caps li{display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center}
+/*
+ * A drawn icon, never a glyph and never a font ligature. This tile used to
+ * hold a Material Symbols name as text with no icon font behind it, so it
+ * rendered the word — `font-size` was sizing "document", which then overlapped
+ * "chart". The SVG takes its colour from here and its size from the Icon
+ * component, so neither is a number typed into this rule.
+ */
 .login-caps .cap-ic{
   display:grid;place-items:center;width:52px;height:52px;border-radius:var(--r-lg);
-  font-size:22px;line-height:1;
+  color:var(--login-ink);
   background:var(--cap-bg);box-shadow:0 1px 2px rgba(16,32,56,.07);
 }
 .login-caps .cap-k{
@@ -1529,22 +1536,65 @@ kbd{font-family:var(--font)}
   border:1px solid var(--line);border-radius:var(--r-xl);padding:34px 34px 28px;
   box-shadow:0 24px 60px -24px rgba(14,38,68,.28),0 2px 8px rgba(14,38,68,.06);
 }
-.login-logo{display:block;height:76px;width:auto;margin:0 auto 18px}
+/*
+ * The card's mark, with the tagline cropped off.
+ *
+ * The artwork is 1638×1126 and carries three bands: transparent padding to
+ * row 223, the cloud and wordmark from 224 to 858, and the rule-and-tagline
+ * "ONE PLATFORM. A THRIVING TEAM." from 883 to 911. At the 76px this used to
+ * be drawn at, that tagline was two pixels tall — present, unreadable, and
+ * making the mark smaller to accommodate something nobody could read.
+ *
+ * So the window shows rows 224 to 870, cutting through the empty gap at
+ * 859–882. Percentages are of the width, which is how a percentage margin
+ * works, so the crop holds at any size: the top padding is 224/1126 of the
+ * natural height, and the natural height is 1126/1638 of the width, giving
+ * 13.7%. The window's own ratio is 1638:646 for the same reason.
+ *
+ * The large mark on the left keeps its tagline — at 300px it is legible, and
+ * it is the one that has room to say it.
+ */
+.login-logo-wrap{
+  display:block;width:200px;margin:0 auto 18px;
+  /*
+   * content-box so the dark theme's white plate (padding, below) sits outside
+   * the window rather than squeezing it — the crop arithmetic is in terms of
+   * the content width, and border-box padding would quietly invalidate it.
+   */
+  box-sizing:content-box;
+  aspect-ratio:1638/646;overflow:hidden;
+}
+.login-logo{display:block;width:100%;height:auto;margin-top:-13.7%}
 
 /*
  * The mark has a navy wordmark and a slate tagline; on the dark card and the
  * dark ground both disappear. Same treatment as the rail — it goes on a light
  * plate rather than having supplied artwork recoloured.
  */
-:root[data-theme="dark"] .login-logo,
 :root[data-theme="dark"] .login-brand,
-:root:not([data-theme="light"]) .login-logo,
 :root:not([data-theme="light"]) .login-brand{
   background:#fff;border-radius:var(--r-lg);padding:10px 14px;
 }
+/*
+ * The card's plate is drawn with a border, not padding, and that is not a
+ * stylistic preference — `overflow` clips at the **padding box**, not the
+ * content box. Padding on the cropping element therefore widens the window by
+ * exactly the padding: the crop above ends at source row 870, and 10px of
+ * bottom padding carried it to row 953, which let the whole tagline back in.
+ * The symptom was a tagline that appeared in dark mode and not in light,
+ * because only the dark theme adds the plate.
+ *
+ * A border sits outside the padding box, so it paints the same white margin
+ * without moving the clip. Same picture, and the crop stays where it was put.
+ */
+:root[data-theme="dark"] .login-logo-wrap,
+:root:not([data-theme="light"]) .login-logo-wrap{
+  background:#fff;border-radius:var(--r-lg);
+  border:10px solid #fff;border-inline-width:14px;
+}
 @media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]) .login-logo,
   :root:not([data-theme="dark"]) .login-brand{background:none;padding:0}
+  :root:not([data-theme="dark"]) .login-logo-wrap{background:none;border:0}
 }
 .login-card h2{
   margin:0;text-align:center;font-size:1.45rem;font-weight:750;
@@ -1553,21 +1603,33 @@ kbd{font-family:var(--font)}
 .login-lede{margin:4px 0 22px;text-align:center;font-size:13.5px;color:var(--ink-2)}
 
 /* An icon inside the field, so the row reads as one control. */
-.login-field{position:relative;margin-bottom:12px}
-.login-field .input{
+.login-field{margin-bottom:12px}
+.login-lbl{
+  display:block;margin:0 0 6px 2px;
+  font-size:12.5px;font-weight:650;color:var(--ink-2);
+}
+.login-input{position:relative}
+.login-input .input{
   width:100%;height:50px;padding-left:44px;padding-right:44px;
   border-radius:var(--r);font-size:14px;background:var(--surface-2);
 }
-.login-field .login-ic{
+/*
+ * `--ink-3` rather than the old `opacity:.5` on the theme's body ink. Opacity
+ * is invisible to `checks/contrast.ts`, which reads tokens: a glyph at half
+ * strength measured as though it were full strength, so the check passed on a
+ * mark nobody could see. A muted-ink token is the same intent and is measured.
+ */
+.login-input .login-ic{
   position:absolute;left:14px;top:50%;transform:translateY(-50%);
-  font-size:15px;opacity:.5;pointer-events:none;
+  display:grid;place-items:center;color:var(--ink-3);pointer-events:none;
 }
 .login-peek{
   position:absolute;right:8px;top:50%;transform:translateY(-50%);
-  border:0;background:none;cursor:pointer;font-size:15px;line-height:1;
-  padding:6px;border-radius:var(--r-sm);opacity:.6;
+  display:grid;place-items:center;
+  border:0;background:none;cursor:pointer;line-height:1;
+  padding:6px;border-radius:var(--r-sm);color:var(--ink-3);
 }
-.login-peek:hover{opacity:1;background:var(--surface-3)}
+.login-peek:hover{color:var(--ink);background:var(--surface-3)}
 
 .login-go{
   width:100%;height:50px;border-radius:var(--r);font-size:15px;font-weight:700;
@@ -1577,7 +1639,16 @@ kbd{font-family:var(--font)}
   display:block;margin:12px auto 0;border:0;background:none;cursor:pointer;
   font-size:13px;font-weight:600;color:var(--brand-ink);
 }
-.login-forgot:disabled{opacity:.45;cursor:default}
+/*
+ * The disabled state is the one almost everybody sees: this control is
+ * disabled until an address is typed, so "Forgot your password?" greets every
+ * visitor. It used to do that at `opacity:.45`, measured at 2.11:1 in light
+ * and 2.97:1 in dark — unreadable either way, and invisible to the contrast
+ * check, which reads tokens and cannot see an opacity. `--ink-3` is the
+ * muted-ink token, already measured against `--surface` at 4.5 in
+ * `checks/contrast.ts`, and lands at 5.43:1 and 5.96:1.
+ */
+.login-forgot:disabled{color:var(--ink-3);cursor:default}
 .login-forgot:not(:disabled):hover{text-decoration:underline}
 
 .login-msg{font-size:12.5px;padding:10px 12px;border-radius:var(--r-md);margin:2px 0 10px}
@@ -1609,7 +1680,8 @@ kbd{font-family:var(--font)}
 }
 @media (max-width:560px){
   .login-card{padding:26px 20px 22px;border-radius:18px}
-  .login-logo{height:62px}
+  /* The window narrows; the crop is proportional so it needs no other change. */
+  .login-logo-wrap{width:164px}
   .login-head{font-size:1.75rem}
 }
 
