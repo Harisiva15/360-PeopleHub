@@ -41,7 +41,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import pg from 'pg';
@@ -61,7 +61,16 @@ if (!process.env.MIGRATE_DATABASE_URL) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const MIGRATION = join(here, '..', 'db', 'migrations', '0063_employee_shift_history.sql');
+/*
+ * Both migrations, in order. 0063 builds the history and 0064 closes the holes
+ * its audit boundary can leave; the question "which hours applied on this day"
+ * only has an answer for every day once both have run, so the suite runs both
+ * and asserts the result rather than 0063's intermediate state.
+ */
+const MIGRATIONS = [
+  '0063_employee_shift_history.sql',
+  '0064_employee_shift_no_gaps.sql',
+].map((f) => join(here, '..', 'db', 'migrations', f));
 
 const { withScratchTenant, sweepScratchTenants } = await import('./lib/scratch-tenant.mjs');
 
@@ -82,17 +91,19 @@ const refused = async (fn) => {
  * which is the order they have to run in, since each later insert reads what the
  * earlier ones wrote.
  */
-const backfillSql = () => {
-  const text = readFileSync(MIGRATION, 'utf8');
+const backfillSql = () => MIGRATIONS.map((path) => {
+  const text = readFileSync(path, 'utf8');
   const from = text.indexOf('-- >>> BACKFILL BEGIN');
   const to = text.indexOf('-- <<< BACKFILL END');
   if (from < 0 || to < 0 || to < from) {
     throw new Error(
-      'the BACKFILL markers are missing from 0063 — this suite runs the SQL '
-      + 'between them, so renaming or moving them makes it test nothing');
+      `the BACKFILL markers are missing from ${basename(path)} — this suite runs `
+      + 'the SQL between them, so renaming or moving them makes it test nothing');
   }
   return text.slice(from, to);
-};
+  /* Each section's statements already end in `;`, so a newline is the whole
+   * join — another semicolon would insert an empty statement between them. */
+}).join('\n');
 
 const admin = new pg.Client({ connectionString: process.env.MIGRATE_DATABASE_URL });
 await admin.connect();
@@ -214,7 +225,7 @@ try {
     console.log('a backfill that can tell what it knows from what it guessed\n');
 
     const ran = await refused(() => admin.query(backfillSql()));
-    ok('1. the migration\'s own backfill runs against these fixtures',
+    ok('1. the migrations\' own backfill runs against these fixtures',
       ran === null, `${ran?.code}: ${ran?.message}`);
 
     /* ---------------------------------------------------------------- *
@@ -244,15 +255,32 @@ try {
 
     console.log('\nand where the days cannot say, the audit can\n');
 
+    /*
+     * Three rows, not two.
+     *
+     * This assertion used to require exactly two and to accept the 8th to the
+     * 19th belonging to nobody. That is not a harmless hole: the reader is
+     * `COALESCE(<period lookup>, employee.shift_id)`, so every uncovered day
+     * resolved to the roster they are on *now* — for VHM007 in production, New
+     * York hours over twelve days he worked on India hours. The gap was
+     * asserted as correct here, which is why no suite caught it.
+     */
     const b = await historyOf(auditedMove);
     ok('3. a move with no days on the new roster still closes the old one',
-      b.length === 2 && b[0]?.code === 'IN' && b[0]?.vto === OCT(7),
+      b.length === 3 && b[0]?.code === 'IN' && b[0]?.vto === OCT(7),
       JSON.stringify(b));
-    ok('    the new one starting on the date the move was audited for',
-      b[1]?.code === 'ZZNY' && b[1]?.vfrom === OCT(20),
-      `${b[1]?.vfrom} — the 20th is what the audit entry says`);
-    ok('    marked as the audit\'s word rather than as measurement',
+    ok('    the days up to the move stay on the roster they were still on',
+      b[1]?.code === 'IN' && b[1]?.vfrom === OCT(8) && b[1]?.vto === OCT(19),
+      `${JSON.stringify(b[1])} — the 8th to the 19th is not nobody's`);
+    ok('    bridged on the audit\'s word, not claimed as measurement',
       b[1]?.source === 'audit', String(b[1]?.source));
+    ok('    the new one starting on the date the move was audited for',
+      b[2]?.code === 'ZZNY' && b[2]?.vfrom === OCT(20),
+      `${b[2]?.vfrom} — the 20th is what the audit entry says`);
+    ok('    marked as the audit\'s word rather than as measurement',
+      b[2]?.source === 'audit', String(b[2]?.source));
+    ok('    and left open, because it is the roster they are still on',
+      b[2]?.vto === null, String(b[2]?.vto));
 
     /* ---------------------------------------------------------------- *
      * Inference, and labelled as inference
@@ -353,6 +381,37 @@ try {
       gap.length > 0 && gap.every((r) => r.open === 1), JSON.stringify(gap));
 
     /*
+     * The invariant assertion 11 cannot see.
+     *
+     * Counting open rows finds a history that stops short. It says nothing
+     * about a hole in the middle, which is the shape the audit boundary
+     * actually produced: a closed run, a gap, then an open row. Both ends
+     * looked right and twelve days in between resolved to the wrong roster.
+     *
+     * Contiguity is the property the table is for — "which hours applied on
+     * this day" has to have an answer for every day, not just for the days
+     * somebody punched — so it is asserted directly, on whatever the backfill
+     * wrote, rather than inferred from the row count of any one fixture.
+     */
+    const holes = (await admin.query(
+      `WITH p AS (
+         SELECT e.code, es.valid_from, es.valid_to,
+                LAG(es.valid_to) OVER (PARTITION BY es.employee_id
+                                           ORDER BY es.valid_from) AS prev_to
+           FROM employee_shift es
+           JOIN employee e ON e.tenant_id = es.tenant_id AND e.id = es.employee_id
+          WHERE e.tenant_id = $1 AND e.code LIKE 'ZZH%'
+       )
+       SELECT code, prev_to::text AS ends, valid_from::text AS resumes
+         FROM p
+        WHERE prev_to IS NOT NULL AND valid_from <> prev_to + 1
+        ORDER BY code, prev_to`, [ctx.tenant])).rows;
+    ok('12. and no day between two periods belongs to nobody',
+      holes.length === 0,
+      `${JSON.stringify(holes)} — an uncovered day resolves to today's roster, `
+      + 'not to nothing, so a gap is a wrong answer rather than a missing one');
+
+    /*
      * The one thing an effective-dated table has to do that a single column
      * cannot: give a different answer for a day either side of the move. This
      * asserts it as the resolver will ask it, so the next phase has a shape to
@@ -364,7 +423,7 @@ try {
           AND daterange(es.valid_from, es.valid_to, '[]') @> $2::date`,
       [empId, date])).rows[0]?.code ?? null;
 
-    ok('12. the day before the move resolves to the roster it was worked on',
+    ok('13. the day before the move resolves to the roster it was worked on',
       await resolve(bothRosters, OCT(9)) === 'IN', String(await resolve(bothRosters, OCT(9))));
     ok('    the day of the move resolves to the new one',
       await resolve(bothRosters, OCT(12)) === 'ZZNY',
