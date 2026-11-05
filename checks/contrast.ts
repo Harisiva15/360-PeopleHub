@@ -140,6 +140,20 @@ const PAIRS: Pair[] = [
   ['status: critical text on its wash', '--crit-text', '--crit-wash', 4.5],
   ['status: info text on its wash', '--brand-ink', '--info-wash', 4.5],
 
+  /*
+   * The two the runtime audit caught and this list could not.
+   *
+   * Both were real AA failures that shipped: the timesheet's today column and
+   * week total drew `--brand` as text on `--surface-2` (4.12:1 light, 3.49
+   * dark), and the calendar's weekly-off cell drew `--ink-3` on `--line-2`
+   * (3.45 and 3.26). Neither pair was in this list, so neither was measured —
+   * which is the limit of a list of declared pairs, and why
+   * `check:runtimecontrast` now measures what the screens actually render.
+   * They are here as well so the regression is caught without a browser.
+   */
+  ['timesheet: today column and week total', '--brand-ink', '--surface-2', 4.5],
+  ['calendar: a weekly-off day', '--ink-2', '--line-2', 4.5],
+
   /* Tinted stat tiles: a pastel card with default grey on it is the usual bug. */
   ['tile: blue', '--t-blue-ink', '--t-blue', 4.5],
   ['tile: green', '--t-green-ink', '--t-green', 4.5],

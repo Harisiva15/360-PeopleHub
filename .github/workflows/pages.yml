@@ -30,6 +30,14 @@ jobs:
 
       - run: npm ci
 
+      # Chromium for `check:runtimecontrast`, which measures the colours the
+      # key screens actually render rather than the token pairs somebody
+      # listed. Two AA failures shipped underneath the token check because
+      # their pairs were never in its list, so this one needs a browser.
+      # Chromium only, not `--with-deps`: the runner already has the system
+      # libraries and installing all three engines would treble the step.
+      - run: npx playwright install chromium
+
       # The same gates that run locally. A red build should not reach the URL.
       #
       # `check:all` rather than a list of its parts: the list had already

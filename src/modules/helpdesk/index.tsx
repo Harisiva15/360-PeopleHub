@@ -327,12 +327,17 @@ function HdQueue() {
                 <option value="">All</option>
                 {['Open', 'In Progress', 'Resolved', 'Closed'].map((s) => <option key={s}>{s}</option>)}
               </select>
-              <button className="btn sm" onClick={() =>
+              {/*
+                * Not `sm`, and not a glyph: it sits beside a full-height select,
+                * and its only content was ⤓ with no accessible name, so a screen
+                * reader announced it as "button".
+                */}
+              <button className="btn icon" aria-label="Export to CSV" onClick={() =>
                 downloadCSV('tickets.csv',
                   [['ID', 'Subject', 'Raised by', 'Category', 'Priority', 'Assignee', 'Created', 'Due', 'Status', 'Resolution h', 'Breached']].concat(
                     all.map((t) => [t.id, t.subject, dir.name(t.empId), tCat(t.cat).n, t.priority,
                       dir.name(t.assigneeId), t.createdOn, t.dueOn, t.status, String(t.resolutionHrs ?? ''), t.breached ? 'Yes' : 'No']),
-                  ))}>⤓</button>
+                  ))}><Icon n="download" size="lg" /></button>
             </div>
           }>
           <div style={{ maxHeight: 600, overflow: 'auto' }}>

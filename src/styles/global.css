@@ -174,8 +174,19 @@
   /*
    * Control heights, so a button beside an input beside a select line up
    * without any of the three knowing about the other two.
+   *
+   * That was the intent and the numbers contradicted it: `--h-ctl` was 38px
+   * and `--h-in` 40px, so a button next to an input was *always* 2px short,
+   * everywhere, by construction. The alignment audit found it as eighteen
+   * distinct "controls in one row have different heights" sites — every
+   * toolbar in the product — and no amount of fixing those screens could have
+   * helped, because the two tokens could not agree.
+   *
+   * One height now. `--h-in` keeps its name because an input is the thing
+   * most rules reach for, and both are written out rather than one aliasing
+   * the other so the checks that read these values as pixels still can.
    */
-  --h-ctl-sm:32px; --h-ctl:38px; --h-ctl-lg:44px;
+  --h-ctl-sm:32px; --h-ctl:40px; --h-ctl-lg:44px;
   --h-in:40px;
 
   /*
@@ -632,8 +643,16 @@ a{color:var(--brand);text-decoration:none}
 
 .field{display:block;margin-bottom:12px}
 .field>label{display:block;font-size:12px;font-weight:650;color:var(--ink-2);margin-bottom:5px}
+/*
+ * `line-height` is pinned so the box is exactly --h-in.
+ *
+ * 9px padding + 1px border + a 13.5px font's normal line box came to 40.9px,
+ * which overran the 40px min-height — so an input was a pixel taller than the
+ * select beside it, from nothing anybody had written down. 20px makes the sum
+ * exact: 20 + 18 + 2.
+ */
 .input,select.input,textarea.input{
-  width:100%;min-height:var(--h-in);padding:9px 12px;border-radius:var(--r-sm);
+  width:100%;min-height:var(--h-in);line-height:20px;padding:9px 12px;border-radius:var(--r-sm);
   border:1px solid var(--line-2);
   background:var(--surface);color:var(--ink);font-size:13.5px;outline:none;
 }
@@ -652,7 +671,17 @@ textarea.input{min-height:80px;resize:vertical}
   color:var(--ink-2);background:var(--warn-wash);
   border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);
 }
-.seg{display:inline-flex;background:var(--surface-3);border-radius:var(--r-sm);padding:3px;gap:2px}
+/*
+ * A segmented control is a control, so it is a control's height.
+ *
+ * It had no height rule at all: 3px of padding around a 12.5px button came to
+ * 35.4px, which is not one of the four control heights and lined up with
+ * nothing. Its buttons stretch to fill, so the hit targets grow with it.
+ */
+.seg{
+  display:inline-flex;align-items:stretch;min-height:var(--h-ctl);
+  background:var(--surface-3);border-radius:var(--r-sm);padding:3px;gap:2px;
+}
 .seg button{
   border:0;background:transparent;padding:5px 11px;border-radius:var(--r-xs);cursor:pointer;
   font-size:12.5px;font-weight:600;color:var(--ink-2);
@@ -757,13 +786,20 @@ textarea.input{min-height:80px;resize:vertical}
   .who-t{display:none}
   .menu-panel{max-width:calc(100vw - 24px)}
   /* touch targets: nothing tappable smaller than 44px */
-  .btn{min-height:44px;padding:0 16px}
-  .btn.sm{min-height:38px;padding:0 12px;font-size:12.5px}
-  .btn.icon,.btn.sm.icon{width:44px;padding:0}
+  /*
+   * The touch sizes carried the same 2px split as the desktop tokens:
+   * buttons 44, inputs 46. Hardcoded here rather than taken from the tokens,
+   * which is why unifying --h-ctl did not reach them. One size for the
+   * regular controls and one for the small ones, same as above.
+   */
+  .btn{min-height:46px;padding:0 16px}
+  .btn.sm{min-height:40px;padding:0 12px;font-size:12.5px}
+  .btn.icon,.btn.sm.icon{width:46px;padding:0}
   .menu-btn{min-height:44px;min-width:44px}
   .input,select.input{min-height:46px;padding:11px 12px;font-size:16px}   /* 16px stops iOS zooming on focus */
   .input.sm,select.input.sm{min-height:40px;padding:0 10px;font-size:16px}
-  .seg button{padding:8px 12px;min-height:38px}
+  /* 40 + the seg's own 3px of padding each side = 46, the control height. */
+  .seg button{padding:8px 12px;min-height:40px}
   .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .tabs::-webkit-scrollbar{display:none}
   .tabs button{white-space:nowrap;padding:10px 13px}
@@ -1287,7 +1323,12 @@ html[data-theme="dark"] .tipbox{background:#3a3a37;color:#fff}
  * a result — it is a gap, and calling it red would be calling it an absence.
  */
 .cal .day.exp-working{background:transparent;border-style:dashed;border-color:var(--line-2);color:var(--ink-2)}
-.cal .day.exp-weekly_off{background:var(--line-2);color:var(--ink-3)}
+/*
+ * The plate stays; the ink darkens. --ink-3 on --line-2 was 3.45:1 in light
+ * and 3.26:1 in dark -- the muted ink is built for a page surface, not for a
+ * filled one. --ink-2 keeps the day quiet at 7.74 and 5.59.
+ */
+.cal .day.exp-weekly_off{background:var(--line-2);color:var(--ink-2)}
 .cal .day.exp-holiday{background:var(--surface-2);border-color:color-mix(in srgb,var(--brand) 20%,transparent);color:var(--ink-3)}
 .cal .day.exp-not_employed{background:transparent;border-color:transparent;color:var(--ink-3);opacity:.45}
 /*
@@ -2575,7 +2616,16 @@ button.chip:hover{border-color:var(--line-2)}
 
 /* Today, so the week reads against the calendar without counting columns. */
 .ts-grid .ts-today{box-shadow:inset 0 -2px 0 0 var(--brand)}
-.ts-grid thead .ts-today .ts-dom{color:var(--brand)}
+/*
+ * `--brand-ink`, not `--brand`.
+ *
+ * --brand is the fill colour for a filled control, where 3:1 against the
+ * surface is the bar. As *text* on --surface-2 it measured 4.12:1 in light
+ * and 3.49:1 in dark, both under the 4.5 this size needs. --brand-ink is the
+ * reading colour and is theme-aware -- a deeper blue on light, a lighter one
+ * on dark -- giving 5.81 and 8.75.
+ */
+.ts-grid thead .ts-today .ts-dom{color:var(--brand-ink)}
 
 .ts-cell{padding:0;text-align:center;vertical-align:middle}
 .ts-cell-input{
@@ -2597,7 +2647,7 @@ button.chip:hover{border-color:var(--line-2)}
   background:var(--surface-2);
 }
 .ts-row-total{color:var(--ink)}
-.ts-week-total{font-size:15px;color:var(--brand)}
+.ts-week-total{font-size:15px;color:var(--brand-ink)}
 .ts-grid tfoot .ts-foot{background:var(--surface-2);font-weight:600;font-variant-numeric:tabular-nums;padding:6px 2px}
 .ts-grid .ts-col-menu{width:40px;text-align:center;background:var(--surface)}
 .ts-grid thead .ts-col-menu,.ts-grid tfoot .ts-col-menu{background:var(--surface-2)}

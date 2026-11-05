@@ -292,7 +292,16 @@ function AttLive() {
                 <option value="L">On leave</option>
                 <option value="A">Absent</option>
               </select>
-              <button className="btn sm" onClick={exportCsv}><Icon n="download" size="lg" /> </button>
+              {/*
+                * Not `sm`: this sits in a row with a search box and a select,
+                * and at 32px against their 40 it was the one thing out of line.
+                * `aria-label` because the only child is an aria-hidden icon, so
+                * the button had no accessible name — a screen reader read it as
+                * just "button".
+                */}
+              <button className="btn icon" onClick={exportCsv} aria-label="Export to CSV">
+                <Icon n="download" size="lg" />
+              </button>
             </div>
           }>
           <div style={{ maxHeight: 560, overflow: 'auto' }} className="tbl-wrap">
