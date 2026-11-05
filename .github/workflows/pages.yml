@@ -19,7 +19,14 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Pinned, not `ubuntu-latest`.
+    #
+    # `latest` rolled to 26.04 and Playwright 1.56.1 refuses it outright:
+    # "Playwright does not support chromium on ubuntu26.04-x64". That is the
+    # installer declining an unknown OS, not a missing system library, so
+    # `--with-deps` fails in exactly the same way. Pinning to the newest
+    # release Playwright knows is the fix until the dependency moves.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -34,9 +41,26 @@ jobs:
       # key screens actually render rather than the token pairs somebody
       # listed. Two AA failures shipped underneath the token check because
       # their pairs were never in its list, so this one needs a browser.
-      # Chromium only, not `--with-deps`: the runner already has the system
-      # libraries and installing all three engines would treble the step.
-      - run: npx playwright install chromium
+      # Chromium only: the other two engines would treble a step whose whole
+      # job is one spec.
+      #
+      # The version comes out of the installed package rather than being
+      # written here, so the cache key cannot quietly describe a browser
+      # build that is no longer the one in use.
+      - name: Resolve the Playwright version
+        id: pw
+        run: |
+          v=$(node -p "require('@playwright/test/package.json').version")
+          echo "v=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.pw.outputs.v }}
+
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
 
       # The same gates that run locally. A red build should not reach the URL.
       #
