@@ -43,7 +43,9 @@ import {
   DeactivateConfirmation, DeleteConfirmation, UserForm, UserProfile,
 } from './Drawers';
 import { SignInTable } from './SignIns';
-import { PermissionGuard, ROLE_LABEL, RoleBadge, UserStatusBadge, useMay, whenOf } from './shared';
+import {
+  PermissionGuard, ROLE_LABEL, RoleBadge, UserStatusBadge, lastLoginLabel, useMay,
+} from './shared';
 
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -282,7 +284,7 @@ function UsersView() {
     ...rows.map((u) => [
       u.code, u.name, u.email, depts.name(u.dept), u.designation, sites.name(u.site),
       u.role, u.managerId ? dir.name(u.managerId) : '—', u.status, u.empType,
-      u.joinedOn, u.lastLoginAt ?? 'Never',
+      u.joinedOn, lastLoginLabel(u.lastLoginAt, u.signInEvents).text,
     ]),
   ]);
 
@@ -438,7 +440,12 @@ function UsersView() {
                     <td><RoleBadge r={u.role} /></td>
                     <td className="nowrap">{u.managerId ? dir.name(u.managerId) : '—'}</td>
                     <td><UserStatusBadge s={u.status} /></td>
-                    <td className="nowrap muted">{whenOf(u.lastLoginAt)}</td>
+                    {(() => {
+                      const ll = lastLoginLabel(u.lastLoginAt, u.signInEvents);
+                      return (
+                        <td className="nowrap muted" title={ll.title}>{ll.text}</td>
+                      );
+                    })()}
                     <td className="right nowrap">
                       <button className="btn ghost sm" onClick={() => openProfile(u)}>View</button>
                       <PermissionGuard action="user.edit">

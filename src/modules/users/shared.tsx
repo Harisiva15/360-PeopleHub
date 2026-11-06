@@ -10,6 +10,7 @@
 
 import type { ReactNode } from 'react';
 import { Badge } from '../../components/ui';
+import { fmtDT } from '../../lib/dates';
 import type { BadgeKind } from '../../components/ui';
 import { ACTION_GATE, ROLE_LABEL, SCOPE } from '../../state/rbac';
 import type { UserAction } from '../../state/rbac';
@@ -108,11 +109,45 @@ export const RoleBadge = ({ r }: { r: AppRole }) => (
 
 /* ---------------- time ---------------- */
 
-/** "18 Sep, 09:30" — an instant, where a date alone would not be enough. */
-export function whenOf(at: string | null): string {
-  if (!at) return 'Never';
-  const [d, t] = at.split('T');
-  const day = new Date(`${d}T00:00:00`);
-  const label = `${day.getDate()} ${day.toLocaleString('en-GB', { month: 'short' })}`;
-  return t ? `${label}, ${t.slice(0, 5)}` : label;
+/**
+ * "18 Sep, 09:30" — an instant, where a date alone would not be enough.
+ *
+ * Now one line over `fmtDT`, which is the app's only date parser. This used to
+ * split on 'T' and hand the remainder to `new Date`, which printed
+ * "NaN Invalid Date" for every user whose stamp came from the real API — see
+ * `parseInstant` for why the demo data hid it.
+ *
+ * The fallback is '—', not 'Never'. An absent stamp means nobody recorded a
+ * sign-in, which is not the same as nobody signing in: VHM007 has sign-out
+ * events and no stamp. `lastLoginLabel` is what decides when 'Never' is
+ * actually earned.
+ */
+export const whenOf = (at: string | null, fallback = '—'): string => fmtDT(at, fallback);
+
+/**
+ * What the Last login column says, given the stamp and the evidence.
+ *
+ * Three answers, because there are three states and the old code collapsed two
+ * of them. `signInEvents` is the count of rows in `login_history` for this
+ * account, which is the record a sign-out is written to as well as a sign-in.
+ *
+ *   * a stamp            -> the instant
+ *   * no stamp, no event -> 'Never', which is now a claim backed by evidence
+ *   * no stamp, events   -> '—'. They have signed in; what we lack is when.
+ *                           Saying 'Never' here is the bug this splits apart.
+ */
+export function lastLoginLabel(
+  at: string | null,
+  signInEvents?: number | null,
+): { text: string; title?: string } {
+  const shown = fmtDT(at, '');
+  if (shown) return { text: shown };
+  if (signInEvents === 0) return { text: 'Never', title: 'No sign-in has been recorded' };
+  if (signInEvents && signInEvents > 0) {
+    return {
+      text: '—',
+      title: `${signInEvents} sign-in event(s) on record, but no last-sign-in stamp`,
+    };
+  }
+  return { text: '—', title: 'Not recorded' };
 }

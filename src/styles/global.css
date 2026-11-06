@@ -548,7 +548,19 @@ a{color:var(--brand);text-decoration:none}
  * is the one thing on the screen the page itself repeats.
  */
 .topbar-acts{display:flex;align-items:center;gap:4px;flex:0 0 auto}
-.menu-wrap{position:relative}
+/*
+ * `inline-flex`, not the default `block`.
+ *
+ * As a block, the wrapper around the ⋯ trigger took a line of its own, so the
+ * actions cell in User management rendered "View · Edit" on one line and ⋯ on
+ * the next, and grew to two rows' height while the rest of the row stayed
+ * centred. `white-space:nowrap` on the cell could not prevent it — that
+ * property governs text, not a block-level child.
+ *
+ * `position:relative` is kept for the trigger's own badge, which is absolutely
+ * positioned against it. The panel no longer uses it: it is portalled.
+ */
+.menu-wrap{position:relative;display:inline-flex;vertical-align:middle}
 .menu-btn{
   display:inline-flex;align-items:center;justify-content:center;position:relative;
   min-height:var(--h-ctl);min-width:var(--h-ctl);padding:0 8px;
@@ -571,6 +583,18 @@ a{color:var(--brand);text-decoration:none}
 }
 .menu-panel.end{right:0}
 .menu-panel.start{left:0}
+/*
+ * The portalled panel. Positioned in viewport coordinates by Menu.tsx, so every
+ * offset the absolute version relied on has to be cleared — `top` especially,
+ * which is `calc(100% + 6px)` above and would be added to the inline `top`'s
+ * element rather than ignored.
+ *
+ * Above `.scrim` (200) and the mobile sidebar (120), because a menu opened from
+ * inside a drawer has to draw over the drawer that owns it.
+ */
+.menu-panel.menu-fixed{
+  position:fixed;top:auto;right:auto;left:auto;bottom:auto;z-index:1200;
+}
 .menu-h{
   font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
   color:var(--ink-3);padding:8px 9px 4px;

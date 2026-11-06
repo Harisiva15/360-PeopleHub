@@ -64,6 +64,16 @@ export interface UserAccount {
   modifiedOn: string | null;
   modifiedById: string | null;
   lastLoginAt: string | null;
+  /**
+   * Rows on record in `login_history` for this account, sign-outs included.
+   *
+   * It exists so the screen can tell "never signed in" from "nobody recorded
+   * when they did". `lastLoginAt` being null means only the latter, and
+   * reading it as the former is what printed "Never" against an account with
+   * two sign-out events. Optional because the demo dataset does not model a
+   * sign-in log; absent means "no evidence either way", which renders '—'.
+   */
+  signInEvents?: number | null;
   /** How many times the invitation has gone out. One on creation. */
   invitedCount: number;
   inviteSentAt: string | null;
@@ -134,6 +144,18 @@ export const USERS: UserAccount[] = [];
         : status === 'Inactive' || status === 'Suspended'
           ? `${ymd(addDays(TODAY, -ri(30, 300)))}T09:${String(ri(0, 59)).padStart(2, '0')}:00`
           : null,
+      /*
+       * The same three branches, so the two never disagree: an account with a
+       * stamp has events behind it, and one without has none. That is what
+       * lets the demo show "Never" and the real server show "—" for the
+       * accounts whose sign-ins were never recorded — a distinction the demo
+       * cannot produce and so cannot be relied on to reveal.
+       */
+      signInEvents: status === 'Active'
+        ? ri(3, 180)
+        : status === 'Inactive' || status === 'Suspended'
+          ? ri(1, 40)
+          : 0,
       invitedCount: invited ? ri(1, 3) : 1,
       inviteSentAt: invited || status === 'Active' ? ymd(created) : null,
       mustChangePassword: invited && chance(0.3),
@@ -205,6 +227,8 @@ export const USERS: UserAccount[] = [];
      */
     if (status === 'Pending Approval' || status === 'Invitation Pending') {
       u.lastLoginAt = null;
+      /* And no events either, so the screen says "Never" rather than "—". */
+      u.signInEvents = 0;
       u.approvedById = null;
       u.approvedAt = null;
     }

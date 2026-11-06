@@ -852,5 +852,147 @@ export function probe(theme: 'light' | 'dark'): Finding[] {
     }
   }
 
+  /* ------------------------------------------------------------------------ *
+   * 11. an open popover cut off by something that clips
+   *
+   * User management's row menu rendered its items as "Require t…",
+   * "Reset pa…", "Deactiva…". The panel was `position:absolute` in a `<td>`
+   * that is `position:sticky` inside a `.tbl-wrap` that is `overflow-x:auto`
+   * — and `overflow` set on one axis computes to `auto` on both, so the panel
+   * was clipped at the cell's edge. `z-index` cannot help: clipping happens in
+   * the ancestor's padding box regardless of stacking.
+   *
+   * So the test is not "is it on top" but "does any ancestor that clips have a
+   * padding box smaller than the panel". A portalled panel has `body` for an
+   * ancestor and passes; anything still nested in a scroller does not.
+   * ------------------------------------------------------------------------ */
+  const panels = document.querySelectorAll(
+    '[role="menu"], [role="listbox"], .menu-panel, .popover, .dropdown');
+  for (let n = 0; n < panels.length; n += 1) {
+    const panel = panels[n]!;
+    if (!visible(panel)) continue;
+    const pr = panel.getBoundingClientRect();
+    if (pr.width < 2 || pr.height < 2) continue;
+
+    let anc = panel.parentElement;
+    while (anc && anc !== document.body) {
+      const a = cs(anc);
+      const clips = (ov: string) => ov !== 'visible' && ov !== '';
+      if (clips(a.overflowX) || clips(a.overflowY) || a.clipPath !== 'none') {
+        const ar = anc.getBoundingClientRect();
+        /* The padding box: what `overflow` actually clips to. */
+        const bl = parseFloat(a.borderLeftWidth) || 0;
+        const br = parseFloat(a.borderRightWidth) || 0;
+        const bt = parseFloat(a.borderTopWidth) || 0;
+        const bb = parseFloat(a.borderBottomWidth) || 0;
+        const over = Math.max(
+          (ar.left + bl) - pr.left,
+          pr.right - (ar.right - br),
+          (ar.top + bt) - pr.top,
+          pr.bottom - (ar.bottom - bb),
+        );
+        if (over > 1) {
+          add('popover-clipped', panel,
+            'an open panel overflows ' + (anc.className || anc.tagName).toString().slice(0, 40)
+            + ' by ' + r1(over) + 'px, and that ancestor clips (overflow-x: '
+            + a.overflowX + ', overflow-y: ' + a.overflowY
+            + ') — its items are cut off, which no z-index can fix',
+            'high');
+          break;
+        }
+      }
+      anc = anc.parentElement;
+    }
+
+    /* And off the viewport, which is the near-the-bottom-edge case. */
+    const outside = Math.max(
+      -pr.left, pr.right - window.innerWidth, -pr.top, pr.bottom - window.innerHeight);
+    if (outside > 1) {
+      add('popover-offscreen', panel,
+        'an open panel extends ' + r1(outside) + 'px past the viewport — it '
+        + 'needs to flip or be clamped to the edge',
+        'high');
+    }
+  }
+
+  /* ------------------------------------------------------------------------ *
+   * 12. a table cell whose controls have wrapped onto a second line
+   *
+   * The actions cell showed "View · Edit" on one line and the ⋯ trigger on the
+   * next, top-aligned while the rest of the row was centred. The cause was a
+   * block-level wrapper around the trigger: `white-space:nowrap` governs text
+   * and does nothing about a block child, so the cell silently grew.
+   *
+   * Measured by the controls' own top edges rather than by the cell's height —
+   * a tall cell may be tall for a legitimate reason, but two controls that
+   * should sit side by side having different tops never is.
+   * ------------------------------------------------------------------------ */
+  const cells = document.querySelectorAll('td, th');
+  for (let n = 0; n < cells.length; n += 1) {
+    const cell = cells[n]!;
+    if (!visible(cell)) continue;
+    const ctrls: Element[] = [];
+    const kids = cell.querySelectorAll('button, a, .menu-wrap, select, input');
+    for (let k = 0; k < kids.length; k += 1) {
+      const c = kids[k]!;
+      if (!visible(c)) continue;
+      /* Only the outermost: a button inside .menu-wrap is not a second row. */
+      if (c.parentElement && c.parentElement.closest('.menu-wrap')) continue;
+      const cr = c.getBoundingClientRect();
+      if (cr.width < 2 || cr.height < 2) continue;
+      ctrls.push(c);
+    }
+    if (ctrls.length < 2) continue;
+
+    let top = Infinity;
+    let bottom = -Infinity;
+    let tallest = 0;
+    for (let k = 0; k < ctrls.length; k += 1) {
+      const cr = ctrls[k]!.getBoundingClientRect();
+      if (cr.top < top) top = cr.top;
+      if (cr.bottom > bottom) bottom = cr.bottom;
+      if (cr.height > tallest) tallest = cr.height;
+    }
+    /* Taller than the tallest control by more than a few px means a new line. */
+    const spread = bottom - top;
+    if (tallest > 0 && spread > tallest + 4) {
+      add('action-cell-wrapped', cell,
+        ctrls.length + ' controls in one cell span ' + r1(spread)
+        + 'px while the tallest is ' + r1(tallest)
+        + 'px — they have wrapped onto separate lines',
+        'high');
+    }
+  }
+
+  /* ------------------------------------------------------------------------ *
+   * 13. a failed computation rendered as text
+   *
+   * "NaN Invalid Date" shipped in the Last login column against three of five
+   * real users. Nothing threw and nothing logged: an invalid Date formats as
+   * the literal string "Invalid Date", and NaN concatenates. Only the real
+   * API's timestamps triggered it, so no screenshot of the demo data could
+   * show it — which is why this belongs in the runtime audit rather than in a
+   * reviewer's eye.
+   *
+   * Text content only, and word-bounded, so a class name or an element called
+   * "Nanometre" is not a finding.
+   * ------------------------------------------------------------------------ */
+  const POISON = /\b(?:Invalid Date|NaN|undefined|null|Infinity|\[object Object\])\b/;
+  const walker = document.createTreeWalker(document.body, 4 /* TEXT_NODE */);
+  let node = walker.nextNode();
+  while (node) {
+    const text = (node.nodeValue || '').trim();
+    if (text && POISON.test(text)) {
+      const host = node.parentElement;
+      if (host && visible(host) && !host.closest('script, style')) {
+        add('invalid-value-text', host,
+          'renders "' + text.slice(0, 48)
+          + '" — a failed parse or computation reached the screen as text',
+          'high');
+      }
+    }
+    node = walker.nextNode();
+  }
+
   return out;
 }

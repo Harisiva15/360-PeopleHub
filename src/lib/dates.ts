@@ -17,22 +17,103 @@ export const parseYmd = (s: Ymd): Date => {
 
 const asDate = (d: Ymd | Date): Date => (typeof d === 'string' ? parseYmd(d) : d);
 
+/**
+ * The one place a stored value becomes a Date. Anything it cannot read becomes
+ * `null`, so no formatter downstream can reach `getDate()` on an invalid Date.
+ *
+ * ## Why this exists
+ *
+ * User management printed "NaN Invalid Date" for three of five users. The
+ * value was fine; the parse was not. `tenant_membership.last_login_at` is
+ * returned as `last_login_at::text`, and Postgres renders a timestamptz as
+ *
+ *   2026-11-06 08:11:47.450537+00
+ *
+ * with a **space** where ISO 8601 puts a `T`. A formatter that split on 'T'
+ * kept the whole string as the date part, `new Date` gave an invalid Date,
+ * `getDate()` gave NaN and `toLocaleString` gave the literal text
+ * "Invalid Date". The demo dataset writes `2026-09-18T09:30`, with the T, so
+ * every screen looked right until it met the real API.
+ *
+ * Three shapes have to be read, and the order matters:
+ *
+ *   1. `YYYY-MM-DD` alone resolves to **local** midnight. `new Date('2026-11-06')`
+ *      is UTC midnight, which is the previous day for any viewer west of
+ *      Greenwich — so a joining date would read a day early in New York.
+ *   2. A space-separated timestamp, normalised to a T. A bare `+00` offset is
+ *      widened to `+00:00`, which is what the spec requires, and sub-millisecond
+ *      digits are trimmed.
+ *   3. Anything already valid, including a Date or an epoch number.
+ */
+export const parseInstant = (v: string | number | Date | null | undefined): Date | null => {
+  if (v === null || v === undefined) return null;
+  if (v instanceof Date) return Number.isFinite(v.getTime()) ? v : null;
+  if (typeof v === 'number') return Number.isFinite(v) ? new Date(v) : null;
+
+  const s = String(v).trim();
+  if (!s) return null;
+
+  /* Date-only first, so it lands on local midnight rather than UTC. */
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (dateOnly) {
+    const d = new Date(+dateOnly[1], +dateOnly[2] - 1, +dateOnly[3]);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+
+  const norm = s
+    .replace(' ', 'T')
+    .replace(/(\.\d{3})\d+/, '$1')
+    .replace(/([+-]\d{2})$/, '$1:00');
+  const d = new Date(norm);
+  return Number.isFinite(d.getTime()) ? d : null;
+};
+
 export const addDays = (d: Ymd | Date, n: number): Date => {
   const x = new Date(asDate(d));
   x.setDate(x.getDate() + n);
   return x;
 };
 
-export const fmtD = (s?: Ymd | Date | null): string => {
-  if (!s) return '—';
-  const d = asDate(s);
+/*
+ * All three go through `parseInstant`, so an unreadable value renders as the
+ * fallback rather than as arithmetic on an invalid Date. `MON[NaN]` is
+ * `undefined`, which is why the old versions could print "NaN undefined NaN".
+ */
+
+export const fmtD = (s?: Ymd | Date | null, fallback = '—'): string => {
+  const d = parseInstant(s ?? null);
+  if (!d) return fallback;
   return d.getDate() + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear();
 };
 
-export const fmtDS = (s?: Ymd | Date | null): string => {
-  if (!s) return '—';
-  const d = asDate(s);
+export const fmtDS = (s?: Ymd | Date | null, fallback = '—'): string => {
+  const d = parseInstant(s ?? null);
+  if (!d) return fallback;
   return d.getDate() + ' ' + MON[d.getMonth()];
+};
+
+/** "November 2026" — a reporting period's own name. */
+export const fmtMonthYear = (s?: Ymd | Date | null, fallback = '—'): string => {
+  const d = parseInstant(s ?? null);
+  if (!d) return fallback;
+  return MONL[d.getMonth()] + ' ' + d.getFullYear();
+};
+
+/**
+ * An instant — a date plus the time of day, where the date alone would not be
+ * enough. "6 Nov, 08:11", in the viewer's own zone.
+ *
+ * `fallback` is the caller's word for "no value", and it is deliberately not
+ * "Never": that is a claim about history, and only a caller holding the
+ * evidence may make it. Everywhere else an absent instant is unknown, not
+ * proof of absence.
+ */
+export const fmtDT = (s?: string | number | Date | null, fallback = '—'): string => {
+  const d = parseInstant(s ?? null);
+  if (!d) return fallback;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getDate()} ${MON[d.getMonth()]}, ${hh}:${mm}`;
 };
 
 export const dowOf = (s: Ymd | Date): string => DOW[asDate(s).getDay()];

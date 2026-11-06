@@ -86,7 +86,15 @@ export interface UserAccount {
   shift: string;
   createdOn: string; createdById: string | null;
   modifiedOn: string | null; modifiedById: string | null;
-  lastLoginAt: string | null; invitedCount: number; inviteSentAt: string | null;
+  lastLoginAt: string | null;
+  /**
+   * Rows in login_history for this account, sign-outs included, so a screen can
+   * tell "never signed in" from "nobody recorded when". A null lastLoginAt
+   * means only the second, and reading it as the first is what showed "Never"
+   * against accounts holding sign-out events.
+   */
+  signInEvents: number;
+  invitedCount: number; inviteSentAt: string | null;
   mustChangePassword: boolean;
   /** Set by an administrator; satisfied only by the person themselves. */
   mfaRequired: boolean;
@@ -159,6 +167,7 @@ interface Row {
   deactivation_reason: string | null;
   requested_by: string | null; approved_by: string | null; approved_at: string | null;
   account_email: string | null;
+  sign_in_events: number;
 }
 
 /*
@@ -181,7 +190,21 @@ const PROJECTION = `
          -- Not a join: app_rw has no access to the auth schema, and cannot
          -- be granted one because supabase_auth_admin owns it. 0042 wraps
          -- the single column this needs in a SECURITY DEFINER function.
-         auth_email_for(m.user_id) AS account_email
+         auth_email_for(m.user_id) AS account_email,
+         /*
+          * Whether anything at all is on record for this account, so the
+          * screen can tell "has never signed in" from "we failed to record
+          * when". last_login_at alone cannot: VHM007 and VHM008 have
+          * sign-out events and a NULL stamp, and both read as "Never".
+          *
+          * Matched on the user as well as the employee, because an account
+          * with no employee row would otherwise count zero and claim it had
+          * never signed in.
+          */
+         (SELECT count(*)::int FROM login_history lh
+           WHERE lh.tenant_id = m.tenant_id
+             AND (lh.employee_id = m.employee_id OR lh.user_id = m.user_id))
+           AS sign_in_events
     FROM tenant_membership m
     LEFT JOIN employee e ON e.id = m.employee_id
     LEFT JOIN department d ON d.id = e.department_id
@@ -210,6 +233,7 @@ const toAccount = (r: Row): UserAccount => ({
   modifiedOn: null,
   modifiedById: null,
   lastLoginAt: r.last_login_at,
+  signInEvents: Number(r.sign_in_events ?? 0),
   invitedCount: Number(r.invited_count ?? 0),
   inviteSentAt: r.invite_sent_at,
   mustChangePassword: Boolean(r.must_change_password),

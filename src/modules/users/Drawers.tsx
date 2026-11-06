@@ -27,7 +27,9 @@ import {
   useCreateUser, useLoginHistory, useNextCode, useShiftProfiles, useUpdateUser,
   useVisiblePeople, useWorkSchedules,
 } from './data';
-import { ROLE_BLURB, ROLE_LABEL, RoleBadge, UserStatusBadge, whenOf } from './shared';
+import {
+  ROLE_BLURB, ROLE_LABEL, RoleBadge, UserStatusBadge, lastLoginLabel,
+} from './shared';
 
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 const Req = () => <span className="req" aria-hidden="true">*</span>;
@@ -449,7 +451,7 @@ export function UserForm({
                 ['Created by', existing.createdById ? dir.name(existing.createdById) : '—'],
                 ['Last modified', existing.modifiedOn ? fmtD(existing.modifiedOn) : '—'],
                 ['Modified by', existing.modifiedById ? dir.name(existing.modifiedById) : '—'],
-                ['Last login', whenOf(existing.lastLoginAt)],
+                ['Last login', lastLoginLabel(existing.lastLoginAt, existing.signInEvents).text],
               ]} />
             </div>
           )}
@@ -614,7 +616,7 @@ export function UserProfile({ u }: { u: UserAccount }) {
 
       {tab === 'activity' && (
         <KV rows={[
-          ['Last login', whenOf(u.lastLoginAt)],
+          ['Last login', lastLoginLabel(u.lastLoginAt, u.signInEvents).text],
           ['Created', fmtD(u.createdOn)],
           ['Created by', u.createdById ? dir.name(u.createdById) : '—'],
           ['Last modified', u.modifiedOn ? fmtD(u.modifiedOn) : '—'],

@@ -113,6 +113,22 @@ const CHECKS = {
     title: 'an empty state not centred',
     fix: '`EmptyState` should centre itself; the container is adding padding on one side',
   },
+  'popover-clipped': {
+    title: 'an open menu cut off by something that clips',
+    fix: 'portal the panel to `document.body` and position it in viewport coordinates — `overflow` clips at the ancestor\'s padding box and no `z-index` escapes it',
+  },
+  'popover-offscreen': {
+    title: 'an open menu running past the viewport',
+    fix: 'flip it above the trigger when there is no room below, and clamp its left edge to the viewport',
+  },
+  'action-cell-wrapped': {
+    title: 'a row\'s controls wrapped onto two lines',
+    fix: 'every control in the cell must be inline-level — a block-level wrapper takes its own line and `white-space:nowrap` does not stop it',
+  },
+  'invalid-value-text': {
+    title: 'a failed parse rendered as text',
+    fix: 'format through `src/lib/dates`, which returns a fallback rather than letting an invalid Date reach the screen as "Invalid Date"',
+  },
   contrast: {
     title: 'text below the contrast it needs',
     fix: 'take the colour from a `--ink`/`--ink-2`/`--ink-3` token resolved for this theme, not a literal',

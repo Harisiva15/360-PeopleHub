@@ -1,5 +1,5 @@
 import { sortBy, sum } from '../../lib/collections';
-import { MON, TODAY } from '../../lib/dates';
+import { MON, TODAY, fmtMonthYear } from '../../lib/dates';
 import { pct } from '../../lib/format';
 import { COUNTRIES, mbS, sumBase, toBase } from '../../data/countries';
 
@@ -150,7 +150,7 @@ function ExecView() {
     ['Client concentration', conc + '%', '25%', conc <= 25],
   ];
 
-  const period = TODAY.toLocaleString('en', { month: 'long', year: 'numeric' });
+  const period = fmtMonthYear(TODAY);
 
   /*
    * The board note is a template over the figures already on this screen, so
